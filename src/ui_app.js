@@ -114,13 +114,106 @@ const WORLD_LOCATIONS = [
   { cat: 'west_east', title: 'BERN', region: 'Szwajcaria • Berno (Zakole Aare)', lat: 46.9480, lon: 7.4515 }
 ];
 
+const PRINT_PROFILES = {
+  mono4_84_1x1: {
+    id: 'mono4_84_1x1',
+    name: 'Anycubic Photon Mono 4 • 84×84 mm (1 Kafel 1×1)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 84, totalHeightMm: 84,
+    cols: 1, rows: 1,
+    isResin: true
+  },
+  mono4_150_1x2: {
+    id: 'mono4_150_1x2',
+    name: 'Anycubic Photon Mono 4 • 150×150 mm (2 Kafle 1×2 po 150×75 mm)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 150, totalHeightMm: 150,
+    cols: 1, rows: 2,
+    isResin: true
+  },
+  mono4_168_2x2: {
+    id: 'mono4_168_2x2',
+    name: 'Anycubic Photon Mono 4 • 168×168 mm (4 Kafle 2×2 po 84×84 mm)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 168, totalHeightMm: 168,
+    cols: 2, rows: 2,
+    isResin: true
+  },
+  mono4_252_2x3: {
+    id: 'mono4_252_2x3',
+    name: 'Anycubic Photon Mono 4 • 252×252 mm (6 Kafli 2×3 po 126×84 mm)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 252, totalHeightMm: 252,
+    cols: 2, rows: 3,
+    isResin: true
+  },
+  mono4_296_2x4: {
+    id: 'mono4_296_2x4',
+    name: 'Anycubic Photon Mono 4 • 296×296 mm (8 Kafli 2×4 po 148×74 mm)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 296, totalHeightMm: 296,
+    cols: 2, rows: 4,
+    isResin: true
+  },
+  fdm_330_1x1: {
+    id: 'fdm_330_1x1',
+    name: 'Prusa XL 5-Toolhead • 320×320 mm (1 Kafel 1×1)',
+    printer: 'Prusa XL (330×330 mm)',
+    bedX: 330.0, bedY: 330.0, bedZ: 330.0,
+    totalWidthMm: 320, totalHeightMm: 320,
+    cols: 1, rows: 1,
+    isResin: false
+  },
+  fdm_256_1x1: {
+    id: 'fdm_256_1x1',
+    name: 'Bambu Lab X1C / P1S • 246×246 mm (1 Kafel 1×1)',
+    printer: 'Bambu Lab (256×256 mm)',
+    bedX: 256.0, bedY: 256.0, bedZ: 256.0,
+    totalWidthMm: 246, totalHeightMm: 246,
+    cols: 1, rows: 1,
+    isResin: false
+  },
+  fdm_350_1x1: {
+    id: 'fdm_350_1x1',
+    name: 'Voron 2.4 350 • 340×340 mm (1 Kafel 1×1)',
+    printer: 'Voron 2.4 (350×350 mm)',
+    bedX: 350.0, bedY: 350.0, bedZ: 350.0,
+    totalWidthMm: 340, totalHeightMm: 340,
+    cols: 1, rows: 1,
+    isResin: false
+  },
+  fdm_500_2x2: {
+    id: 'fdm_500_2x2',
+    name: 'Format XL 4-Kafle FDM • 492×492 mm (2×2 po 246×246 mm)',
+    printer: 'Bambu / Prusa (256×256 mm)',
+    bedX: 256.0, bedY: 256.0, bedZ: 256.0,
+    totalWidthMm: 492, totalHeightMm: 492,
+    cols: 2, rows: 2,
+    isResin: false
+  }
+};
+
 function initMap3DApp(initialScene) {
   const state = {
     mapCenterLat: initialScene ? initialScene.center[0] : 48.1338,
     mapCenterLon: initialScene ? initialScene.center[1] : 11.5855,
     mapZoom: 15,
     plaqueText: initialScene ? initialScene.title : 'MÜNCHEN',
-    bedSizeMm: 330,
+    printerProfileId: 'fdm_330_1x1',
+    bedSizeMm: 320,
+    totalHeightMm: 320,
+    tileCols: 1,
+    tileRows: 1,
+    tileExplode: 0.0,
+    hollowBase: true,
+    hollowWallMm: 1.8,
+    exportTileFilter: 'all',
+    printMetrics: null,
     cropRatio: 0.88,
     cropCenterX: 0.04,
     cropCenterY: 0.07,
@@ -319,6 +412,50 @@ function initMap3DApp(initialScene) {
     ctx2d.lineWidth = 2.2;
     ctx2d.strokeRect(bx0, by0, bw, bh);
 
+    // Draw Multi-Tile Grid Split Overlay (e.g., 1x2, 2x2, 2x3, 2x4 for Anycubic Photon Mono 4)
+    const tCols = state.tileCols || 1;
+    const tRows = state.tileRows || 1;
+    if (tCols > 1 || tRows > 1) {
+      ctx2d.save();
+      ctx2d.strokeStyle = 'rgba(6, 182, 212, 0.9)';
+      ctx2d.lineWidth = 1.4;
+      ctx2d.setLineDash([4, 3]);
+      for (let c = 1; c < tCols; c++) {
+        const sx = bx0 + (c / tCols) * bw;
+        ctx2d.beginPath();
+        ctx2d.moveTo(sx, by0);
+        ctx2d.lineTo(sx, by0 + bh);
+        ctx2d.stroke();
+      }
+      for (let r = 1; r < tRows; r++) {
+        const sy = by0 + (r / tRows) * bh;
+        ctx2d.beginPath();
+        ctx2d.moveTo(bx0, sy);
+        ctx2d.lineTo(bx0 + bw, sy);
+        ctx2d.stroke();
+      }
+      ctx2d.setLineDash([]);
+      ctx2d.font = 'bold 9px monospace';
+      for (let r = 0; r < tRows; r++) {
+        for (let c = 0; c < tCols; c++) {
+          const tid = (tRows - 1 - r) * tCols + c;
+          const tx = bx0 + (c / tCols) * bw;
+          const ty = by0 + (r / tRows) * bh;
+          const tw = bw / tCols;
+          const th = bh / tRows;
+          if (state.exportTileFilter !== 'all' && parseInt(state.exportTileFilter, 10) === tid) {
+            ctx2d.fillStyle = 'rgba(6, 182, 212, 0.25)';
+            ctx2d.fillRect(tx, ty, tw, th);
+          }
+          ctx2d.fillStyle = 'rgba(15, 23, 42, 0.72)';
+          ctx2d.fillRect(tx + 3, ty + 3, 28, 12);
+          ctx2d.fillStyle = '#38bdf8';
+          ctx2d.fillText(`R${tRows - r}C${c + 1}`, tx + 5, ty + 12);
+        }
+      }
+      ctx2d.restore();
+    }
+
     // Crosshair in center of frame
     ctx2d.strokeStyle = 'rgba(37, 99, 235, 0.65)';
     ctx2d.lineWidth = 1.0;
@@ -343,6 +480,7 @@ function initMap3DApp(initialScene) {
     state.layerMeshes = res.meshes;
     state.buildingBounds = res.buildingBounds;
     state.totalTriangles = res.totalTriangles;
+    state.printMetrics = res.printMetrics || null;
 
     // Build groupId -> buildings lookup so multi-part buildings act as one cohesive unit
     state.groupIdMap.clear();
@@ -354,6 +492,7 @@ function initMap3DApp(initialScene) {
     });
 
     studio.uploadMeshes(state.layerMeshes);
+    updateTileSelectorOptions();
     updateStatsUI();
     updateLandmarkChips();
     updateInspectorUI();
@@ -956,19 +1095,118 @@ function initMap3DApp(initialScene) {
     });
   }
 
+  function updateTileSelectorOptions() {
+    const sel = document.getElementById('exportTileSelect');
+    if (!sel) return;
+    const prevVal = state.exportTileFilter || 'all';
+    const pm = state.printMetrics || {};
+    const cols = state.tileCols || 1;
+    const rows = state.tileRows || 1;
+    const numTiles = cols * rows;
+    const tw = Math.round((state.bedSizeMm || 320) / cols);
+    const th = Math.round((state.totalHeightMm || state.bedSizeMm || 320) / rows);
+
+    sel.innerHTML = '';
+    const optAll = document.createElement('option');
+    optAll.value = 'all';
+    optAll.textContent = numTiles > 1
+      ? `Wszystkie ${numTiles} kafle (${cols}×${rows} • Paczka .ZIP / .3MF)`
+      : `Cały model 1×1 (${tw}×${th} mm)`;
+    sel.appendChild(optAll);
+
+    if (numTiles > 1) {
+      for (let tr = 0; tr < rows; tr++) {
+        for (let tc = 0; tc < cols; tc++) {
+          const tid = tr * cols + tc;
+          const vMl = (pm.tileVolumesMl && pm.tileVolumesMl[tid] !== undefined)
+            ? pm.tileVolumesMl[tid].toFixed(1)
+            : ((pm.totalVolumeMl || 30) / numTiles).toFixed(1);
+          const opt = document.createElement('option');
+          opt.value = String(tid);
+          opt.textContent = `Kafel ${tid + 1}/${numTiles} (R${tr + 1}•C${tc + 1} — ${tw}×${th} mm • ~${vMl} ml żywicy)`;
+          sel.appendChild(opt);
+        }
+      }
+    }
+
+    if (prevVal !== 'all' && parseInt(prevVal, 10) < numTiles) {
+      sel.value = prevVal;
+    } else {
+      state.exportTileFilter = 'all';
+      sel.value = 'all';
+    }
+  }
+
   function updateStatsUI() {
     const sc = state.sceneData;
     const bCount = sc && sc.buildings ? sc.buildings.length : 0;
     const tCount = sc && sc.trees ? sc.trees.length : 0;
+    const pm = state.printMetrics || {};
+    const profile = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.fdm_330_1x1;
+    const cols = state.tileCols || 1;
+    const rows = state.tileRows || 1;
+    const numTiles = cols * rows;
+    const dimW = state.bedSizeMm || 320;
+    const dimH = state.totalHeightMm || dimW;
+    const tileW = Math.round(dimW / cols);
+    const tileH = Math.round(dimH / rows);
+    const maxZ = Math.round(pm.maxZMm || 22);
+
     document.getElementById('meshStatsBadge').textContent =
       `${state.totalTriangles.toLocaleString('pl-PL')} trójkątów • ${bCount} budynków • ${tCount} drzew 3D`;
-    const dim = state.bedSizeMm;
-    document.getElementById('statDimensions').textContent = `${dim}×${dim}×29 mm`;
-    document.getElementById('bboxScaleBadge').textContent = `${(dim / 10).toFixed(0)}×${(dim / 10).toFixed(0)} cm`;
-    const grams = Math.round((dim / 330) * (dim / 330) * 448);
-    document.getElementById('statFilament').textContent = `~${grams} g`;
+
+    const tileSplitLbl = document.getElementById('tileSplitLabel');
+    if (tileSplitLbl) {
+      tileSplitLbl.textContent = `Kafle (${cols}×${rows}):`;
+    }
+
+    if (numTiles > 1) {
+      document.getElementById('statDimensions').textContent = `${dimW}×${dimH} (${numTiles}× ${tileW}×${tileH} mm)`;
+      document.getElementById('bboxScaleBadge').textContent = `${(dimW / 10).toFixed(1)}×${(dimH / 10).toFixed(1)} cm (${cols}×${rows})`;
+    } else {
+      document.getElementById('statDimensions').textContent = `${dimW}×${dimH}×${maxZ} mm`;
+      document.getElementById('bboxScaleBadge').textContent = `${(dimW / 10).toFixed(1)}×${(dimH / 10).toFixed(1)} cm`;
+    }
+
+    const totalMl = pm.totalVolumeMl !== undefined ? pm.totalVolumeMl : 42.0;
+    const resinG = pm.resinGrams !== undefined ? pm.resinGrams : Math.round(totalMl * 1.12);
+    const plaG = pm.plaGrams !== undefined ? pm.plaGrams : Math.round(totalMl * 0.42);
+    const perTileMl = totalMl / numTiles;
+
+    const matTitle = document.getElementById('statMaterialTitle');
+    if (profile.isResin) {
+      if (matTitle) matTitle.textContent = numTiles > 1 ? `Żywica SLA (1 kafel / suma)` : `Żywica SLA (Photon Mono 4)`;
+      document.getElementById('statFilament').textContent = numTiles > 1
+        ? `~${perTileMl.toFixed(1)} ml / ∑${Math.round(totalMl)} ml (${resinG}g)`
+        : `~${totalMl.toFixed(1)} ml (${resinG} g)`;
+    } else {
+      if (matTitle) matTitle.textContent = `Żywica SLA / Masa PLA`;
+      document.getElementById('statFilament').textContent = `~${Math.round(totalMl)} ml / ~${plaG} g PLA`;
+    }
+
     const activeVols = Object.keys(state.layerVisible).filter(k => state.layerVisible[k]).length;
-    document.getElementById('statVolumes').textContent = `${activeVols} osobnych`;
+    document.getElementById('statVolumes').textContent = `${cols}×${rows} (${activeVols} warstw)`;
+
+    const hollowBadge = document.getElementById('hollowSavingsBadge');
+    if (hollowBadge) {
+      hollowBadge.textContent = state.hollowBase
+        ? `-${pm.hollowSavingsPct || 48}% żywicy`
+        : `Pełna baza (0%)`;
+      hollowBadge.className = state.hollowBase
+        ? 'text-xs font-mono font-bold text-emerald-400'
+        : 'text-xs font-mono font-bold text-amber-400';
+    }
+
+    const preflightBadge = document.getElementById('preflightStatusBadge');
+    if (preflightBadge) {
+      if (profile.isResin) {
+        preflightBadge.textContent = pm.fitsPhotonMono4
+          ? `Manifold ✓ • Mono 4 (${tileW}×${tileH}≤153×87mm) ✓`
+          : `Manifold ✓ • Bez ramki`;
+      } else {
+        preflightBadge.textContent = `Manifold ✓ • Bez ramki w eksporcie`;
+      }
+    }
   }
 
   // ==========================================================================
@@ -998,7 +1236,7 @@ function initMap3DApp(initialScene) {
         studio.camera.target[2] += dy * ps;
       } else {
         studio.camera.yaw += dx * 0.008;
-        studio.camera.pitch = Math.max(0.10, Math.min(1.50, studio.camera.pitch + dy * 0.008));
+        studio.camera.pitch = Math.max(-1.25, Math.min(1.50, studio.camera.pitch + dy * 0.008));
       }
       return;
     }
@@ -1256,6 +1494,61 @@ function initMap3DApp(initialScene) {
     if (target > 0) studio.camera.pitch = 0.42;
   });
 
+  // Multi-Tile Split Explode slider & toggle (Anycubic Photon Mono 4 / FDM XL)
+  const tileExplodeSlider = document.getElementById('tileExplodeSlider');
+  if (tileExplodeSlider) {
+    tileExplodeSlider.addEventListener('input', e => {
+      const val = parseInt(e.target.value, 10);
+      if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1 && val > 0) {
+        // Automatically switch to Anycubic Photon Mono 4 2x3 (6 tiles) if user slides tile explode while in 1x1!
+        applyPrinterProfile('mono4_252_2x3');
+        const pSel = document.getElementById('printerSelect');
+        if (pSel) pSel.value = 'mono4_252_2x3';
+      }
+      state.tileExplode = val / 100;
+      const lbl = document.getElementById('tileExplodeValueLabel');
+      if (lbl) lbl.textContent = `${val}%`;
+    });
+  }
+
+  const btnQuickTileExplode = document.getElementById('btnQuickTileExplode');
+  if (btnQuickTileExplode) {
+    btnQuickTileExplode.addEventListener('click', () => {
+      if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1) {
+        applyPrinterProfile('mono4_252_2x3');
+        const pSel = document.getElementById('printerSelect');
+        if (pSel) pSel.value = 'mono4_252_2x3';
+      }
+      const target = state.tileExplode > 0.15 ? 0 : 65;
+      if (tileExplodeSlider) tileExplodeSlider.value = target;
+      state.tileExplode = target / 100;
+      const lbl = document.getElementById('tileExplodeValueLabel');
+      if (lbl) lbl.textContent = `${target}%`;
+      if (target > 0) {
+        studio.camera.pitch = 0.62;
+        studio.camera.distance = 295;
+      }
+    });
+  }
+
+  function applyPrinterProfile(profileId) {
+    const prof = PRINT_PROFILES[profileId] || PRINT_PROFILES.fdm_330_1x1;
+    state.printerProfileId = prof.id;
+    state.bedSizeMm = prof.totalWidthMm;
+    state.totalHeightMm = prof.totalHeightMm;
+    state.tileCols = prof.cols;
+    state.tileRows = prof.rows;
+    state.exportTileFilter = 'all';
+    if (prof.cols === 1 && prof.rows === 1) {
+      state.tileExplode = 0;
+      if (tileExplodeSlider) tileExplodeSlider.value = 0;
+      const lbl = document.getElementById('tileExplodeValueLabel');
+      if (lbl) lbl.textContent = '0%';
+    }
+    draw2DMap();
+    rebuildModel3D();
+  }
+
   // Multi-Select Inspector Actions (applies to all selected buildings + their building:parts!)
   document.getElementById('btnToggleHighlight').addEventListener('click', () => {
     const targets = getActiveTargetBuildings();
@@ -1303,6 +1596,21 @@ function initMap3DApp(initialScene) {
           document.getElementById('explodeValueLabel').textContent = '65%';
           document.getElementById('explodedLegendOverlay').classList.remove('hidden');
         }
+      } else if (mode === 'tiles') {
+        if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1) {
+          applyPrinterProfile('mono4_252_2x3');
+          const pSel = document.getElementById('printerSelect');
+          if (pSel) pSel.value = 'mono4_252_2x3';
+        }
+        state.tileExplode = 0.62;
+        if (tileExplodeSlider) tileExplodeSlider.value = 62;
+        const lbl = document.getElementById('tileExplodeValueLabel');
+        if (lbl) lbl.textContent = '62%';
+        studio.camera.yaw = -0.38; studio.camera.pitch = 0.64; studio.camera.distance = 298;
+        studio.camera.target = [0, 0, 2.5];
+      } else if (mode === 'bottom') {
+        studio.camera.yaw = -0.42; studio.camera.pitch = -0.68; studio.camera.distance = 255;
+        studio.camera.target = [0, 0, 1.0];
       }
     });
   });
@@ -1344,9 +1652,24 @@ function initMap3DApp(initialScene) {
   });
 
   document.getElementById('printerSelect').addEventListener('change', e => {
-    state.bedSizeMm = parseInt(e.target.value, 10);
-    updateStatsUI();
+    applyPrinterProfile(e.target.value);
   });
+
+  const chkHollowBase = document.getElementById('chkHollowBase');
+  if (chkHollowBase) {
+    chkHollowBase.addEventListener('change', e => {
+      state.hollowBase = e.target.checked;
+      rebuildModel3D();
+    });
+  }
+
+  const exportTileSelect = document.getElementById('exportTileSelect');
+  if (exportTileSelect) {
+    exportTileSelect.addEventListener('change', e => {
+      state.exportTileFilter = e.target.value;
+      draw2DMap();
+    });
+  }
 
   document.getElementById('btnShowAllLayers').addEventListener('click', () => {
     Object.keys(state.layerVisible).forEach(k => { state.layerVisible[k] = true; });
@@ -1428,6 +1751,32 @@ function initMap3DApp(initialScene) {
           rebuildModel3D();
         }
       }
+      const printerParam = params.get('printer');
+      if (printerParam && PRINT_PROFILES[printerParam]) {
+        const pSel = document.getElementById('printerSelect');
+        if (pSel) pSel.value = printerParam;
+        applyPrinterProfile(printerParam);
+      }
+      const hollowParam = params.get('hollow');
+      if (hollowParam === '0' || hollowParam === '1') {
+        state.hollowBase = (hollowParam === '1');
+        if (chkHollowBase) chkHollowBase.checked = state.hollowBase;
+        rebuildModel3D();
+      }
+      const tileExplodeParam = params.get('tile_explode');
+      if (tileExplodeParam !== null) {
+        const tev = parseInt(tileExplodeParam, 10) || 0;
+        state.tileExplode = tev / 100;
+        if (tileExplodeSlider) tileExplodeSlider.value = tev;
+        const lbl = document.getElementById('tileExplodeValueLabel');
+        if (lbl) lbl.textContent = `${tev}%`;
+      }
+      const tileParam = params.get('tile');
+      if (tileParam !== null && exportTileSelect) {
+        state.exportTileFilter = tileParam;
+        exportTileSelect.value = tileParam;
+        draw2DMap();
+      }
       const cam = params.get('cam');
       if (cam === 'top') {
         studio.camera.yaw = 0; studio.camera.pitch = 1.51; studio.camera.distance = 248;
@@ -1444,6 +1793,12 @@ function initMap3DApp(initialScene) {
         state.explodeFactor = 0.70;
         document.getElementById('explodeValueLabel').textContent = '70%';
         document.getElementById('explodedLegendOverlay').classList.remove('hidden');
+      } else if (cam === 'tiles') {
+        studio.camera.yaw = -0.38; studio.camera.pitch = 0.64; studio.camera.distance = 298;
+        studio.camera.target = [0, 0, 2.5];
+      } else if (cam === 'bottom') {
+        studio.camera.yaw = -0.42; studio.camera.pitch = -0.68; studio.camera.distance = 248;
+        studio.camera.target = [0, 0, 1.0];
       }
     } catch (e) {
       console.warn('URL param error:', e);

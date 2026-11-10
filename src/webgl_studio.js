@@ -23,14 +23,27 @@ function createWebGLStudio(canvas3d, state) {
   const SHADOW_VS = `
     attribute vec3 aPos;
     attribute float aLayerId;
+    attribute float aTileId;
     uniform mat4 uLightMatrix;
     uniform float uExplode;
+    uniform float uTileCols;
+    uniform float uTileRows;
+    uniform float uTileExplode;
     varying float vDepth;
     varying vec3 vWorldPos;
     varying float vLayerId;
     void main() {
       float lift = (aLayerId >= 0.0 && aLayerId <= 5.0) ? (aLayerId * uExplode * 14.0) : 0.0;
-      vec3 pos = vec3(aPos.x, aPos.y, aPos.z + lift);
+      float shiftX = 0.0;
+      float shiftY = 0.0;
+      if (aTileId >= 0.0 && (uTileCols > 1.0 || uTileRows > 1.0)) {
+        float tid = floor(aTileId + 0.5);
+        float tc = mod(tid, uTileCols);
+        float tr = floor(tid / uTileCols);
+        shiftX = (tc - (uTileCols - 1.0) * 0.5) * uTileExplode * 15.0;
+        shiftY = (tr - (uTileRows - 1.0) * 0.5) * uTileExplode * 15.0;
+      }
+      vec3 pos = vec3(aPos.x + shiftX, aPos.y + shiftY, aPos.z + lift);
       vWorldPos = pos;
       vLayerId = aLayerId;
       vec4 clip = uLightMatrix * vec4(pos, 1.0);
@@ -44,6 +57,7 @@ function createWebGLStudio(canvas3d, state) {
     varying float vDepth;
     varying vec3 vWorldPos;
     varying float vLayerId;
+    uniform float uTileExplode;
     vec4 packDepth(const in float depth) {
       const vec4 bitShift = vec4(256.0*256.0*256.0, 256.0*256.0, 256.0, 1.0);
       const vec4 bitMask  = vec4(0.0, 1.0/256.0, 1.0/256.0, 1.0/256.0);
@@ -53,7 +67,8 @@ function createWebGLStudio(canvas3d, state) {
     }
     void main() {
       int lid = int(vLayerId + 0.5);
-      if (lid < 6 && (abs(vWorldPos.x) > 84.85 || abs(vWorldPos.y) > 84.85)) {
+      float clipLim = 84.85 + uTileExplode * 32.0;
+      if (lid < 6 && (abs(vWorldPos.x) > clipLim || abs(vWorldPos.y) > clipLim)) {
         discard;
       }
       gl_FragColor = packDepth(clamp(vDepth, 0.0, 1.0));
@@ -65,29 +80,46 @@ function createWebGLStudio(canvas3d, state) {
     attribute vec3 aNorm;
     attribute float aLayerId;
     attribute float aBuildingId;
+    attribute float aTileId;
 
     uniform mat4 uProj;
     uniform mat4 uView;
     uniform mat4 uLightMatrix;
     uniform float uExplode;
+    uniform float uTileCols;
+    uniform float uTileRows;
+    uniform float uTileExplode;
     uniform float uSelectedIds[16];
     uniform float uHoveredBuildingId;
 
     varying vec3 vWorldPos;
+    varying vec3 vRawPos;
     varying vec3 vNorm;
     varying float vLayerId;
     varying float vBuildingId;
+    varying float vTileId;
     varying vec4 vLightSpacePos;
     varying float vIsSelected;
     varying float vIsHovered;
 
     void main() {
       float lift = (aLayerId >= 0.0 && aLayerId <= 5.0) ? (aLayerId * uExplode * 14.0) : 0.0;
-      vec3 pos = vec3(aPos.x, aPos.y, aPos.z + lift);
+      float shiftX = 0.0;
+      float shiftY = 0.0;
+      if (aTileId >= 0.0 && (uTileCols > 1.0 || uTileRows > 1.0)) {
+        float tid = floor(aTileId + 0.5);
+        float tc = mod(tid, uTileCols);
+        float tr = floor(tid / uTileCols);
+        shiftX = (tc - (uTileCols - 1.0) * 0.5) * uTileExplode * 15.0;
+        shiftY = (tr - (uTileRows - 1.0) * 0.5) * uTileExplode * 15.0;
+      }
+      vec3 pos = vec3(aPos.x + shiftX, aPos.y + shiftY, aPos.z + lift);
+      vRawPos = aPos;
       vWorldPos = pos;
       vNorm = aNorm;
       vLayerId = aLayerId;
       vBuildingId = aBuildingId;
+      vTileId = aTileId;
       vLightSpacePos = uLightMatrix * vec4(pos, 1.0);
 
       float sel = 0.0;
@@ -106,7 +138,6 @@ function createWebGLStudio(canvas3d, state) {
       vIsHovered = hov;
 
       vec4 clipPos = uProj * uView * vec4(pos, 1.0);
-      // Anti-Z-fighting NDC depth bias for selected, hovered, and highlighted buildings
       if (sel > 0.5) {
         clipPos.z -= 0.00035 * clipPos.w;
       } else if (hov > 0.5) {
@@ -122,9 +153,11 @@ function createWebGLStudio(canvas3d, state) {
     precision highp float;
 
     varying vec3 vWorldPos;
+    varying vec3 vRawPos;
     varying vec3 vNorm;
     varying float vLayerId;
     varying float vBuildingId;
+    varying float vTileId;
     varying vec4 vLightSpacePos;
     varying float vIsSelected;
     varying float vIsHovered;
@@ -140,7 +173,10 @@ function createWebGLStudio(canvas3d, state) {
     uniform vec3 uSunDir;
     uniform vec3 uEyePos;
     uniform float uShowLayerLines;
-    uniform float uQuadSplit;
+    uniform float uTileCols;
+    uniform float uTileRows;
+    uniform float uTileExplode;
+    uniform float uActiveTileFilter;
     uniform float uStudioBg;
 
     float unpackDepth(const in vec4 rgbaDepth) {
@@ -172,8 +208,9 @@ function createWebGLStudio(canvas3d, state) {
     void main() {
       int lid = int(vLayerId + 0.5);
 
-      // Hard GPU Clip: Never allow any inner layer (0..5) to protrude outside [-84.85, 84.85]
-      if (lid < 6 && (abs(vWorldPos.x) > 84.85 || abs(vWorldPos.y) > 84.85)) {
+      // Hard GPU Clip (expands smoothly when tiles are exploded)
+      float clipLim = 84.85 + uTileExplode * 32.0;
+      if (lid < 6 && (abs(vWorldPos.x) > clipLim || abs(vWorldPos.y) > clipLim)) {
         discard;
       }
 
@@ -226,10 +263,14 @@ function createWebGLStudio(canvas3d, state) {
       vec3 V = normalize(uEyePos - vWorldPos);
       vec3 H = normalize(L + V);
 
+      // Double-sided illumination when inspecting the underside hollow vault (N.z < -0.5)
       float diff = max(dot(N, L), 0.0);
-      float shadow = computeShadow(vLightSpacePos, N, L);
+      if (N.z < -0.5 && uEyePos.z < 0.0) {
+        diff = max(dot(-N, L), 0.35);
+      }
+      float shadow = (N.z < -0.5) ? 0.85 : computeShadow(vLightSpacePos, N, L);
 
-      float sky = 0.5 + 0.5 * N.z;
+      float sky = 0.5 + 0.5 * abs(N.z);
       float bounce = 0.5 + 0.5 * dot(N.xy, vec2(-L.x, -L.y));
 
       float heightAo = clamp(0.92 + 0.08 * ((vWorldPos.z - 2.0) / 14.0), 0.88, 1.03);
@@ -249,9 +290,23 @@ function createWebGLStudio(canvas3d, state) {
         col *= (0.98 + 0.02 * wave);
       }
 
-      if (uQuadSplit > 0.5 && lid != 6) {
-        if (abs(vWorldPos.x) < 0.35 || abs(vWorldPos.y) < 0.35) {
-          col *= 0.45;
+      // Precision multi-tile cut line visualization for Anycubic Photon Mono 4 & FDM multi-tile modes
+      if ((uTileCols > 1.0 || uTileRows > 1.0) && lid != 6 && uTileExplode < 0.03) {
+        float uX = ((vRawPos.x + 84.6) / 169.2) * uTileCols;
+        float uY = ((vRawPos.y + 84.6) / 169.2) * uTileRows;
+        float distX = min(fract(uX), 1.0 - fract(uX)) * (169.2 / uTileCols);
+        float distY = min(fract(uY), 1.0 - fract(uY)) * (169.2 / uTileRows);
+        bool onInnerSeamX = (uX > 0.05 && uX < uTileCols - 0.05 && distX < 0.36);
+        bool onInnerSeamY = (uY > 0.05 && uY < uTileRows - 0.05 && distY < 0.36);
+        if (onInnerSeamX || onInnerSeamY) {
+          col = mix(col * 0.38, vec3(0.05, 0.65, 0.92), 0.55);
+        }
+      }
+
+      // Highlight active single tile if user selected a specific tile in UI
+      if (uActiveTileFilter >= 0.0 && lid != 6) {
+        if (abs(vTileId - uActiveTileFilter) > 0.25) {
+          col = mix(col * 0.32, vec3(0.12, 0.16, 0.24), 0.45);
         }
       }
 
@@ -311,12 +366,12 @@ function createWebGLStudio(canvas3d, state) {
   (function initFloor() {
     const R = 360, Z = -1.62;
     const verts = new Float32Array([
-      -R, -R, Z, 0, 0, 1, 7, -1,
-       R, -R, Z, 0, 0, 1, 7, -1,
-       R,  R, Z, 0, 0, 1, 7, -1,
-      -R, -R, Z, 0, 0, 1, 7, -1,
-       R,  R, Z, 0, 0, 1, 7, -1,
-      -R,  R, Z, 0, 0, 1, 7, -1
+      -R, -R, Z, 0, 0, 1, 7, -1, -1,
+       R, -R, Z, 0, 0, 1, 7, -1, -1,
+       R,  R, Z, 0, 0, 1, 7, -1, -1,
+      -R, -R, Z, 0, 0, 1, 7, -1, -1,
+       R,  R, Z, 0, 0, 1, 7, -1, -1,
+      -R,  R, Z, 0, 0, 1, 7, -1, -1
     ]);
     gl.bindBuffer(gl.ARRAY_BUFFER, floorBuf);
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
@@ -326,11 +381,12 @@ function createWebGLStudio(canvas3d, state) {
     const keys = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted', 'frame'];
     keys.forEach(key => {
       const tris = layerMeshes[key] || [];
-      const data = new Float32Array(tris.length * 3 * 8);
+      const data = new Float32Array(tris.length * 3 * 9);
       let ptr = 0;
       for (let i = 0; i < tris.length; i++) {
         const t = tris[i];
         const pts = [t.v0, t.v1, t.v2];
+        const tid = (t.tileId !== undefined) ? t.tileId : 0;
         for (let v = 0; v < 3; v++) {
           data[ptr++] = pts[v][0];
           data[ptr++] = pts[v][1];
@@ -340,6 +396,7 @@ function createWebGLStudio(canvas3d, state) {
           data[ptr++] = t.n[2];
           data[ptr++] = t.layerId;
           data[ptr++] = t.buildingId;
+          data[ptr++] = tid;
         }
       }
       if (!glBuffers[key]) glBuffers[key] = { buf: gl.createBuffer(), count: 0 };
@@ -444,7 +501,13 @@ function createWebGLStudio(canvas3d, state) {
     const lightMatrix = mat4Multiply(lightProj, lightView);
 
     const drawOrder = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted', 'frame'];
-    const stride = 8 * 4;
+    const stride = 9 * 4;
+    const tCols = state.tileCols || 1;
+    const tRows = state.tileRows || 1;
+    const tExplode = state.tileExplode || 0.0;
+    const activeTile = (state.exportTileFilter !== undefined && state.exportTileFilter !== 'all')
+      ? parseFloat(state.exportTileFilter)
+      : -1.0;
 
     // PASS 1: SHADOW MAP
     gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);
@@ -457,21 +520,27 @@ function createWebGLStudio(canvas3d, state) {
     gl.useProgram(shadowProg);
     gl.uniformMatrix4fv(gl.getUniformLocation(shadowProg, 'uLightMatrix'), false, lightMatrix);
     gl.uniform1f(gl.getUniformLocation(shadowProg, 'uExplode'), state.explodeFactor);
+    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileCols'), tCols);
+    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileRows'), tRows);
+    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileExplode'), tExplode);
 
     const sLocPos = gl.getAttribLocation(shadowProg, 'aPos');
     const sLocLayer = gl.getAttribLocation(shadowProg, 'aLayerId');
+    const sLocTile = gl.getAttribLocation(shadowProg, 'aTileId');
     gl.enableVertexAttribArray(sLocPos);
     gl.enableVertexAttribArray(sLocLayer);
+    if (sLocTile >= 0) gl.enableVertexAttribArray(sLocTile);
 
     drawOrder.forEach(key => {
       if (key === 'frame') {
-        if (!state.showFrame || state.explodeFactor > 0.08) return;
+        if (!state.showFrame || state.explodeFactor > 0.08 || tExplode > 0.03) return;
       } else if (!state.layerVisible[key]) return;
       const b = glBuffers[key];
       if (!b || b.count === 0) return;
       gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
       gl.vertexAttribPointer(sLocPos, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(sLocLayer, 1, gl.FLOAT, false, stride, 24);
+      if (sLocTile >= 0) gl.vertexAttribPointer(sLocTile, 1, gl.FLOAT, false, stride, 32);
       gl.drawArrays(gl.TRIANGLES, 0, b.count);
     });
 
@@ -496,6 +565,10 @@ function createWebGLStudio(canvas3d, state) {
     gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uView'), false, view);
     gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uLightMatrix'), false, lightMatrix);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uExplode'), state.explodeFactor);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uTileCols'), tCols);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uTileRows'), tRows);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uTileExplode'), tExplode);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uActiveTileFilter'), activeTile);
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uEyePos'), eye);
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uSunDir'), sunDir);
 
@@ -530,31 +603,33 @@ function createWebGLStudio(canvas3d, state) {
     gl.uniform1fv(gl.getUniformLocation(mainProg, 'uSelectedIds[0]'), selectedIdsBuffer);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uHoveredBuildingId'), state.hoveredBuildingId || -999);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uShowLayerLines'), state.showLayerLines ? 1.0 : 0.0);
-    gl.uniform1f(gl.getUniformLocation(mainProg, 'uQuadSplit'), state.bedSizeMm === 520 ? 1.0 : 0.0);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uStudioBg'), state.studioBg ? 1.0 : 0.0);
 
     const locPos = gl.getAttribLocation(mainProg, 'aPos');
     const locNorm = gl.getAttribLocation(mainProg, 'aNorm');
     const locLayer = gl.getAttribLocation(mainProg, 'aLayerId');
     const locBld = gl.getAttribLocation(mainProg, 'aBuildingId');
+    const locTile = gl.getAttribLocation(mainProg, 'aTileId');
 
     gl.enableVertexAttribArray(locPos);
     gl.enableVertexAttribArray(locNorm);
     gl.enableVertexAttribArray(locLayer);
     gl.enableVertexAttribArray(locBld);
+    if (locTile >= 0) gl.enableVertexAttribArray(locTile);
 
-    if (state.explodeFactor < 0.05) {
+    if (state.explodeFactor < 0.05 && camera.pitch > 0.05) {
       gl.bindBuffer(gl.ARRAY_BUFFER, floorBuf);
       gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(locNorm, 3, gl.FLOAT, false, stride, 12);
       gl.vertexAttribPointer(locLayer, 1, gl.FLOAT, false, stride, 24);
       gl.vertexAttribPointer(locBld, 1, gl.FLOAT, false, stride, 28);
+      if (locTile >= 0) gl.vertexAttribPointer(locTile, 1, gl.FLOAT, false, stride, 32);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
     drawOrder.forEach(key => {
       if (key === 'frame') {
-        if (!state.showFrame || state.explodeFactor > 0.08) return;
+        if (!state.showFrame || state.explodeFactor > 0.08 || tExplode > 0.03) return;
       } else if (!state.layerVisible[key]) return;
       const b = glBuffers[key];
       if (!b || b.count === 0) return;
@@ -563,11 +638,13 @@ function createWebGLStudio(canvas3d, state) {
       gl.vertexAttribPointer(locNorm, 3, gl.FLOAT, false, stride, 12);
       gl.vertexAttribPointer(locLayer, 1, gl.FLOAT, false, stride, 24);
       gl.vertexAttribPointer(locBld, 1, gl.FLOAT, false, stride, 28);
+      if (locTile >= 0) gl.vertexAttribPointer(locTile, 1, gl.FLOAT, false, stride, 32);
       gl.drawArrays(gl.TRIANGLES, 0, b.count);
     });
 
     gl.disableVertexAttribArray(locNorm);
     gl.disableVertexAttribArray(locBld);
+    if (locTile >= 0) gl.disableVertexAttribArray(locTile);
   }
 
   // Exact Möller–Trumbore ray-triangle intersection (after fast AABB broadphase)

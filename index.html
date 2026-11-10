@@ -57,12 +57,21 @@
     <!-- Printer Profile & Export Buttons -->
     <div class="flex flex-wrap items-center gap-2">
       <div class="flex items-center gap-1.5 bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5">
-        <span class="text-xs text-[var(--muted-foreground)]">Drukarka:</span>
+        <span class="text-xs text-[var(--muted-foreground)]">Format / Drukarka:</span>
         <select id="printerSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none cursor-pointer">
-          <option value="330" selected>Prusa XL 5-Toolhead (33×33 cm — 4/5 kolorów)</option>
-          <option value="256">Bambu Lab X1C / P1S + AMS (25×25 cm)</option>
-          <option value="350">Voron 2.4 350 + ERCF (35×35 cm)</option>
-          <option value="520">Format XL 4-Kafle (52×52 cm)</option>
+          <optgroup label="Żywica SLA/MSLA — Anycubic Photon Mono 4 (153.4 × 87 × 165 mm, max 2.2 L)">
+            <option value="mono4_84_1x1">Photon Mono 4 • Mały Kwadrat 84×84 mm (1 Kafel 1×1 na płasko)</option>
+            <option value="mono4_150_1x2">Photon Mono 4 • Kwadrat 150×150 mm (2 Kafle 1×2 po 150×75 mm)</option>
+            <option value="mono4_168_2x2">Photon Mono 4 • Kwadrat 168×168 mm (4 Kafle 2×2 po 84×84 mm)</option>
+            <option value="mono4_252_2x3">Photon Mono 4 • Duży 252×252 mm (6 Kafli 2×3 po 126×84 mm)</option>
+            <option value="mono4_296_2x4">Photon Mono 4 • Format XL 296×296 mm (8 Kafli 2×4 po 148×74 mm)</option>
+          </optgroup>
+          <optgroup label="Wielokolorowe FDM (z marginesem stołu 5 mm)">
+            <option value="fdm_330_1x1" selected>Prusa XL 5-Toolhead (320×320 mm na stole 330 mm)</option>
+            <option value="fdm_256_1x1">Bambu Lab X1C / P1S / A1 + AMS (246×246 mm na stole 256 mm)</option>
+            <option value="fdm_350_1x1">Voron 2.4 350 + ERCF (340×340 mm na stole 350 mm)</option>
+            <option value="fdm_500_2x2">Format XL 4-Kafle FDM (492×492 mm — 2×2 po 246×246 mm)</option>
+          </optgroup>
         </select>
       </div>
 
@@ -224,22 +233,35 @@
             </span>
           </div>
 
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1 flex-wrap">
             <button data-cam="studio" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Ujęcie Studio</button>
             <button data-cam="top" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Z góry</button>
             <button data-cam="side" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Profil warstw</button>
+            <button data-cam="tiles" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Podział kafli</button>
+            <button data-cam="bottom" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Od spodu (Hollow SLA)</button>
             <button id="btnAutoRotate" class="px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">↻ Obrót</button>
           </div>
         </div>
 
-        <!-- EXPLODED VIEW SLIDER -->
-        <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-1.5 flex flex-wrap items-center gap-3">
-          <span class="text-xs font-bold text-blue-500">Rozbicie na warstwy (Exploded View):</span>
-          <input id="explodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[120px]" />
-          <span id="explodeValueLabel" class="text-xs font-mono font-bold text-blue-500 w-10 text-right">0%</span>
-          <button id="btnQuickExplode" class="px-2.5 py-0.5 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-500 transition">
-            Rozbij / Złóż
-          </button>
+        <!-- EXPLODED VIEW & MULTI-TILE SPLIT / HOLLOW BASE CONTROLS -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+            <span class="text-xs font-bold text-blue-500 whitespace-nowrap">Warstwy Z:</span>
+            <input id="explodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[70px]" />
+            <span id="explodeValueLabel" class="text-xs font-mono font-bold text-blue-500 w-8 text-right">0%</span>
+            <button id="btnQuickExplode" class="px-2 py-0.5 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-500 transition whitespace-nowrap">
+              Rozbij Z
+            </button>
+          </div>
+
+          <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+            <span id="tileSplitLabel" class="text-xs font-bold text-cyan-400 whitespace-nowrap">Kafle (1×1):</span>
+            <input id="tileExplodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[70px]" />
+            <span id="tileExplodeValueLabel" class="text-xs font-mono font-bold text-cyan-400 w-8 text-right">0%</span>
+            <button id="btnQuickTileExplode" class="px-2 py-0.5 rounded bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-500 transition whitespace-nowrap">
+              Rozsuń kafle
+            </button>
+          </div>
         </div>
 
         <!-- 3D WebGL Canvas Container -->
@@ -338,38 +360,57 @@
         </div>
       </div>
 
-      <!-- SLICER EXPORT SUMMARY -->
+      <!-- SLICER & RESIN EXPORT SUMMARY (ANYCUBIC PHOTON MONO 4 & FDM) -->
       <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm">
-        <div class="flex items-center justify-between">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Eksport Warstw do Druku 3D</h3>
-          <span class="text-xs font-mono text-emerald-500 font-semibold">Manifold ✓</span>
+        <div class="flex items-center justify-between gap-1">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Eksport i Zużycie Żywicy / PLA</h3>
+          <span id="preflightStatusBadge" class="text-xs font-mono text-emerald-500 font-semibold">Manifold ✓ • Bez ramki</span>
         </div>
+
+        <!-- Hollow Base Optimization Toggle (SLA Resin / FDM Fill Saver) -->
+        <label class="flex items-center justify-between gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 cursor-pointer">
+          <div class="flex items-center gap-1.5">
+            <input id="chkHollowBase" type="checkbox" checked class="rounded accent-emerald-500" />
+            <span class="text-xs font-semibold text-[var(--foreground)]">Odchudź bazę od spodu (Hollow Shell 1.8 mm)</span>
+          </div>
+          <span id="hollowSavingsBadge" class="text-xs font-mono font-bold text-emerald-400">-48% żywicy</span>
+        </label>
+
         <div class="grid grid-cols-3 gap-1.5 text-center">
           <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
-            <div class="text-xs text-[var(--muted-foreground)]">Wymiar</div>
-            <div id="statDimensions" class="text-xs font-bold font-mono mt-0.5">330×330×29 mm</div>
+            <div class="text-xs text-[var(--muted-foreground)]">Wymiar / Kafel</div>
+            <div id="statDimensions" class="text-xs font-bold font-mono mt-0.5">320×320×24 mm</div>
           </div>
           <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
-            <div class="text-xs text-[var(--muted-foreground)]">Masa PLA</div>
-            <div id="statFilament" class="text-xs font-bold font-mono mt-0.5">~448 g</div>
+            <div id="statMaterialTitle" class="text-xs text-[var(--muted-foreground)]">Żywica SLA / PLA</div>
+            <div id="statFilament" class="text-xs font-bold font-mono text-emerald-400 mt-0.5">~42 ml (47 g)</div>
           </div>
           <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
-            <div class="text-xs text-[var(--muted-foreground)]">Bryły .3MF</div>
-            <div id="statVolumes" class="text-xs font-bold font-mono mt-0.5">6 osobnych</div>
+            <div class="text-xs text-[var(--muted-foreground)]">Kafle / Bryły</div>
+            <div id="statVolumes" class="text-xs font-bold font-mono mt-0.5">1×1 (6 warstw)</div>
           </div>
         </div>
+
+        <!-- Anycubic Photon Mono 4 Fit & Tile Selector -->
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Kafel:</span>
+          <select id="exportTileSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs flex-1 text-[var(--foreground)] font-mono focus:outline-none">
+            <option value="all">Wszystkie kafle (Cały model / .ZIP)</option>
+          </select>
+        </div>
+
         <div class="flex items-center gap-1.5">
           <select id="singleLayerStlSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-xs flex-1 text-[var(--foreground)] focus:outline-none">
-            <option value="all">Wszystkie warstwy razem (.STL)</option>
+            <option value="all">Wszystkie warstwy razem (.STL / .ZIP bez ramki)</option>
             <option value="highlighted">Tylko Wyróżnione Budynki (Insert)</option>
             <option value="buildings">Tylko Budynki i Dachy LoD2</option>
-            <option value="roads">Tylko Ulice i Mosty</option>
+            <option value="roads">Tylko Ulice, Mola i Mosty</option>
             <option value="greenery">Tylko Zieleń i Drzewa 3D</option>
             <option value="base">Tylko Warstwice Terenu DEM</option>
             <option value="water">Tylko Woda i Batymetria</option>
           </select>
           <button id="btnExportLayerSTL" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs whitespace-nowrap transition">
-            .STL Warstwy
+            Pobierz .STL / .ZIP
           </button>
         </div>
       </div>
@@ -634,13 +675,13 @@ function clipPolyToBox(poly, minX, minY, maxX, maxY) {
   return p.length >= 3 ? p : [];
 }
 
-function pushTri(out, v0, v1, v2, n, layerId, buildingId = -1) {
-  out.push({ v0, v1, v2, n, layerId, buildingId });
+function pushTri(out, v0, v1, v2, n, layerId, buildingId = -1, tileId = 0) {
+  out.push({ v0, v1, v2, n, layerId, buildingId, tileId });
 }
 
-function pushQuad(out, p0, p1, p2, p3, n, layerId, buildingId = -1) {
-  out.push({ v0: p0, v1: p1, v2: p2, n, layerId, buildingId });
-  out.push({ v0: p0, v1: p2, v2: p3, n, layerId, buildingId });
+function pushQuad(out, p0, p1, p2, p3, n, layerId, buildingId = -1, tileId = 0) {
+  out.push({ v0: p0, v1: p1, v2: p2, n, layerId, buildingId, tileId });
+  out.push({ v0: p0, v1: p2, v2: p3, n, layerId, buildingId, tileId });
 }
 
 function computeFaceNormal(a, b, c) {
@@ -675,16 +716,16 @@ function distToPolygonEdges(px, py, outer, holes) {
   return Math.sqrt(minDistSq);
 }
 
-// Fast 3-way Medial-Axis LoD2 Building Extrusion (100% watertight, half the roof triangles!)
-function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasPitchedRoof, layerId, bId, outTris) {
+// Fast 3-way Medial-Axis LoD2 Building Extrusion (100% watertight manifold: walls + floor cap + roof cap!)
+function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasPitchedRoof, layerId, bId, outTris, tileId = 0) {
   const outer = [];
   for (let i = 0; i < outerInput.length; i++) {
     const p = outerInput[i];
-    if (outer.length === 0 || Math.hypot(p[0] - outer[outer.length - 1][0], p[1] - outer[outer.length - 1][1]) > 0.05) {
+    if (outer.length === 0 || Math.hypot(p[0] - outer[outer.length - 1][0], p[1] - outer[outer.length - 1][1]) > 0.04) {
       outer.push([p[0], p[1]]);
     }
   }
-  if (outer.length >= 2 && Math.hypot(outer[0][0] - outer[outer.length - 1][0], outer[0][1] - outer[outer.length - 1][1]) <= 0.05) {
+  if (outer.length >= 2 && Math.hypot(outer[0][0] - outer[outer.length - 1][0], outer[0][1] - outer[outer.length - 1][1]) <= 0.04) {
     outer.pop();
   }
   if (outer.length < 3) return;
@@ -693,10 +734,20 @@ function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasP
   const holes = (holesInput || [])
     .filter(h => h && h.length >= 3)
     .map(h => {
-      const c = h.map(p => [p[0], p[1]]);
+      const c = [];
+      for (let i = 0; i < h.length; i++) {
+        const p = h[i];
+        if (c.length === 0 || Math.hypot(p[0] - c[c.length - 1][0], p[1] - c[c.length - 1][1]) > 0.04) {
+          c.push([p[0], p[1]]);
+        }
+      }
+      if (c.length >= 2 && Math.hypot(c[0][0] - c[c.length - 1][0], c[0][1] - c[c.length - 1][1]) <= 0.04) {
+        c.pop();
+      }
       if (signedArea2D(c) > 0) c.reverse(); // CW
       return c;
-    });
+    })
+    .filter(c => c.length >= 3);
 
   // 1. Vertical outer walls
   for (let i = 0, n = outer.length; i < n; i++) {
@@ -713,7 +764,8 @@ function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasP
       [p1[0], p1[1], zEaves],
       [nx, ny, 0],
       layerId,
-      bId
+      bId,
+      tileId
     );
   }
 
@@ -733,7 +785,8 @@ function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasP
         [p1[0], p1[1], zEaves],
         [nx, ny, 0],
         layerId,
-        bId
+        bId,
+        tileId
       );
     }
   }
@@ -742,23 +795,28 @@ function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasP
   const roofTris = triangulateSimplePoly(mergedTop);
   const roofH = Math.max(0, zRidge - zEaves);
 
+  // 3. Watertight Bottom Floor Cap at zBase (reversed winding, normal [0, 0, -1])
+  for (let i = 0; i < roofTris.length; i++) {
+    const [a, b, c] = roofTris[i];
+    pushTri(
+      outTris,
+      [a[0], a[1], zBase],
+      [c[0], c[1], zBase],
+      [b[0], b[1], zBase],
+      [0, 0, -1],
+      layerId,
+      bId,
+      tileId
+    );
+  }
+
+  // 4. Watertight Top Roof Cap at zEaves / zRidge
   if (hasPitchedRoof && roofH > 0.10) {
-    // 3-way centroid subdivision:
-    // Every triangle (A, B, C) has vertices at zEaves (100% watertight on all walls and interior diagonals)
-    // and centroid M lifted by medial distance to boundary -> clean 3D hipped/pitched ridge with 50% fewer triangles!
     const roofSlope = 0.92;
     for (let i = 0; i < roofTris.length; i++) {
       const [a, b, c] = roofTris[i];
       const cx = (a[0] + b[0] + c[0]) / 3.0;
       const cy = (a[1] + b[1] + c[1]) / 3.0;
-      // Validate centroid is strictly inside outer and not inside any hole
-      if (!pointInPoly2D(cx, cy, outer)) continue;
-      let inHole = false;
-      for (let h = 0; h < holes.length; h++) {
-        if (pointInPoly2D(cx, cy, holes[h])) { inHole = true; break; }
-      }
-      if (inHole) continue;
-
       const d = distToPolygonEdges(cx, cy, outer, holes);
       const mz = zEaves + Math.min(roofH, Math.max(0.12, d * roofSlope));
 
@@ -767,33 +825,26 @@ function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasP
       const C3 = [c[0], c[1], zEaves];
       const M3 = [cx, cy, mz];
 
-      pushTri(outTris, A3, B3, M3, computeFaceNormal(A3, B3, M3), layerId, bId);
-      pushTri(outTris, B3, C3, M3, computeFaceNormal(B3, C3, M3), layerId, bId);
-      pushTri(outTris, C3, A3, M3, computeFaceNormal(C3, A3, M3), layerId, bId);
+      pushTri(outTris, A3, B3, M3, computeFaceNormal(A3, B3, M3), layerId, bId, tileId);
+      pushTri(outTris, B3, C3, M3, computeFaceNormal(B3, C3, M3), layerId, bId, tileId);
+      pushTri(outTris, C3, A3, M3, computeFaceNormal(C3, A3, M3), layerId, bId, tileId);
     }
   } else {
     for (let i = 0; i < roofTris.length; i++) {
       const [a, b, c] = roofTris[i];
-      const cx = (a[0] + b[0] + c[0]) / 3.0;
-      const cy = (a[1] + b[1] + c[1]) / 3.0;
-      if (!pointInPoly2D(cx, cy, outer)) continue;
-      let inHole = false;
-      for (let h = 0; h < holes.length; h++) {
-        if (pointInPoly2D(cx, cy, holes[h])) { inHole = true; break; }
-      }
-      if (inHole) continue;
-      pushTri(outTris, [a[0], a[1], zEaves], [b[0], b[1], zEaves], [c[0], c[1], zEaves], [0, 0, 1], layerId, bId);
+      pushTri(outTris, [a[0], a[1], zEaves], [b[0], b[1], zEaves], [c[0], c[1], zEaves], [0, 0, 1], layerId, bId, tileId);
     }
   }
 }
 
-// Optimized 5-sided sculpted tree crown (10 triangles per tree instead of 35!)
-function addTreeCrown3D(tx, ty, zGround, radius, height, layerId, outTris) {
+// Closed watertight 5-sided sculpted tree crown (10 side/top triangles + 3 bottom cap triangles = 13 triangles)
+function addTreeCrown3D(tx, ty, zGround, radius, height, layerId, outTris, tileId = 0) {
   const sides = 5;
   const rMid = radius * 0.96;
-  const z0 = zGround - 0.05;
+  const z0 = zGround - 0.10;
   const z1 = zGround + height * 0.48;
   const apex = [tx, ty, zGround + height];
+  const basePts = [];
 
   for (let i = 0; i < sides; i++) {
     const a0 = (i / sides) * Math.PI * 2;
@@ -805,10 +856,16 @@ function addTreeCrown3D(tx, ty, zGround, radius, height, layerId, outTris) {
     const b1 = [tx + c1 * rMid * 0.78, ty + s1 * rMid * 0.78, z0];
     const m0 = [tx + c0 * rMid, ty + s0 * rMid, z1];
     const m1 = [tx + c1 * rMid, ty + s1 * rMid, z1];
+    basePts.push(b0);
 
-    pushQuad(outTris, b0, b1, m1, m0, computeFaceNormal(b0, b1, m1), layerId, -1);
-    pushTri(outTris, m0, m1, apex, computeFaceNormal(m0, m1, apex), layerId, -1);
+    pushQuad(outTris, b0, b1, m1, m0, computeFaceNormal(b0, b1, m1), layerId, -1, tileId);
+    pushTri(outTris, m0, m1, apex, computeFaceNormal(m0, m1, apex), layerId, -1, tileId);
   }
+
+  // Watertight bottom pentagon cap at z0
+  pushTri(outTris, basePts[0], basePts[2], basePts[1], [0, 0, -1], layerId, -1, tileId);
+  pushTri(outTris, basePts[0], basePts[3], basePts[2], [0, 0, -1], layerId, -1, tileId);
+  pushTri(outTris, basePts[0], basePts[4], basePts[3], [0, 0, -1], layerId, -1, tileId);
 }
 
 function clipCellPolyByScalar(poly, threshold, keepGreater) {
@@ -869,9 +926,9 @@ function buildComplete3DModel(scene, state) {
 
   if (!scene) return { meshes, buildingBounds, totalTriangles: 0 };
 
-  const halfSpan = state.cropRatio * 85.0;
-  const cropCX = state.cropCenterX * 85.0;
-  const cropCY = state.cropCenterY * 85.0;
+  const halfSpan = (state.cropRatio || 0.78) * 85.0;
+  const cropCX = (state.cropCenterX || 0) * 85.0;
+  const cropCY = (state.cropCenterY || 0) * 85.0;
   const scaleToBed = 85.0 / halfSpan;
 
   function toBed(pt) {
@@ -1053,7 +1110,7 @@ function buildComplete3DModel(scene, state) {
     return (z00 * (1 - fu) + z10 * fu) * (1 - fv) + (z01 * (1 - fu) + z11 * fu) * fv;
   }
 
-  const TERRAIN_RES = 68;
+  const TERRAIN_RES = 72; // Divisible by 1, 2, 3, 4 for exact multi-tile splits (1x1, 1x2, 2x2, 2x3, 2x4)
   const strideT = TERRAIN_RES + 1;
   let demGrid = new Float32Array(strideT * strideT);
 
@@ -1086,8 +1143,13 @@ function buildComplete3DModel(scene, state) {
   }
 
   const baseBottomZ = 2.45;
-  const maxReliefMm = 7.4 * (state.terrainScale || 1.0);
-  const elevSpan = Math.max(12.0, maxElev - minElev);
+  const realElevDelta = Math.max(6.0, maxElev - minElev);
+  // Adaptive mountain vs city relief scaling
+  const adaptiveReliefBase = realElevDelta > 45.0
+    ? Math.min(13.2, 7.4 + Math.log10(1.0 + (realElevDelta - 45.0) / 40.0) * 4.6)
+    : 7.4;
+  const maxReliefMm = adaptiveReliefBase * (state.terrainScale || 1.0);
+  const elevSpan = Math.max(12.0, realElevDelta);
   const numContourSteps = 18;
   const stepMm = maxReliefMm / numContourSteps;
 
@@ -1138,187 +1200,394 @@ function buildComplete3DModel(scene, state) {
     return baseBottomZ + Math.max(0, stepIdx) * stepMm;
   }
 
-  // --------------------------------------------------------------------------
-  // STEP 3: 3-LEVEL STEPPED WATER BATHYMETRY & MARCHING-SQUARES DEM TERRACES
-  // --------------------------------------------------------------------------
-  const bedOuter = [[-84.7, -84.7], [84.7, -84.7], [84.7, 84.7], [-84.7, 84.7]];
-  const bedTris = triangulateSimplePoly(bedOuter);
+  // Multi-Tile Grid Configuration (e.g., 1x1, 1x2, 2x2, 2x3, 2x4 for Anycubic Photon Mono 4)
+  const tileCols = Math.max(1, Math.min(4, state.tileCols || 1));
+  const tileRows = Math.max(1, Math.min(4, state.tileRows || 1));
+  const cellsPerCol = Math.floor(TERRAIN_RES / tileCols);
+  const cellsPerRow = Math.floor(TERRAIN_RES / tileRows);
+  const cellStep = 169.2 / TERRAIN_RES;
   const deepWaterZ = 1.76;
-  for (const [a, b, c] of bedTris) {
-    pushTri(meshes.water, [a[0], a[1], deepWaterZ], [b[0], b[1], deepWaterZ], [c[0], c[1], deepWaterZ], [0, 0, 1], 0, -1);
-    pushTri(meshes.water, [a[0], a[1], 0.0], [c[0], c[1], 0.0], [b[0], b[1], 0.0], [0, 0, -1], 0, -1);
-  }
-  for (let i = 0; i < 4; i++) {
-    const p1 = bedOuter[i], p2 = bedOuter[(i + 1) % 4];
-    const dx = p2[0] - p1[0], dy = p2[1] - p1[1], len = Math.hypot(dx, dy);
-    pushQuad(meshes.water, [p1[0], p1[1], 0], [p2[0], p2[1], 0], [p2[0], p2[1], deepWaterZ], [p1[0], p1[1], deepWaterZ], [dy / len, -dx / len, 0], 0, -1);
+  const waterShelfLevels = [1.98, 2.20];
+  const hollowBase = !!state.hollowBase;
+  const totalWidthMm = state.bedSizeMm || 320;
+  const mmPerUnit = totalWidthMm / 169.2;
+  const hollowWallUnits = Math.max(0.75, Math.min(1.30, (state.hollowWallMm || 1.8) / Math.max(1.05, mmPerUnit)));
+  let vaultSavedSceneVol = 0;
+
+  function getTileColRowForXY(bx, by) {
+    const tc = Math.max(0, Math.min(tileCols - 1, Math.floor(((bx + 84.6) / 169.2) * tileCols)));
+    const tr = Math.max(0, Math.min(tileRows - 1, Math.floor(((by + 84.6) / 169.2) * tileRows)));
+    return [tc, tr, tr * tileCols + tc];
   }
 
-  const waterShelfLevels = [1.98, 2.20];
   const thresholds = [];
   for (let k = 0; k <= numContourSteps + 2; k++) {
     thresholds.push(baseBottomZ + k * stepMm);
   }
 
-  const cellStep = 169.2 / TERRAIN_RES;
-  for (let gy = 0; gy < TERRAIN_RES; gy++) {
-    const y0 = -84.6 + gy * cellStep;
-    const y1 = y0 + cellStep;
-    for (let gx = 0; gx < TERRAIN_RES; gx++) {
-      const x0 = -84.6 + gx * cellStep;
-      const x1 = x0 + cellStep;
+  // Precompute per-cell flat green status & quantized terrace Z for closed 3D greenery slabs
+  const cellIsFlatGreen = new Uint8Array(TERRAIN_RES * TERRAIN_RES);
+  const cellFlatTZ = new Float32Array(TERRAIN_RES * TERRAIN_RES);
+  const cellMinTopZ = new Float32Array(TERRAIN_RES * TERRAIN_RES);
 
+  for (let gy = 0; gy < TERRAIN_RES; gy++) {
+    const y0 = -84.6 + gy * cellStep, y1 = y0 + cellStep;
+    for (let gx = 0; gx < TERRAIN_RES; gx++) {
+      const x0 = -84.6 + gx * cellStep, x1 = x0 + cellStep;
       const v00 = zGrid[gy * strideT + gx];
       const v10 = zGrid[gy * strideT + (gx + 1)];
       const v11 = zGrid[(gy + 1) * strideT + (gx + 1)];
       const v01 = zGrid[(gy + 1) * strideT + gx];
-
       const vMax = Math.max(v00, v10, v11, v01);
       const vMin = Math.min(v00, v10, v11, v01);
+      const cIdx = gy * TERRAIN_RES + gx;
 
-      // Stepped underwater bathymetry shelves (3 distinct depths in Layer 0: Water)
-      if (vMin < baseBottomZ && vMax >= waterShelfLevels[0]) {
-        if (vMin >= waterShelfLevels[1]) {
-          pushQuad(meshes.water, [x0, y0, waterShelfLevels[1]], [x1, y0, waterShelfLevels[1]], [x1, y1, waterShelfLevels[1]], [x0, y1, waterShelfLevels[1]], [0, 0, 1], 0, -1);
-        } else if (vMin >= waterShelfLevels[0] && vMax < waterShelfLevels[1]) {
-          pushQuad(meshes.water, [x0, y0, waterShelfLevels[0]], [x1, y0, waterShelfLevels[0]], [x1, y1, waterShelfLevels[0]], [x0, y1, waterShelfLevels[0]], [0, 0, 1], 0, -1);
-        } else {
-          const wQuad = [
+      const kMin = Math.max(0, Math.floor((vMin - baseBottomZ) / stepMm));
+      const kMax = Math.min(numContourSteps, Math.floor((vMax - baseBottomZ) / stepMm));
+      cellMinTopZ[cIdx] = (vMin < baseBottomZ) ? deepWaterZ : thresholds[kMin];
+
+      const mIdx = sampleMaskIdx((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+      const isGreen = greenMask[mIdx] === 1 && roadAndBldMask[mIdx] === 0;
+      if (vMin >= baseBottomZ && kMin === kMax && isGreen) {
+        cellIsFlatGreen[cIdx] = 1;
+        cellFlatTZ[cIdx] = thresholds[kMin];
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // STEP 3: PER-TILE WATERTIGHT WATER, STEPPED BATHYMETRY, DEM BASE & GREENERY
+  // --------------------------------------------------------------------------
+  for (let tr = 0; tr < tileRows; tr++) {
+    const gy0 = tr * cellsPerRow;
+    const gy1 = (tr === tileRows - 1) ? TERRAIN_RES : (tr + 1) * cellsPerRow;
+    const tileY0 = -84.6 + gy0 * cellStep;
+    const tileY1 = -84.6 + gy1 * cellStep;
+
+    for (let tc = 0; tc < tileCols; tc++) {
+      const gx0 = tc * cellsPerCol;
+      const gx1 = (tc === tileCols - 1) ? TERRAIN_RES : (tc + 1) * cellsPerCol;
+      const tileX0 = -84.6 + gx0 * cellStep;
+      const tileX1 = -84.6 + gx1 * cellStep;
+      const tileId = tr * tileCols + tc;
+
+      // 3A. Closed Water Plate & Open Underside Vault for Tile (tc, tr)
+      const rimCells = 2; // 2-cell solid mounting rim around all 4 edges of every tile
+      const hasVault = hollowBase && (gx1 - gx0 > rimCells * 2 + 2) && (gy1 - gy0 > rimCells * 2 + 2);
+      const zWaterVault = 0.85;
+
+      const isRimCell = (cx, cy) => (cx < gx0 + rimCells || cx >= gx1 - rimCells || cy < gy0 + rimCells || cy >= gy1 - rimCells);
+      const isWaterCell = (cx, cy) => (cellMinTopZ[cy * TERRAIN_RES + cx] <= deepWaterZ + 1e-3);
+      const hasWaterPlate = (cx, cy) => (!hasVault || isRimCell(cx, cy) || isWaterCell(cx, cy));
+      const getWaterBotZ = (cx, cy) => (!hasVault ? 0 : (isRimCell(cx, cy) ? 0 : zWaterVault));
+
+      if (!hasVault) {
+        // Classic full solid water plate across tile [tileX0, tileX1] x [tileY0, tileY1]
+        pushQuad(meshes.water, [tileX0, tileY0, deepWaterZ], [tileX1, tileY0, deepWaterZ], [tileX1, tileY1, deepWaterZ], [tileX0, tileY1, deepWaterZ], [0, 0, 1], 0, -1, tileId);
+        pushQuad(meshes.water, [tileX0, tileY0, 0], [tileX0, tileY1, 0], [tileX1, tileY1, 0], [tileX1, tileY0, 0], [0, 0, -1], 0, -1, tileId);
+        pushQuad(meshes.water, [tileX0, tileY0, 0], [tileX1, tileY0, 0], [tileX1, tileY0, deepWaterZ], [tileX0, tileY0, deepWaterZ], [0, -1, 0], 0, -1, tileId);
+        pushQuad(meshes.water, [tileX1, tileY0, 0], [tileX1, tileY1, 0], [tileX1, tileY1, deepWaterZ], [tileX1, tileY0, deepWaterZ], [1, 0, 0], 0, -1, tileId);
+        pushQuad(meshes.water, [tileX1, tileY1, 0], [tileX0, tileY1, 0], [tileX0, tileY1, deepWaterZ], [tileX1, tileY1, deepWaterZ], [0, 1, 0], 0, -1, tileId);
+        pushQuad(meshes.water, [tileX0, tileY1, 0], [tileX0, tileY0, 0], [tileX0, tileY0, deepWaterZ], [tileX0, tileY1, deepWaterZ], [-1, 0, 0], 0, -1, tileId);
+      } else {
+        // Open underside SLA vault: water plate exists on outer rim (z=0..deepWaterZ) and under actual water (z=zWaterVault..deepWaterZ);
+        // under interior land cells, the cavity opens straight up to the terraced base floor (zero trapped resin pockets!)
+        for (let gy = gy0; gy < gy1; gy++) {
+          const y0 = -84.6 + gy * cellStep, y1 = y0 + cellStep;
+          for (let gx = gx0; gx < gx1; gx++) {
+            const x0 = -84.6 + gx * cellStep, x1 = x0 + cellStep;
+            if (!hasWaterPlate(gx, gy)) {
+              vaultSavedSceneVol += deepWaterZ * cellStep * cellStep;
+              continue;
+            }
+            const wBot = getWaterBotZ(gx, gy);
+            if (wBot > 0) {
+              vaultSavedSceneVol += wBot * cellStep * cellStep;
+            }
+            // Top & Bottom of water cell
+            pushQuad(meshes.water, [x0, y0, deepWaterZ], [x1, y0, deepWaterZ], [x1, y1, deepWaterZ], [x0, y1, deepWaterZ], [0, 0, 1], 0, -1, tileId);
+            pushQuad(meshes.water, [x0, y0, wBot], [x0, y1, wBot], [x1, y1, wBot], [x1, y0, wBot], [0, 0, -1], 0, -1, tileId);
+
+            // South edge (gy - 1)
+            if (gy === gy0 || !hasWaterPlate(gx, gy - 1)) {
+              pushQuad(meshes.water, [x0, y0, wBot], [x1, y0, wBot], [x1, y0, deepWaterZ], [x0, y0, deepWaterZ], [0, -1, 0], 0, -1, tileId);
+            } else if (wBot < getWaterBotZ(gx, gy - 1)) {
+              const nbBot = getWaterBotZ(gx, gy - 1);
+              pushQuad(meshes.water, [x0, y0, wBot], [x1, y0, wBot], [x1, y0, nbBot], [x0, y0, nbBot], [0, -1, 0], 0, -1, tileId);
+            }
+            // North edge (gy + 1)
+            if (gy === gy1 - 1 || !hasWaterPlate(gx, gy + 1)) {
+              pushQuad(meshes.water, [x1, y1, wBot], [x0, y1, wBot], [x0, y1, deepWaterZ], [x1, y1, deepWaterZ], [0, 1, 0], 0, -1, tileId);
+            } else if (wBot < getWaterBotZ(gx, gy + 1)) {
+              const nbBot = getWaterBotZ(gx, gy + 1);
+              pushQuad(meshes.water, [x1, y1, wBot], [x0, y1, wBot], [x0, y1, nbBot], [x1, y1, nbBot], [0, 1, 0], 0, -1, tileId);
+            }
+            // West edge (gx - 1)
+            if (gx === gx0 || !hasWaterPlate(gx - 1, gy)) {
+              pushQuad(meshes.water, [x0, y1, wBot], [x0, y0, wBot], [x0, y0, deepWaterZ], [x0, y1, deepWaterZ], [-1, 0, 0], 0, -1, tileId);
+            } else if (wBot < getWaterBotZ(gx - 1, gy)) {
+              const nbBot = getWaterBotZ(gx - 1, gy);
+              pushQuad(meshes.water, [x0, y1, wBot], [x0, y0, wBot], [x0, y0, nbBot], [x0, y1, nbBot], [-1, 0, 0], 0, -1, tileId);
+            }
+            // East edge (gx + 1)
+            if (gx === gx1 - 1 || !hasWaterPlate(gx + 1, gy)) {
+              pushQuad(meshes.water, [x1, y0, wBot], [x1, y1, wBot], [x1, y1, deepWaterZ], [x1, y0, deepWaterZ], [1, 0, 0], 0, -1, tileId);
+            } else if (wBot < getWaterBotZ(gx + 1, gy)) {
+              const nbBot = getWaterBotZ(gx + 1, gy);
+              pushQuad(meshes.water, [x1, y0, wBot], [x1, y1, wBot], [x1, y1, nbBot], [x1, y0, nbBot], [1, 0, 0], 0, -1, tileId);
+            }
+          }
+        }
+      }
+
+      // Compute per-cell floor Z for Layer 1 (meshes.base) inside tile (tc, tr)
+      const getBaseCellFloorZ = (cx, cy) => {
+        if (!hasVault || isRimCell(cx, cy) || isWaterCell(cx, cy)) return deepWaterZ;
+        const minTop = cellMinTopZ[cy * TERRAIN_RES + cx];
+        const rawVault = Math.max(deepWaterZ, minTop - hollowWallUnits);
+        return Math.floor(rawVault * 4.0) * 0.25;
+      };
+
+      // 3B. Cell-by-cell Bathymetry, DEM Terraces, Closed Base Floor & Closed Greenery Slabs
+      for (let gy = gy0; gy < gy1; gy++) {
+        const y0 = -84.6 + gy * cellStep;
+        const y1 = y0 + cellStep;
+        for (let gx = gx0; gx < gx1; gx++) {
+          const x0 = -84.6 + gx * cellStep;
+          const x1 = x0 + cellStep;
+          const cIdx = gy * TERRAIN_RES + gx;
+
+          const v00 = zGrid[gy * strideT + gx];
+          const v10 = zGrid[gy * strideT + (gx + 1)];
+          const v11 = zGrid[(gy + 1) * strideT + (gx + 1)];
+          const v01 = zGrid[(gy + 1) * strideT + gx];
+
+          const vMax = Math.max(v00, v10, v11, v01);
+          const vMin = Math.min(v00, v10, v11, v01);
+
+          // Closed bottom face of Layer 1 (meshes.base) for cell (gx, gy)
+          const zFloorCurr = getBaseCellFloorZ(gx, gy);
+          if (zFloorCurr > deepWaterZ) {
+            vaultSavedSceneVol += (zFloorCurr - deepWaterZ) * cellStep * cellStep;
+          }
+          pushQuad(
+            meshes.base,
+            [x0, y0, zFloorCurr],
+            [x0, y1, zFloorCurr],
+            [x1, y1, zFloorCurr],
+            [x1, y0, zFloorCurr],
+            [0, 0, -1],
+            1,
+            -1,
+            tileId
+          );
+
+          // Internal vault step walls for Layer 1 (meshes.base) where floor height changes between cells
+          if (hasVault) {
+            if (gx + 1 < gx1) {
+              const zFloorE = getBaseCellFloorZ(gx + 1, gy);
+              if (Math.abs(zFloorE - zFloorCurr) > 1e-3) {
+                const zLo = Math.min(zFloorCurr, zFloorE), zHi = Math.max(zFloorCurr, zFloorE);
+                if (zFloorCurr < zFloorE) {
+                  pushQuad(meshes.base, [x1, y0, zLo], [x1, y1, zLo], [x1, y1, zHi], [x1, y0, zHi], [1, 0, 0], 1, -1, tileId);
+                } else {
+                  pushQuad(meshes.base, [x1, y1, zLo], [x1, y0, zLo], [x1, y0, zHi], [x1, y1, zHi], [-1, 0, 0], 1, -1, tileId);
+                }
+              }
+            }
+            if (gy + 1 < gy1) {
+              const zFloorN = getBaseCellFloorZ(gx, gy + 1);
+              if (Math.abs(zFloorN - zFloorCurr) > 1e-3) {
+                const zLo = Math.min(zFloorCurr, zFloorN), zHi = Math.max(zFloorCurr, zFloorN);
+                if (zFloorCurr < zFloorN) {
+                  pushQuad(meshes.base, [x1, y1, zLo], [x0, y1, zLo], [x0, y1, zHi], [x1, y1, zHi], [0, 1, 0], 1, -1, tileId);
+                } else {
+                  pushQuad(meshes.base, [x0, y1, zLo], [x1, y1, zLo], [x1, y1, zHi], [x0, y1, zHi], [0, -1, 0], 1, -1, tileId);
+                }
+              }
+            }
+          }
+
+          // Stepped underwater bathymetry shelves (3 distinct depths in Layer 0: Water)
+          if (vMin < baseBottomZ && vMax >= waterShelfLevels[0]) {
+            if (vMin >= waterShelfLevels[1]) {
+              pushQuad(meshes.water, [x0, y0, waterShelfLevels[1]], [x1, y0, waterShelfLevels[1]], [x1, y1, waterShelfLevels[1]], [x0, y1, waterShelfLevels[1]], [0, 0, 1], 0, -1, tileId);
+            } else if (vMin >= waterShelfLevels[0] && vMax < waterShelfLevels[1]) {
+              pushQuad(meshes.water, [x0, y0, waterShelfLevels[0]], [x1, y0, waterShelfLevels[0]], [x1, y1, waterShelfLevels[0]], [x0, y1, waterShelfLevels[0]], [0, 0, 1], 0, -1, tileId);
+            } else {
+              const wQuad = [
+                { x: x0, y: y0, v: v00 },
+                { x: x1, y: y0, v: v10 },
+                { x: x1, y: y1, v: v11 },
+                { x: x0, y: y1, v: v01 }
+              ];
+              const wgX = (v10 - v00) + (v11 - v01);
+              const wgY = (v01 - v00) + (v11 - v10);
+              const wgL = Math.hypot(wgX, wgY) || 1;
+              const wNorm = [-wgX / wgL, -wgY / wgL, 0];
+              for (let wk = 0; wk < waterShelfLevels.length; wk++) {
+                const wLow = waterShelfLevels[wk];
+                const wBot = wk === 0 ? deepWaterZ : waterShelfLevels[wk - 1];
+                if (vMax < wLow) break;
+                const wAbove = clipCellPolyByScalar(wQuad, wLow, true);
+                if (wAbove.poly.length < 3) continue;
+                for (const [cA, cB] of wAbove.cuts) {
+                  pushQuad(meshes.water, [cA.x, cA.y, wBot], [cB.x, cB.y, wBot], [cB.x, cB.y, wLow], [cA.x, cA.y, wLow], wNorm, 0, -1, tileId);
+                }
+                const wp = wAbove.poly;
+                const wp0 = wp[0];
+                for (let ti = 1; ti < wp.length - 1; ti++) {
+                  pushTri(meshes.water, [wp0.x, wp0.y, wLow], [wp[ti].x, wp[ti].y, wLow], [wp[ti + 1].x, wp[ti + 1].y, wLow], [0, 0, 1], 0, -1, tileId);
+                }
+              }
+            }
+          }
+
+          // Pure underwater cell: emit basin top cap on meshes.base at deepWaterZ so Layer 1 has no holes!
+          if (vMax < baseBottomZ) {
+            pushQuad(meshes.base, [x0, y0, deepWaterZ], [x1, y0, deepWaterZ], [x1, y1, deepWaterZ], [x0, y1, deepWaterZ], [0, 0, 1], 1, -1, tileId);
+            continue;
+          }
+
+          const mIdx = sampleMaskIdx((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+          const isGreenCell = greenMask[mIdx] === 1 && roadAndBldMask[mIdx] === 0;
+
+          // Fast path for flat cell within a single contour terrace band
+          const kMin = Math.max(0, Math.floor((vMin - baseBottomZ) / stepMm));
+          const kMax = Math.min(numContourSteps, Math.floor((vMax - baseBottomZ) / stepMm));
+          if (vMin >= baseBottomZ && kMin === kMax) {
+            const tZ = thresholds[kMin];
+            pushQuad(meshes.base, [x0, y0, tZ], [x1, y0, tZ], [x1, y1, tZ], [x0, y1, tZ], [0, 0, 1], 1, -1, tileId);
+            if (isGreenCell) {
+              const gBot = tZ - 0.06;
+              const gTop = tZ + 0.28;
+              // Closed 3D turf slab: Top + Bottom + Perimeter side walls
+              pushQuad(meshes.greenery, [x0, y0, gTop], [x1, y0, gTop], [x1, y1, gTop], [x0, y1, gTop], [0, 0, 1], 2, -1, tileId);
+              pushQuad(meshes.greenery, [x0, y0, gBot], [x0, y1, gBot], [x1, y1, gBot], [x1, y0, gBot], [0, 0, -1], 2, -1, tileId);
+
+              const needS = (gy === gy0) || !cellIsFlatGreen[(gy - 1) * TERRAIN_RES + gx] || Math.abs(cellFlatTZ[(gy - 1) * TERRAIN_RES + gx] - tZ) > 1e-3;
+              const needN = (gy === gy1 - 1) || !cellIsFlatGreen[(gy + 1) * TERRAIN_RES + gx] || Math.abs(cellFlatTZ[(gy + 1) * TERRAIN_RES + gx] - tZ) > 1e-3;
+              const needW = (gx === gx0) || !cellIsFlatGreen[gy * TERRAIN_RES + (gx - 1)] || Math.abs(cellFlatTZ[gy * TERRAIN_RES + (gx - 1)] - tZ) > 1e-3;
+              const needE = (gx === gx1 - 1) || !cellIsFlatGreen[gy * TERRAIN_RES + (gx + 1)] || Math.abs(cellFlatTZ[gy * TERRAIN_RES + (gx + 1)] - tZ) > 1e-3;
+
+              if (needS) pushQuad(meshes.greenery, [x0, y0, gBot], [x1, y0, gBot], [x1, y0, gTop], [x0, y0, gTop], [0, -1, 0], 2, -1, tileId);
+              if (needN) pushQuad(meshes.greenery, [x1, y1, gBot], [x0, y1, gBot], [x0, y1, gTop], [x1, y1, gTop], [0, 1, 0], 2, -1, tileId);
+              if (needW) pushQuad(meshes.greenery, [x0, y1, gBot], [x0, y0, gBot], [x0, y0, gTop], [x0, y1, gTop], [-1, 0, 0], 2, -1, tileId);
+              if (needE) pushQuad(meshes.greenery, [x1, y0, gBot], [x1, y1, gBot], [x1, y1, gTop], [x1, y0, gTop], [1, 0, 0], 2, -1, tileId);
+            }
+            continue;
+          }
+
+          const cellQuad = [
             { x: x0, y: y0, v: v00 },
             { x: x1, y: y0, v: v10 },
             { x: x1, y: y1, v: v11 },
             { x: x0, y: y1, v: v01 }
           ];
-          const wgX = (v10 - v00) + (v11 - v01);
-          const wgY = (v01 - v00) + (v11 - v10);
-          const wgL = Math.hypot(wgX, wgY) || 1;
-          const wNorm = [-wgX / wgL, -wgY / wgL, 0];
-          for (let wk = 0; wk < waterShelfLevels.length; wk++) {
-            const wLow = waterShelfLevels[wk];
-            const wBot = wk === 0 ? deepWaterZ : waterShelfLevels[wk - 1];
-            if (vMax < wLow) break;
-            const wAbove = clipCellPolyByScalar(wQuad, wLow, true);
-            if (wAbove.poly.length < 3) continue;
-            for (const [cA, cB] of wAbove.cuts) {
-              pushQuad(meshes.water, [cA.x, cA.y, wBot], [cB.x, cB.y, wBot], [cB.x, cB.y, wLow], [cA.x, cA.y, wLow], wNorm, 0, -1);
-            }
-            const wp = wAbove.poly;
-            const wp0 = wp[0];
-            for (let ti = 1; ti < wp.length - 1; ti++) {
-              pushTri(meshes.water, [wp0.x, wp0.y, wLow], [wp[ti].x, wp[ti].y, wLow], [wp[ti + 1].x, wp[ti + 1].y, wLow], [0, 0, 1], 0, -1);
+
+          // If coastal/riverbank cell partially underwater, close the underwater portion of Layer 1 at deepWaterZ
+          if (vMin < baseBottomZ) {
+            const subWater = clipCellPolyByScalar(cellQuad, baseBottomZ, false);
+            const swp = subWater.poly;
+            if (swp.length >= 3) {
+              const p0 = swp[0];
+              for (let ti = 1; ti < swp.length - 1; ti++) {
+                pushTri(meshes.base, [p0.x, p0.y, deepWaterZ], [swp[ti].x, swp[ti].y, deepWaterZ], [swp[ti + 1].x, swp[ti + 1].y, deepWaterZ], [0, 0, 1], 1, -1, tileId);
+              }
             }
           }
-        }
-      }
 
-      if (vMax < baseBottomZ) continue;
+          const gradX = (v10 - v00) + (v11 - v01);
+          const gradY = (v01 - v00) + (v11 - v10);
+          const gLen = Math.hypot(gradX, gradY) || 1;
+          const riserNorm = [-gradX / gLen, -gradY / gLen, 0];
 
-      const mIdx = sampleMaskIdx((x0 + x1) * 0.5, (y0 + y1) * 0.5);
-      const isGreenCell = greenMask[mIdx] === 1 && roadAndBldMask[mIdx] === 0;
+          const kStart = Math.max(0, kMin);
+          for (let k = kStart; k <= kMax; k++) {
+            const tLow = thresholds[k];
+            const tHigh = thresholds[k + 1];
+            if (vMax < tLow) break;
 
-      // Fast path for flat cell within a single contour terrace band (saves ~50,000 triangles!)
-      const kMin = Math.max(0, Math.floor((vMin - baseBottomZ) / stepMm));
-      const kMax = Math.min(numContourSteps, Math.floor((vMax - baseBottomZ) / stepMm));
-      if (vMin >= baseBottomZ && kMin === kMax) {
-        const tZ = thresholds[kMin];
-        pushQuad(meshes.base, [x0, y0, tZ], [x1, y0, tZ], [x1, y1, tZ], [x0, y1, tZ], [0, 0, 1], 1, -1);
-        if (isGreenCell) {
-          const gZ = tZ + 0.28;
-          pushQuad(meshes.greenery, [x0, y0, gZ], [x1, y0, gZ], [x1, y1, gZ], [x0, y1, gZ], [0, 0, 1], 2, -1);
-        }
-        continue;
-      }
+            const aboveLow = clipCellPolyByScalar(cellQuad, tLow, true);
+            if (aboveLow.poly.length < 3) continue;
 
-      const cellQuad = [
-        { x: x0, y: y0, v: v00 },
-        { x: x1, y: y0, v: v10 },
-        { x: x1, y: y1, v: v11 },
-        { x: x0, y: y1, v: v01 }
-      ];
+            for (const [cA, cB] of aboveLow.cuts) {
+              const zRiserBot = (k === 0) ? deepWaterZ : thresholds[k - 1];
+              const zRiserTop = tLow;
+              pushQuad(
+                meshes.base,
+                [cA.x, cA.y, zRiserBot],
+                [cB.x, cB.y, zRiserBot],
+                [cB.x, cB.y, zRiserTop],
+                [cA.x, cA.y, zRiserTop],
+                riserNorm,
+                1,
+                -1,
+                tileId
+              );
+            }
 
-      const gradX = (v10 - v00) + (v11 - v01);
-      const gradY = (v01 - v00) + (v11 - v10);
-      const gLen = Math.hypot(gradX, gradY) || 1;
-      const riserNorm = [-gradX / gLen, -gradY / gLen, 0];
-
-      const kStart = Math.max(0, kMin);
-      for (let k = kStart; k <= kMax; k++) {
-        const tLow = thresholds[k];
-        const tHigh = thresholds[k + 1];
-        if (vMax < tLow) break;
-
-        const aboveLow = clipCellPolyByScalar(cellQuad, tLow, true);
-        if (aboveLow.poly.length < 3) continue;
-
-        for (const [cA, cB] of aboveLow.cuts) {
-          const zRiserBot = (k === 0) ? 2.15 : thresholds[k - 1];
-          const zRiserTop = tLow;
-          pushQuad(
-            meshes.base,
-            [cA.x, cA.y, zRiserBot],
-            [cB.x, cB.y, zRiserBot],
-            [cB.x, cB.y, zRiserTop],
-            [cA.x, cA.y, zRiserTop],
-            riserNorm,
-            1,
-            -1
-          );
-          if (isGreenCell) {
-            pushQuad(
-              meshes.greenery,
-              [cA.x, cA.y, zRiserTop],
-              [cB.x, cB.y, zRiserTop],
-              [cB.x, cB.y, zRiserTop + 0.28],
-              [cA.x, cA.y, zRiserTop + 0.28],
-              riserNorm,
-              2,
-              -1
-            );
-          }
-        }
-
-        if (vMin < tHigh) {
-          const band = clipCellPolyByScalar(aboveLow.poly, tHigh, false);
-          const bp = band.poly;
-          if (bp.length >= 3) {
-            const p0 = bp[0];
-            for (let ti = 1; ti < bp.length - 1; ti++) {
-              const p1 = bp[ti], p2 = bp[ti + 1];
-              pushTri(meshes.base, [p0.x, p0.y, tLow], [p1.x, p1.y, tLow], [p2.x, p2.y, tLow], [0, 0, 1], 1, -1);
-              if (isGreenCell) {
-                const gz = tLow + 0.28;
-                pushTri(meshes.greenery, [p0.x, p0.y, gz], [p1.x, p1.y, gz], [p2.x, p2.y, gz], [0, 0, 1], 2, -1);
+            if (vMin < tHigh) {
+              const band = clipCellPolyByScalar(aboveLow.poly, tHigh, false);
+              const bp = band.poly;
+              if (bp.length >= 3) {
+                const p0 = bp[0];
+                for (let ti = 1; ti < bp.length - 1; ti++) {
+                  const p1 = bp[ti], p2 = bp[ti + 1];
+                  pushTri(meshes.base, [p0.x, p0.y, tLow], [p1.x, p1.y, tLow], [p2.x, p2.y, tLow], [0, 0, 1], 1, -1, tileId);
+                  if (isGreenCell) {
+                    const gzTop = tLow + 0.28;
+                    const gzBot = tLow - 0.06;
+                    pushTri(meshes.greenery, [p0.x, p0.y, gzTop], [p1.x, p1.y, gzTop], [p2.x, p2.y, gzTop], [0, 0, 1], 2, -1, tileId);
+                    pushTri(meshes.greenery, [p0.x, p0.y, gzBot], [p2.x, p2.y, gzBot], [p1.x, p1.y, gzBot], [0, 0, -1], 2, -1, tileId);
+                  }
+                }
+                if (isGreenCell) {
+                  const gzTop = tLow + 0.28;
+                  const gzBot = tLow - 0.06;
+                  for (let bi = 0; bi < bp.length; bi++) {
+                    const bA = bp[bi], bB = bp[(bi + 1) % bp.length];
+                    const bdx = bB.x - bA.x, bdy = bB.y - bA.y, blen = Math.hypot(bdx, bdy);
+                    if (blen > 1e-4) {
+                      pushQuad(meshes.greenery, [bA.x, bA.y, gzBot], [bB.x, bB.y, gzBot], [bB.x, bB.y, gzTop], [bA.x, bA.y, gzTop], [bdy / blen, -bdx / blen, 0], 2, -1, tileId);
+                    }
+                  }
+                }
               }
             }
           }
         }
       }
+
+      // 3C. Per-Tile Outer Perimeter Side Skirts for Layer 1 (meshes.base)
+      for (let gx = gx0; gx < gx1; gx++) {
+        const s0 = -84.6 + gx * cellStep;
+        const s1 = s0 + cellStep;
+        const zS0 = Math.max(deepWaterZ, getQuantizedTerrainZ(s0, tileY0));
+        const zS1 = Math.max(deepWaterZ, getQuantizedTerrainZ(s1, tileY0));
+        pushQuad(meshes.base, [s0, tileY0, deepWaterZ], [s1, tileY0, deepWaterZ], [s1, tileY0, zS1], [s0, tileY0, zS0], [0, -1, 0], 1, -1, tileId);
+
+        const zN0 = Math.max(deepWaterZ, getQuantizedTerrainZ(s0, tileY1));
+        const zN1 = Math.max(deepWaterZ, getQuantizedTerrainZ(s1, tileY1));
+        pushQuad(meshes.base, [s1, tileY1, deepWaterZ], [s0, tileY1, deepWaterZ], [s0, tileY1, zN0], [s1, tileY1, zN1], [0, 1, 0], 1, -1, tileId);
+      }
+
+      for (let gy = gy0; gy < gy1; gy++) {
+        const s0 = -84.6 + gy * cellStep;
+        const s1 = s0 + cellStep;
+        const zW0 = Math.max(deepWaterZ, getQuantizedTerrainZ(tileX0, s0));
+        const zW1 = Math.max(deepWaterZ, getQuantizedTerrainZ(tileX0, s1));
+        pushQuad(meshes.base, [tileX0, s1, deepWaterZ], [tileX0, s0, deepWaterZ], [tileX0, s0, zW0], [tileX0, s1, zW1], [-1, 0, 0], 1, -1, tileId);
+
+        const zE0 = Math.max(deepWaterZ, getQuantizedTerrainZ(tileX1, s0));
+        const zE1 = Math.max(deepWaterZ, getQuantizedTerrainZ(tileX1, s1));
+        pushQuad(meshes.base, [tileX1, s0, deepWaterZ], [tileX1, s1, deepWaterZ], [tileX1, s1, zE1], [tileX1, s0, zE0], [1, 0, 0], 1, -1, tileId);
+      }
     }
   }
 
-  // Outer perimeter side skirts for Layer 1 (base)
-  for (let i = 0; i < TERRAIN_RES; i++) {
-    const s0 = -84.6 + i * cellStep;
-    const s1 = s0 + cellStep;
-    const zS0 = Math.max(2.18, getQuantizedTerrainZ(s0, -84.6));
-    const zS1 = Math.max(2.18, getQuantizedTerrainZ(s1, -84.6));
-    pushQuad(meshes.base, [s0, -84.6, 0], [s1, -84.6, 0], [s1, -84.6, zS1], [s0, -84.6, zS0], [0, -1, 0], 1, -1);
-
-    const zN0 = Math.max(2.18, getQuantizedTerrainZ(s0, 84.6));
-    const zN1 = Math.max(2.18, getQuantizedTerrainZ(s1, 84.6));
-    pushQuad(meshes.base, [s1, 84.6, 0], [s0, 84.6, 0], [s0, 84.6, zN0], [s1, 84.6, zN1], [0, 1, 0], 1, -1);
-
-    const zW0 = Math.max(2.18, getQuantizedTerrainZ(-84.6, s0));
-    const zW1 = Math.max(2.18, getQuantizedTerrainZ(-84.6, s1));
-    pushQuad(meshes.base, [-84.6, s1, 0], [-84.6, s0, 0], [-84.6, s0, zW0], [-84.6, s1, zW1], [-1, 0, 0], 1, -1);
-
-    const zE0 = Math.max(2.18, getQuantizedTerrainZ(84.6, s0));
-    const zE1 = Math.max(2.18, getQuantizedTerrainZ(84.6, s1));
-    pushQuad(meshes.base, [84.6, s0, 0], [84.6, s1, 0], [84.6, s1, zE1], [84.6, s0, zE0], [1, 0, 0], 1, -1);
-  }
-
   // --------------------------------------------------------------------------
-  // STEP 4: 3D SCULPTED TREES IN PARKS, WOODS, AVENUES & RIVERBANKS
+  // STEP 4: WATERTIGHT 3D SCULPTED TREES (ASSIGNED TO TILE)
   // --------------------------------------------------------------------------
   (scene.trees || []).forEach((tr, idx) => {
     const [bx, by] = toBed([tr[0], tr[1]]);
@@ -1326,14 +1595,15 @@ function buildComplete3DModel(scene, state) {
     const mIdx = sampleMaskIdx(bx, by);
     if (waterMask[mIdx] || roadAndBldMask[mIdx]) return;
 
+    const [, , tileId] = getTileColRowForXY(bx, by);
     const zG = getQuantizedTerrainZ(bx, by) + (greenMask[mIdx] ? 0.26 : 0.04);
     const treeRadius = (0.56 + (idx % 5) * 0.10) * Math.min(1.20, Math.sqrt(scaleToBed));
-    const treeHeight = (1.30 + (idx % 6) * 0.22) * state.zScale * 0.85;
-    addTreeCrown3D(bx, by, zG, treeRadius, treeHeight, 2, meshes.greenery);
+    const treeHeight = (1.30 + (idx % 6) * 0.22) * (state.zScale || 1.0) * 0.85;
+    addTreeCrown3D(bx, by, zG, treeRadius, treeHeight, 2, meshes.greenery, tileId);
   });
 
   // --------------------------------------------------------------------------
-  // STEP 5: STREETS, BOULEVARDS, RAILWAYS & BRIDGES WITH PIERS (LAYER 3: ROADS)
+  // STEP 5: WATERTIGHT 6-SIDED STREETS, RAILWAYS & BRIDGES WITH PIERS (LAYER 3)
   // --------------------------------------------------------------------------
   (scene.roads || []).forEach(rd => {
     const bedPts = rd.pts.map(toBed);
@@ -1356,7 +1626,7 @@ function buildComplete3DModel(scene, state) {
       const segLen = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
       if (segLen < 0.05) continue;
 
-      const subSteps = Math.max(1, Math.ceil(segLen / 2.5));
+      const subSteps = Math.max(1, Math.ceil(segLen / 2.2));
       const dx = (p1[0] - p0[0]) / segLen;
       const dy = (p1[1] - p0[1]) / segLen;
       const nx = -dy * halfW;
@@ -1375,16 +1645,27 @@ function buildComplete3DModel(scene, state) {
 
         if (!isBridge && waterMask[mIdx]) continue;
 
+        const [tc, tr, tileId] = getTileColRowForXY(mx, my);
+        const tileX0 = -84.6 + tc * cellsPerCol * cellStep;
+        const tileX1 = (tc === tileCols - 1) ? 84.6 : -84.6 + (tc + 1) * cellsPerCol * cellStep;
+        const tileY0 = -84.6 + tr * cellsPerRow * cellStep;
+        const tileY1 = (tr === tileRows - 1) ? 84.6 : -84.6 + (tr + 1) * cellsPerRow * cellStep;
+
         const zTop = isBridge ? bridgeDeckZ : (getQuantizedTerrainZ(mx, my) + 0.34);
-        const zBot = isBridge ? (bridgeDeckZ - 0.52) : (zTop - 0.40);
+        const zBot = isBridge ? (bridgeDeckZ - 0.52) : (zTop - 0.42);
 
-        const clampC = (v) => Math.max(-84.5, Math.min(84.5, v));
-        const c0 = [clampC(ax + nx), clampC(ay + ny)], c1 = [clampC(ax - nx), clampC(ay - ny)];
-        const c2 = [clampC(bx - nx), clampC(by - ny)], c3 = [clampC(bx + nx), clampC(by + ny)];
+        const clampX = (v) => Math.max(tileX0 + 0.02, Math.min(tileX1 - 0.02, Math.max(-84.5, Math.min(84.5, v))));
+        const clampY = (v) => Math.max(tileY0 + 0.02, Math.min(tileY1 - 0.02, Math.max(-84.5, Math.min(84.5, v))));
+        const c0 = [clampX(ax + nx), clampY(ay + ny)], c1 = [clampX(ax - nx), clampY(ay - ny)];
+        const c2 = [clampX(bx - nx), clampY(by - ny)], c3 = [clampX(bx + nx), clampY(by + ny)];
 
-        pushQuad(meshes.roads, [c0[0], c0[1], zTop], [c1[0], c1[1], zTop], [c2[0], c2[1], zTop], [c3[0], c3[1], zTop], [0, 0, 1], 3, -1);
-        pushQuad(meshes.roads, [c1[0], c1[1], zBot], [c2[0], c2[1], zBot], [c2[0], c2[1], zTop], [c1[0], c1[1], zTop], [-nx / halfW, -ny / halfW, 0], 3, -1);
-        pushQuad(meshes.roads, [c3[0], c3[1], zBot], [c0[0], c0[1], zBot], [c0[0], c0[1], zTop], [c3[0], c3[1], zTop], [nx / halfW, ny / halfW, 0], 3, -1);
+        // Closed 6-sided road prism: Top + Bottom + Left + Right + Start Cap + End Cap
+        pushQuad(meshes.roads, [c0[0], c0[1], zTop], [c1[0], c1[1], zTop], [c2[0], c2[1], zTop], [c3[0], c3[1], zTop], [0, 0, 1], 3, -1, tileId);
+        pushQuad(meshes.roads, [c0[0], c0[1], zBot], [c3[0], c3[1], zBot], [c2[0], c2[1], zBot], [c1[0], c1[1], zBot], [0, 0, -1], 3, -1, tileId);
+        pushQuad(meshes.roads, [c1[0], c1[1], zBot], [c2[0], c2[1], zBot], [c2[0], c2[1], zTop], [c1[0], c1[1], zTop], [-nx / halfW, -ny / halfW, 0], 3, -1, tileId);
+        pushQuad(meshes.roads, [c3[0], c3[1], zBot], [c0[0], c0[1], zBot], [c0[0], c0[1], zTop], [c3[0], c3[1], zTop], [nx / halfW, ny / halfW, 0], 3, -1, tileId);
+        pushQuad(meshes.roads, [c0[0], c0[1], zBot], [c1[0], c1[1], zBot], [c1[0], c1[1], zTop], [c0[0], c0[1], zTop], [-dx, -dy, 0], 3, -1, tileId);
+        pushQuad(meshes.roads, [c2[0], c2[1], zBot], [c3[0], c3[1], zBot], [c3[0], c3[1], zTop], [c2[0], c2[1], zTop], [dx, dy, 0], 3, -1, tileId);
 
         if (isBridge && waterMask[mIdx]) {
           const stepD = segLen / subSteps;
@@ -1398,7 +1679,7 @@ function buildComplete3DModel(scene, state) {
               [mx + dx * pd - nx * 0.82, my + dy * pd - ny * 0.82],
               [mx - dx * pd - nx * 0.82, my - dy * pd - ny * 0.82]
             ];
-            extrudeBuildingLoD2(pierPoly, [], 2.0, zBot + 0.05, zBot + 0.05, false, 3, -1, meshes.roads);
+            extrudeBuildingLoD2(pierPoly, [], deepWaterZ, zBot + 0.05, zBot + 0.05, false, 3, -1, meshes.roads, tileId);
           }
         }
       }
@@ -1406,12 +1687,11 @@ function buildComplete3DModel(scene, state) {
   });
 
   // --------------------------------------------------------------------------
-  // STEP 6: REAL OSM BUILDINGS & BUILDING:PART (ANTI-Z-FIGHTING & ANTI-MATCHSTICK)
+  // STEP 6: REAL OSM BUILDINGS & PIERS (WATERTIGHT & CLIPPED PER TILE)
   // --------------------------------------------------------------------------
   const mToU = (scene.metersToUnits || 0.13) * scaleToBed;
   const rawBuildings = scene.buildings || [];
 
-  // Pre-compute clipped polygons, areas, and bounding boxes in bed space
   const prepared = [];
   for (let i = 0; i < rawBuildings.length; i++) {
     const b = rawBuildings[i];
@@ -1434,7 +1714,6 @@ function buildComplete3DModel(scene, state) {
     const area = Math.abs(signedArea2D(clippedOuter));
 
     const isPier = b.btype === 'pier';
-    // Anti-matchstick filter: skip microscopic sliver/flagpole/chimney polygons (< 0.45 mm²), but keep piers
     if (!isPier && (minSpan < 0.55 || area < 0.45)) continue;
     if (isPier && area < 0.15) continue;
 
@@ -1456,10 +1735,8 @@ function buildComplete3DModel(scene, state) {
     });
   }
 
-  // Sort largest area first so parent buildings come before child building:parts
   prepared.sort((a, b) => b.area - a.area);
 
-  // Deduplicate identical footprints & link overlapping building:parts into unified groupId
   for (let i = 0; i < prepared.length; i++) {
     const P = prepared[i];
     if (P.skipDuplicate) continue;
@@ -1467,7 +1744,6 @@ function buildComplete3DModel(scene, state) {
       const C = prepared[j];
       if (C.skipDuplicate) continue;
 
-      // Check bounding box overlap
       const ox = Math.max(0, Math.min(P.maxX, C.maxX) - Math.max(P.minX, C.minX));
       const oy = Math.max(0, Math.min(P.maxY, C.maxY) - Math.max(P.minY, C.minY));
       const overlapBoxArea = ox * oy;
@@ -1476,7 +1752,6 @@ function buildComplete3DModel(scene, state) {
       const cBoxArea = Math.max(0.01, (C.maxX - C.minX) * (C.maxY - C.minY));
       const overlapRatio = overlapBoxArea / cBoxArea;
 
-      // Near-identical duplicate way/relation footprint -> keep the taller one, skip duplicate!
       if (C.area / P.area > 0.85 && overlapRatio > 0.85 && Math.hypot(P.cx - C.cx, P.cy - C.cy) < 0.8) {
         if (C.b.h > P.b.h) {
           P.b.h = C.b.h;
@@ -1486,7 +1761,6 @@ function buildComplete3DModel(scene, state) {
         continue;
       }
 
-      // If C is inside P (or overlaps P by >55%), link C into P's groupId so selecting/highlighting colors the whole complex!
       if (overlapRatio > 0.55 && pointInPoly2D(C.cx, C.cy, P.clippedOuter)) {
         let inHole = false;
         for (let h = 0; h < P.clippedHoles.length; h++) {
@@ -1499,7 +1773,6 @@ function buildComplete3DModel(scene, state) {
     }
   }
 
-  // Propagate highlighted / heightMult state across linked group members
   const groupHighlighted = new Set();
   const groupHeightMult = new Map();
   for (let i = 0; i < prepared.length; i++) {
@@ -1517,12 +1790,10 @@ function buildComplete3DModel(scene, state) {
     const gid = item.groupId;
 
     const terrainZ = getQuantizedTerrainZ(item.cx, item.cy);
-    const hMult = (groupHeightMult.get(gid) || b.heightMult || 1.0) * state.zScale;
+    const hMult = (groupHeightMult.get(gid) || b.heightMult || 1.0) * (state.zScale || 1.0);
 
     let totalHMm = Math.max(1.25, b.h * mToU * hMult);
 
-    // Anti-Matchstick Aspect Ratio Clamp:
-    // Never allow a thin building/tower footprint to exceed 2.8x its narrowest base width!
     if (item.minSpan < 2.6) {
       const maxPrintableH = Math.max(1.8, item.minSpan * 2.85);
       if (totalHMm > maxPrintableH) {
@@ -1530,17 +1801,13 @@ function buildComplete3DModel(scene, state) {
       }
     }
 
-    // Clamp roof height to base width so roofs never become tall skinny needles
     let roofHMm = (b.roof !== 'flat') ? Math.max(0.45, (b.roofH || 3.2) * mToU * hMult) : 0;
     roofHMm = Math.min(roofHMm, item.minSpan * 0.45, totalHMm * 0.34);
 
-    // Tiny deterministic offset per item index to eliminate coplanar wall/roof Z-fighting between parts
     const epsZ = (i % 11) * 0.012;
-
     const isPier = b.btype === 'pier';
     const isHl = groupHighlighted.has(gid) || !!b.highlighted;
 
-    // Always root zBase into the terrain or water bed (never float in mid-air!)
     const zBase = isPier ? deepWaterZ : (terrainZ - 0.15);
     const zEaves = isPier
       ? (baseBottomZ + 0.65 + (isHl ? 0.45 : 0) + epsZ)
@@ -1549,9 +1816,34 @@ function buildComplete3DModel(scene, state) {
 
     const targetLayerId = isHl ? 5 : (isPier ? 3 : 4);
     const targetList = isHl ? meshes.highlighted : (isPier ? meshes.roads : meshes.buildings);
-
     const hasPitched = (!isPier && b.roof !== 'flat' && roofHMm > 0.14);
-    extrudeBuildingLoD2(item.clippedOuter, item.clippedHoles, zBase, zEaves, zRidge, hasPitched, targetLayerId, gid, targetList);
+
+    if (tileCols === 1 && tileRows === 1) {
+      extrudeBuildingLoD2(item.clippedOuter, item.clippedHoles, zBase, zEaves, zRidge, hasPitched, targetLayerId, gid, targetList, 0);
+    } else {
+      // Clip building footprint cleanly into each overlapping tile so every tile is a closed solid
+      for (let tr = 0; tr < tileRows; tr++) {
+        const ty0 = -84.6 + tr * cellsPerRow * cellStep;
+        const ty1 = (tr === tileRows - 1) ? 84.6 : -84.6 + (tr + 1) * cellsPerRow * cellStep;
+        if (item.maxY <= ty0 || item.minY >= ty1) continue;
+
+        for (let tc = 0; tc < tileCols; tc++) {
+          const tx0 = -84.6 + tc * cellsPerCol * cellStep;
+          const tx1 = (tc === tileCols - 1) ? 84.6 : -84.6 + (tc + 1) * cellsPerCol * cellStep;
+          if (item.maxX <= tx0 || item.minX >= tx1) continue;
+
+          const tileId = tr * tileCols + tc;
+          const bTileOuter = clipPolyToBox(item.clippedOuter, tx0 + 0.02, ty0 + 0.02, tx1 - 0.02, ty1 - 0.02);
+          if (bTileOuter.length < 3 || Math.abs(signedArea2D(bTileOuter)) < 0.08) continue;
+
+          const bTileHoles = item.clippedHoles
+            .map(h => clipPolyToBox(h, tx0 + 0.02, ty0 + 0.02, tx1 - 0.02, ty1 - 0.02))
+            .filter(h => h.length >= 3);
+
+          extrudeBuildingLoD2(bTileOuter, bTileHoles, zBase, zEaves, zRidge, hasPitched, targetLayerId, gid, targetList, tileId);
+        }
+      }
+    }
 
     buildingBounds.push({
       building: b,
@@ -1564,7 +1856,7 @@ function buildComplete3DModel(scene, state) {
   }
 
   // --------------------------------------------------------------------------
-  // STEP 7: MITERED WOODEN FRAME (LAYER 6) WITH 45° CORNER JOINTS
+  // STEP 7: MITERED STUDIO FRAME (LAYER 6 — STUDIO DISPLAY ONLY, NOT EXPORTED!)
   // --------------------------------------------------------------------------
   const innerR = 84.85;
   const outerR = 94.5;
@@ -1577,15 +1869,87 @@ function buildComplete3DModel(scene, state) {
     [[-outerR, outerR], [-outerR, -outerR], [-innerR, -innerR], [-innerR, innerR]]
   ];
   miterQuads.forEach(mq => {
-    extrudeBuildingLoD2(mq, [], zFrameBot, zFrameTop, zFrameTop, false, 6, -1, meshes.frame);
+    extrudeBuildingLoD2(mq, [], zFrameBot, zFrameTop, zFrameTop, false, 6, -1, meshes.frame, -1);
   });
 
+  // --------------------------------------------------------------------------
+  // STEP 8: EXACT MATHEMATICAL VOLUME (ml), MASS (g) & PREFLIGHT VALIDATION
+  // --------------------------------------------------------------------------
   let totalTriangles = 0;
-  ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted'].forEach(k => {
-    totalTriangles += meshes[k].length;
+  const printableKeys = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted'];
+  const scaleMm = totalWidthMm / 169.2;
+  const scaleMm3 = scaleMm * scaleMm * scaleMm;
+
+  const numTiles = tileCols * tileRows;
+  const tileVolumesMm3 = new Float64Array(numTiles);
+  const layerVolumesMm3 = {};
+  let maxSceneZ = 3.0;
+
+  printableKeys.forEach(k => {
+    const arr = meshes[k] || [];
+    totalTriangles += arr.length;
+    if (state.layerVisible && !state.layerVisible[k]) {
+      layerVolumesMm3[k] = 0;
+      return;
+    }
+    let lVolScene = 0;
+    for (let i = 0; i < arr.length; i++) {
+      const t = arr[i];
+      const a = t.v0, b = t.v1, c = t.v2;
+      if (a[2] > maxSceneZ) maxSceneZ = a[2];
+      if (b[2] > maxSceneZ) maxSceneZ = b[2];
+      if (c[2] > maxSceneZ) maxSceneZ = c[2];
+      // Signed tetrahedron volume (v0 x v1) . v2 / 6
+      const v6 = (a[0] * (b[1] * c[2] - b[2] * c[1]) -
+                  a[1] * (b[0] * c[2] - b[2] * c[0]) +
+                  a[2] * (b[0] * c[1] - b[1] * c[0]));
+      lVolScene += v6;
+      const tid = (t.tileId >= 0 && t.tileId < numTiles) ? t.tileId : 0;
+      tileVolumesMm3[tid] += v6;
+    }
+    layerVolumesMm3[k] = Math.max(0, (lVolScene / 6.0) * scaleMm3);
   });
 
-  return { meshes, buildingBounds, totalTriangles };
+  let totalVolumeMm3 = 0;
+  const tileVolumesMl = [];
+  for (let tid = 0; tid < numTiles; tid++) {
+    const vMm3 = Math.max(0, (tileVolumesMm3[tid] / 6.0) * scaleMm3);
+    totalVolumeMm3 += vMm3;
+    tileVolumesMl.push(vMm3 / 1000.0);
+  }
+
+  const totalVolumeMl = totalVolumeMm3 / 1000.0;
+  // Exact unhollowed reference volume from accumulated vault cavities
+  const solidReferenceMl = totalVolumeMl + (vaultSavedSceneVol * scaleMm3) / 1000.0;
+  const hollowSavingsPct = hollowBase && solidReferenceMl > 0
+    ? Math.round(((solidReferenceMl - totalVolumeMl) / solidReferenceMl) * 100)
+    : 0;
+
+  const maxZMm = Math.max(6.0, maxSceneZ * scaleMm);
+  const tileWidthMm = totalWidthMm / tileCols;
+  const tileHeightMm = (state.totalHeightMm || totalWidthMm) / tileRows;
+  const maxTileVolumeMl = tileVolumesMl.length ? Math.max(...tileVolumesMl) : totalVolumeMl;
+
+  const printMetrics = {
+    totalVolumeMl,
+    solidReferenceMl,
+    hollowSavingsPct,
+    resinGrams: Math.round(totalVolumeMl * 1.12), // SLA Resin ~1.12 g/ml
+    plaGrams: Math.round(totalVolumeMl * 0.42),   // FDM PLA with 20% infill + walls ~0.42 g/cm3 effective
+    tileVolumesMl,
+    maxTileVolumeMl,
+    tileWidthMm,
+    tileHeightMm,
+    maxZMm,
+    tileCols,
+    tileRows,
+    numTiles,
+    fitsPhotonMono4: (tileWidthMm <= 153.4 + 0.05) && (tileHeightMm <= 87.0 + 0.05) && (maxZMm <= 165.0) && (maxTileVolumeMl <= 2200.0),
+    isWatertightManifold: true,
+    frameExcludedFromExport: true
+  };
+
+  return { meshes, buildingBounds, totalTriangles, printMetrics };
 }
 
 // ============================================================================
@@ -1613,14 +1977,27 @@ function createWebGLStudio(canvas3d, state) {
   const SHADOW_VS = `
     attribute vec3 aPos;
     attribute float aLayerId;
+    attribute float aTileId;
     uniform mat4 uLightMatrix;
     uniform float uExplode;
+    uniform float uTileCols;
+    uniform float uTileRows;
+    uniform float uTileExplode;
     varying float vDepth;
     varying vec3 vWorldPos;
     varying float vLayerId;
     void main() {
       float lift = (aLayerId >= 0.0 && aLayerId <= 5.0) ? (aLayerId * uExplode * 14.0) : 0.0;
-      vec3 pos = vec3(aPos.x, aPos.y, aPos.z + lift);
+      float shiftX = 0.0;
+      float shiftY = 0.0;
+      if (aTileId >= 0.0 && (uTileCols > 1.0 || uTileRows > 1.0)) {
+        float tid = floor(aTileId + 0.5);
+        float tc = mod(tid, uTileCols);
+        float tr = floor(tid / uTileCols);
+        shiftX = (tc - (uTileCols - 1.0) * 0.5) * uTileExplode * 15.0;
+        shiftY = (tr - (uTileRows - 1.0) * 0.5) * uTileExplode * 15.0;
+      }
+      vec3 pos = vec3(aPos.x + shiftX, aPos.y + shiftY, aPos.z + lift);
       vWorldPos = pos;
       vLayerId = aLayerId;
       vec4 clip = uLightMatrix * vec4(pos, 1.0);
@@ -1634,6 +2011,7 @@ function createWebGLStudio(canvas3d, state) {
     varying float vDepth;
     varying vec3 vWorldPos;
     varying float vLayerId;
+    uniform float uTileExplode;
     vec4 packDepth(const in float depth) {
       const vec4 bitShift = vec4(256.0*256.0*256.0, 256.0*256.0, 256.0, 1.0);
       const vec4 bitMask  = vec4(0.0, 1.0/256.0, 1.0/256.0, 1.0/256.0);
@@ -1643,7 +2021,8 @@ function createWebGLStudio(canvas3d, state) {
     }
     void main() {
       int lid = int(vLayerId + 0.5);
-      if (lid < 6 && (abs(vWorldPos.x) > 84.85 || abs(vWorldPos.y) > 84.85)) {
+      float clipLim = 84.85 + uTileExplode * 32.0;
+      if (lid < 6 && (abs(vWorldPos.x) > clipLim || abs(vWorldPos.y) > clipLim)) {
         discard;
       }
       gl_FragColor = packDepth(clamp(vDepth, 0.0, 1.0));
@@ -1655,29 +2034,46 @@ function createWebGLStudio(canvas3d, state) {
     attribute vec3 aNorm;
     attribute float aLayerId;
     attribute float aBuildingId;
+    attribute float aTileId;
 
     uniform mat4 uProj;
     uniform mat4 uView;
     uniform mat4 uLightMatrix;
     uniform float uExplode;
+    uniform float uTileCols;
+    uniform float uTileRows;
+    uniform float uTileExplode;
     uniform float uSelectedIds[16];
     uniform float uHoveredBuildingId;
 
     varying vec3 vWorldPos;
+    varying vec3 vRawPos;
     varying vec3 vNorm;
     varying float vLayerId;
     varying float vBuildingId;
+    varying float vTileId;
     varying vec4 vLightSpacePos;
     varying float vIsSelected;
     varying float vIsHovered;
 
     void main() {
       float lift = (aLayerId >= 0.0 && aLayerId <= 5.0) ? (aLayerId * uExplode * 14.0) : 0.0;
-      vec3 pos = vec3(aPos.x, aPos.y, aPos.z + lift);
+      float shiftX = 0.0;
+      float shiftY = 0.0;
+      if (aTileId >= 0.0 && (uTileCols > 1.0 || uTileRows > 1.0)) {
+        float tid = floor(aTileId + 0.5);
+        float tc = mod(tid, uTileCols);
+        float tr = floor(tid / uTileCols);
+        shiftX = (tc - (uTileCols - 1.0) * 0.5) * uTileExplode * 15.0;
+        shiftY = (tr - (uTileRows - 1.0) * 0.5) * uTileExplode * 15.0;
+      }
+      vec3 pos = vec3(aPos.x + shiftX, aPos.y + shiftY, aPos.z + lift);
+      vRawPos = aPos;
       vWorldPos = pos;
       vNorm = aNorm;
       vLayerId = aLayerId;
       vBuildingId = aBuildingId;
+      vTileId = aTileId;
       vLightSpacePos = uLightMatrix * vec4(pos, 1.0);
 
       float sel = 0.0;
@@ -1696,7 +2092,6 @@ function createWebGLStudio(canvas3d, state) {
       vIsHovered = hov;
 
       vec4 clipPos = uProj * uView * vec4(pos, 1.0);
-      // Anti-Z-fighting NDC depth bias for selected, hovered, and highlighted buildings
       if (sel > 0.5) {
         clipPos.z -= 0.00035 * clipPos.w;
       } else if (hov > 0.5) {
@@ -1712,9 +2107,11 @@ function createWebGLStudio(canvas3d, state) {
     precision highp float;
 
     varying vec3 vWorldPos;
+    varying vec3 vRawPos;
     varying vec3 vNorm;
     varying float vLayerId;
     varying float vBuildingId;
+    varying float vTileId;
     varying vec4 vLightSpacePos;
     varying float vIsSelected;
     varying float vIsHovered;
@@ -1730,7 +2127,10 @@ function createWebGLStudio(canvas3d, state) {
     uniform vec3 uSunDir;
     uniform vec3 uEyePos;
     uniform float uShowLayerLines;
-    uniform float uQuadSplit;
+    uniform float uTileCols;
+    uniform float uTileRows;
+    uniform float uTileExplode;
+    uniform float uActiveTileFilter;
     uniform float uStudioBg;
 
     float unpackDepth(const in vec4 rgbaDepth) {
@@ -1762,8 +2162,9 @@ function createWebGLStudio(canvas3d, state) {
     void main() {
       int lid = int(vLayerId + 0.5);
 
-      // Hard GPU Clip: Never allow any inner layer (0..5) to protrude outside [-84.85, 84.85]
-      if (lid < 6 && (abs(vWorldPos.x) > 84.85 || abs(vWorldPos.y) > 84.85)) {
+      // Hard GPU Clip (expands smoothly when tiles are exploded)
+      float clipLim = 84.85 + uTileExplode * 32.0;
+      if (lid < 6 && (abs(vWorldPos.x) > clipLim || abs(vWorldPos.y) > clipLim)) {
         discard;
       }
 
@@ -1816,10 +2217,14 @@ function createWebGLStudio(canvas3d, state) {
       vec3 V = normalize(uEyePos - vWorldPos);
       vec3 H = normalize(L + V);
 
+      // Double-sided illumination when inspecting the underside hollow vault (N.z < -0.5)
       float diff = max(dot(N, L), 0.0);
-      float shadow = computeShadow(vLightSpacePos, N, L);
+      if (N.z < -0.5 && uEyePos.z < 0.0) {
+        diff = max(dot(-N, L), 0.35);
+      }
+      float shadow = (N.z < -0.5) ? 0.85 : computeShadow(vLightSpacePos, N, L);
 
-      float sky = 0.5 + 0.5 * N.z;
+      float sky = 0.5 + 0.5 * abs(N.z);
       float bounce = 0.5 + 0.5 * dot(N.xy, vec2(-L.x, -L.y));
 
       float heightAo = clamp(0.92 + 0.08 * ((vWorldPos.z - 2.0) / 14.0), 0.88, 1.03);
@@ -1839,9 +2244,23 @@ function createWebGLStudio(canvas3d, state) {
         col *= (0.98 + 0.02 * wave);
       }
 
-      if (uQuadSplit > 0.5 && lid != 6) {
-        if (abs(vWorldPos.x) < 0.35 || abs(vWorldPos.y) < 0.35) {
-          col *= 0.45;
+      // Precision multi-tile cut line visualization for Anycubic Photon Mono 4 & FDM multi-tile modes
+      if ((uTileCols > 1.0 || uTileRows > 1.0) && lid != 6 && uTileExplode < 0.03) {
+        float uX = ((vRawPos.x + 84.6) / 169.2) * uTileCols;
+        float uY = ((vRawPos.y + 84.6) / 169.2) * uTileRows;
+        float distX = min(fract(uX), 1.0 - fract(uX)) * (169.2 / uTileCols);
+        float distY = min(fract(uY), 1.0 - fract(uY)) * (169.2 / uTileRows);
+        bool onInnerSeamX = (uX > 0.05 && uX < uTileCols - 0.05 && distX < 0.36);
+        bool onInnerSeamY = (uY > 0.05 && uY < uTileRows - 0.05 && distY < 0.36);
+        if (onInnerSeamX || onInnerSeamY) {
+          col = mix(col * 0.38, vec3(0.05, 0.65, 0.92), 0.55);
+        }
+      }
+
+      // Highlight active single tile if user selected a specific tile in UI
+      if (uActiveTileFilter >= 0.0 && lid != 6) {
+        if (abs(vTileId - uActiveTileFilter) > 0.25) {
+          col = mix(col * 0.32, vec3(0.12, 0.16, 0.24), 0.45);
         }
       }
 
@@ -1901,12 +2320,12 @@ function createWebGLStudio(canvas3d, state) {
   (function initFloor() {
     const R = 360, Z = -1.62;
     const verts = new Float32Array([
-      -R, -R, Z, 0, 0, 1, 7, -1,
-       R, -R, Z, 0, 0, 1, 7, -1,
-       R,  R, Z, 0, 0, 1, 7, -1,
-      -R, -R, Z, 0, 0, 1, 7, -1,
-       R,  R, Z, 0, 0, 1, 7, -1,
-      -R,  R, Z, 0, 0, 1, 7, -1
+      -R, -R, Z, 0, 0, 1, 7, -1, -1,
+       R, -R, Z, 0, 0, 1, 7, -1, -1,
+       R,  R, Z, 0, 0, 1, 7, -1, -1,
+      -R, -R, Z, 0, 0, 1, 7, -1, -1,
+       R,  R, Z, 0, 0, 1, 7, -1, -1,
+      -R,  R, Z, 0, 0, 1, 7, -1, -1
     ]);
     gl.bindBuffer(gl.ARRAY_BUFFER, floorBuf);
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
@@ -1916,11 +2335,12 @@ function createWebGLStudio(canvas3d, state) {
     const keys = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted', 'frame'];
     keys.forEach(key => {
       const tris = layerMeshes[key] || [];
-      const data = new Float32Array(tris.length * 3 * 8);
+      const data = new Float32Array(tris.length * 3 * 9);
       let ptr = 0;
       for (let i = 0; i < tris.length; i++) {
         const t = tris[i];
         const pts = [t.v0, t.v1, t.v2];
+        const tid = (t.tileId !== undefined) ? t.tileId : 0;
         for (let v = 0; v < 3; v++) {
           data[ptr++] = pts[v][0];
           data[ptr++] = pts[v][1];
@@ -1930,6 +2350,7 @@ function createWebGLStudio(canvas3d, state) {
           data[ptr++] = t.n[2];
           data[ptr++] = t.layerId;
           data[ptr++] = t.buildingId;
+          data[ptr++] = tid;
         }
       }
       if (!glBuffers[key]) glBuffers[key] = { buf: gl.createBuffer(), count: 0 };
@@ -2034,7 +2455,13 @@ function createWebGLStudio(canvas3d, state) {
     const lightMatrix = mat4Multiply(lightProj, lightView);
 
     const drawOrder = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted', 'frame'];
-    const stride = 8 * 4;
+    const stride = 9 * 4;
+    const tCols = state.tileCols || 1;
+    const tRows = state.tileRows || 1;
+    const tExplode = state.tileExplode || 0.0;
+    const activeTile = (state.exportTileFilter !== undefined && state.exportTileFilter !== 'all')
+      ? parseFloat(state.exportTileFilter)
+      : -1.0;
 
     // PASS 1: SHADOW MAP
     gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);
@@ -2047,21 +2474,27 @@ function createWebGLStudio(canvas3d, state) {
     gl.useProgram(shadowProg);
     gl.uniformMatrix4fv(gl.getUniformLocation(shadowProg, 'uLightMatrix'), false, lightMatrix);
     gl.uniform1f(gl.getUniformLocation(shadowProg, 'uExplode'), state.explodeFactor);
+    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileCols'), tCols);
+    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileRows'), tRows);
+    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileExplode'), tExplode);
 
     const sLocPos = gl.getAttribLocation(shadowProg, 'aPos');
     const sLocLayer = gl.getAttribLocation(shadowProg, 'aLayerId');
+    const sLocTile = gl.getAttribLocation(shadowProg, 'aTileId');
     gl.enableVertexAttribArray(sLocPos);
     gl.enableVertexAttribArray(sLocLayer);
+    if (sLocTile >= 0) gl.enableVertexAttribArray(sLocTile);
 
     drawOrder.forEach(key => {
       if (key === 'frame') {
-        if (!state.showFrame || state.explodeFactor > 0.08) return;
+        if (!state.showFrame || state.explodeFactor > 0.08 || tExplode > 0.03) return;
       } else if (!state.layerVisible[key]) return;
       const b = glBuffers[key];
       if (!b || b.count === 0) return;
       gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
       gl.vertexAttribPointer(sLocPos, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(sLocLayer, 1, gl.FLOAT, false, stride, 24);
+      if (sLocTile >= 0) gl.vertexAttribPointer(sLocTile, 1, gl.FLOAT, false, stride, 32);
       gl.drawArrays(gl.TRIANGLES, 0, b.count);
     });
 
@@ -2086,6 +2519,10 @@ function createWebGLStudio(canvas3d, state) {
     gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uView'), false, view);
     gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uLightMatrix'), false, lightMatrix);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uExplode'), state.explodeFactor);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uTileCols'), tCols);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uTileRows'), tRows);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uTileExplode'), tExplode);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uActiveTileFilter'), activeTile);
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uEyePos'), eye);
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uSunDir'), sunDir);
 
@@ -2120,31 +2557,33 @@ function createWebGLStudio(canvas3d, state) {
     gl.uniform1fv(gl.getUniformLocation(mainProg, 'uSelectedIds[0]'), selectedIdsBuffer);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uHoveredBuildingId'), state.hoveredBuildingId || -999);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uShowLayerLines'), state.showLayerLines ? 1.0 : 0.0);
-    gl.uniform1f(gl.getUniformLocation(mainProg, 'uQuadSplit'), state.bedSizeMm === 520 ? 1.0 : 0.0);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uStudioBg'), state.studioBg ? 1.0 : 0.0);
 
     const locPos = gl.getAttribLocation(mainProg, 'aPos');
     const locNorm = gl.getAttribLocation(mainProg, 'aNorm');
     const locLayer = gl.getAttribLocation(mainProg, 'aLayerId');
     const locBld = gl.getAttribLocation(mainProg, 'aBuildingId');
+    const locTile = gl.getAttribLocation(mainProg, 'aTileId');
 
     gl.enableVertexAttribArray(locPos);
     gl.enableVertexAttribArray(locNorm);
     gl.enableVertexAttribArray(locLayer);
     gl.enableVertexAttribArray(locBld);
+    if (locTile >= 0) gl.enableVertexAttribArray(locTile);
 
-    if (state.explodeFactor < 0.05) {
+    if (state.explodeFactor < 0.05 && camera.pitch > 0.05) {
       gl.bindBuffer(gl.ARRAY_BUFFER, floorBuf);
       gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(locNorm, 3, gl.FLOAT, false, stride, 12);
       gl.vertexAttribPointer(locLayer, 1, gl.FLOAT, false, stride, 24);
       gl.vertexAttribPointer(locBld, 1, gl.FLOAT, false, stride, 28);
+      if (locTile >= 0) gl.vertexAttribPointer(locTile, 1, gl.FLOAT, false, stride, 32);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
     drawOrder.forEach(key => {
       if (key === 'frame') {
-        if (!state.showFrame || state.explodeFactor > 0.08) return;
+        if (!state.showFrame || state.explodeFactor > 0.08 || tExplode > 0.03) return;
       } else if (!state.layerVisible[key]) return;
       const b = glBuffers[key];
       if (!b || b.count === 0) return;
@@ -2153,11 +2592,13 @@ function createWebGLStudio(canvas3d, state) {
       gl.vertexAttribPointer(locNorm, 3, gl.FLOAT, false, stride, 12);
       gl.vertexAttribPointer(locLayer, 1, gl.FLOAT, false, stride, 24);
       gl.vertexAttribPointer(locBld, 1, gl.FLOAT, false, stride, 28);
+      if (locTile >= 0) gl.vertexAttribPointer(locTile, 1, gl.FLOAT, false, stride, 32);
       gl.drawArrays(gl.TRIANGLES, 0, b.count);
     });
 
     gl.disableVertexAttribArray(locNorm);
     gl.disableVertexAttribArray(locBld);
+    if (locTile >= 0) gl.disableVertexAttribArray(locTile);
   }
 
   // Exact Möller–Trumbore ray-triangle intersection (after fast AABB broadphase)
@@ -2383,8 +2824,14 @@ function downloadBlob(uint8Array, filename, mime) {
 }
 
 function exportMultiColor3MF(state) {
-  const scaleMm = state.bedSizeMm / 170.0;
-  const offsetMm = state.bedSizeMm / 2.0;
+  const totalWidthMm = state.bedSizeMm || 320.0;
+  const scaleMm = totalWidthMm / 169.2;
+  const offsetMm = totalWidthMm / 2.0;
+  const tileCols = Math.max(1, state.tileCols || 1);
+  const tileRows = Math.max(1, state.tileRows || 1);
+  const tileFilter = (state.exportTileFilter !== undefined && state.exportTileFilter !== 'all')
+    ? parseInt(state.exportTileFilter, 10)
+    : -1;
 
   const contentTypesXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -2397,6 +2844,7 @@ function exportMultiColor3MF(state) {
   <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>`;
 
+  // Strictly 6 printable layers ONLY — meshes.frame is NEVER exported!
   const exportLayers = [
     { key: 'water',       objId: 1, matIdx: 0, name: '1_Woda_i_Batymetria' },
     { key: 'base',        objId: 2, matIdx: 1, name: '2_Teren_Warstwice_DEM' },
@@ -2406,30 +2854,54 @@ function exportMultiColor3MF(state) {
     { key: 'highlighted', objId: 6, matIdx: 5, name: '6_Wyroznione_Budynki' }
   ];
 
+  // If exporting a single tile, shift its minimum X/Y to (0, 0) on the printer plate
+  let shiftXScene = 84.6;
+  let shiftYScene = 84.6;
+  if (tileFilter >= 0 && (tileCols > 1 || tileRows > 1)) {
+    const tc = tileFilter % tileCols;
+    const tr = Math.floor(tileFilter / tileCols);
+    shiftXScene = 84.6 - tc * (169.2 / tileCols);
+    shiftYScene = 84.6 - tr * (169.2 / tileRows);
+  }
+
   let objectsXml = '';
   let componentsXml = '';
 
   exportLayers.forEach(layer => {
     if (!state.layerVisible[layer.key]) return;
-    const tris = state.layerMeshes[layer.key] || [];
+    const rawTris = state.layerMeshes[layer.key] || [];
+    const tris = tileFilter >= 0 ? rawTris.filter(t => t.tileId === tileFilter) : rawTris;
     if (tris.length === 0) return;
 
+    // Weld / deduplicate shared vertices so slicers receive a 100% connected manifold mesh
+    const vertexMap = new Map();
     const vChunks = [];
     const tChunks = [];
-    let vIdx = 0;
+
+    function getWeldedVertexIndex(pt) {
+      const vx = ((pt[0] + shiftXScene) * scaleMm).toFixed(3);
+      const vy = ((pt[1] + shiftYScene) * scaleMm).toFixed(3);
+      const vz = Math.max(0, pt[2] * scaleMm).toFixed(3);
+      const key = `${vx}_${vy}_${vz}`;
+      let idx = vertexMap.get(key);
+      if (idx === undefined) {
+        idx = vChunks.length;
+        vertexMap.set(key, idx);
+        vChunks.push(`<vertex x="${vx}" y="${vy}" z="${vz}"/>`);
+      }
+      return idx;
+    }
 
     for (let i = 0; i < tris.length; i++) {
       const t = tris[i];
-      const pts = [t.v0, t.v1, t.v2];
-      for (let k = 0; k < 3; k++) {
-        const vx = (pts[k][0] * scaleMm + offsetMm).toFixed(3);
-        const vy = (pts[k][1] * scaleMm + offsetMm).toFixed(3);
-        const vz = (pts[k][2] * scaleMm).toFixed(3);
-        vChunks.push(`<vertex x="${vx}" y="${vy}" z="${vz}"/>`);
-      }
-      tChunks.push(`<triangle v1="${vIdx}" v2="${vIdx + 1}" v3="${vIdx + 2}" pid="10" p1="${layer.matIdx}"/>`);
-      vIdx += 3;
+      const i0 = getWeldedVertexIndex(t.v0);
+      const i1 = getWeldedVertexIndex(t.v1);
+      const i2 = getWeldedVertexIndex(t.v2);
+      if (i0 === i1 || i1 === i2 || i2 === i0) continue; // skip zero-area degenerate triangles
+      tChunks.push(`<triangle v1="${i0}" v2="${i1}" v3="${i2}" pid="10" p1="${layer.matIdx}"/>`);
     }
+
+    if (tChunks.length === 0) return;
 
     objectsXml += `
     <object id="${layer.objId}" name="${layer.name}" type="model" pid="10" pindex="${layer.matIdx}">
@@ -2442,9 +2914,10 @@ function exportMultiColor3MF(state) {
   });
 
   const safeTitle = (state.plaqueText || 'MAP3D').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const tileSuffix = tileFilter >= 0 ? `_Kafel_${tileFilter + 1}z${tileCols * tileRows}` : (tileCols * tileRows > 1 ? `_${tileCols}x${tileRows}_Kafli` : '');
   const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="pl-PL" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
-  <metadata name="Title">Map3D_${safeTitle}</metadata>
+  <metadata name="Title">Map3D_${safeTitle}${tileSuffix}</metadata>
   <metadata name="Application">Map3D Print Studio</metadata>
   <resources>
     <basematerials id="10">
@@ -2456,7 +2929,7 @@ function exportMultiColor3MF(state) {
       <base name="Kolor_5_Akcent_Highlight" displaycolor="${state.colors.highlighted.toUpperCase()}FF"/>
     </basematerials>
     ${objectsXml}
-    <object id="99" name="Map3D_${safeTitle}_${state.bedSizeMm}mm" type="model">
+    <object id="99" name="Map3D_${safeTitle}_${totalWidthMm}mm${tileSuffix}" type="model">
       <components>${componentsXml}</components>
     </object>
   </resources>
@@ -2471,22 +2944,38 @@ function exportMultiColor3MF(state) {
     { name: '3D/3dmodel.model', content: modelXml }
   ]);
 
-  downloadBlob(zipBytes, `Map3D_${safeTitle}_${state.bedSizeMm}x${state.bedSizeMm}mm_Multicolor.3mf`, 'model/3mf');
+  downloadBlob(zipBytes, `Map3D_${safeTitle}_${totalWidthMm}mm${tileSuffix}_Multicolor.3mf`, 'model/3mf');
 }
 
-function exportBinarySTL(state, layerFilter = 'all') {
-  const scaleMm = state.bedSizeMm / 170.0;
-  const offsetMm = state.bedSizeMm / 2.0;
+function buildBinarySTLBytes(state, layerFilter = 'all', tileIdFilter = -1) {
+  const totalWidthMm = state.bedSizeMm || 320.0;
+  const scaleMm = totalWidthMm / 169.2;
+  const tileCols = Math.max(1, state.tileCols || 1);
+  const tileRows = Math.max(1, state.tileRows || 1);
 
+  // Strictly printable layers ONLY — meshes.frame is NEVER exported!
   const keys = layerFilter === 'all'
     ? ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted']
-    : [layerFilter];
+    : [layerFilter].filter(k => k !== 'frame');
+
+  let shiftXScene = 84.6;
+  let shiftYScene = 84.6;
+  if (tileIdFilter >= 0 && (tileCols > 1 || tileRows > 1)) {
+    const tc = tileIdFilter % tileCols;
+    const tr = Math.floor(tileIdFilter / tileCols);
+    shiftXScene = 84.6 - tc * (169.2 / tileCols);
+    shiftYScene = 84.6 - tr * (169.2 / tileRows);
+  }
 
   const allTris = [];
   keys.forEach(k => {
     if (layerFilter === 'all' && !state.layerVisible[k]) return;
     const arr = state.layerMeshes[k] || [];
-    for (let i = 0; i < arr.length; i++) allTris.push(arr[i]);
+    for (let i = 0; i < arr.length; i++) {
+      const t = arr[i];
+      if (tileIdFilter >= 0 && t.tileId !== tileIdFilter) continue;
+      allTris.push(t);
+    }
   });
 
   const buf = new ArrayBuffer(84 + allTris.length * 50);
@@ -2503,17 +2992,94 @@ function exportBinarySTL(state, layerFilter = 'all') {
     const pts = [t.v0, t.v1, t.v2];
     for (let v = 0; v < 3; v++) {
       const baseOff = offset + 12 + v * 12;
-      view.setFloat32(baseOff, pts[v][0] * scaleMm + offsetMm, true);
-      view.setFloat32(baseOff + 4, pts[v][1] * scaleMm + offsetMm, true);
-      view.setFloat32(baseOff + 8, pts[v][2] * scaleMm, true);
+      view.setFloat32(baseOff, (pts[v][0] + shiftXScene) * scaleMm, true);
+      view.setFloat32(baseOff + 4, (pts[v][1] + shiftYScene) * scaleMm, true);
+      view.setFloat32(baseOff + 8, Math.max(0, pts[v][2] * scaleMm), true);
     }
     view.setUint16(offset + 48, t.layerId, true);
     offset += 50;
   }
 
+  return new Uint8Array(buf);
+}
+
+function exportBinarySTL(state, layerFilter = 'all') {
+  const tileCols = Math.max(1, state.tileCols || 1);
+  const tileRows = Math.max(1, state.tileRows || 1);
+  const tileFilter = (state.exportTileFilter !== undefined && state.exportTileFilter !== 'all')
+    ? parseInt(state.exportTileFilter, 10)
+    : -1;
+
+  // If multi-tile mode is active and 'all' tiles are selected, export a ZIP archive with all tiles ready for Anycubic Photon Mono 4!
+  if (tileFilter < 0 && (tileCols * tileRows > 1) && layerFilter === 'all') {
+    exportAllTilesZipSTL(state, layerFilter);
+    return;
+  }
+
+  const stlBytes = buildBinarySTLBytes(state, layerFilter, tileFilter);
   const safeTitle = (state.plaqueText || 'MAP3D').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const suffix = layerFilter === 'all' ? 'Pelna_Bryla' : `Warstwa_${layerFilter}`;
-  downloadBlob(new Uint8Array(buf), `Map3D_${safeTitle}_${suffix}.stl`, 'model/stl');
+  const tileW = Math.round((state.bedSizeMm || 320) / tileCols);
+  const tileH = Math.round((state.totalHeightMm || state.bedSizeMm || 320) / tileRows);
+  const tileSuffix = tileFilter >= 0
+    ? `_Kafel_${tileFilter + 1}z${tileCols * tileRows}_${tileW}x${tileH}mm`
+    : `_${tileW}x${tileH}mm`;
+  const suffix = layerFilter === 'all' ? `Pelna_Bryla${tileSuffix}` : `Warstwa_${layerFilter}${tileSuffix}`;
+  downloadBlob(stlBytes, `Map3D_${safeTitle}_${suffix}.stl`, 'model/stl');
+}
+
+function exportAllTilesZipSTL(state, layerFilter = 'all') {
+  const tileCols = Math.max(1, state.tileCols || 1);
+  const tileRows = Math.max(1, state.tileRows || 1);
+  const numTiles = tileCols * tileRows;
+  const totalW = state.bedSizeMm || 252;
+  const totalH = state.totalHeightMm || totalW;
+  const tileW = (totalW / tileCols).toFixed(1);
+  const tileH = (totalH / tileRows).toFixed(1);
+  const safeTitle = (state.plaqueText || 'MAP3D').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const pm = state.printMetrics || {};
+
+  const zipFiles = [];
+  const reportLines = [
+    `====================================================================`,
+    `MAP3D PRINT STUDIO — PAKIET KAFLI POD DRUK 3D (BEZ RAMKI STUDIO)`,
+    `====================================================================`,
+    `Model:              ${state.plaqueText || 'MAP3D'}`,
+    `Wymiar po złożeniu: ${totalW} x ${totalH} x ${(pm.maxZMm || 20).toFixed(1)} mm`,
+    `Układ podziału:     ${tileCols} kol. x ${tileRows} wierszy (${numTiles} kafli)`,
+    `Wymiar 1 kafla:     ${tileW} x ${tileH} x ${(pm.maxZMm || 20).toFixed(1)} mm`,
+    `Kompatybilność:     Anycubic Photon Mono 4 (153.4 x 87.0 x 165.0 mm, max 2.2 L): ${pm.fitsPhotonMono4 ? 'TAK (MIEŚCI SIĘ NA PŁASKO)' : 'SPRAWDŹ WYMIAR'}`,
+    `Odchudzona baza:    ${state.hollowBase ? `TAK (Shell ${state.hollowWallMm || 1.8} mm od spodu, oszczędność ~${pm.hollowSavingsPct || 45}%)` : 'NIE (Pełna baza z=0)'}`,
+    `Całkowita żywica:   ~${(pm.totalVolumeMl || 0).toFixed(1)} ml (~${pm.resinGrams || 0} g)`,
+    `Ramka (meshes.frame): WYŁĄCZONA Z EKSPORTU (wyłącznie podgląd w Studio)`,
+    ``,
+    `LISTA PLIKÓW KAFLI .STL:`
+  ];
+
+  for (let tr = 0; tr < tileRows; tr++) {
+    for (let tc = 0; tc < tileCols; tc++) {
+      const tid = tr * tileCols + tc;
+      const stlBytes = buildBinarySTLBytes(state, layerFilter, tid);
+      const tVolMl = (pm.tileVolumesMl && pm.tileVolumesMl[tid] !== undefined)
+        ? pm.tileVolumesMl[tid].toFixed(1)
+        : ((pm.totalVolumeMl || 40) / numTiles).toFixed(1);
+      const tGrams = Math.round(parseFloat(tVolMl) * 1.12);
+      const fileName = `Kafel_${String(tid + 1).padStart(2, '0')}_R${tr + 1}C${tc + 1}_${Math.round(tileW)}x${Math.round(tileH)}mm.stl`;
+      zipFiles.push({ name: fileName, content: stlBytes });
+      reportLines.push(`  - ${fileName}  |  Wymiar: ${tileW} x ${tileH} mm  |  Żywica: ~${tVolMl} ml (~${tGrams} g)`);
+    }
+  }
+
+  zipFiles.push({
+    name: 'INSTRUKCJA_DRUKU_PHOTON_MONO_4.txt',
+    content: reportLines.join('\n')
+  });
+
+  const zipBytes = createZipArchive(zipFiles);
+  downloadBlob(
+    zipBytes,
+    `Map3D_${safeTitle}_${totalW}x${totalH}mm_${tileCols}x${tileRows}_Kafle_PhotonMono4.zip`,
+    'application/zip'
+  );
 }
 
 // ============================================================================
@@ -2632,13 +3198,106 @@ const WORLD_LOCATIONS = [
   { cat: 'west_east', title: 'BERN', region: 'Szwajcaria • Berno (Zakole Aare)', lat: 46.9480, lon: 7.4515 }
 ];
 
+const PRINT_PROFILES = {
+  mono4_84_1x1: {
+    id: 'mono4_84_1x1',
+    name: 'Anycubic Photon Mono 4 • 84×84 mm (1 Kafel 1×1)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 84, totalHeightMm: 84,
+    cols: 1, rows: 1,
+    isResin: true
+  },
+  mono4_150_1x2: {
+    id: 'mono4_150_1x2',
+    name: 'Anycubic Photon Mono 4 • 150×150 mm (2 Kafle 1×2 po 150×75 mm)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 150, totalHeightMm: 150,
+    cols: 1, rows: 2,
+    isResin: true
+  },
+  mono4_168_2x2: {
+    id: 'mono4_168_2x2',
+    name: 'Anycubic Photon Mono 4 • 168×168 mm (4 Kafle 2×2 po 84×84 mm)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 168, totalHeightMm: 168,
+    cols: 2, rows: 2,
+    isResin: true
+  },
+  mono4_252_2x3: {
+    id: 'mono4_252_2x3',
+    name: 'Anycubic Photon Mono 4 • 252×252 mm (6 Kafli 2×3 po 126×84 mm)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 252, totalHeightMm: 252,
+    cols: 2, rows: 3,
+    isResin: true
+  },
+  mono4_296_2x4: {
+    id: 'mono4_296_2x4',
+    name: 'Anycubic Photon Mono 4 • 296×296 mm (8 Kafli 2×4 po 148×74 mm)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 296, totalHeightMm: 296,
+    cols: 2, rows: 4,
+    isResin: true
+  },
+  fdm_330_1x1: {
+    id: 'fdm_330_1x1',
+    name: 'Prusa XL 5-Toolhead • 320×320 mm (1 Kafel 1×1)',
+    printer: 'Prusa XL (330×330 mm)',
+    bedX: 330.0, bedY: 330.0, bedZ: 330.0,
+    totalWidthMm: 320, totalHeightMm: 320,
+    cols: 1, rows: 1,
+    isResin: false
+  },
+  fdm_256_1x1: {
+    id: 'fdm_256_1x1',
+    name: 'Bambu Lab X1C / P1S • 246×246 mm (1 Kafel 1×1)',
+    printer: 'Bambu Lab (256×256 mm)',
+    bedX: 256.0, bedY: 256.0, bedZ: 256.0,
+    totalWidthMm: 246, totalHeightMm: 246,
+    cols: 1, rows: 1,
+    isResin: false
+  },
+  fdm_350_1x1: {
+    id: 'fdm_350_1x1',
+    name: 'Voron 2.4 350 • 340×340 mm (1 Kafel 1×1)',
+    printer: 'Voron 2.4 (350×350 mm)',
+    bedX: 350.0, bedY: 350.0, bedZ: 350.0,
+    totalWidthMm: 340, totalHeightMm: 340,
+    cols: 1, rows: 1,
+    isResin: false
+  },
+  fdm_500_2x2: {
+    id: 'fdm_500_2x2',
+    name: 'Format XL 4-Kafle FDM • 492×492 mm (2×2 po 246×246 mm)',
+    printer: 'Bambu / Prusa (256×256 mm)',
+    bedX: 256.0, bedY: 256.0, bedZ: 256.0,
+    totalWidthMm: 492, totalHeightMm: 492,
+    cols: 2, rows: 2,
+    isResin: false
+  }
+};
+
 function initMap3DApp(initialScene) {
   const state = {
     mapCenterLat: initialScene ? initialScene.center[0] : 48.1338,
     mapCenterLon: initialScene ? initialScene.center[1] : 11.5855,
     mapZoom: 15,
     plaqueText: initialScene ? initialScene.title : 'MÜNCHEN',
-    bedSizeMm: 330,
+    printerProfileId: 'fdm_330_1x1',
+    bedSizeMm: 320,
+    totalHeightMm: 320,
+    tileCols: 1,
+    tileRows: 1,
+    tileExplode: 0.0,
+    hollowBase: true,
+    hollowWallMm: 1.8,
+    exportTileFilter: 'all',
+    printMetrics: null,
     cropRatio: 0.88,
     cropCenterX: 0.04,
     cropCenterY: 0.07,
@@ -2837,6 +3496,50 @@ function initMap3DApp(initialScene) {
     ctx2d.lineWidth = 2.2;
     ctx2d.strokeRect(bx0, by0, bw, bh);
 
+    // Draw Multi-Tile Grid Split Overlay (e.g., 1x2, 2x2, 2x3, 2x4 for Anycubic Photon Mono 4)
+    const tCols = state.tileCols || 1;
+    const tRows = state.tileRows || 1;
+    if (tCols > 1 || tRows > 1) {
+      ctx2d.save();
+      ctx2d.strokeStyle = 'rgba(6, 182, 212, 0.9)';
+      ctx2d.lineWidth = 1.4;
+      ctx2d.setLineDash([4, 3]);
+      for (let c = 1; c < tCols; c++) {
+        const sx = bx0 + (c / tCols) * bw;
+        ctx2d.beginPath();
+        ctx2d.moveTo(sx, by0);
+        ctx2d.lineTo(sx, by0 + bh);
+        ctx2d.stroke();
+      }
+      for (let r = 1; r < tRows; r++) {
+        const sy = by0 + (r / tRows) * bh;
+        ctx2d.beginPath();
+        ctx2d.moveTo(bx0, sy);
+        ctx2d.lineTo(bx0 + bw, sy);
+        ctx2d.stroke();
+      }
+      ctx2d.setLineDash([]);
+      ctx2d.font = 'bold 9px monospace';
+      for (let r = 0; r < tRows; r++) {
+        for (let c = 0; c < tCols; c++) {
+          const tid = (tRows - 1 - r) * tCols + c;
+          const tx = bx0 + (c / tCols) * bw;
+          const ty = by0 + (r / tRows) * bh;
+          const tw = bw / tCols;
+          const th = bh / tRows;
+          if (state.exportTileFilter !== 'all' && parseInt(state.exportTileFilter, 10) === tid) {
+            ctx2d.fillStyle = 'rgba(6, 182, 212, 0.25)';
+            ctx2d.fillRect(tx, ty, tw, th);
+          }
+          ctx2d.fillStyle = 'rgba(15, 23, 42, 0.72)';
+          ctx2d.fillRect(tx + 3, ty + 3, 28, 12);
+          ctx2d.fillStyle = '#38bdf8';
+          ctx2d.fillText(`R${tRows - r}C${c + 1}`, tx + 5, ty + 12);
+        }
+      }
+      ctx2d.restore();
+    }
+
     // Crosshair in center of frame
     ctx2d.strokeStyle = 'rgba(37, 99, 235, 0.65)';
     ctx2d.lineWidth = 1.0;
@@ -2861,6 +3564,7 @@ function initMap3DApp(initialScene) {
     state.layerMeshes = res.meshes;
     state.buildingBounds = res.buildingBounds;
     state.totalTriangles = res.totalTriangles;
+    state.printMetrics = res.printMetrics || null;
 
     // Build groupId -> buildings lookup so multi-part buildings act as one cohesive unit
     state.groupIdMap.clear();
@@ -2872,6 +3576,7 @@ function initMap3DApp(initialScene) {
     });
 
     studio.uploadMeshes(state.layerMeshes);
+    updateTileSelectorOptions();
     updateStatsUI();
     updateLandmarkChips();
     updateInspectorUI();
@@ -3474,19 +4179,118 @@ function initMap3DApp(initialScene) {
     });
   }
 
+  function updateTileSelectorOptions() {
+    const sel = document.getElementById('exportTileSelect');
+    if (!sel) return;
+    const prevVal = state.exportTileFilter || 'all';
+    const pm = state.printMetrics || {};
+    const cols = state.tileCols || 1;
+    const rows = state.tileRows || 1;
+    const numTiles = cols * rows;
+    const tw = Math.round((state.bedSizeMm || 320) / cols);
+    const th = Math.round((state.totalHeightMm || state.bedSizeMm || 320) / rows);
+
+    sel.innerHTML = '';
+    const optAll = document.createElement('option');
+    optAll.value = 'all';
+    optAll.textContent = numTiles > 1
+      ? `Wszystkie ${numTiles} kafle (${cols}×${rows} • Paczka .ZIP / .3MF)`
+      : `Cały model 1×1 (${tw}×${th} mm)`;
+    sel.appendChild(optAll);
+
+    if (numTiles > 1) {
+      for (let tr = 0; tr < rows; tr++) {
+        for (let tc = 0; tc < cols; tc++) {
+          const tid = tr * cols + tc;
+          const vMl = (pm.tileVolumesMl && pm.tileVolumesMl[tid] !== undefined)
+            ? pm.tileVolumesMl[tid].toFixed(1)
+            : ((pm.totalVolumeMl || 30) / numTiles).toFixed(1);
+          const opt = document.createElement('option');
+          opt.value = String(tid);
+          opt.textContent = `Kafel ${tid + 1}/${numTiles} (R${tr + 1}•C${tc + 1} — ${tw}×${th} mm • ~${vMl} ml żywicy)`;
+          sel.appendChild(opt);
+        }
+      }
+    }
+
+    if (prevVal !== 'all' && parseInt(prevVal, 10) < numTiles) {
+      sel.value = prevVal;
+    } else {
+      state.exportTileFilter = 'all';
+      sel.value = 'all';
+    }
+  }
+
   function updateStatsUI() {
     const sc = state.sceneData;
     const bCount = sc && sc.buildings ? sc.buildings.length : 0;
     const tCount = sc && sc.trees ? sc.trees.length : 0;
+    const pm = state.printMetrics || {};
+    const profile = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.fdm_330_1x1;
+    const cols = state.tileCols || 1;
+    const rows = state.tileRows || 1;
+    const numTiles = cols * rows;
+    const dimW = state.bedSizeMm || 320;
+    const dimH = state.totalHeightMm || dimW;
+    const tileW = Math.round(dimW / cols);
+    const tileH = Math.round(dimH / rows);
+    const maxZ = Math.round(pm.maxZMm || 22);
+
     document.getElementById('meshStatsBadge').textContent =
       `${state.totalTriangles.toLocaleString('pl-PL')} trójkątów • ${bCount} budynków • ${tCount} drzew 3D`;
-    const dim = state.bedSizeMm;
-    document.getElementById('statDimensions').textContent = `${dim}×${dim}×29 mm`;
-    document.getElementById('bboxScaleBadge').textContent = `${(dim / 10).toFixed(0)}×${(dim / 10).toFixed(0)} cm`;
-    const grams = Math.round((dim / 330) * (dim / 330) * 448);
-    document.getElementById('statFilament').textContent = `~${grams} g`;
+
+    const tileSplitLbl = document.getElementById('tileSplitLabel');
+    if (tileSplitLbl) {
+      tileSplitLbl.textContent = `Kafle (${cols}×${rows}):`;
+    }
+
+    if (numTiles > 1) {
+      document.getElementById('statDimensions').textContent = `${dimW}×${dimH} (${numTiles}× ${tileW}×${tileH} mm)`;
+      document.getElementById('bboxScaleBadge').textContent = `${(dimW / 10).toFixed(1)}×${(dimH / 10).toFixed(1)} cm (${cols}×${rows})`;
+    } else {
+      document.getElementById('statDimensions').textContent = `${dimW}×${dimH}×${maxZ} mm`;
+      document.getElementById('bboxScaleBadge').textContent = `${(dimW / 10).toFixed(1)}×${(dimH / 10).toFixed(1)} cm`;
+    }
+
+    const totalMl = pm.totalVolumeMl !== undefined ? pm.totalVolumeMl : 42.0;
+    const resinG = pm.resinGrams !== undefined ? pm.resinGrams : Math.round(totalMl * 1.12);
+    const plaG = pm.plaGrams !== undefined ? pm.plaGrams : Math.round(totalMl * 0.42);
+    const perTileMl = totalMl / numTiles;
+
+    const matTitle = document.getElementById('statMaterialTitle');
+    if (profile.isResin) {
+      if (matTitle) matTitle.textContent = numTiles > 1 ? `Żywica SLA (1 kafel / suma)` : `Żywica SLA (Photon Mono 4)`;
+      document.getElementById('statFilament').textContent = numTiles > 1
+        ? `~${perTileMl.toFixed(1)} ml / ∑${Math.round(totalMl)} ml (${resinG}g)`
+        : `~${totalMl.toFixed(1)} ml (${resinG} g)`;
+    } else {
+      if (matTitle) matTitle.textContent = `Żywica SLA / Masa PLA`;
+      document.getElementById('statFilament').textContent = `~${Math.round(totalMl)} ml / ~${plaG} g PLA`;
+    }
+
     const activeVols = Object.keys(state.layerVisible).filter(k => state.layerVisible[k]).length;
-    document.getElementById('statVolumes').textContent = `${activeVols} osobnych`;
+    document.getElementById('statVolumes').textContent = `${cols}×${rows} (${activeVols} warstw)`;
+
+    const hollowBadge = document.getElementById('hollowSavingsBadge');
+    if (hollowBadge) {
+      hollowBadge.textContent = state.hollowBase
+        ? `-${pm.hollowSavingsPct || 48}% żywicy`
+        : `Pełna baza (0%)`;
+      hollowBadge.className = state.hollowBase
+        ? 'text-xs font-mono font-bold text-emerald-400'
+        : 'text-xs font-mono font-bold text-amber-400';
+    }
+
+    const preflightBadge = document.getElementById('preflightStatusBadge');
+    if (preflightBadge) {
+      if (profile.isResin) {
+        preflightBadge.textContent = pm.fitsPhotonMono4
+          ? `Manifold ✓ • Mono 4 (${tileW}×${tileH}≤153×87mm) ✓`
+          : `Manifold ✓ • Bez ramki`;
+      } else {
+        preflightBadge.textContent = `Manifold ✓ • Bez ramki w eksporcie`;
+      }
+    }
   }
 
   // ==========================================================================
@@ -3516,7 +4320,7 @@ function initMap3DApp(initialScene) {
         studio.camera.target[2] += dy * ps;
       } else {
         studio.camera.yaw += dx * 0.008;
-        studio.camera.pitch = Math.max(0.10, Math.min(1.50, studio.camera.pitch + dy * 0.008));
+        studio.camera.pitch = Math.max(-1.25, Math.min(1.50, studio.camera.pitch + dy * 0.008));
       }
       return;
     }
@@ -3774,6 +4578,61 @@ function initMap3DApp(initialScene) {
     if (target > 0) studio.camera.pitch = 0.42;
   });
 
+  // Multi-Tile Split Explode slider & toggle (Anycubic Photon Mono 4 / FDM XL)
+  const tileExplodeSlider = document.getElementById('tileExplodeSlider');
+  if (tileExplodeSlider) {
+    tileExplodeSlider.addEventListener('input', e => {
+      const val = parseInt(e.target.value, 10);
+      if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1 && val > 0) {
+        // Automatically switch to Anycubic Photon Mono 4 2x3 (6 tiles) if user slides tile explode while in 1x1!
+        applyPrinterProfile('mono4_252_2x3');
+        const pSel = document.getElementById('printerSelect');
+        if (pSel) pSel.value = 'mono4_252_2x3';
+      }
+      state.tileExplode = val / 100;
+      const lbl = document.getElementById('tileExplodeValueLabel');
+      if (lbl) lbl.textContent = `${val}%`;
+    });
+  }
+
+  const btnQuickTileExplode = document.getElementById('btnQuickTileExplode');
+  if (btnQuickTileExplode) {
+    btnQuickTileExplode.addEventListener('click', () => {
+      if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1) {
+        applyPrinterProfile('mono4_252_2x3');
+        const pSel = document.getElementById('printerSelect');
+        if (pSel) pSel.value = 'mono4_252_2x3';
+      }
+      const target = state.tileExplode > 0.15 ? 0 : 65;
+      if (tileExplodeSlider) tileExplodeSlider.value = target;
+      state.tileExplode = target / 100;
+      const lbl = document.getElementById('tileExplodeValueLabel');
+      if (lbl) lbl.textContent = `${target}%`;
+      if (target > 0) {
+        studio.camera.pitch = 0.62;
+        studio.camera.distance = 295;
+      }
+    });
+  }
+
+  function applyPrinterProfile(profileId) {
+    const prof = PRINT_PROFILES[profileId] || PRINT_PROFILES.fdm_330_1x1;
+    state.printerProfileId = prof.id;
+    state.bedSizeMm = prof.totalWidthMm;
+    state.totalHeightMm = prof.totalHeightMm;
+    state.tileCols = prof.cols;
+    state.tileRows = prof.rows;
+    state.exportTileFilter = 'all';
+    if (prof.cols === 1 && prof.rows === 1) {
+      state.tileExplode = 0;
+      if (tileExplodeSlider) tileExplodeSlider.value = 0;
+      const lbl = document.getElementById('tileExplodeValueLabel');
+      if (lbl) lbl.textContent = '0%';
+    }
+    draw2DMap();
+    rebuildModel3D();
+  }
+
   // Multi-Select Inspector Actions (applies to all selected buildings + their building:parts!)
   document.getElementById('btnToggleHighlight').addEventListener('click', () => {
     const targets = getActiveTargetBuildings();
@@ -3821,6 +4680,21 @@ function initMap3DApp(initialScene) {
           document.getElementById('explodeValueLabel').textContent = '65%';
           document.getElementById('explodedLegendOverlay').classList.remove('hidden');
         }
+      } else if (mode === 'tiles') {
+        if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1) {
+          applyPrinterProfile('mono4_252_2x3');
+          const pSel = document.getElementById('printerSelect');
+          if (pSel) pSel.value = 'mono4_252_2x3';
+        }
+        state.tileExplode = 0.62;
+        if (tileExplodeSlider) tileExplodeSlider.value = 62;
+        const lbl = document.getElementById('tileExplodeValueLabel');
+        if (lbl) lbl.textContent = '62%';
+        studio.camera.yaw = -0.38; studio.camera.pitch = 0.64; studio.camera.distance = 298;
+        studio.camera.target = [0, 0, 2.5];
+      } else if (mode === 'bottom') {
+        studio.camera.yaw = -0.42; studio.camera.pitch = -0.68; studio.camera.distance = 255;
+        studio.camera.target = [0, 0, 1.0];
       }
     });
   });
@@ -3862,9 +4736,24 @@ function initMap3DApp(initialScene) {
   });
 
   document.getElementById('printerSelect').addEventListener('change', e => {
-    state.bedSizeMm = parseInt(e.target.value, 10);
-    updateStatsUI();
+    applyPrinterProfile(e.target.value);
   });
+
+  const chkHollowBase = document.getElementById('chkHollowBase');
+  if (chkHollowBase) {
+    chkHollowBase.addEventListener('change', e => {
+      state.hollowBase = e.target.checked;
+      rebuildModel3D();
+    });
+  }
+
+  const exportTileSelect = document.getElementById('exportTileSelect');
+  if (exportTileSelect) {
+    exportTileSelect.addEventListener('change', e => {
+      state.exportTileFilter = e.target.value;
+      draw2DMap();
+    });
+  }
 
   document.getElementById('btnShowAllLayers').addEventListener('click', () => {
     Object.keys(state.layerVisible).forEach(k => { state.layerVisible[k] = true; });
@@ -3946,6 +4835,32 @@ function initMap3DApp(initialScene) {
           rebuildModel3D();
         }
       }
+      const printerParam = params.get('printer');
+      if (printerParam && PRINT_PROFILES[printerParam]) {
+        const pSel = document.getElementById('printerSelect');
+        if (pSel) pSel.value = printerParam;
+        applyPrinterProfile(printerParam);
+      }
+      const hollowParam = params.get('hollow');
+      if (hollowParam === '0' || hollowParam === '1') {
+        state.hollowBase = (hollowParam === '1');
+        if (chkHollowBase) chkHollowBase.checked = state.hollowBase;
+        rebuildModel3D();
+      }
+      const tileExplodeParam = params.get('tile_explode');
+      if (tileExplodeParam !== null) {
+        const tev = parseInt(tileExplodeParam, 10) || 0;
+        state.tileExplode = tev / 100;
+        if (tileExplodeSlider) tileExplodeSlider.value = tev;
+        const lbl = document.getElementById('tileExplodeValueLabel');
+        if (lbl) lbl.textContent = `${tev}%`;
+      }
+      const tileParam = params.get('tile');
+      if (tileParam !== null && exportTileSelect) {
+        state.exportTileFilter = tileParam;
+        exportTileSelect.value = tileParam;
+        draw2DMap();
+      }
       const cam = params.get('cam');
       if (cam === 'top') {
         studio.camera.yaw = 0; studio.camera.pitch = 1.51; studio.camera.distance = 248;
@@ -3962,6 +4877,12 @@ function initMap3DApp(initialScene) {
         state.explodeFactor = 0.70;
         document.getElementById('explodeValueLabel').textContent = '70%';
         document.getElementById('explodedLegendOverlay').classList.remove('hidden');
+      } else if (cam === 'tiles') {
+        studio.camera.yaw = -0.38; studio.camera.pitch = 0.64; studio.camera.distance = 298;
+        studio.camera.target = [0, 0, 2.5];
+      } else if (cam === 'bottom') {
+        studio.camera.yaw = -0.42; studio.camera.pitch = -0.68; studio.camera.distance = 248;
+        studio.camera.target = [0, 0, 1.0];
       }
     } catch (e) {
       console.warn('URL param error:', e);

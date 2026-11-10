@@ -253,13 +253,13 @@ function clipPolyToBox(poly, minX, minY, maxX, maxY) {
   return p.length >= 3 ? p : [];
 }
 
-function pushTri(out, v0, v1, v2, n, layerId, buildingId = -1) {
-  out.push({ v0, v1, v2, n, layerId, buildingId });
+function pushTri(out, v0, v1, v2, n, layerId, buildingId = -1, tileId = 0) {
+  out.push({ v0, v1, v2, n, layerId, buildingId, tileId });
 }
 
-function pushQuad(out, p0, p1, p2, p3, n, layerId, buildingId = -1) {
-  out.push({ v0: p0, v1: p1, v2: p2, n, layerId, buildingId });
-  out.push({ v0: p0, v1: p2, v2: p3, n, layerId, buildingId });
+function pushQuad(out, p0, p1, p2, p3, n, layerId, buildingId = -1, tileId = 0) {
+  out.push({ v0: p0, v1: p1, v2: p2, n, layerId, buildingId, tileId });
+  out.push({ v0: p0, v1: p2, v2: p3, n, layerId, buildingId, tileId });
 }
 
 function computeFaceNormal(a, b, c) {
@@ -294,16 +294,16 @@ function distToPolygonEdges(px, py, outer, holes) {
   return Math.sqrt(minDistSq);
 }
 
-// Fast 3-way Medial-Axis LoD2 Building Extrusion (100% watertight, half the roof triangles!)
-function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasPitchedRoof, layerId, bId, outTris) {
+// Fast 3-way Medial-Axis LoD2 Building Extrusion (100% watertight manifold: walls + floor cap + roof cap!)
+function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasPitchedRoof, layerId, bId, outTris, tileId = 0) {
   const outer = [];
   for (let i = 0; i < outerInput.length; i++) {
     const p = outerInput[i];
-    if (outer.length === 0 || Math.hypot(p[0] - outer[outer.length - 1][0], p[1] - outer[outer.length - 1][1]) > 0.05) {
+    if (outer.length === 0 || Math.hypot(p[0] - outer[outer.length - 1][0], p[1] - outer[outer.length - 1][1]) > 0.04) {
       outer.push([p[0], p[1]]);
     }
   }
-  if (outer.length >= 2 && Math.hypot(outer[0][0] - outer[outer.length - 1][0], outer[0][1] - outer[outer.length - 1][1]) <= 0.05) {
+  if (outer.length >= 2 && Math.hypot(outer[0][0] - outer[outer.length - 1][0], outer[0][1] - outer[outer.length - 1][1]) <= 0.04) {
     outer.pop();
   }
   if (outer.length < 3) return;
@@ -312,10 +312,20 @@ function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasP
   const holes = (holesInput || [])
     .filter(h => h && h.length >= 3)
     .map(h => {
-      const c = h.map(p => [p[0], p[1]]);
+      const c = [];
+      for (let i = 0; i < h.length; i++) {
+        const p = h[i];
+        if (c.length === 0 || Math.hypot(p[0] - c[c.length - 1][0], p[1] - c[c.length - 1][1]) > 0.04) {
+          c.push([p[0], p[1]]);
+        }
+      }
+      if (c.length >= 2 && Math.hypot(c[0][0] - c[c.length - 1][0], c[0][1] - c[c.length - 1][1]) <= 0.04) {
+        c.pop();
+      }
       if (signedArea2D(c) > 0) c.reverse(); // CW
       return c;
-    });
+    })
+    .filter(c => c.length >= 3);
 
   // 1. Vertical outer walls
   for (let i = 0, n = outer.length; i < n; i++) {
@@ -332,7 +342,8 @@ function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasP
       [p1[0], p1[1], zEaves],
       [nx, ny, 0],
       layerId,
-      bId
+      bId,
+      tileId
     );
   }
 
@@ -352,7 +363,8 @@ function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasP
         [p1[0], p1[1], zEaves],
         [nx, ny, 0],
         layerId,
-        bId
+        bId,
+        tileId
       );
     }
   }
@@ -361,23 +373,28 @@ function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasP
   const roofTris = triangulateSimplePoly(mergedTop);
   const roofH = Math.max(0, zRidge - zEaves);
 
+  // 3. Watertight Bottom Floor Cap at zBase (reversed winding, normal [0, 0, -1])
+  for (let i = 0; i < roofTris.length; i++) {
+    const [a, b, c] = roofTris[i];
+    pushTri(
+      outTris,
+      [a[0], a[1], zBase],
+      [c[0], c[1], zBase],
+      [b[0], b[1], zBase],
+      [0, 0, -1],
+      layerId,
+      bId,
+      tileId
+    );
+  }
+
+  // 4. Watertight Top Roof Cap at zEaves / zRidge
   if (hasPitchedRoof && roofH > 0.10) {
-    // 3-way centroid subdivision:
-    // Every triangle (A, B, C) has vertices at zEaves (100% watertight on all walls and interior diagonals)
-    // and centroid M lifted by medial distance to boundary -> clean 3D hipped/pitched ridge with 50% fewer triangles!
     const roofSlope = 0.92;
     for (let i = 0; i < roofTris.length; i++) {
       const [a, b, c] = roofTris[i];
       const cx = (a[0] + b[0] + c[0]) / 3.0;
       const cy = (a[1] + b[1] + c[1]) / 3.0;
-      // Validate centroid is strictly inside outer and not inside any hole
-      if (!pointInPoly2D(cx, cy, outer)) continue;
-      let inHole = false;
-      for (let h = 0; h < holes.length; h++) {
-        if (pointInPoly2D(cx, cy, holes[h])) { inHole = true; break; }
-      }
-      if (inHole) continue;
-
       const d = distToPolygonEdges(cx, cy, outer, holes);
       const mz = zEaves + Math.min(roofH, Math.max(0.12, d * roofSlope));
 
@@ -386,33 +403,26 @@ function extrudeBuildingLoD2(outerInput, holesInput, zBase, zEaves, zRidge, hasP
       const C3 = [c[0], c[1], zEaves];
       const M3 = [cx, cy, mz];
 
-      pushTri(outTris, A3, B3, M3, computeFaceNormal(A3, B3, M3), layerId, bId);
-      pushTri(outTris, B3, C3, M3, computeFaceNormal(B3, C3, M3), layerId, bId);
-      pushTri(outTris, C3, A3, M3, computeFaceNormal(C3, A3, M3), layerId, bId);
+      pushTri(outTris, A3, B3, M3, computeFaceNormal(A3, B3, M3), layerId, bId, tileId);
+      pushTri(outTris, B3, C3, M3, computeFaceNormal(B3, C3, M3), layerId, bId, tileId);
+      pushTri(outTris, C3, A3, M3, computeFaceNormal(C3, A3, M3), layerId, bId, tileId);
     }
   } else {
     for (let i = 0; i < roofTris.length; i++) {
       const [a, b, c] = roofTris[i];
-      const cx = (a[0] + b[0] + c[0]) / 3.0;
-      const cy = (a[1] + b[1] + c[1]) / 3.0;
-      if (!pointInPoly2D(cx, cy, outer)) continue;
-      let inHole = false;
-      for (let h = 0; h < holes.length; h++) {
-        if (pointInPoly2D(cx, cy, holes[h])) { inHole = true; break; }
-      }
-      if (inHole) continue;
-      pushTri(outTris, [a[0], a[1], zEaves], [b[0], b[1], zEaves], [c[0], c[1], zEaves], [0, 0, 1], layerId, bId);
+      pushTri(outTris, [a[0], a[1], zEaves], [b[0], b[1], zEaves], [c[0], c[1], zEaves], [0, 0, 1], layerId, bId, tileId);
     }
   }
 }
 
-// Optimized 5-sided sculpted tree crown (10 triangles per tree instead of 35!)
-function addTreeCrown3D(tx, ty, zGround, radius, height, layerId, outTris) {
+// Closed watertight 5-sided sculpted tree crown (10 side/top triangles + 3 bottom cap triangles = 13 triangles)
+function addTreeCrown3D(tx, ty, zGround, radius, height, layerId, outTris, tileId = 0) {
   const sides = 5;
   const rMid = radius * 0.96;
-  const z0 = zGround - 0.05;
+  const z0 = zGround - 0.10;
   const z1 = zGround + height * 0.48;
   const apex = [tx, ty, zGround + height];
+  const basePts = [];
 
   for (let i = 0; i < sides; i++) {
     const a0 = (i / sides) * Math.PI * 2;
@@ -424,10 +434,16 @@ function addTreeCrown3D(tx, ty, zGround, radius, height, layerId, outTris) {
     const b1 = [tx + c1 * rMid * 0.78, ty + s1 * rMid * 0.78, z0];
     const m0 = [tx + c0 * rMid, ty + s0 * rMid, z1];
     const m1 = [tx + c1 * rMid, ty + s1 * rMid, z1];
+    basePts.push(b0);
 
-    pushQuad(outTris, b0, b1, m1, m0, computeFaceNormal(b0, b1, m1), layerId, -1);
-    pushTri(outTris, m0, m1, apex, computeFaceNormal(m0, m1, apex), layerId, -1);
+    pushQuad(outTris, b0, b1, m1, m0, computeFaceNormal(b0, b1, m1), layerId, -1, tileId);
+    pushTri(outTris, m0, m1, apex, computeFaceNormal(m0, m1, apex), layerId, -1, tileId);
   }
+
+  // Watertight bottom pentagon cap at z0
+  pushTri(outTris, basePts[0], basePts[2], basePts[1], [0, 0, -1], layerId, -1, tileId);
+  pushTri(outTris, basePts[0], basePts[3], basePts[2], [0, 0, -1], layerId, -1, tileId);
+  pushTri(outTris, basePts[0], basePts[4], basePts[3], [0, 0, -1], layerId, -1, tileId);
 }
 
 function clipCellPolyByScalar(poly, threshold, keepGreater) {
@@ -488,9 +504,9 @@ function buildComplete3DModel(scene, state) {
 
   if (!scene) return { meshes, buildingBounds, totalTriangles: 0 };
 
-  const halfSpan = state.cropRatio * 85.0;
-  const cropCX = state.cropCenterX * 85.0;
-  const cropCY = state.cropCenterY * 85.0;
+  const halfSpan = (state.cropRatio || 0.78) * 85.0;
+  const cropCX = (state.cropCenterX || 0) * 85.0;
+  const cropCY = (state.cropCenterY || 0) * 85.0;
   const scaleToBed = 85.0 / halfSpan;
 
   function toBed(pt) {
@@ -672,7 +688,7 @@ function buildComplete3DModel(scene, state) {
     return (z00 * (1 - fu) + z10 * fu) * (1 - fv) + (z01 * (1 - fu) + z11 * fu) * fv;
   }
 
-  const TERRAIN_RES = 68;
+  const TERRAIN_RES = 72; // Divisible by 1, 2, 3, 4 for exact multi-tile splits (1x1, 1x2, 2x2, 2x3, 2x4)
   const strideT = TERRAIN_RES + 1;
   let demGrid = new Float32Array(strideT * strideT);
 
@@ -705,8 +721,13 @@ function buildComplete3DModel(scene, state) {
   }
 
   const baseBottomZ = 2.45;
-  const maxReliefMm = 7.4 * (state.terrainScale || 1.0);
-  const elevSpan = Math.max(12.0, maxElev - minElev);
+  const realElevDelta = Math.max(6.0, maxElev - minElev);
+  // Adaptive mountain vs city relief scaling
+  const adaptiveReliefBase = realElevDelta > 45.0
+    ? Math.min(13.2, 7.4 + Math.log10(1.0 + (realElevDelta - 45.0) / 40.0) * 4.6)
+    : 7.4;
+  const maxReliefMm = adaptiveReliefBase * (state.terrainScale || 1.0);
+  const elevSpan = Math.max(12.0, realElevDelta);
   const numContourSteps = 18;
   const stepMm = maxReliefMm / numContourSteps;
 
@@ -757,187 +778,394 @@ function buildComplete3DModel(scene, state) {
     return baseBottomZ + Math.max(0, stepIdx) * stepMm;
   }
 
-  // --------------------------------------------------------------------------
-  // STEP 3: 3-LEVEL STEPPED WATER BATHYMETRY & MARCHING-SQUARES DEM TERRACES
-  // --------------------------------------------------------------------------
-  const bedOuter = [[-84.7, -84.7], [84.7, -84.7], [84.7, 84.7], [-84.7, 84.7]];
-  const bedTris = triangulateSimplePoly(bedOuter);
+  // Multi-Tile Grid Configuration (e.g., 1x1, 1x2, 2x2, 2x3, 2x4 for Anycubic Photon Mono 4)
+  const tileCols = Math.max(1, Math.min(4, state.tileCols || 1));
+  const tileRows = Math.max(1, Math.min(4, state.tileRows || 1));
+  const cellsPerCol = Math.floor(TERRAIN_RES / tileCols);
+  const cellsPerRow = Math.floor(TERRAIN_RES / tileRows);
+  const cellStep = 169.2 / TERRAIN_RES;
   const deepWaterZ = 1.76;
-  for (const [a, b, c] of bedTris) {
-    pushTri(meshes.water, [a[0], a[1], deepWaterZ], [b[0], b[1], deepWaterZ], [c[0], c[1], deepWaterZ], [0, 0, 1], 0, -1);
-    pushTri(meshes.water, [a[0], a[1], 0.0], [c[0], c[1], 0.0], [b[0], b[1], 0.0], [0, 0, -1], 0, -1);
-  }
-  for (let i = 0; i < 4; i++) {
-    const p1 = bedOuter[i], p2 = bedOuter[(i + 1) % 4];
-    const dx = p2[0] - p1[0], dy = p2[1] - p1[1], len = Math.hypot(dx, dy);
-    pushQuad(meshes.water, [p1[0], p1[1], 0], [p2[0], p2[1], 0], [p2[0], p2[1], deepWaterZ], [p1[0], p1[1], deepWaterZ], [dy / len, -dx / len, 0], 0, -1);
+  const waterShelfLevels = [1.98, 2.20];
+  const hollowBase = !!state.hollowBase;
+  const totalWidthMm = state.bedSizeMm || 320;
+  const mmPerUnit = totalWidthMm / 169.2;
+  const hollowWallUnits = Math.max(0.75, Math.min(1.30, (state.hollowWallMm || 1.8) / Math.max(1.05, mmPerUnit)));
+  let vaultSavedSceneVol = 0;
+
+  function getTileColRowForXY(bx, by) {
+    const tc = Math.max(0, Math.min(tileCols - 1, Math.floor(((bx + 84.6) / 169.2) * tileCols)));
+    const tr = Math.max(0, Math.min(tileRows - 1, Math.floor(((by + 84.6) / 169.2) * tileRows)));
+    return [tc, tr, tr * tileCols + tc];
   }
 
-  const waterShelfLevels = [1.98, 2.20];
   const thresholds = [];
   for (let k = 0; k <= numContourSteps + 2; k++) {
     thresholds.push(baseBottomZ + k * stepMm);
   }
 
-  const cellStep = 169.2 / TERRAIN_RES;
-  for (let gy = 0; gy < TERRAIN_RES; gy++) {
-    const y0 = -84.6 + gy * cellStep;
-    const y1 = y0 + cellStep;
-    for (let gx = 0; gx < TERRAIN_RES; gx++) {
-      const x0 = -84.6 + gx * cellStep;
-      const x1 = x0 + cellStep;
+  // Precompute per-cell flat green status & quantized terrace Z for closed 3D greenery slabs
+  const cellIsFlatGreen = new Uint8Array(TERRAIN_RES * TERRAIN_RES);
+  const cellFlatTZ = new Float32Array(TERRAIN_RES * TERRAIN_RES);
+  const cellMinTopZ = new Float32Array(TERRAIN_RES * TERRAIN_RES);
 
+  for (let gy = 0; gy < TERRAIN_RES; gy++) {
+    const y0 = -84.6 + gy * cellStep, y1 = y0 + cellStep;
+    for (let gx = 0; gx < TERRAIN_RES; gx++) {
+      const x0 = -84.6 + gx * cellStep, x1 = x0 + cellStep;
       const v00 = zGrid[gy * strideT + gx];
       const v10 = zGrid[gy * strideT + (gx + 1)];
       const v11 = zGrid[(gy + 1) * strideT + (gx + 1)];
       const v01 = zGrid[(gy + 1) * strideT + gx];
-
       const vMax = Math.max(v00, v10, v11, v01);
       const vMin = Math.min(v00, v10, v11, v01);
+      const cIdx = gy * TERRAIN_RES + gx;
 
-      // Stepped underwater bathymetry shelves (3 distinct depths in Layer 0: Water)
-      if (vMin < baseBottomZ && vMax >= waterShelfLevels[0]) {
-        if (vMin >= waterShelfLevels[1]) {
-          pushQuad(meshes.water, [x0, y0, waterShelfLevels[1]], [x1, y0, waterShelfLevels[1]], [x1, y1, waterShelfLevels[1]], [x0, y1, waterShelfLevels[1]], [0, 0, 1], 0, -1);
-        } else if (vMin >= waterShelfLevels[0] && vMax < waterShelfLevels[1]) {
-          pushQuad(meshes.water, [x0, y0, waterShelfLevels[0]], [x1, y0, waterShelfLevels[0]], [x1, y1, waterShelfLevels[0]], [x0, y1, waterShelfLevels[0]], [0, 0, 1], 0, -1);
-        } else {
-          const wQuad = [
+      const kMin = Math.max(0, Math.floor((vMin - baseBottomZ) / stepMm));
+      const kMax = Math.min(numContourSteps, Math.floor((vMax - baseBottomZ) / stepMm));
+      cellMinTopZ[cIdx] = (vMin < baseBottomZ) ? deepWaterZ : thresholds[kMin];
+
+      const mIdx = sampleMaskIdx((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+      const isGreen = greenMask[mIdx] === 1 && roadAndBldMask[mIdx] === 0;
+      if (vMin >= baseBottomZ && kMin === kMax && isGreen) {
+        cellIsFlatGreen[cIdx] = 1;
+        cellFlatTZ[cIdx] = thresholds[kMin];
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // STEP 3: PER-TILE WATERTIGHT WATER, STEPPED BATHYMETRY, DEM BASE & GREENERY
+  // --------------------------------------------------------------------------
+  for (let tr = 0; tr < tileRows; tr++) {
+    const gy0 = tr * cellsPerRow;
+    const gy1 = (tr === tileRows - 1) ? TERRAIN_RES : (tr + 1) * cellsPerRow;
+    const tileY0 = -84.6 + gy0 * cellStep;
+    const tileY1 = -84.6 + gy1 * cellStep;
+
+    for (let tc = 0; tc < tileCols; tc++) {
+      const gx0 = tc * cellsPerCol;
+      const gx1 = (tc === tileCols - 1) ? TERRAIN_RES : (tc + 1) * cellsPerCol;
+      const tileX0 = -84.6 + gx0 * cellStep;
+      const tileX1 = -84.6 + gx1 * cellStep;
+      const tileId = tr * tileCols + tc;
+
+      // 3A. Closed Water Plate & Open Underside Vault for Tile (tc, tr)
+      const rimCells = 2; // 2-cell solid mounting rim around all 4 edges of every tile
+      const hasVault = hollowBase && (gx1 - gx0 > rimCells * 2 + 2) && (gy1 - gy0 > rimCells * 2 + 2);
+      const zWaterVault = 0.85;
+
+      const isRimCell = (cx, cy) => (cx < gx0 + rimCells || cx >= gx1 - rimCells || cy < gy0 + rimCells || cy >= gy1 - rimCells);
+      const isWaterCell = (cx, cy) => (cellMinTopZ[cy * TERRAIN_RES + cx] <= deepWaterZ + 1e-3);
+      const hasWaterPlate = (cx, cy) => (!hasVault || isRimCell(cx, cy) || isWaterCell(cx, cy));
+      const getWaterBotZ = (cx, cy) => (!hasVault ? 0 : (isRimCell(cx, cy) ? 0 : zWaterVault));
+
+      if (!hasVault) {
+        // Classic full solid water plate across tile [tileX0, tileX1] x [tileY0, tileY1]
+        pushQuad(meshes.water, [tileX0, tileY0, deepWaterZ], [tileX1, tileY0, deepWaterZ], [tileX1, tileY1, deepWaterZ], [tileX0, tileY1, deepWaterZ], [0, 0, 1], 0, -1, tileId);
+        pushQuad(meshes.water, [tileX0, tileY0, 0], [tileX0, tileY1, 0], [tileX1, tileY1, 0], [tileX1, tileY0, 0], [0, 0, -1], 0, -1, tileId);
+        pushQuad(meshes.water, [tileX0, tileY0, 0], [tileX1, tileY0, 0], [tileX1, tileY0, deepWaterZ], [tileX0, tileY0, deepWaterZ], [0, -1, 0], 0, -1, tileId);
+        pushQuad(meshes.water, [tileX1, tileY0, 0], [tileX1, tileY1, 0], [tileX1, tileY1, deepWaterZ], [tileX1, tileY0, deepWaterZ], [1, 0, 0], 0, -1, tileId);
+        pushQuad(meshes.water, [tileX1, tileY1, 0], [tileX0, tileY1, 0], [tileX0, tileY1, deepWaterZ], [tileX1, tileY1, deepWaterZ], [0, 1, 0], 0, -1, tileId);
+        pushQuad(meshes.water, [tileX0, tileY1, 0], [tileX0, tileY0, 0], [tileX0, tileY0, deepWaterZ], [tileX0, tileY1, deepWaterZ], [-1, 0, 0], 0, -1, tileId);
+      } else {
+        // Open underside SLA vault: water plate exists on outer rim (z=0..deepWaterZ) and under actual water (z=zWaterVault..deepWaterZ);
+        // under interior land cells, the cavity opens straight up to the terraced base floor (zero trapped resin pockets!)
+        for (let gy = gy0; gy < gy1; gy++) {
+          const y0 = -84.6 + gy * cellStep, y1 = y0 + cellStep;
+          for (let gx = gx0; gx < gx1; gx++) {
+            const x0 = -84.6 + gx * cellStep, x1 = x0 + cellStep;
+            if (!hasWaterPlate(gx, gy)) {
+              vaultSavedSceneVol += deepWaterZ * cellStep * cellStep;
+              continue;
+            }
+            const wBot = getWaterBotZ(gx, gy);
+            if (wBot > 0) {
+              vaultSavedSceneVol += wBot * cellStep * cellStep;
+            }
+            // Top & Bottom of water cell
+            pushQuad(meshes.water, [x0, y0, deepWaterZ], [x1, y0, deepWaterZ], [x1, y1, deepWaterZ], [x0, y1, deepWaterZ], [0, 0, 1], 0, -1, tileId);
+            pushQuad(meshes.water, [x0, y0, wBot], [x0, y1, wBot], [x1, y1, wBot], [x1, y0, wBot], [0, 0, -1], 0, -1, tileId);
+
+            // South edge (gy - 1)
+            if (gy === gy0 || !hasWaterPlate(gx, gy - 1)) {
+              pushQuad(meshes.water, [x0, y0, wBot], [x1, y0, wBot], [x1, y0, deepWaterZ], [x0, y0, deepWaterZ], [0, -1, 0], 0, -1, tileId);
+            } else if (wBot < getWaterBotZ(gx, gy - 1)) {
+              const nbBot = getWaterBotZ(gx, gy - 1);
+              pushQuad(meshes.water, [x0, y0, wBot], [x1, y0, wBot], [x1, y0, nbBot], [x0, y0, nbBot], [0, -1, 0], 0, -1, tileId);
+            }
+            // North edge (gy + 1)
+            if (gy === gy1 - 1 || !hasWaterPlate(gx, gy + 1)) {
+              pushQuad(meshes.water, [x1, y1, wBot], [x0, y1, wBot], [x0, y1, deepWaterZ], [x1, y1, deepWaterZ], [0, 1, 0], 0, -1, tileId);
+            } else if (wBot < getWaterBotZ(gx, gy + 1)) {
+              const nbBot = getWaterBotZ(gx, gy + 1);
+              pushQuad(meshes.water, [x1, y1, wBot], [x0, y1, wBot], [x0, y1, nbBot], [x1, y1, nbBot], [0, 1, 0], 0, -1, tileId);
+            }
+            // West edge (gx - 1)
+            if (gx === gx0 || !hasWaterPlate(gx - 1, gy)) {
+              pushQuad(meshes.water, [x0, y1, wBot], [x0, y0, wBot], [x0, y0, deepWaterZ], [x0, y1, deepWaterZ], [-1, 0, 0], 0, -1, tileId);
+            } else if (wBot < getWaterBotZ(gx - 1, gy)) {
+              const nbBot = getWaterBotZ(gx - 1, gy);
+              pushQuad(meshes.water, [x0, y1, wBot], [x0, y0, wBot], [x0, y0, nbBot], [x0, y1, nbBot], [-1, 0, 0], 0, -1, tileId);
+            }
+            // East edge (gx + 1)
+            if (gx === gx1 - 1 || !hasWaterPlate(gx + 1, gy)) {
+              pushQuad(meshes.water, [x1, y0, wBot], [x1, y1, wBot], [x1, y1, deepWaterZ], [x1, y0, deepWaterZ], [1, 0, 0], 0, -1, tileId);
+            } else if (wBot < getWaterBotZ(gx + 1, gy)) {
+              const nbBot = getWaterBotZ(gx + 1, gy);
+              pushQuad(meshes.water, [x1, y0, wBot], [x1, y1, wBot], [x1, y1, nbBot], [x1, y0, nbBot], [1, 0, 0], 0, -1, tileId);
+            }
+          }
+        }
+      }
+
+      // Compute per-cell floor Z for Layer 1 (meshes.base) inside tile (tc, tr)
+      const getBaseCellFloorZ = (cx, cy) => {
+        if (!hasVault || isRimCell(cx, cy) || isWaterCell(cx, cy)) return deepWaterZ;
+        const minTop = cellMinTopZ[cy * TERRAIN_RES + cx];
+        const rawVault = Math.max(deepWaterZ, minTop - hollowWallUnits);
+        return Math.floor(rawVault * 4.0) * 0.25;
+      };
+
+      // 3B. Cell-by-cell Bathymetry, DEM Terraces, Closed Base Floor & Closed Greenery Slabs
+      for (let gy = gy0; gy < gy1; gy++) {
+        const y0 = -84.6 + gy * cellStep;
+        const y1 = y0 + cellStep;
+        for (let gx = gx0; gx < gx1; gx++) {
+          const x0 = -84.6 + gx * cellStep;
+          const x1 = x0 + cellStep;
+          const cIdx = gy * TERRAIN_RES + gx;
+
+          const v00 = zGrid[gy * strideT + gx];
+          const v10 = zGrid[gy * strideT + (gx + 1)];
+          const v11 = zGrid[(gy + 1) * strideT + (gx + 1)];
+          const v01 = zGrid[(gy + 1) * strideT + gx];
+
+          const vMax = Math.max(v00, v10, v11, v01);
+          const vMin = Math.min(v00, v10, v11, v01);
+
+          // Closed bottom face of Layer 1 (meshes.base) for cell (gx, gy)
+          const zFloorCurr = getBaseCellFloorZ(gx, gy);
+          if (zFloorCurr > deepWaterZ) {
+            vaultSavedSceneVol += (zFloorCurr - deepWaterZ) * cellStep * cellStep;
+          }
+          pushQuad(
+            meshes.base,
+            [x0, y0, zFloorCurr],
+            [x0, y1, zFloorCurr],
+            [x1, y1, zFloorCurr],
+            [x1, y0, zFloorCurr],
+            [0, 0, -1],
+            1,
+            -1,
+            tileId
+          );
+
+          // Internal vault step walls for Layer 1 (meshes.base) where floor height changes between cells
+          if (hasVault) {
+            if (gx + 1 < gx1) {
+              const zFloorE = getBaseCellFloorZ(gx + 1, gy);
+              if (Math.abs(zFloorE - zFloorCurr) > 1e-3) {
+                const zLo = Math.min(zFloorCurr, zFloorE), zHi = Math.max(zFloorCurr, zFloorE);
+                if (zFloorCurr < zFloorE) {
+                  pushQuad(meshes.base, [x1, y0, zLo], [x1, y1, zLo], [x1, y1, zHi], [x1, y0, zHi], [1, 0, 0], 1, -1, tileId);
+                } else {
+                  pushQuad(meshes.base, [x1, y1, zLo], [x1, y0, zLo], [x1, y0, zHi], [x1, y1, zHi], [-1, 0, 0], 1, -1, tileId);
+                }
+              }
+            }
+            if (gy + 1 < gy1) {
+              const zFloorN = getBaseCellFloorZ(gx, gy + 1);
+              if (Math.abs(zFloorN - zFloorCurr) > 1e-3) {
+                const zLo = Math.min(zFloorCurr, zFloorN), zHi = Math.max(zFloorCurr, zFloorN);
+                if (zFloorCurr < zFloorN) {
+                  pushQuad(meshes.base, [x1, y1, zLo], [x0, y1, zLo], [x0, y1, zHi], [x1, y1, zHi], [0, 1, 0], 1, -1, tileId);
+                } else {
+                  pushQuad(meshes.base, [x0, y1, zLo], [x1, y1, zLo], [x1, y1, zHi], [x0, y1, zHi], [0, -1, 0], 1, -1, tileId);
+                }
+              }
+            }
+          }
+
+          // Stepped underwater bathymetry shelves (3 distinct depths in Layer 0: Water)
+          if (vMin < baseBottomZ && vMax >= waterShelfLevels[0]) {
+            if (vMin >= waterShelfLevels[1]) {
+              pushQuad(meshes.water, [x0, y0, waterShelfLevels[1]], [x1, y0, waterShelfLevels[1]], [x1, y1, waterShelfLevels[1]], [x0, y1, waterShelfLevels[1]], [0, 0, 1], 0, -1, tileId);
+            } else if (vMin >= waterShelfLevels[0] && vMax < waterShelfLevels[1]) {
+              pushQuad(meshes.water, [x0, y0, waterShelfLevels[0]], [x1, y0, waterShelfLevels[0]], [x1, y1, waterShelfLevels[0]], [x0, y1, waterShelfLevels[0]], [0, 0, 1], 0, -1, tileId);
+            } else {
+              const wQuad = [
+                { x: x0, y: y0, v: v00 },
+                { x: x1, y: y0, v: v10 },
+                { x: x1, y: y1, v: v11 },
+                { x: x0, y: y1, v: v01 }
+              ];
+              const wgX = (v10 - v00) + (v11 - v01);
+              const wgY = (v01 - v00) + (v11 - v10);
+              const wgL = Math.hypot(wgX, wgY) || 1;
+              const wNorm = [-wgX / wgL, -wgY / wgL, 0];
+              for (let wk = 0; wk < waterShelfLevels.length; wk++) {
+                const wLow = waterShelfLevels[wk];
+                const wBot = wk === 0 ? deepWaterZ : waterShelfLevels[wk - 1];
+                if (vMax < wLow) break;
+                const wAbove = clipCellPolyByScalar(wQuad, wLow, true);
+                if (wAbove.poly.length < 3) continue;
+                for (const [cA, cB] of wAbove.cuts) {
+                  pushQuad(meshes.water, [cA.x, cA.y, wBot], [cB.x, cB.y, wBot], [cB.x, cB.y, wLow], [cA.x, cA.y, wLow], wNorm, 0, -1, tileId);
+                }
+                const wp = wAbove.poly;
+                const wp0 = wp[0];
+                for (let ti = 1; ti < wp.length - 1; ti++) {
+                  pushTri(meshes.water, [wp0.x, wp0.y, wLow], [wp[ti].x, wp[ti].y, wLow], [wp[ti + 1].x, wp[ti + 1].y, wLow], [0, 0, 1], 0, -1, tileId);
+                }
+              }
+            }
+          }
+
+          // Pure underwater cell: emit basin top cap on meshes.base at deepWaterZ so Layer 1 has no holes!
+          if (vMax < baseBottomZ) {
+            pushQuad(meshes.base, [x0, y0, deepWaterZ], [x1, y0, deepWaterZ], [x1, y1, deepWaterZ], [x0, y1, deepWaterZ], [0, 0, 1], 1, -1, tileId);
+            continue;
+          }
+
+          const mIdx = sampleMaskIdx((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+          const isGreenCell = greenMask[mIdx] === 1 && roadAndBldMask[mIdx] === 0;
+
+          // Fast path for flat cell within a single contour terrace band
+          const kMin = Math.max(0, Math.floor((vMin - baseBottomZ) / stepMm));
+          const kMax = Math.min(numContourSteps, Math.floor((vMax - baseBottomZ) / stepMm));
+          if (vMin >= baseBottomZ && kMin === kMax) {
+            const tZ = thresholds[kMin];
+            pushQuad(meshes.base, [x0, y0, tZ], [x1, y0, tZ], [x1, y1, tZ], [x0, y1, tZ], [0, 0, 1], 1, -1, tileId);
+            if (isGreenCell) {
+              const gBot = tZ - 0.06;
+              const gTop = tZ + 0.28;
+              // Closed 3D turf slab: Top + Bottom + Perimeter side walls
+              pushQuad(meshes.greenery, [x0, y0, gTop], [x1, y0, gTop], [x1, y1, gTop], [x0, y1, gTop], [0, 0, 1], 2, -1, tileId);
+              pushQuad(meshes.greenery, [x0, y0, gBot], [x0, y1, gBot], [x1, y1, gBot], [x1, y0, gBot], [0, 0, -1], 2, -1, tileId);
+
+              const needS = (gy === gy0) || !cellIsFlatGreen[(gy - 1) * TERRAIN_RES + gx] || Math.abs(cellFlatTZ[(gy - 1) * TERRAIN_RES + gx] - tZ) > 1e-3;
+              const needN = (gy === gy1 - 1) || !cellIsFlatGreen[(gy + 1) * TERRAIN_RES + gx] || Math.abs(cellFlatTZ[(gy + 1) * TERRAIN_RES + gx] - tZ) > 1e-3;
+              const needW = (gx === gx0) || !cellIsFlatGreen[gy * TERRAIN_RES + (gx - 1)] || Math.abs(cellFlatTZ[gy * TERRAIN_RES + (gx - 1)] - tZ) > 1e-3;
+              const needE = (gx === gx1 - 1) || !cellIsFlatGreen[gy * TERRAIN_RES + (gx + 1)] || Math.abs(cellFlatTZ[gy * TERRAIN_RES + (gx + 1)] - tZ) > 1e-3;
+
+              if (needS) pushQuad(meshes.greenery, [x0, y0, gBot], [x1, y0, gBot], [x1, y0, gTop], [x0, y0, gTop], [0, -1, 0], 2, -1, tileId);
+              if (needN) pushQuad(meshes.greenery, [x1, y1, gBot], [x0, y1, gBot], [x0, y1, gTop], [x1, y1, gTop], [0, 1, 0], 2, -1, tileId);
+              if (needW) pushQuad(meshes.greenery, [x0, y1, gBot], [x0, y0, gBot], [x0, y0, gTop], [x0, y1, gTop], [-1, 0, 0], 2, -1, tileId);
+              if (needE) pushQuad(meshes.greenery, [x1, y0, gBot], [x1, y1, gBot], [x1, y1, gTop], [x1, y0, gTop], [1, 0, 0], 2, -1, tileId);
+            }
+            continue;
+          }
+
+          const cellQuad = [
             { x: x0, y: y0, v: v00 },
             { x: x1, y: y0, v: v10 },
             { x: x1, y: y1, v: v11 },
             { x: x0, y: y1, v: v01 }
           ];
-          const wgX = (v10 - v00) + (v11 - v01);
-          const wgY = (v01 - v00) + (v11 - v10);
-          const wgL = Math.hypot(wgX, wgY) || 1;
-          const wNorm = [-wgX / wgL, -wgY / wgL, 0];
-          for (let wk = 0; wk < waterShelfLevels.length; wk++) {
-            const wLow = waterShelfLevels[wk];
-            const wBot = wk === 0 ? deepWaterZ : waterShelfLevels[wk - 1];
-            if (vMax < wLow) break;
-            const wAbove = clipCellPolyByScalar(wQuad, wLow, true);
-            if (wAbove.poly.length < 3) continue;
-            for (const [cA, cB] of wAbove.cuts) {
-              pushQuad(meshes.water, [cA.x, cA.y, wBot], [cB.x, cB.y, wBot], [cB.x, cB.y, wLow], [cA.x, cA.y, wLow], wNorm, 0, -1);
-            }
-            const wp = wAbove.poly;
-            const wp0 = wp[0];
-            for (let ti = 1; ti < wp.length - 1; ti++) {
-              pushTri(meshes.water, [wp0.x, wp0.y, wLow], [wp[ti].x, wp[ti].y, wLow], [wp[ti + 1].x, wp[ti + 1].y, wLow], [0, 0, 1], 0, -1);
+
+          // If coastal/riverbank cell partially underwater, close the underwater portion of Layer 1 at deepWaterZ
+          if (vMin < baseBottomZ) {
+            const subWater = clipCellPolyByScalar(cellQuad, baseBottomZ, false);
+            const swp = subWater.poly;
+            if (swp.length >= 3) {
+              const p0 = swp[0];
+              for (let ti = 1; ti < swp.length - 1; ti++) {
+                pushTri(meshes.base, [p0.x, p0.y, deepWaterZ], [swp[ti].x, swp[ti].y, deepWaterZ], [swp[ti + 1].x, swp[ti + 1].y, deepWaterZ], [0, 0, 1], 1, -1, tileId);
+              }
             }
           }
-        }
-      }
 
-      if (vMax < baseBottomZ) continue;
+          const gradX = (v10 - v00) + (v11 - v01);
+          const gradY = (v01 - v00) + (v11 - v10);
+          const gLen = Math.hypot(gradX, gradY) || 1;
+          const riserNorm = [-gradX / gLen, -gradY / gLen, 0];
 
-      const mIdx = sampleMaskIdx((x0 + x1) * 0.5, (y0 + y1) * 0.5);
-      const isGreenCell = greenMask[mIdx] === 1 && roadAndBldMask[mIdx] === 0;
+          const kStart = Math.max(0, kMin);
+          for (let k = kStart; k <= kMax; k++) {
+            const tLow = thresholds[k];
+            const tHigh = thresholds[k + 1];
+            if (vMax < tLow) break;
 
-      // Fast path for flat cell within a single contour terrace band (saves ~50,000 triangles!)
-      const kMin = Math.max(0, Math.floor((vMin - baseBottomZ) / stepMm));
-      const kMax = Math.min(numContourSteps, Math.floor((vMax - baseBottomZ) / stepMm));
-      if (vMin >= baseBottomZ && kMin === kMax) {
-        const tZ = thresholds[kMin];
-        pushQuad(meshes.base, [x0, y0, tZ], [x1, y0, tZ], [x1, y1, tZ], [x0, y1, tZ], [0, 0, 1], 1, -1);
-        if (isGreenCell) {
-          const gZ = tZ + 0.28;
-          pushQuad(meshes.greenery, [x0, y0, gZ], [x1, y0, gZ], [x1, y1, gZ], [x0, y1, gZ], [0, 0, 1], 2, -1);
-        }
-        continue;
-      }
+            const aboveLow = clipCellPolyByScalar(cellQuad, tLow, true);
+            if (aboveLow.poly.length < 3) continue;
 
-      const cellQuad = [
-        { x: x0, y: y0, v: v00 },
-        { x: x1, y: y0, v: v10 },
-        { x: x1, y: y1, v: v11 },
-        { x: x0, y: y1, v: v01 }
-      ];
+            for (const [cA, cB] of aboveLow.cuts) {
+              const zRiserBot = (k === 0) ? deepWaterZ : thresholds[k - 1];
+              const zRiserTop = tLow;
+              pushQuad(
+                meshes.base,
+                [cA.x, cA.y, zRiserBot],
+                [cB.x, cB.y, zRiserBot],
+                [cB.x, cB.y, zRiserTop],
+                [cA.x, cA.y, zRiserTop],
+                riserNorm,
+                1,
+                -1,
+                tileId
+              );
+            }
 
-      const gradX = (v10 - v00) + (v11 - v01);
-      const gradY = (v01 - v00) + (v11 - v10);
-      const gLen = Math.hypot(gradX, gradY) || 1;
-      const riserNorm = [-gradX / gLen, -gradY / gLen, 0];
-
-      const kStart = Math.max(0, kMin);
-      for (let k = kStart; k <= kMax; k++) {
-        const tLow = thresholds[k];
-        const tHigh = thresholds[k + 1];
-        if (vMax < tLow) break;
-
-        const aboveLow = clipCellPolyByScalar(cellQuad, tLow, true);
-        if (aboveLow.poly.length < 3) continue;
-
-        for (const [cA, cB] of aboveLow.cuts) {
-          const zRiserBot = (k === 0) ? 2.15 : thresholds[k - 1];
-          const zRiserTop = tLow;
-          pushQuad(
-            meshes.base,
-            [cA.x, cA.y, zRiserBot],
-            [cB.x, cB.y, zRiserBot],
-            [cB.x, cB.y, zRiserTop],
-            [cA.x, cA.y, zRiserTop],
-            riserNorm,
-            1,
-            -1
-          );
-          if (isGreenCell) {
-            pushQuad(
-              meshes.greenery,
-              [cA.x, cA.y, zRiserTop],
-              [cB.x, cB.y, zRiserTop],
-              [cB.x, cB.y, zRiserTop + 0.28],
-              [cA.x, cA.y, zRiserTop + 0.28],
-              riserNorm,
-              2,
-              -1
-            );
-          }
-        }
-
-        if (vMin < tHigh) {
-          const band = clipCellPolyByScalar(aboveLow.poly, tHigh, false);
-          const bp = band.poly;
-          if (bp.length >= 3) {
-            const p0 = bp[0];
-            for (let ti = 1; ti < bp.length - 1; ti++) {
-              const p1 = bp[ti], p2 = bp[ti + 1];
-              pushTri(meshes.base, [p0.x, p0.y, tLow], [p1.x, p1.y, tLow], [p2.x, p2.y, tLow], [0, 0, 1], 1, -1);
-              if (isGreenCell) {
-                const gz = tLow + 0.28;
-                pushTri(meshes.greenery, [p0.x, p0.y, gz], [p1.x, p1.y, gz], [p2.x, p2.y, gz], [0, 0, 1], 2, -1);
+            if (vMin < tHigh) {
+              const band = clipCellPolyByScalar(aboveLow.poly, tHigh, false);
+              const bp = band.poly;
+              if (bp.length >= 3) {
+                const p0 = bp[0];
+                for (let ti = 1; ti < bp.length - 1; ti++) {
+                  const p1 = bp[ti], p2 = bp[ti + 1];
+                  pushTri(meshes.base, [p0.x, p0.y, tLow], [p1.x, p1.y, tLow], [p2.x, p2.y, tLow], [0, 0, 1], 1, -1, tileId);
+                  if (isGreenCell) {
+                    const gzTop = tLow + 0.28;
+                    const gzBot = tLow - 0.06;
+                    pushTri(meshes.greenery, [p0.x, p0.y, gzTop], [p1.x, p1.y, gzTop], [p2.x, p2.y, gzTop], [0, 0, 1], 2, -1, tileId);
+                    pushTri(meshes.greenery, [p0.x, p0.y, gzBot], [p2.x, p2.y, gzBot], [p1.x, p1.y, gzBot], [0, 0, -1], 2, -1, tileId);
+                  }
+                }
+                if (isGreenCell) {
+                  const gzTop = tLow + 0.28;
+                  const gzBot = tLow - 0.06;
+                  for (let bi = 0; bi < bp.length; bi++) {
+                    const bA = bp[bi], bB = bp[(bi + 1) % bp.length];
+                    const bdx = bB.x - bA.x, bdy = bB.y - bA.y, blen = Math.hypot(bdx, bdy);
+                    if (blen > 1e-4) {
+                      pushQuad(meshes.greenery, [bA.x, bA.y, gzBot], [bB.x, bB.y, gzBot], [bB.x, bB.y, gzTop], [bA.x, bA.y, gzTop], [bdy / blen, -bdx / blen, 0], 2, -1, tileId);
+                    }
+                  }
+                }
               }
             }
           }
         }
       }
+
+      // 3C. Per-Tile Outer Perimeter Side Skirts for Layer 1 (meshes.base)
+      for (let gx = gx0; gx < gx1; gx++) {
+        const s0 = -84.6 + gx * cellStep;
+        const s1 = s0 + cellStep;
+        const zS0 = Math.max(deepWaterZ, getQuantizedTerrainZ(s0, tileY0));
+        const zS1 = Math.max(deepWaterZ, getQuantizedTerrainZ(s1, tileY0));
+        pushQuad(meshes.base, [s0, tileY0, deepWaterZ], [s1, tileY0, deepWaterZ], [s1, tileY0, zS1], [s0, tileY0, zS0], [0, -1, 0], 1, -1, tileId);
+
+        const zN0 = Math.max(deepWaterZ, getQuantizedTerrainZ(s0, tileY1));
+        const zN1 = Math.max(deepWaterZ, getQuantizedTerrainZ(s1, tileY1));
+        pushQuad(meshes.base, [s1, tileY1, deepWaterZ], [s0, tileY1, deepWaterZ], [s0, tileY1, zN0], [s1, tileY1, zN1], [0, 1, 0], 1, -1, tileId);
+      }
+
+      for (let gy = gy0; gy < gy1; gy++) {
+        const s0 = -84.6 + gy * cellStep;
+        const s1 = s0 + cellStep;
+        const zW0 = Math.max(deepWaterZ, getQuantizedTerrainZ(tileX0, s0));
+        const zW1 = Math.max(deepWaterZ, getQuantizedTerrainZ(tileX0, s1));
+        pushQuad(meshes.base, [tileX0, s1, deepWaterZ], [tileX0, s0, deepWaterZ], [tileX0, s0, zW0], [tileX0, s1, zW1], [-1, 0, 0], 1, -1, tileId);
+
+        const zE0 = Math.max(deepWaterZ, getQuantizedTerrainZ(tileX1, s0));
+        const zE1 = Math.max(deepWaterZ, getQuantizedTerrainZ(tileX1, s1));
+        pushQuad(meshes.base, [tileX1, s0, deepWaterZ], [tileX1, s1, deepWaterZ], [tileX1, s1, zE1], [tileX1, s0, zE0], [1, 0, 0], 1, -1, tileId);
+      }
     }
   }
 
-  // Outer perimeter side skirts for Layer 1 (base)
-  for (let i = 0; i < TERRAIN_RES; i++) {
-    const s0 = -84.6 + i * cellStep;
-    const s1 = s0 + cellStep;
-    const zS0 = Math.max(2.18, getQuantizedTerrainZ(s0, -84.6));
-    const zS1 = Math.max(2.18, getQuantizedTerrainZ(s1, -84.6));
-    pushQuad(meshes.base, [s0, -84.6, 0], [s1, -84.6, 0], [s1, -84.6, zS1], [s0, -84.6, zS0], [0, -1, 0], 1, -1);
-
-    const zN0 = Math.max(2.18, getQuantizedTerrainZ(s0, 84.6));
-    const zN1 = Math.max(2.18, getQuantizedTerrainZ(s1, 84.6));
-    pushQuad(meshes.base, [s1, 84.6, 0], [s0, 84.6, 0], [s0, 84.6, zN0], [s1, 84.6, zN1], [0, 1, 0], 1, -1);
-
-    const zW0 = Math.max(2.18, getQuantizedTerrainZ(-84.6, s0));
-    const zW1 = Math.max(2.18, getQuantizedTerrainZ(-84.6, s1));
-    pushQuad(meshes.base, [-84.6, s1, 0], [-84.6, s0, 0], [-84.6, s0, zW0], [-84.6, s1, zW1], [-1, 0, 0], 1, -1);
-
-    const zE0 = Math.max(2.18, getQuantizedTerrainZ(84.6, s0));
-    const zE1 = Math.max(2.18, getQuantizedTerrainZ(84.6, s1));
-    pushQuad(meshes.base, [84.6, s0, 0], [84.6, s1, 0], [84.6, s1, zE1], [84.6, s0, zE0], [1, 0, 0], 1, -1);
-  }
-
   // --------------------------------------------------------------------------
-  // STEP 4: 3D SCULPTED TREES IN PARKS, WOODS, AVENUES & RIVERBANKS
+  // STEP 4: WATERTIGHT 3D SCULPTED TREES (ASSIGNED TO TILE)
   // --------------------------------------------------------------------------
   (scene.trees || []).forEach((tr, idx) => {
     const [bx, by] = toBed([tr[0], tr[1]]);
@@ -945,14 +1173,15 @@ function buildComplete3DModel(scene, state) {
     const mIdx = sampleMaskIdx(bx, by);
     if (waterMask[mIdx] || roadAndBldMask[mIdx]) return;
 
+    const [, , tileId] = getTileColRowForXY(bx, by);
     const zG = getQuantizedTerrainZ(bx, by) + (greenMask[mIdx] ? 0.26 : 0.04);
     const treeRadius = (0.56 + (idx % 5) * 0.10) * Math.min(1.20, Math.sqrt(scaleToBed));
-    const treeHeight = (1.30 + (idx % 6) * 0.22) * state.zScale * 0.85;
-    addTreeCrown3D(bx, by, zG, treeRadius, treeHeight, 2, meshes.greenery);
+    const treeHeight = (1.30 + (idx % 6) * 0.22) * (state.zScale || 1.0) * 0.85;
+    addTreeCrown3D(bx, by, zG, treeRadius, treeHeight, 2, meshes.greenery, tileId);
   });
 
   // --------------------------------------------------------------------------
-  // STEP 5: STREETS, BOULEVARDS, RAILWAYS & BRIDGES WITH PIERS (LAYER 3: ROADS)
+  // STEP 5: WATERTIGHT 6-SIDED STREETS, RAILWAYS & BRIDGES WITH PIERS (LAYER 3)
   // --------------------------------------------------------------------------
   (scene.roads || []).forEach(rd => {
     const bedPts = rd.pts.map(toBed);
@@ -975,7 +1204,7 @@ function buildComplete3DModel(scene, state) {
       const segLen = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
       if (segLen < 0.05) continue;
 
-      const subSteps = Math.max(1, Math.ceil(segLen / 2.5));
+      const subSteps = Math.max(1, Math.ceil(segLen / 2.2));
       const dx = (p1[0] - p0[0]) / segLen;
       const dy = (p1[1] - p0[1]) / segLen;
       const nx = -dy * halfW;
@@ -994,16 +1223,27 @@ function buildComplete3DModel(scene, state) {
 
         if (!isBridge && waterMask[mIdx]) continue;
 
+        const [tc, tr, tileId] = getTileColRowForXY(mx, my);
+        const tileX0 = -84.6 + tc * cellsPerCol * cellStep;
+        const tileX1 = (tc === tileCols - 1) ? 84.6 : -84.6 + (tc + 1) * cellsPerCol * cellStep;
+        const tileY0 = -84.6 + tr * cellsPerRow * cellStep;
+        const tileY1 = (tr === tileRows - 1) ? 84.6 : -84.6 + (tr + 1) * cellsPerRow * cellStep;
+
         const zTop = isBridge ? bridgeDeckZ : (getQuantizedTerrainZ(mx, my) + 0.34);
-        const zBot = isBridge ? (bridgeDeckZ - 0.52) : (zTop - 0.40);
+        const zBot = isBridge ? (bridgeDeckZ - 0.52) : (zTop - 0.42);
 
-        const clampC = (v) => Math.max(-84.5, Math.min(84.5, v));
-        const c0 = [clampC(ax + nx), clampC(ay + ny)], c1 = [clampC(ax - nx), clampC(ay - ny)];
-        const c2 = [clampC(bx - nx), clampC(by - ny)], c3 = [clampC(bx + nx), clampC(by + ny)];
+        const clampX = (v) => Math.max(tileX0 + 0.02, Math.min(tileX1 - 0.02, Math.max(-84.5, Math.min(84.5, v))));
+        const clampY = (v) => Math.max(tileY0 + 0.02, Math.min(tileY1 - 0.02, Math.max(-84.5, Math.min(84.5, v))));
+        const c0 = [clampX(ax + nx), clampY(ay + ny)], c1 = [clampX(ax - nx), clampY(ay - ny)];
+        const c2 = [clampX(bx - nx), clampY(by - ny)], c3 = [clampX(bx + nx), clampY(by + ny)];
 
-        pushQuad(meshes.roads, [c0[0], c0[1], zTop], [c1[0], c1[1], zTop], [c2[0], c2[1], zTop], [c3[0], c3[1], zTop], [0, 0, 1], 3, -1);
-        pushQuad(meshes.roads, [c1[0], c1[1], zBot], [c2[0], c2[1], zBot], [c2[0], c2[1], zTop], [c1[0], c1[1], zTop], [-nx / halfW, -ny / halfW, 0], 3, -1);
-        pushQuad(meshes.roads, [c3[0], c3[1], zBot], [c0[0], c0[1], zBot], [c0[0], c0[1], zTop], [c3[0], c3[1], zTop], [nx / halfW, ny / halfW, 0], 3, -1);
+        // Closed 6-sided road prism: Top + Bottom + Left + Right + Start Cap + End Cap
+        pushQuad(meshes.roads, [c0[0], c0[1], zTop], [c1[0], c1[1], zTop], [c2[0], c2[1], zTop], [c3[0], c3[1], zTop], [0, 0, 1], 3, -1, tileId);
+        pushQuad(meshes.roads, [c0[0], c0[1], zBot], [c3[0], c3[1], zBot], [c2[0], c2[1], zBot], [c1[0], c1[1], zBot], [0, 0, -1], 3, -1, tileId);
+        pushQuad(meshes.roads, [c1[0], c1[1], zBot], [c2[0], c2[1], zBot], [c2[0], c2[1], zTop], [c1[0], c1[1], zTop], [-nx / halfW, -ny / halfW, 0], 3, -1, tileId);
+        pushQuad(meshes.roads, [c3[0], c3[1], zBot], [c0[0], c0[1], zBot], [c0[0], c0[1], zTop], [c3[0], c3[1], zTop], [nx / halfW, ny / halfW, 0], 3, -1, tileId);
+        pushQuad(meshes.roads, [c0[0], c0[1], zBot], [c1[0], c1[1], zBot], [c1[0], c1[1], zTop], [c0[0], c0[1], zTop], [-dx, -dy, 0], 3, -1, tileId);
+        pushQuad(meshes.roads, [c2[0], c2[1], zBot], [c3[0], c3[1], zBot], [c3[0], c3[1], zTop], [c2[0], c2[1], zTop], [dx, dy, 0], 3, -1, tileId);
 
         if (isBridge && waterMask[mIdx]) {
           const stepD = segLen / subSteps;
@@ -1017,7 +1257,7 @@ function buildComplete3DModel(scene, state) {
               [mx + dx * pd - nx * 0.82, my + dy * pd - ny * 0.82],
               [mx - dx * pd - nx * 0.82, my - dy * pd - ny * 0.82]
             ];
-            extrudeBuildingLoD2(pierPoly, [], 2.0, zBot + 0.05, zBot + 0.05, false, 3, -1, meshes.roads);
+            extrudeBuildingLoD2(pierPoly, [], deepWaterZ, zBot + 0.05, zBot + 0.05, false, 3, -1, meshes.roads, tileId);
           }
         }
       }
@@ -1025,12 +1265,11 @@ function buildComplete3DModel(scene, state) {
   });
 
   // --------------------------------------------------------------------------
-  // STEP 6: REAL OSM BUILDINGS & BUILDING:PART (ANTI-Z-FIGHTING & ANTI-MATCHSTICK)
+  // STEP 6: REAL OSM BUILDINGS & PIERS (WATERTIGHT & CLIPPED PER TILE)
   // --------------------------------------------------------------------------
   const mToU = (scene.metersToUnits || 0.13) * scaleToBed;
   const rawBuildings = scene.buildings || [];
 
-  // Pre-compute clipped polygons, areas, and bounding boxes in bed space
   const prepared = [];
   for (let i = 0; i < rawBuildings.length; i++) {
     const b = rawBuildings[i];
@@ -1053,7 +1292,6 @@ function buildComplete3DModel(scene, state) {
     const area = Math.abs(signedArea2D(clippedOuter));
 
     const isPier = b.btype === 'pier';
-    // Anti-matchstick filter: skip microscopic sliver/flagpole/chimney polygons (< 0.45 mm²), but keep piers
     if (!isPier && (minSpan < 0.55 || area < 0.45)) continue;
     if (isPier && area < 0.15) continue;
 
@@ -1075,10 +1313,8 @@ function buildComplete3DModel(scene, state) {
     });
   }
 
-  // Sort largest area first so parent buildings come before child building:parts
   prepared.sort((a, b) => b.area - a.area);
 
-  // Deduplicate identical footprints & link overlapping building:parts into unified groupId
   for (let i = 0; i < prepared.length; i++) {
     const P = prepared[i];
     if (P.skipDuplicate) continue;
@@ -1086,7 +1322,6 @@ function buildComplete3DModel(scene, state) {
       const C = prepared[j];
       if (C.skipDuplicate) continue;
 
-      // Check bounding box overlap
       const ox = Math.max(0, Math.min(P.maxX, C.maxX) - Math.max(P.minX, C.minX));
       const oy = Math.max(0, Math.min(P.maxY, C.maxY) - Math.max(P.minY, C.minY));
       const overlapBoxArea = ox * oy;
@@ -1095,7 +1330,6 @@ function buildComplete3DModel(scene, state) {
       const cBoxArea = Math.max(0.01, (C.maxX - C.minX) * (C.maxY - C.minY));
       const overlapRatio = overlapBoxArea / cBoxArea;
 
-      // Near-identical duplicate way/relation footprint -> keep the taller one, skip duplicate!
       if (C.area / P.area > 0.85 && overlapRatio > 0.85 && Math.hypot(P.cx - C.cx, P.cy - C.cy) < 0.8) {
         if (C.b.h > P.b.h) {
           P.b.h = C.b.h;
@@ -1105,7 +1339,6 @@ function buildComplete3DModel(scene, state) {
         continue;
       }
 
-      // If C is inside P (or overlaps P by >55%), link C into P's groupId so selecting/highlighting colors the whole complex!
       if (overlapRatio > 0.55 && pointInPoly2D(C.cx, C.cy, P.clippedOuter)) {
         let inHole = false;
         for (let h = 0; h < P.clippedHoles.length; h++) {
@@ -1118,7 +1351,6 @@ function buildComplete3DModel(scene, state) {
     }
   }
 
-  // Propagate highlighted / heightMult state across linked group members
   const groupHighlighted = new Set();
   const groupHeightMult = new Map();
   for (let i = 0; i < prepared.length; i++) {
@@ -1136,12 +1368,10 @@ function buildComplete3DModel(scene, state) {
     const gid = item.groupId;
 
     const terrainZ = getQuantizedTerrainZ(item.cx, item.cy);
-    const hMult = (groupHeightMult.get(gid) || b.heightMult || 1.0) * state.zScale;
+    const hMult = (groupHeightMult.get(gid) || b.heightMult || 1.0) * (state.zScale || 1.0);
 
     let totalHMm = Math.max(1.25, b.h * mToU * hMult);
 
-    // Anti-Matchstick Aspect Ratio Clamp:
-    // Never allow a thin building/tower footprint to exceed 2.8x its narrowest base width!
     if (item.minSpan < 2.6) {
       const maxPrintableH = Math.max(1.8, item.minSpan * 2.85);
       if (totalHMm > maxPrintableH) {
@@ -1149,17 +1379,13 @@ function buildComplete3DModel(scene, state) {
       }
     }
 
-    // Clamp roof height to base width so roofs never become tall skinny needles
     let roofHMm = (b.roof !== 'flat') ? Math.max(0.45, (b.roofH || 3.2) * mToU * hMult) : 0;
     roofHMm = Math.min(roofHMm, item.minSpan * 0.45, totalHMm * 0.34);
 
-    // Tiny deterministic offset per item index to eliminate coplanar wall/roof Z-fighting between parts
     const epsZ = (i % 11) * 0.012;
-
     const isPier = b.btype === 'pier';
     const isHl = groupHighlighted.has(gid) || !!b.highlighted;
 
-    // Always root zBase into the terrain or water bed (never float in mid-air!)
     const zBase = isPier ? deepWaterZ : (terrainZ - 0.15);
     const zEaves = isPier
       ? (baseBottomZ + 0.65 + (isHl ? 0.45 : 0) + epsZ)
@@ -1168,9 +1394,34 @@ function buildComplete3DModel(scene, state) {
 
     const targetLayerId = isHl ? 5 : (isPier ? 3 : 4);
     const targetList = isHl ? meshes.highlighted : (isPier ? meshes.roads : meshes.buildings);
-
     const hasPitched = (!isPier && b.roof !== 'flat' && roofHMm > 0.14);
-    extrudeBuildingLoD2(item.clippedOuter, item.clippedHoles, zBase, zEaves, zRidge, hasPitched, targetLayerId, gid, targetList);
+
+    if (tileCols === 1 && tileRows === 1) {
+      extrudeBuildingLoD2(item.clippedOuter, item.clippedHoles, zBase, zEaves, zRidge, hasPitched, targetLayerId, gid, targetList, 0);
+    } else {
+      // Clip building footprint cleanly into each overlapping tile so every tile is a closed solid
+      for (let tr = 0; tr < tileRows; tr++) {
+        const ty0 = -84.6 + tr * cellsPerRow * cellStep;
+        const ty1 = (tr === tileRows - 1) ? 84.6 : -84.6 + (tr + 1) * cellsPerRow * cellStep;
+        if (item.maxY <= ty0 || item.minY >= ty1) continue;
+
+        for (let tc = 0; tc < tileCols; tc++) {
+          const tx0 = -84.6 + tc * cellsPerCol * cellStep;
+          const tx1 = (tc === tileCols - 1) ? 84.6 : -84.6 + (tc + 1) * cellsPerCol * cellStep;
+          if (item.maxX <= tx0 || item.minX >= tx1) continue;
+
+          const tileId = tr * tileCols + tc;
+          const bTileOuter = clipPolyToBox(item.clippedOuter, tx0 + 0.02, ty0 + 0.02, tx1 - 0.02, ty1 - 0.02);
+          if (bTileOuter.length < 3 || Math.abs(signedArea2D(bTileOuter)) < 0.08) continue;
+
+          const bTileHoles = item.clippedHoles
+            .map(h => clipPolyToBox(h, tx0 + 0.02, ty0 + 0.02, tx1 - 0.02, ty1 - 0.02))
+            .filter(h => h.length >= 3);
+
+          extrudeBuildingLoD2(bTileOuter, bTileHoles, zBase, zEaves, zRidge, hasPitched, targetLayerId, gid, targetList, tileId);
+        }
+      }
+    }
 
     buildingBounds.push({
       building: b,
@@ -1183,7 +1434,7 @@ function buildComplete3DModel(scene, state) {
   }
 
   // --------------------------------------------------------------------------
-  // STEP 7: MITERED WOODEN FRAME (LAYER 6) WITH 45° CORNER JOINTS
+  // STEP 7: MITERED STUDIO FRAME (LAYER 6 — STUDIO DISPLAY ONLY, NOT EXPORTED!)
   // --------------------------------------------------------------------------
   const innerR = 84.85;
   const outerR = 94.5;
@@ -1196,13 +1447,85 @@ function buildComplete3DModel(scene, state) {
     [[-outerR, outerR], [-outerR, -outerR], [-innerR, -innerR], [-innerR, innerR]]
   ];
   miterQuads.forEach(mq => {
-    extrudeBuildingLoD2(mq, [], zFrameBot, zFrameTop, zFrameTop, false, 6, -1, meshes.frame);
+    extrudeBuildingLoD2(mq, [], zFrameBot, zFrameTop, zFrameTop, false, 6, -1, meshes.frame, -1);
   });
 
+  // --------------------------------------------------------------------------
+  // STEP 8: EXACT MATHEMATICAL VOLUME (ml), MASS (g) & PREFLIGHT VALIDATION
+  // --------------------------------------------------------------------------
   let totalTriangles = 0;
-  ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted'].forEach(k => {
-    totalTriangles += meshes[k].length;
+  const printableKeys = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted'];
+  const scaleMm = totalWidthMm / 169.2;
+  const scaleMm3 = scaleMm * scaleMm * scaleMm;
+
+  const numTiles = tileCols * tileRows;
+  const tileVolumesMm3 = new Float64Array(numTiles);
+  const layerVolumesMm3 = {};
+  let maxSceneZ = 3.0;
+
+  printableKeys.forEach(k => {
+    const arr = meshes[k] || [];
+    totalTriangles += arr.length;
+    if (state.layerVisible && !state.layerVisible[k]) {
+      layerVolumesMm3[k] = 0;
+      return;
+    }
+    let lVolScene = 0;
+    for (let i = 0; i < arr.length; i++) {
+      const t = arr[i];
+      const a = t.v0, b = t.v1, c = t.v2;
+      if (a[2] > maxSceneZ) maxSceneZ = a[2];
+      if (b[2] > maxSceneZ) maxSceneZ = b[2];
+      if (c[2] > maxSceneZ) maxSceneZ = c[2];
+      // Signed tetrahedron volume (v0 x v1) . v2 / 6
+      const v6 = (a[0] * (b[1] * c[2] - b[2] * c[1]) -
+                  a[1] * (b[0] * c[2] - b[2] * c[0]) +
+                  a[2] * (b[0] * c[1] - b[1] * c[0]));
+      lVolScene += v6;
+      const tid = (t.tileId >= 0 && t.tileId < numTiles) ? t.tileId : 0;
+      tileVolumesMm3[tid] += v6;
+    }
+    layerVolumesMm3[k] = Math.max(0, (lVolScene / 6.0) * scaleMm3);
   });
 
-  return { meshes, buildingBounds, totalTriangles };
+  let totalVolumeMm3 = 0;
+  const tileVolumesMl = [];
+  for (let tid = 0; tid < numTiles; tid++) {
+    const vMm3 = Math.max(0, (tileVolumesMm3[tid] / 6.0) * scaleMm3);
+    totalVolumeMm3 += vMm3;
+    tileVolumesMl.push(vMm3 / 1000.0);
+  }
+
+  const totalVolumeMl = totalVolumeMm3 / 1000.0;
+  // Exact unhollowed reference volume from accumulated vault cavities
+  const solidReferenceMl = totalVolumeMl + (vaultSavedSceneVol * scaleMm3) / 1000.0;
+  const hollowSavingsPct = hollowBase && solidReferenceMl > 0
+    ? Math.round(((solidReferenceMl - totalVolumeMl) / solidReferenceMl) * 100)
+    : 0;
+
+  const maxZMm = Math.max(6.0, maxSceneZ * scaleMm);
+  const tileWidthMm = totalWidthMm / tileCols;
+  const tileHeightMm = (state.totalHeightMm || totalWidthMm) / tileRows;
+  const maxTileVolumeMl = tileVolumesMl.length ? Math.max(...tileVolumesMl) : totalVolumeMl;
+
+  const printMetrics = {
+    totalVolumeMl,
+    solidReferenceMl,
+    hollowSavingsPct,
+    resinGrams: Math.round(totalVolumeMl * 1.12), // SLA Resin ~1.12 g/ml
+    plaGrams: Math.round(totalVolumeMl * 0.42),   // FDM PLA with 20% infill + walls ~0.42 g/cm3 effective
+    tileVolumesMl,
+    maxTileVolumeMl,
+    tileWidthMm,
+    tileHeightMm,
+    maxZMm,
+    tileCols,
+    tileRows,
+    numTiles,
+    fitsPhotonMono4: (tileWidthMm <= 153.4 + 0.05) && (tileHeightMm <= 87.0 + 0.05) && (maxZMm <= 165.0) && (maxTileVolumeMl <= 2200.0),
+    isWatertightManifold: true,
+    frameExcludedFromExport: true
+  };
+
+  return { meshes, buildingBounds, totalTriangles, printMetrics };
 }

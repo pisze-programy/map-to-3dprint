@@ -57,12 +57,21 @@
     <!-- Printer Profile & Export Buttons -->
     <div class="flex flex-wrap items-center gap-2">
       <div class="flex items-center gap-1.5 bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5">
-        <span class="text-xs text-[var(--muted-foreground)]">Drukarka:</span>
+        <span class="text-xs text-[var(--muted-foreground)]">Format / Drukarka:</span>
         <select id="printerSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none cursor-pointer">
-          <option value="330" selected>Prusa XL 5-Toolhead (33×33 cm — 4/5 kolorów)</option>
-          <option value="256">Bambu Lab X1C / P1S + AMS (25×25 cm)</option>
-          <option value="350">Voron 2.4 350 + ERCF (35×35 cm)</option>
-          <option value="520">Format XL 4-Kafle (52×52 cm)</option>
+          <optgroup label="Żywica SLA/MSLA — Anycubic Photon Mono 4 (153.4 × 87 × 165 mm, max 2.2 L)">
+            <option value="mono4_84_1x1">Photon Mono 4 • Mały Kwadrat 84×84 mm (1 Kafel 1×1 na płasko)</option>
+            <option value="mono4_150_1x2">Photon Mono 4 • Kwadrat 150×150 mm (2 Kafle 1×2 po 150×75 mm)</option>
+            <option value="mono4_168_2x2">Photon Mono 4 • Kwadrat 168×168 mm (4 Kafle 2×2 po 84×84 mm)</option>
+            <option value="mono4_252_2x3">Photon Mono 4 • Duży 252×252 mm (6 Kafli 2×3 po 126×84 mm)</option>
+            <option value="mono4_296_2x4">Photon Mono 4 • Format XL 296×296 mm (8 Kafli 2×4 po 148×74 mm)</option>
+          </optgroup>
+          <optgroup label="Wielokolorowe FDM (z marginesem stołu 5 mm)">
+            <option value="fdm_330_1x1" selected>Prusa XL 5-Toolhead (320×320 mm na stole 330 mm)</option>
+            <option value="fdm_256_1x1">Bambu Lab X1C / P1S / A1 + AMS (246×246 mm na stole 256 mm)</option>
+            <option value="fdm_350_1x1">Voron 2.4 350 + ERCF (340×340 mm na stole 350 mm)</option>
+            <option value="fdm_500_2x2">Format XL 4-Kafle FDM (492×492 mm — 2×2 po 246×246 mm)</option>
+          </optgroup>
         </select>
       </div>
 
@@ -224,22 +233,35 @@
             </span>
           </div>
 
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1 flex-wrap">
             <button data-cam="studio" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Ujęcie Studio</button>
             <button data-cam="top" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Z góry</button>
             <button data-cam="side" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Profil warstw</button>
+            <button data-cam="tiles" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Podział kafli</button>
+            <button data-cam="bottom" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Od spodu (Hollow SLA)</button>
             <button id="btnAutoRotate" class="px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">↻ Obrót</button>
           </div>
         </div>
 
-        <!-- EXPLODED VIEW SLIDER -->
-        <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-1.5 flex flex-wrap items-center gap-3">
-          <span class="text-xs font-bold text-blue-500">Rozbicie na warstwy (Exploded View):</span>
-          <input id="explodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[120px]" />
-          <span id="explodeValueLabel" class="text-xs font-mono font-bold text-blue-500 w-10 text-right">0%</span>
-          <button id="btnQuickExplode" class="px-2.5 py-0.5 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-500 transition">
-            Rozbij / Złóż
-          </button>
+        <!-- EXPLODED VIEW & MULTI-TILE SPLIT / HOLLOW BASE CONTROLS -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+            <span class="text-xs font-bold text-blue-500 whitespace-nowrap">Warstwy Z:</span>
+            <input id="explodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[70px]" />
+            <span id="explodeValueLabel" class="text-xs font-mono font-bold text-blue-500 w-8 text-right">0%</span>
+            <button id="btnQuickExplode" class="px-2 py-0.5 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-500 transition whitespace-nowrap">
+              Rozbij Z
+            </button>
+          </div>
+
+          <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+            <span id="tileSplitLabel" class="text-xs font-bold text-cyan-400 whitespace-nowrap">Kafle (1×1):</span>
+            <input id="tileExplodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[70px]" />
+            <span id="tileExplodeValueLabel" class="text-xs font-mono font-bold text-cyan-400 w-8 text-right">0%</span>
+            <button id="btnQuickTileExplode" class="px-2 py-0.5 rounded bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-500 transition whitespace-nowrap">
+              Rozsuń kafle
+            </button>
+          </div>
         </div>
 
         <!-- 3D WebGL Canvas Container -->
@@ -338,38 +360,57 @@
         </div>
       </div>
 
-      <!-- SLICER EXPORT SUMMARY -->
+      <!-- SLICER & RESIN EXPORT SUMMARY (ANYCUBIC PHOTON MONO 4 & FDM) -->
       <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm">
-        <div class="flex items-center justify-between">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Eksport Warstw do Druku 3D</h3>
-          <span class="text-xs font-mono text-emerald-500 font-semibold">Manifold ✓</span>
+        <div class="flex items-center justify-between gap-1">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Eksport i Zużycie Żywicy / PLA</h3>
+          <span id="preflightStatusBadge" class="text-xs font-mono text-emerald-500 font-semibold">Manifold ✓ • Bez ramki</span>
         </div>
+
+        <!-- Hollow Base Optimization Toggle (SLA Resin / FDM Fill Saver) -->
+        <label class="flex items-center justify-between gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 cursor-pointer">
+          <div class="flex items-center gap-1.5">
+            <input id="chkHollowBase" type="checkbox" checked class="rounded accent-emerald-500" />
+            <span class="text-xs font-semibold text-[var(--foreground)]">Odchudź bazę od spodu (Hollow Shell 1.8 mm)</span>
+          </div>
+          <span id="hollowSavingsBadge" class="text-xs font-mono font-bold text-emerald-400">-48% żywicy</span>
+        </label>
+
         <div class="grid grid-cols-3 gap-1.5 text-center">
           <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
-            <div class="text-xs text-[var(--muted-foreground)]">Wymiar</div>
-            <div id="statDimensions" class="text-xs font-bold font-mono mt-0.5">330×330×29 mm</div>
+            <div class="text-xs text-[var(--muted-foreground)]">Wymiar / Kafel</div>
+            <div id="statDimensions" class="text-xs font-bold font-mono mt-0.5">320×320×24 mm</div>
           </div>
           <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
-            <div class="text-xs text-[var(--muted-foreground)]">Masa PLA</div>
-            <div id="statFilament" class="text-xs font-bold font-mono mt-0.5">~448 g</div>
+            <div id="statMaterialTitle" class="text-xs text-[var(--muted-foreground)]">Żywica SLA / PLA</div>
+            <div id="statFilament" class="text-xs font-bold font-mono text-emerald-400 mt-0.5">~42 ml (47 g)</div>
           </div>
           <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
-            <div class="text-xs text-[var(--muted-foreground)]">Bryły .3MF</div>
-            <div id="statVolumes" class="text-xs font-bold font-mono mt-0.5">6 osobnych</div>
+            <div class="text-xs text-[var(--muted-foreground)]">Kafle / Bryły</div>
+            <div id="statVolumes" class="text-xs font-bold font-mono mt-0.5">1×1 (6 warstw)</div>
           </div>
         </div>
+
+        <!-- Anycubic Photon Mono 4 Fit & Tile Selector -->
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Kafel:</span>
+          <select id="exportTileSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs flex-1 text-[var(--foreground)] font-mono focus:outline-none">
+            <option value="all">Wszystkie kafle (Cały model / .ZIP)</option>
+          </select>
+        </div>
+
         <div class="flex items-center gap-1.5">
           <select id="singleLayerStlSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-xs flex-1 text-[var(--foreground)] focus:outline-none">
-            <option value="all">Wszystkie warstwy razem (.STL)</option>
+            <option value="all">Wszystkie warstwy razem (.STL / .ZIP bez ramki)</option>
             <option value="highlighted">Tylko Wyróżnione Budynki (Insert)</option>
             <option value="buildings">Tylko Budynki i Dachy LoD2</option>
-            <option value="roads">Tylko Ulice i Mosty</option>
+            <option value="roads">Tylko Ulice, Mola i Mosty</option>
             <option value="greenery">Tylko Zieleń i Drzewa 3D</option>
             <option value="base">Tylko Warstwice Terenu DEM</option>
             <option value="water">Tylko Woda i Batymetria</option>
           </select>
           <button id="btnExportLayerSTL" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs whitespace-nowrap transition">
-            .STL Warstwy
+            Pobierz .STL / .ZIP
           </button>
         </div>
       </div>
