@@ -20,7 +20,7 @@ The application operates in two modes:
 | Data Layer | Source | Format | Usage |
 | :--- | :--- | :--- | :--- |
 | Elevation (DEM) | AWS Terrain Tiles (`terrarium`) | 24-bit PNG (`z = 14`) | Stepped terrain contour layers and sea-level bathymetry |
-| Vector Geometry | OpenStreetMap (Overpass API) | JSON | Buildings (`building`, `building:part`), water, parks, trees, roads, bridges |
+| Vector Geometry | OpenStreetMap (Overpass API) | JSON | Buildings (`building`, `building:part`), coastlines (`natural=coastline`), piers (`man_made=pier`), water, parks, trees, roads, bridges |
 | Geocoding | Photon Komoot (`photon.komoot.io`) | GeoJSON | Live place search and coordinate lookup |
 | 2D Slippy Map | OpenStreetMap France (`hot`) / ArcGIS | Raster PNG | Interactive 2D bounding-box selection |
 
@@ -132,6 +132,10 @@ Follow these steps to run the application locally:
 ### Dense Urban Grid and River Bridges (Tokyo, Japan — `6,858` Buildings in `163,877` Triangles)
 
 ![Tokyo Dense Urban Grid](docs/screenshots/tokyo-dense-urban.png)
+
+### Coastal Sea Bathymetry and 3D Pier (Sopot, Poland — Baltic Sea `natural=coastline` + `Molo w Sopocie`)
+
+![Sopot Baltic Sea and Pier](docs/screenshots/sopot-baltic-pier.png)
 
 ---
 

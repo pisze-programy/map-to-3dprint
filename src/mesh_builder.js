@@ -718,7 +718,7 @@ function buildComplete3DModel(scene, state) {
       const mIdx = sampleMaskIdx(bx, by);
       const relE = demGrid[gy * strideT + gx];
       if (waterMask[mIdx]) {
-        zGrid[gy * strideT + gx] = baseBottomZ - 0.15 - Math.min(1.1, waterDepth[mIdx] * 0.22);
+        zGrid[gy * strideT + gx] = baseBottomZ - 0.12 - Math.min(0.85, waterDepth[mIdx] * 0.045);
       } else {
         const bankBlend = Math.min(1.0, shoreDist[mIdx] / 6.0);
         const hMm = (relE / elevSpan) * maxReliefMm * bankBlend;
@@ -758,20 +758,22 @@ function buildComplete3DModel(scene, state) {
   }
 
   // --------------------------------------------------------------------------
-  // STEP 3: WATER BATHYMETRY & OPTIMIZED MARCHING-SQUARES TOPOGRAPHIC TERRACES
+  // STEP 3: 3-LEVEL STEPPED WATER BATHYMETRY & MARCHING-SQUARES DEM TERRACES
   // --------------------------------------------------------------------------
   const bedOuter = [[-84.7, -84.7], [84.7, -84.7], [84.7, 84.7], [-84.7, 84.7]];
   const bedTris = triangulateSimplePoly(bedOuter);
+  const deepWaterZ = 1.76;
   for (const [a, b, c] of bedTris) {
-    pushTri(meshes.water, [a[0], a[1], 2.18], [b[0], b[1], 2.18], [c[0], c[1], 2.18], [0, 0, 1], 0, -1);
+    pushTri(meshes.water, [a[0], a[1], deepWaterZ], [b[0], b[1], deepWaterZ], [c[0], c[1], deepWaterZ], [0, 0, 1], 0, -1);
     pushTri(meshes.water, [a[0], a[1], 0.0], [c[0], c[1], 0.0], [b[0], b[1], 0.0], [0, 0, -1], 0, -1);
   }
   for (let i = 0; i < 4; i++) {
     const p1 = bedOuter[i], p2 = bedOuter[(i + 1) % 4];
     const dx = p2[0] - p1[0], dy = p2[1] - p1[1], len = Math.hypot(dx, dy);
-    pushQuad(meshes.water, [p1[0], p1[1], 0], [p2[0], p2[1], 0], [p2[0], p2[1], 2.18], [p1[0], p1[1], 2.18], [dy / len, -dx / len, 0], 0, -1);
+    pushQuad(meshes.water, [p1[0], p1[1], 0], [p2[0], p2[1], 0], [p2[0], p2[1], deepWaterZ], [p1[0], p1[1], deepWaterZ], [dy / len, -dx / len, 0], 0, -1);
   }
 
+  const waterShelfLevels = [1.98, 2.20];
   const thresholds = [];
   for (let k = 0; k <= numContourSteps + 2; k++) {
     thresholds.push(baseBottomZ + k * stepMm);
@@ -792,6 +794,42 @@ function buildComplete3DModel(scene, state) {
 
       const vMax = Math.max(v00, v10, v11, v01);
       const vMin = Math.min(v00, v10, v11, v01);
+
+      // Stepped underwater bathymetry shelves (3 distinct depths in Layer 0: Water)
+      if (vMin < baseBottomZ && vMax >= waterShelfLevels[0]) {
+        if (vMin >= waterShelfLevels[1]) {
+          pushQuad(meshes.water, [x0, y0, waterShelfLevels[1]], [x1, y0, waterShelfLevels[1]], [x1, y1, waterShelfLevels[1]], [x0, y1, waterShelfLevels[1]], [0, 0, 1], 0, -1);
+        } else if (vMin >= waterShelfLevels[0] && vMax < waterShelfLevels[1]) {
+          pushQuad(meshes.water, [x0, y0, waterShelfLevels[0]], [x1, y0, waterShelfLevels[0]], [x1, y1, waterShelfLevels[0]], [x0, y1, waterShelfLevels[0]], [0, 0, 1], 0, -1);
+        } else {
+          const wQuad = [
+            { x: x0, y: y0, v: v00 },
+            { x: x1, y: y0, v: v10 },
+            { x: x1, y: y1, v: v11 },
+            { x: x0, y: y1, v: v01 }
+          ];
+          const wgX = (v10 - v00) + (v11 - v01);
+          const wgY = (v01 - v00) + (v11 - v10);
+          const wgL = Math.hypot(wgX, wgY) || 1;
+          const wNorm = [-wgX / wgL, -wgY / wgL, 0];
+          for (let wk = 0; wk < waterShelfLevels.length; wk++) {
+            const wLow = waterShelfLevels[wk];
+            const wBot = wk === 0 ? deepWaterZ : waterShelfLevels[wk - 1];
+            if (vMax < wLow) break;
+            const wAbove = clipCellPolyByScalar(wQuad, wLow, true);
+            if (wAbove.poly.length < 3) continue;
+            for (const [cA, cB] of wAbove.cuts) {
+              pushQuad(meshes.water, [cA.x, cA.y, wBot], [cB.x, cB.y, wBot], [cB.x, cB.y, wLow], [cA.x, cA.y, wLow], wNorm, 0, -1);
+            }
+            const wp = wAbove.poly;
+            const wp0 = wp[0];
+            for (let ti = 1; ti < wp.length - 1; ti++) {
+              pushTri(meshes.water, [wp0.x, wp0.y, wLow], [wp[ti].x, wp[ti].y, wLow], [wp[ti + 1].x, wp[ti + 1].y, wLow], [0, 0, 1], 0, -1);
+            }
+          }
+        }
+      }
+
       if (vMax < baseBottomZ) continue;
 
       const mIdx = sampleMaskIdx((x0 + x1) * 0.5, (y0 + y1) * 0.5);
@@ -1014,8 +1052,10 @@ function buildComplete3DModel(scene, state) {
     const minSpan = Math.min(spanX, spanY);
     const area = Math.abs(signedArea2D(clippedOuter));
 
-    // Anti-matchstick filter: skip microscopic sliver/flagpole/chimney polygons (< 0.45 mm²)
-    if (minSpan < 0.55 || area < 0.45) continue;
+    const isPier = b.btype === 'pier';
+    // Anti-matchstick filter: skip microscopic sliver/flagpole/chimney polygons (< 0.45 mm²), but keep piers
+    if (!isPier && (minSpan < 0.55 || area < 0.45)) continue;
+    if (isPier && area < 0.15) continue;
 
     const clippedHoles = (b.holes || [])
       .map(h => clipPolyToBox(h.map(toBed), -84.2, -84.2, 84.2, 84.2))
@@ -1116,16 +1156,20 @@ function buildComplete3DModel(scene, state) {
     // Tiny deterministic offset per item index to eliminate coplanar wall/roof Z-fighting between parts
     const epsZ = (i % 11) * 0.012;
 
-    // Always root zBase into the terrain (never float in mid-air!)
-    const zBase = terrainZ - 0.15;
+    const isPier = b.btype === 'pier';
     const isHl = groupHighlighted.has(gid) || !!b.highlighted;
-    const zEaves = terrainZ + Math.max(0.95, totalHMm - roofHMm * 0.45) + (isHl ? 0.45 : 0) + epsZ;
-    const zRidge = zEaves + roofHMm;
 
-    const targetLayerId = isHl ? 5 : 4;
-    const targetList = isHl ? meshes.highlighted : meshes.buildings;
+    // Always root zBase into the terrain or water bed (never float in mid-air!)
+    const zBase = isPier ? deepWaterZ : (terrainZ - 0.15);
+    const zEaves = isPier
+      ? (baseBottomZ + 0.65 + (isHl ? 0.45 : 0) + epsZ)
+      : (terrainZ + Math.max(0.95, totalHMm - roofHMm * 0.45) + (isHl ? 0.45 : 0) + epsZ);
+    const zRidge = isPier ? zEaves : (zEaves + roofHMm);
 
-    const hasPitched = (b.roof !== 'flat' && roofHMm > 0.14);
+    const targetLayerId = isHl ? 5 : (isPier ? 3 : 4);
+    const targetList = isHl ? meshes.highlighted : (isPier ? meshes.roads : meshes.buildings);
+
+    const hasPitched = (!isPier && b.roof !== 'flat' && roofHMm > 0.14);
     extrudeBuildingLoD2(item.clippedOuter, item.clippedHoles, zBase, zEaves, zRidge, hasPitched, targetLayerId, gid, targetList);
 
     buildingBounds.push({

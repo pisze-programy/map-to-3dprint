@@ -169,7 +169,7 @@ def fetch_osm_overpass(south, west, north, east):
     - highways, streets, pedestrian plazas, bridges, railways
     """
     bbox = f"{south:.5f},{west:.5f},{north:.5f},{east:.5f}"
-    nbbox = f"{south - 0.004:.5f},{west - 0.005:.5f},{north + 0.004:.5f},{east + 0.005:.5f}"
+    nbbox = f"{south - 0.012:.5f},{west - 0.015:.5f},{north + 0.012:.5f},{east + 0.015:.5f}"
     cache_key = f"osm_{south:.4f}_{west:.4f}_{north:.4f}_{east:.4f}.json"
     cache_path = os.path.join(CACHE_DIR, cache_key)
 
@@ -191,6 +191,8 @@ def fetch_osm_overpass(south, west, north, east):
       way["railway"];
       way["man_made"="bridge"];
       way["man_made"="pier"];
+      way["man_made"="breakwater"];
+      way["man_made"="groyne"];
     );
     out body qt;
     node(w)({nbbox});

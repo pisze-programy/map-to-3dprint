@@ -234,11 +234,11 @@ function initMap3DApp(initialScene) {
           img.onerror = () => {
             if (!img._triedFallback) {
               img._triedFallback = true;
-              img.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/${z}/${ty}/${wrappedTx}`;
+              const sub = ['a', 'b', 'c'][(wrappedTx + ty) % 3];
+              img.src = `https://${sub}.tile.openstreetmap.fr/hot/${z}/${wrappedTx}/${ty}.png`;
             }
           };
-          const sub = ['a', 'b', 'c'][(wrappedTx + ty) % 3];
-          img.src = `https://${sub}.tile.openstreetmap.fr/hot/${z}/${wrappedTx}/${ty}.png`;
+          img.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/${z}/${ty}/${wrappedTx}`;
           osmTileCache[key] = { img, loaded: false };
         } else if (osmTileCache[key].loaded) {
           const sx = cw / 2 + (tx - centerTileX) * 256;
@@ -267,6 +267,18 @@ function initMap3DApp(initialScene) {
 
       const [scCenterSx, scCenterSy] = toScreenGeo([0, 0]);
       if (Math.hypot(scCenterSx - cw / 2, scCenterSy - ch / 2) < Math.max(cw, ch) * 1.5) {
+        // Subtle blue tint for loaded water/sea polygons on 2D map
+        ctx2d.fillStyle = 'rgba(14, 165, 233, 0.24)';
+        (scene.waterPolys || []).forEach(wp => {
+          ctx2d.beginPath();
+          wp.outer.forEach((p, i) => {
+            const [sx, sy] = toScreenGeo(p);
+            if (i === 0) ctx2d.moveTo(sx, sy); else ctx2d.lineTo(sx, sy);
+          });
+          ctx2d.closePath();
+          ctx2d.fill();
+        });
+
         // Highlighted / Selected buildings overlay on 2D map
         (scene.buildings || []).forEach(b => {
           if (b.hidden) return;
@@ -534,6 +546,7 @@ function initMap3DApp(initialScene) {
       }
     }
 
+    const coastWays = [];
     for (const [wid, w] of ways.entries()) {
       const tags = w.tags || {};
       const nids = w.nodes || [];
@@ -542,6 +555,14 @@ function initMap3DApp(initialScene) {
       const pts = nodesToPts(nids);
       if (pts.length < 2) continue;
 
+      if (tags.natural === 'coastline') {
+        coastWays.push(pts);
+        continue;
+      }
+      if (['pier', 'breakwater', 'groyne'].includes(tags.man_made) && isClosed && pts.length >= 3) {
+        pushBuilding(wid, { ...tags, building: 'pier', height: '3.5', 'roof:shape': 'flat', name: tags.name || `Molo #${wid}` }, pts, []);
+        continue;
+      }
       if ((tags.building || tags['building:part']) && isClosed) {
         if (!usedWays.has(wid) || tags['building:part']) pushBuilding(wid, tags, pts, []);
         continue;
@@ -561,13 +582,74 @@ function initMap3DApp(initialScene) {
         }
         continue;
       }
-      if (tags.highway || tags.railway || tags.man_made === 'bridge') {
+      if (tags.highway || tags.railway || ['bridge', 'pier', 'breakwater', 'groyne'].includes(tags.man_made)) {
         if (tags.tunnel === 'yes' || (parseFloat(tags.layer) < 0)) continue;
-        const hwy = tags.highway || tags.railway || 'bridge';
-        if (['footway', 'path', 'steps', 'cycleway'].includes(hwy) && tags.bridge !== 'yes') continue;
-        const isBridge = tags.bridge === 'yes' || tags.bridge === 'viaduct' || tags.man_made === 'bridge';
+        const hwy = tags.highway || tags.railway || tags.man_made || 'bridge';
+        const isBridge = tags.bridge === 'yes' || tags.bridge === 'viaduct' || ['bridge', 'pier', 'breakwater', 'groyne'].includes(tags.man_made);
+        if (['footway', 'path', 'steps', 'cycleway'].includes(hwy) && !isBridge) continue;
         const rwm = ['motorway', 'trunk', 'primary'].includes(hwy) ? 11.0 : ['secondary', 'tertiary'].includes(hwy) ? 8.5 : 6.2;
         roads.push({ pts, width: Math.max(0.55, rwm * metersToUnits), hwy, bridge: isBridge, name: tags.name || '' });
+      }
+    }
+
+    // Stitch any natural=coastline ways into closed sea polygons (land on left, sea on right -> clockwise around box)
+    if (coastWays.length > 0) {
+      const chains = coastWays.map(c => c.slice());
+      let merged = true;
+      while (merged) {
+        merged = false;
+        for (let i = 0; i < chains.length && !merged; i++) {
+          for (let j = 0; j < chains.length; j++) {
+            if (i === j) continue;
+            const endI = chains[i][chains[i].length - 1];
+            const startJ = chains[j][0];
+            if (Math.hypot(endI[0] - startJ[0], endI[1] - startJ[1]) < 0.8) {
+              chains[i] = chains[i].concat(chains[j].slice(1));
+              chains.splice(j, 1);
+              merged = true;
+              break;
+            }
+          }
+        }
+      }
+      const R = 92.0;
+      const rayBox = (pFrom, pTo) => {
+        const dx = pTo[0] - pFrom[0], dy = pTo[1] - pFrom[1];
+        let bestT = Infinity, bestPt = [Math.max(-R, Math.min(R, pTo[0])), Math.max(-R, Math.min(R, pTo[1]))];
+        for (const ex of [-R, R]) {
+          if (Math.abs(dx) > 1e-6) {
+            const t = (ex - pFrom[0]) / dx, y = pFrom[1] + t * dy;
+            if (t > 0 && y >= -R - 1e-2 && y <= R + 1e-2 && t < bestT) { bestT = t; bestPt = [ex, Math.max(-R, Math.min(R, y))]; }
+          }
+        }
+        for (const ey of [-R, R]) {
+          if (Math.abs(dy) > 1e-6) {
+            const t = (ey - pFrom[1]) / dy, x = pFrom[0] + t * dx;
+            if (t > 0 && x >= -R - 1e-2 && x <= R + 1e-2 && t < bestT) { bestT = t; bestPt = [Math.max(-R, Math.min(R, x)), ey]; }
+          }
+        }
+        return bestPt;
+      };
+      const cwParam = (pt) => {
+        const [x, y] = pt;
+        if (Math.abs(y - R) < 0.05) return x + R;
+        if (Math.abs(x - R) < 0.05) return 2 * R + (R - y);
+        if (Math.abs(y + R) < 0.05) return 4 * R + (R - x);
+        return 6 * R + (y + R);
+      };
+      const corners = [[2 * R, [R, R]], [4 * R, [R, -R]], [6 * R, [-R, -R]], [8 * R, [-R, R]]];
+      for (const ch of chains) {
+        if (ch.length < 2) continue;
+        const pStart = rayBox(ch[1], ch[0]);
+        const pEnd = rayBox(ch[ch.length - 2], ch[ch.length - 1]);
+        const sEnd = cwParam(pEnd), sStart = cwParam(pStart);
+        const span = ((sStart - sEnd) % (8 * R) + 8 * R) % (8 * R);
+        const cwCorners = corners
+          .map(c => [((c[0] - sEnd) % (8 * R) + 8 * R) % (8 * R), c[1]])
+          .filter(c => c[0] > 0.05 && c[0] < span - 0.05)
+          .sort((a, b) => a[0] - b[0])
+          .map(c => c[1]);
+        waterPolys.push({ outer: [pStart, ...ch, pEnd, ...cwCorners], holes: [], name: 'Morze / Zatoka' });
       }
     }
 

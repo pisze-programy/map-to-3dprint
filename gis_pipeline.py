@@ -111,6 +111,110 @@ def poly_area_signed(poly):
     return a * 0.5
 
 
+def _ray_box_intersect(p_from, p_to, R=92.0):
+    dx = p_to[0] - p_from[0]
+    dy = p_to[1] - p_from[1]
+    if abs(dx) < 1e-6 and abs(dy) < 1e-6:
+        return [round(max(-R, min(R, p_to[0])), 2), round(max(-R, min(R, p_to[1])), 2)]
+    best_t = None
+    best_pt = None
+    for edge_x in (-R, R):
+        if abs(dx) > 1e-6:
+            t = (edge_x - p_from[0]) / dx
+            y = p_from[1] + t * dy
+            if t > 0 and -R - 1e-3 <= y <= R + 1e-3:
+                if best_t is None or t < best_t:
+                    best_t = t
+                    best_pt = [round(edge_x, 2), round(max(-R, min(R, y)), 2)]
+    for edge_y in (-R, R):
+        if abs(dy) > 1e-6:
+            t = (edge_y - p_from[1]) / dy
+            x = p_from[0] + t * dx
+            if t > 0 and -R - 1e-3 <= x <= R + 1e-3:
+                if best_t is None or t < best_t:
+                    best_t = t
+                    best_pt = [round(max(-R, min(R, x)), 2), round(edge_y, 2)]
+    return best_pt or [round(max(-R, min(R, p_to[0])), 2), round(max(-R, min(R, p_to[1])), 2)]
+
+
+def _cw_box_param(pt, R=92.0):
+    x, y = pt[0], pt[1]
+    if abs(y - R) < 0.05:
+        return x + R
+    if abs(x - R) < 0.05:
+        return 2.0 * R + (R - y)
+    if abs(y + R) < 0.05:
+        return 4.0 * R + (R - x)
+    return 6.0 * R + (y + R)
+
+
+def build_sea_polygons_from_coastlines(coast_ways_pts, R=92.0):
+    """
+    Converts directed OSM natural=coastline ways (land on left, sea on right)
+    into closed sea water polygons clipped/extended to [-R, R]^2.
+    """
+    if not coast_ways_pts:
+        return []
+
+    # 1. Stitch directed segments where end of A matches start of B
+    chains = [list(seg) for seg in coast_ways_pts if len(seg) >= 2]
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(chains)):
+            for j in range(len(chains)):
+                if i == j:
+                    continue
+                end_i = chains[i][-1]
+                start_j = chains[j][0]
+                if math.hypot(end_i[0] - start_j[0], end_i[1] - start_j[1]) < 0.8:
+                    chains[i] = chains[i] + chains[j][1:]
+                    chains.pop(j)
+                    merged = True
+                    break
+            if merged:
+                break
+
+    sea_polys = []
+    island_holes = []
+    corners = [
+        (2.0 * R, [R, R]),
+        (4.0 * R, [R, -R]),
+        (6.0 * R, [-R, -R]),
+        (8.0 * R, [-R, R]),
+    ]
+
+    for ch in chains:
+        if len(ch) < 2:
+            continue
+        if len(ch) >= 4 and math.hypot(ch[0][0] - ch[-1][0], ch[0][1] - ch[-1][1]) < 1.0:
+            # Closed loop: CCW (>0) is an island (land inside), CW (<0) is water inside
+            if poly_area_signed(ch) > 0:
+                island_holes.append(ch)
+            else:
+                sea_polys.append({"outer": ch, "holes": [], "name": "Morze / Ocean"})
+            continue
+
+        p_start = _ray_box_intersect(ch[1], ch[0], R)
+        p_end = _ray_box_intersect(ch[-2], ch[-1], R)
+        s_end = _cw_box_param(p_end, R)
+        s_start = _cw_box_param(p_start, R)
+        span = (s_start - s_end) % (8.0 * R)
+
+        cw_corners = []
+        for cs, cpt in sorted(corners, key=lambda c: (c[0] - s_end) % (8.0 * R)):
+            dist = (cs - s_end) % (8.0 * R)
+            if 0.05 < dist < span - 0.05:
+                cw_corners.append(cpt)
+
+        poly_pts = [p_start] + ch + [p_end] + cw_corners
+        sea_polys.append({"outer": poly_pts, "holes": [], "name": "Morze / Zatoka"})
+
+    if sea_polys and island_holes:
+        sea_polys[0]["holes"].extend(island_holes)
+    return sea_polys
+
+
 def build_scene_from_bbox(south, west, north, east, title_hint=""):
     """Fetches and processes real DEM + real OSM data for [south, west, north, east]."""
     key_str = f"{south:.4f}_{west:.4f}_{north:.4f}_{east:.4f}"
@@ -167,6 +271,7 @@ def build_scene_from_bbox(south, west, north, east, title_hint=""):
 
     water_polys = []
     water_lines = []
+    coastline_ways = []
     green_polys = []
     roads = []
     buildings = []
@@ -253,6 +358,27 @@ def build_scene_from_bbox(south, west, north, east, title_hint=""):
                 add_building_record(buildings, wid, tags, pts, [])
             continue
 
+        # Coastline ways (land on left, sea/ocean on right)
+        if tags.get("natural") == "coastline":
+            pts = [nodes[nid] for nid in nids if nid in nodes]
+            if len(pts) >= 2:
+                coastline_ways.append(pts)
+            continue
+
+        # Closed piers / breakwaters (e.g. Molo w Sopocie, marina piers)
+        if tags.get("man_made") in ("pier", "breakwater", "groyne") and is_closed:
+            pts = nodes_to_pts(nids, tol=0.10)
+            if len(pts) >= 3:
+                pier_tags = dict(tags)
+                pier_tags["building"] = "pier"
+                pier_tags["height"] = "3.5"
+                pier_tags["roof:shape"] = "flat"
+                pier_tags["roof:height"] = "0.0"
+                if not pier_tags.get("name"):
+                    pier_tags["name"] = f"Molo / Pomost #{wid}"
+                add_building_record(buildings, wid, pier_tags, pts, [])
+            continue
+
         # Water polygons & linear waterways
         if tags.get("natural") == "water" or tags.get("waterway") == "riverbank" or tags.get("landuse") in ("reservoir", "basin"):
             if wid not in used_way_ids_in_rel and is_closed:
@@ -307,16 +433,19 @@ def build_scene_from_bbox(south, west, north, east, title_hint=""):
                         tree_nodes.append([round(tx, 2), round(ty, 2), 12.0])
             continue
 
-        # Highways, Railways & Bridges
-        if "highway" in tags or "railway" in tags or tags.get("man_made") == "bridge":
+        # Highways, Railways, Bridges & Linear Piers
+        if "highway" in tags or "railway" in tags or tags.get("man_made") in ("bridge", "pier", "breakwater", "groyne"):
             if tags.get("tunnel") in ("yes", "building_passage", "culvert") or tags.get("covered") == "yes":
                 continue
             layer_val = parse_float_tag(tags.get("layer"), 0)
             if layer_val is not None and layer_val < 0:
                 continue
 
-            hwy = tags.get("highway") or tags.get("railway") or "bridge"
-            is_bridge = (tags.get("bridge") in ("yes", "viaduct", "cantilever") or tags.get("man_made") == "bridge")
+            hwy = tags.get("highway") or tags.get("railway") or tags.get("man_made") or "bridge"
+            is_bridge = (
+                tags.get("bridge") in ("yes", "viaduct", "cantilever") or
+                tags.get("man_made") in ("bridge", "pier", "breakwater", "groyne")
+            )
 
             if hwy in ("footway", "path", "cycleway", "steps", "bridleway", "track", "corridor") and not is_bridge:
                 if tags.get("footway") in ("sidewalk", "crossing"):
@@ -340,6 +469,11 @@ def build_scene_from_bbox(south, west, north, east, title_hint=""):
                     "bridge": is_bridge,
                     "name": tags.get("name", "")
                 })
+
+    # Convert any natural=coastline chains into closed sea/ocean water polygons
+    if coastline_ways:
+        sea_polys = build_sea_polygons_from_coastlines(coastline_ways, R=92.0)
+        water_polys.extend(sea_polys)
 
     # Deduplicate tree nodes that are too close (< 0.75 units apart)
     filtered_trees = []
