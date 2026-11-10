@@ -10,13 +10,15 @@
 //  - triangles outside own tile, sliver triangles
 function getText(u) { const x = new XMLHttpRequest(); x.open('GET', u, false); x.send(); if (x.status !== 200) throw new Error(u + ' ' + x.status); return x.responseText; }
 const P = new URLSearchParams(location.search);
-const SRC = P.get('src') || '../src/mesh_builder.js';
+const SRC_FILES = P.get('src')
+  ? P.get('src').split(',')
+  : ['../src/geometry_2d.js', '../src/mesh_extrude.js', '../src/mesh_topology.js', '../src/mesh_builder.js'];
 const SCENES = (P.get('scenes') || '').split(',').filter(Boolean);
 const CONFIGS = JSON.parse(P.get('configs') || '[{"tileCols":1,"tileRows":1,"hollowBase":false}]');
 const BED = parseFloat(P.get('bed') || '320');
 const RAYS = parseInt(P.get('rays') || '160', 10);
 const KEYS = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted'];
-(0, eval)(getText(SRC));
+for (const sf of SRC_FILES) (0, eval)(getText(sf));
 
 function analyseLayer(tris, scaleMm) {
   const vmap = new Map(); let nv = 0;
