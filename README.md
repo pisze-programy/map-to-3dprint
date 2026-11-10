@@ -164,25 +164,36 @@ Follow these steps to run the application locally:
 
 ---
 
-## 8. Rebuilding the Single-File Bundle
+## 8. Modular Architecture and Build
 
-If you modify files inside `src/`, rebuild the `index.html` bundle:
+If you modify `src/template.html` or the initial scene dataset, run `build_app.py`:
 
 ```bash
 python3 build_app.py
 ```
 
-### Repository Structure
+### Repository Structure (Modular Per-Feature Layout)
 
 | Path | Description |
 | :--- | :--- |
-| `server.py` | Local HTTP server (`/api/gis`, `/api/geocode`, static file serving) |
+| `server.py` | Local HTTP server (`/api/gis`, `/api/geocode`, static file serving with hidden-file protection) |
 | `fetch_gis.py` | Downloader for AWS Terrarium DEM PNG tiles and Overpass QL vectors |
-| `gis_pipeline.py` | Coordinate projection, polygon ring stitching, coastline water closure, and tree distribution |
-| `build_app.py` | Compiler that bundles `src/*` and initial scene data into `index.html` |
+| `gis_geometry.py` | 2D polygon ring stitching, coastline sea polygon closure, and processed-scene validation |
+| `gis_pipeline.py` | Metric-square DEM sampling, OSM feature extraction, and `scene_v4` caching |
+| `build_app.py` | Generates `src/initial_scene.js` and modular `index.html` from `src/template.html` |
 | `src/template.html` | HTML5 layout and CSS variables |
-| `src/mesh_builder.js` | Multi-tile clipping, 18-step analytical triangle-split DEM contouring (`0` open/non-manifold edges), open SLA hollow vaulting with 4 drain channels, keyhole courtyard bridging, LoD2 roof extrusion, and volume calculation |
-| `src/webgl_studio.js` | Custom WebGL 1.0 renderer with 2048×2048 PCF shadow mapping, studio hemisphere lighting, 3D tile explode, and Möller-Trumbore raycasting |
-| `src/exporters.js` | Client-side generators for vertex-welded `.3mf`, binary `.stl`, and multi-tile `.zip` archives (excluding `meshes.frame`) |
-| `src/ui_app.js` | State management, Anycubic Photon Mono 4 profiles, 2D slippy map with tile grid, Photon autocomplete, and event handlers |
+| `src/geometry_2d.js` | 2D polygon geometry, keyhole courtyard merging, convex/box clipping, and ear-clipping triangulation |
+| `src/mesh_extrude.js` | 3D mesh primitive emitters, watertight 2-manifold LoD2 building extrusion, and 3D tree crowns |
+| `src/mesh_topology.js` | Exact mathematical volume (`ml`), resin/PLA mass (`g`), and welded (`toFixed(3)` mm) manifold preflight |
+| `src/mesh_builder.js` | Core 3D map & SLA hollow vault builder (DEM terraces, bathymetry, disjoint feature slabs, bridges, buildings) |
+| `src/webgl_shaders_math.js` | GLSL shadow/studio shaders, 4×4 matrix math, and Möller–Trumbore ray-triangle intersection |
+| `src/webgl_studio.js` | WebGL 1.0 studio renderer with 2048×2048 PCF shadow mapping, 3D tile explode, and building picking |
+| `src/export_stl_zip.js` | CRC32, ZIP archive builder, binary `.STL` exporter, and multi-tile Anycubic Photon Mono 4 `.ZIP` packager |
+| `src/export_3mf.js` | Multi-volume `.3MF` exporter with vertex welding and per-tile `<object>` assemblies |
+| `src/ui_config.js` | Palettes, layer metadata, global world locations, and printer profiles |
+| `src/ui_map2d.js` | Web Mercator tile projection and interactive 2D slippy map canvas renderer |
+| `src/ui_gis_client.js` | Direct in-browser GIS pipeline (AWS Terrarium DEM + Overpass QL multipolygons) |
+| `src/ui_panels.js` | Palettes, layers, multi-select building inspector, landmark chips, and print stats UI |
+| `src/ui_app.js` | Main application controller, 3D/2D viewport events, Photon Komoot autocomplete, and URL hooks |
+| `tests/` | Automated verification suite (`tests/v3.html`, `tests/roofs.html`, `tests/run_audit.py`, `tests/audit_report.json`) |
 | `docs/screenshots/` | Verification screenshots across camera angles, printer tile grids, and geographic regions |

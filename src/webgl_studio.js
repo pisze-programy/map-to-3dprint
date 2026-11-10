@@ -20,8 +20,8 @@ function createWebGLStudio(canvas3d, state) {
     target: [2, 5, 3.2]
   };
 
-  const shadowProg = compileWebGLProgram(gl, WEBGL_SHADOW_VS, WEBGL_SHADOW_FS, shadow);
-  const mainProg = compileWebGLProgram(gl, WEBGL_MAIN_VS, WEBGL_MAIN_FS, main);
+  const shadowProg = compileWebGLProgram(gl, WEBGL_SHADOW_VS, WEBGL_SHADOW_FS, "shadow");
+  const mainProg = compileWebGLProgram(gl, WEBGL_MAIN_VS, WEBGL_MAIN_FS, "main");
   const SHADOW_RES = 2048;
   const shadowTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, shadowTex);

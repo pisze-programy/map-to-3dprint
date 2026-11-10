@@ -66,8 +66,9 @@ def check_http_status(path, method="GET"):
 def run_stl_and_ui_checks():
     html = """<!DOCTYPE html><html><body><pre id="out">RUNNING</pre><script>
 function getText(u){const x=new XMLHttpRequest();x.open('GET',u,false);x.send();return x.responseText;}
-(0,eval)(getText('../src/mesh_builder.js'));
-(0,eval)(getText('../src/exporters.js'));
+for(const f of ['../src/geometry_2d.js','../src/mesh_extrude.js','../src/mesh_topology.js','../src/mesh_builder.js','../src/export_stl_zip.js','../src/export_3mf.js']){
+  (0,eval)(getText(f));
+}
 const scene=JSON.parse(getText('../cache/scene_v4_48.1280_11.5769_48.1396_11.5941.json'));
 const state={
   cropRatio:0.88,zScale:1.25,terrainScale:1.15,bedSizeMm:252,totalHeightMm:252,
