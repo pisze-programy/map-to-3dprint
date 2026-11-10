@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Map3D Studio — Fotorealistyczny Konfigurator GIS & Eksporter .3MF / .STL</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --background: #f8fafc;
+      --foreground: #0f172a;
+      --card: #ffffff;
+      --border: #cbd5e1;
+      --muted-foreground: #64748b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #0f172a;
+        --foreground: #f8fafc;
+        --card: #1e293b;
+        --border: #334155;
+        --muted-foreground: #94a3b8;
+      }
+    }
+    * { box-sizing: border-box; user-select: none; }
+    body { margin: 0; padding: 0; overflow-x: hidden; }
+    .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.35); border-radius: 9999px; }
+    input[type="range"] { accent-color: #2563eb; }
+    input[type="color"] { -webkit-appearance: none; border: none; padding: 0; overflow: hidden; cursor: pointer; }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch { border: none; border-radius: 6px; }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased min-h-screen flex flex-col">
+
+  <!-- TOP HEADER BAR -->
+  <header class="bg-[var(--card)] border-b border-[var(--border)] px-4 py-2 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm">
+        3D
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-bold text-base tracking-tight text-[var(--foreground)]">Map3D Print Studio</h1>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-semibold border border-emerald-500/30">
+            100% Prawdziwe Dane: OpenStreetMap + AWS Terrarium DEM
+          </span>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground)]">
+          Schodkowe warstwice terenu DEM • Batymetria wody • Parki i drzewa 3D • Ulice i mosty z filarami • Budynki LoD2 z dachami i dziedzińcami
+        </p>
+      </div>
+    </div>
+
+    <!-- Printer Profile & Export Buttons -->
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="flex items-center gap-1.5 bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5">
+        <span class="text-xs text-[var(--muted-foreground)]">Drukarka:</span>
+        <select id="printerSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none cursor-pointer">
+          <option value="330" selected>Prusa XL 5-Toolhead (33×33 cm — 4/5 kolorów)</option>
+          <option value="256">Bambu Lab X1C / P1S + AMS (25×25 cm)</option>
+          <option value="350">Voron 2.4 350 + ERCF (35×35 cm)</option>
+          <option value="520">Format XL 4-Kafle (52×52 cm)</option>
+        </select>
+      </div>
+
+      <button id="btnExport3MF" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"/></svg>
+        Eksportuj .3MF (Warstwy do Slicera)
+      </button>
+
+      <button id="btnExportSTL" class="px-3 py-1.5 rounded-lg bg-[var(--background)] hover:opacity-80 text-[var(--foreground)] border border-[var(--border)] font-semibold text-xs flex items-center gap-1.5 transition">
+        Pobierz .STL
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE GRID -->
+  <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3">
+
+    <!-- LEFT PANEL: INTERACTIVE WORLD MAP + LIVE GIS FETCH + INSPECTOR -->
+    <section class="lg:col-span-3 flex flex-col gap-3">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2.5 shadow-sm">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            1. Interaktywna Mapa (Wybór Kadru)
+          </h2>
+          <span id="bboxScaleBadge" class="text-xs font-mono px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)]">33×33 cm</span>
+        </div>
+
+        <!-- Search Any Place on Earth with Live Autocomplete (Photon OSM) -->
+        <div class="relative">
+          <div class="flex items-center gap-1.5">
+            <input id="placeSearchInput" type="text" autocomplete="off" placeholder="Wpisz miasto, górę, kurort, wyspę na Ziemi..." class="bg-[var(--background)] border border-[var(--border)] rounded-lg text-xs px-2.5 py-1.5 flex-1 text-[var(--foreground)] focus:outline-none focus:border-blue-500" />
+            <button id="btnSearchPlace" class="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition whitespace-nowrap">
+              Szukaj
+            </button>
+          </div>
+          <div id="searchSuggestionsDropdown" style="background-color: var(--card); z-index: 100;" class="hidden absolute left-0 right-0 top-full mt-1 border-2 border-blue-500/40 rounded-lg shadow-2xl max-h-56 overflow-y-auto divide-y divide-[var(--border)]"></div>
+        </div>
+
+        <!-- Universal World Randomizer (Mountains, Resorts, Asia, East/West, Global) -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-[var(--muted-foreground)]">Losuj obszar testowy na świecie:</span>
+            <span id="currentRegionBadge" class="text-xs font-mono text-blue-400 truncate max-w-[165px]">Europa • Monachium</span>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <button data-random-cat="all" class="px-2 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition flex items-center gap-1 shadow-sm">
+              🎲 Losuj Świat
+            </button>
+            <button data-random-cat="mountains" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
+              ⛰️ Góry
+            </button>
+            <button data-random-cat="resorts" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
+              🏖️ Kurorty
+            </button>
+            <button data-random-cat="asia" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
+              🏯 Azja
+            </button>
+            <button data-random-cat="west_east" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
+              🌍 Wschód/Zachód
+            </button>
+          </div>
+        </div>
+
+        <!-- Interactive 2D Slippy Map Canvas -->
+        <div class="relative rounded-lg overflow-hidden border border-[var(--border)] bg-[#dce6f0]" style="height: 220px;">
+          <canvas id="map2dCanvas" class="w-full h-full cursor-grab active:cursor-grabbing block"></canvas>
+          <div class="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none">
+            <span id="mapStatusPill" class="text-xs px-2 py-0.5 rounded bg-black/75 text-white font-mono">
+              N 48.1280°..48.1396° • E 11.5769°..11.5941°
+            </span>
+          </div>
+          <!-- 2D Map Zoom Controls -->
+          <div class="absolute top-8 right-1.5 flex flex-col gap-1">
+            <button id="btnZoomIn2D" title="Przybliż mapę" class="w-6 h-6 rounded bg-black/75 hover:bg-black text-white font-bold text-xs flex items-center justify-center shadow">＋</button>
+            <button id="btnZoomOut2D" title="Oddal mapę (cały świat)" class="w-6 h-6 rounded bg-black/75 hover:bg-black text-white font-bold text-xs flex items-center justify-center shadow">－</button>
+          </div>
+          <div class="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none text-xs">
+            <span class="px-2 py-0.5 rounded bg-black/70 text-gray-200 font-mono">
+              Przeciągnij mapę / Scroll: Zoom • 100% Live GIS
+            </span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Kadr:</span>
+          <input id="cropSizeSlider" type="range" min="55" max="98" value="88" class="flex-1" />
+          <span id="cropSizeLabel" class="text-xs font-mono w-14 text-right">1.19 km</span>
+        </div>
+
+        <!-- Live GIS Fetch & Render Button -->
+        <button id="btnRender3D" class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-1.5 shadow-md transition">
+          Pobierz Prawdziwe Dane z Mapy i Renderuj 3D
+        </button>
+      </div>
+
+      <!-- BUILDING INSPECTOR & HIGHLIGHTING -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm flex-1">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            Inspektor Budynku (OSM)
+          </h2>
+          <span id="highlightedCountBadge" class="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 font-semibold border border-amber-500/30">
+            Wyróżnione: 0
+          </span>
+        </div>
+
+        <div id="buildingInspectorEmpty" class="hidden text-xs text-[var(--muted-foreground)] py-3 text-center border border-dashed border-[var(--border)] rounded-lg">
+          Kliknij dowolny budynek w <strong>widoku 3D</strong>, aby go wyróżnić lub zmienić wysokość.
+        </div>
+
+        <div id="buildingInspectorContent" class="flex flex-col gap-2">
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2 flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span id="inspName" class="font-bold text-xs text-[var(--foreground)] truncate">St. Lukas (Lukaskirche)</span>
+                <span id="inspTagBadge" class="text-xs px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-mono">DACH: GABLED</span>
+              </div>
+              <p id="inspOsmId" class="text-xs font-mono text-[var(--muted-foreground)] mt-0.5">OSM ID: 19330628 • Kondygnacje: 9</p>
+            </div>
+            <div class="text-right shrink-0">
+              <div id="inspRealHeight" class="text-xs font-bold text-[var(--foreground)]">32 m</div>
+              <div id="inspPrintHeight" class="text-xs font-mono text-blue-400">12.4 mm</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5">
+            <button id="btnToggleHighlight" class="py-1.5 px-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition">
+              ★ Wyróżnij budynek
+            </button>
+            <button id="btnToggleHideBuilding" class="py-1.5 px-2 rounded-lg bg-[var(--background)] hover:opacity-80 text-[var(--foreground)] border border-[var(--border)] font-semibold text-xs transition">
+              Ukryj / Przywróć
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Skala wys.:</span>
+            <input id="inspHeightMultiplier" type="range" min="40" max="240" value="100" class="flex-1" />
+            <span id="inspHeightMultLabel" class="text-xs font-mono w-10 text-right">100%</span>
+          </div>
+        </div>
+
+        <div>
+          <span class="text-xs text-[var(--muted-foreground)] block mb-1">Obiekty z nazwą w kadrze OSM:</span>
+          <div id="landmarkChips" class="flex flex-wrap gap-1"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CENTER PANEL: STUDIO 3D VIEWPORT -->
+    <section class="lg:col-span-6 flex flex-col gap-3">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2.5 shadow-sm flex-1">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <h2 class="text-sm font-semibold text-[var(--foreground)]">2. Fotorealistyczny Podgląd 3D (WebGL + Soft Shadows)</h2>
+            <span id="meshStatsBadge" class="text-xs font-mono px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)]">
+              Ładowanie siatki...
+            </span>
+          </div>
+
+          <div class="flex items-center gap-1">
+            <button data-cam="studio" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Ujęcie Studio</button>
+            <button data-cam="top" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Z góry</button>
+            <button data-cam="side" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Profil warstw</button>
+            <button id="btnAutoRotate" class="px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">↻ Obrót</button>
+          </div>
+        </div>
+
+        <!-- EXPLODED VIEW SLIDER -->
+        <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-1.5 flex flex-wrap items-center gap-3">
+          <span class="text-xs font-bold text-blue-500">Rozbicie na warstwy (Exploded View):</span>
+          <input id="explodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[120px]" />
+          <span id="explodeValueLabel" class="text-xs font-mono font-bold text-blue-500 w-10 text-right">0%</span>
+          <button id="btnQuickExplode" class="px-2.5 py-0.5 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-500 transition">
+            Rozbij / Złóż
+          </button>
+        </div>
+
+        <!-- 3D WebGL Canvas Container -->
+        <div class="relative flex-1 min-h-[460px] rounded-xl overflow-hidden border border-[var(--border)] bg-[#f7f8fa]">
+          <canvas id="view3dCanvas" class="w-full h-full block cursor-grab active:cursor-grabbing"></canvas>
+
+          <!-- Loading Live GIS Overlay -->
+          <div id="loadingOverlay3D" class="hidden absolute inset-0 bg-black/65 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-30">
+            <div class="w-9 h-9 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+            <div id="loadingStatusText" class="text-white font-semibold text-sm">Pobieranie prawdziwych danych GIS z OpenStreetMap i AWS Terrarium DEM...</div>
+            <div class="text-gray-300 text-xs mt-1">Budowanie schodkowych warstwic terenu, batymetrii wody, drzew 3D i dachów LoD2</div>
+          </div>
+
+          <!-- Hover Tooltip -->
+          <div id="hoverTooltip" class="hidden absolute pointer-events-none px-2.5 py-1.5 rounded-lg bg-black/85 text-white text-xs border border-white/15 shadow-lg backdrop-blur-sm z-20"></div>
+
+          <!-- Exploded Layer Legend Overlay -->
+          <div id="explodedLegendOverlay" class="hidden absolute top-3 left-3 bg-black/80 border border-white/15 rounded-lg p-2.5 text-white text-xs backdrop-blur-sm pointer-events-none space-y-1">
+            <div class="font-bold text-blue-300 mb-1">Struktura warstw modelu 3D (oś Z):</div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block"></span><span>5. Wyróżnione budynki (Akcent)</span></div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-white inline-block"></span><span>4B. Budynki, dziedzińce i dachy spadziste LoD2</span></div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-gray-200 inline-block"></span><span>4A. Ulice, place, koleje i mosty z filarami</span></div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-600 inline-block"></span><span>3. Trawa, parki, nabrzeża i korony drzew 3D</span></div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-[#dfb888] inline-block"></span><span>2. Schodkowe warstwice terenu DEM (Nierówności)</span></div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-[#82bce0] inline-block"></span><span>1. Woda i batymetria schodkowa (Rzeki/Jeziora)</span></div>
+          </div>
+
+          <!-- Bottom Viewport Toggles -->
+          <div class="absolute bottom-2.5 left-3 right-3 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+            <div class="px-2.5 py-1 rounded-md bg-black/70 text-gray-100 text-xs backdrop-blur-sm">
+              LPM: Obracaj 360° • Klik: Zaznacz • Shift+Klik: Zaznacz wiele • PPM: Przesuwaj
+            </div>
+            <div class="flex items-center gap-2 pointer-events-auto">
+              <label class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/70 text-gray-100 text-xs cursor-pointer backdrop-blur-sm">
+                <input id="chkStudioBg" type="checkbox" checked class="rounded" />
+                Tło Studio
+              </label>
+              <label class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/70 text-gray-100 text-xs cursor-pointer backdrop-blur-sm">
+                <input id="chkShowFrame" type="checkbox" checked class="rounded" />
+                Rama
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Environment & Frame Bar -->
+        <div class="grid grid-cols-3 gap-2">
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2">
+            <span class="text-xs text-[var(--muted-foreground)]">Rama:</span>
+            <select id="frameStyleSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none">
+              <option value="black" selected>Czarny Mat (Lichtbild)</option>
+              <option value="oak">Dąb Naturalny</option>
+              <option value="walnut">Orzech Ciemny</option>
+              <option value="white">Biały</option>
+            </select>
+          </div>
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+            <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Światło:</span>
+            <input id="sunAngleSlider" type="range" min="0" max="360" value="132" class="w-full" />
+          </div>
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+            <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Tytuł:</span>
+            <input id="plaqueTextInput" type="text" value="MÜNCHEN" maxlength="22" class="bg-transparent text-xs font-mono font-bold text-[var(--foreground)] w-full focus:outline-none text-right" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT PANEL: PALETTES, LAYERS & SLICER EXPORT -->
+    <section class="lg:col-span-3 flex flex-col gap-3">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+        <h2 class="text-sm font-semibold text-[var(--foreground)]">3. Paleta Kolorów Filamentu</h2>
+        <div class="grid grid-cols-2 gap-1.5" id="paletteButtonsContainer"></div>
+      </div>
+
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm flex-1">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-[var(--foreground)]">4. Warstwy i Nierówności</h2>
+          <button id="btnShowAllLayers" class="text-xs text-blue-500 hover:underline font-medium">Pokaż wszystkie</button>
+        </div>
+
+        <div id="layersListContainer" class="flex flex-col gap-1.5 custom-scroll overflow-y-auto pr-0.5"></div>
+
+        <div class="border-t border-[var(--border)] pt-2 mt-1 space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-[var(--muted-foreground)]">Skala wysokości budynków i drzew:</span>
+            <span id="zScaleLabel" class="text-xs font-mono font-bold">1.25×</span>
+          </div>
+          <input id="zScaleSlider" type="range" min="60" max="220" value="125" class="w-full" />
+
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-[var(--muted-foreground)]">Przewyższenie warstwic terenu DEM:</span>
+            <span id="terrainScaleLabel" class="text-xs font-mono font-bold">1.15×</span>
+          </div>
+          <input id="terrainScaleSlider" type="range" min="40" max="250" value="115" class="w-full" />
+        </div>
+      </div>
+
+      <!-- SLICER EXPORT SUMMARY -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Eksport Warstw do Druku 3D</h3>
+          <span class="text-xs font-mono text-emerald-500 font-semibold">Manifold ✓</span>
+        </div>
+        <div class="grid grid-cols-3 gap-1.5 text-center">
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
+            <div class="text-xs text-[var(--muted-foreground)]">Wymiar</div>
+            <div id="statDimensions" class="text-xs font-bold font-mono mt-0.5">330×330×29 mm</div>
+          </div>
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
+            <div class="text-xs text-[var(--muted-foreground)]">Masa PLA</div>
+            <div id="statFilament" class="text-xs font-bold font-mono mt-0.5">~448 g</div>
+          </div>
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
+            <div class="text-xs text-[var(--muted-foreground)]">Bryły .3MF</div>
+            <div id="statVolumes" class="text-xs font-bold font-mono mt-0.5">6 osobnych</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <select id="singleLayerStlSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-xs flex-1 text-[var(--foreground)] focus:outline-none">
+            <option value="all">Wszystkie warstwy razem (.STL)</option>
+            <option value="highlighted">Tylko Wyróżnione Budynki (Insert)</option>
+            <option value="buildings">Tylko Budynki i Dachy LoD2</option>
+            <option value="roads">Tylko Ulice i Mosty</option>
+            <option value="greenery">Tylko Zieleń i Drzewa 3D</option>
+            <option value="base">Tylko Warstwice Terenu DEM</option>
+            <option value="water">Tylko Woda i Batymetria</option>
+          </select>
+          <button id="btnExportLayerSTL" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs whitespace-nowrap transition">
+            .STL Warstwy
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- BUNDLED ENGINE & INITIAL REAL GIS SCENE -->
+  <script>
+/*__BUNDLE_SCRIPT__*/
+  </script>
+</body>
+</html>

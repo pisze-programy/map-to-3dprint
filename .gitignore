@@ -1,0 +1,13 @@
+# macOS & IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Raw GIS & DEM download cache (keep only initial bundled scene)
+cache/*
+!cache/scene_v3_48.1280_11.5769_48.1396_11.5941.json
