@@ -215,29 +215,66 @@ def build_sea_polygons_from_coastlines(coast_ways_pts, R=92.0):
     return sea_polys
 
 
+def validate_processed_scene(scene):
+    """
+    Fix B05, B12, B13: Rejects truncated or incomplete processed scenes
+    (e.g. partial Overpass responses missing roads, greenery, or trees).
+    """
+    if not isinstance(scene, dict):
+        return False
+    buildings = scene.get("buildings") or []
+    roads = scene.get("roads") or []
+    green_polys = scene.get("greenPolys") or []
+    trees = scene.get("trees") or []
+    if len(buildings) < 50 or len(roads) < 15:
+        return False
+    if len(green_polys) == 0 and len(trees) == 0:
+        return False
+    return True
+
+
 def build_scene_from_bbox(south, west, north, east, title_hint=""):
     """Fetches and processes real DEM + real OSM data for [south, west, north, east]."""
     key_str = f"{south:.4f}_{west:.4f}_{north:.4f}_{east:.4f}"
-    processed_cache = os.path.join(CACHE_DIR, f"scene_v3_{key_str}.json")
+    processed_cache = os.path.join(CACHE_DIR, f"scene_v4_{key_str}.json")
     if os.path.exists(processed_cache):
-        with open(processed_cache, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    # 1. Fetch real AWS Terrarium DEM
-    dem_data = fetch_terrarium_dem_grid(south, west, north, east, grid_size=72, zoom=14)
-
-    # 2. Fetch real OpenStreetMap vectors
-    osm_raw = fetch_osm_overpass(south, west, north, east)
-    elements = osm_raw.get("elements", [])
+        try:
+            with open(processed_cache, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            if validate_processed_scene(cached):
+                return cached
+        except Exception:
+            pass
+        try:
+            os.remove(processed_cache)
+        except OSError:
+            pass
 
     center_lat = (south + north) * 0.5
     center_lon = (west + east) * 0.5
-    cos_lat = math.cos(math.radians(center_lat))
+    cos_lat = max(0.2, math.cos(math.radians(center_lat)))
 
     span_lat_m = (north - south) * 111320.0
     span_lon_m = (east - west) * 111320.0 * cos_lat
     span_m = max(span_lat_m, span_lon_m)
     meters_to_units = 170.0 / span_m
+
+    # Fix B08: Sample DEM over the exact metric square [-85, +85] matching vector projection
+    half_m = span_m * 0.5
+    sq_dlat = half_m / 111320.0
+    sq_dlon = half_m / (111320.0 * cos_lat)
+    dem_data = fetch_terrarium_dem_grid(
+        center_lat - sq_dlat,
+        center_lon - sq_dlon,
+        center_lat + sq_dlat,
+        center_lon + sq_dlon,
+        grid_size=72,
+        zoom=14
+    )
+
+    # 2. Fetch real OpenStreetMap vectors (validated for node completeness and multipolygon relations)
+    osm_raw = fetch_osm_overpass(south, west, north, east)
+    elements = osm_raw.get("elements", [])
 
     def project(lon, lat):
         mx = (lon - center_lon) * 111320.0 * cos_lat * meters_to_units
@@ -556,6 +593,7 @@ def build_scene_from_bbox(south, west, north, east, title_hint=""):
         "center": [round(center_lat, 5), round(center_lon, 5)],
         "spanMeters": round(span_m, 1),
         "metersToUnits": round(meters_to_units, 5),
+        "_fetchedCropRatio": 0.88,
         "title": title_hint or f"N {center_lat:.3f}° E {center_lon:.3f}°",
         "dem": dem_data,
         "waterPolys": water_polys,
@@ -566,8 +604,19 @@ def build_scene_from_bbox(south, west, north, east, title_hint=""):
         "buildings": buildings
     }
 
+    if not validate_processed_scene(scene):
+        raise RuntimeError(
+            f"Incomplete GIS scene for [{south}, {west}, {north}, {east}]: "
+            f"{len(buildings)} buildings, {len(roads)} roads, {len(green_polys)} greenPolys, {len(filtered_trees)} trees"
+        )
+
     with open(processed_cache, "w", encoding="utf-8") as f:
         json.dump(scene, f, separators=(",", ":"))
+
+    legacy_cache = os.path.join(CACHE_DIR, f"scene_v3_{key_str}.json")
+    if os.path.exists(legacy_cache):
+        with open(legacy_cache, "w", encoding="utf-8") as f:
+            json.dump(scene, f, separators=(",", ":"))
 
     return scene
 

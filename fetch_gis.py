@@ -159,23 +159,61 @@ def fetch_terrarium_dem_grid(south, west, north, east, grid_size=64, zoom=14):
     }
 
 
+def validate_overpass_payload(parsed):
+    """
+    Validates that an Overpass JSON payload has no runtime/timeout remark,
+    contains ways and nodes, and that every node referenced by a way exists in the payload.
+    """
+    if not isinstance(parsed, dict):
+        return False
+    remark = str(parsed.get("remark", "")).strip()
+    if remark:
+        return False
+    elements = parsed.get("elements")
+    if not isinstance(elements, list) or len(elements) <= 10:
+        return False
+    node_ids = {
+        el["id"]
+        for el in elements
+        if isinstance(el, dict) and el.get("type") == "node" and "lat" in el and "lon" in el
+    }
+    if len(node_ids) <= 10:
+        return False
+    ways = [el for el in elements if isinstance(el, dict) and el.get("type") == "way" and el.get("nodes")]
+    if not ways:
+        return False
+    for w in ways:
+        for nid in w.get("nodes", []):
+            if nid not in node_ids:
+                return False
+    return True
+
+
 def fetch_osm_overpass(south, west, north, east):
     """
     Fetches full OSM vector features inside bounding box:
-    - buildings & building:part
+    - buildings & building:part (ways & multipolygon relations)
     - water bodies, riverbanks, rivers, streams, canals
     - parks, forests, grass, meadows, gardens, recreation grounds
     - trees & tree rows
     - highways, streets, pedestrian plazas, bridges, railways
     """
     bbox = f"{south:.5f},{west:.5f},{north:.5f},{east:.5f}"
-    nbbox = f"{south - 0.012:.5f},{west - 0.015:.5f},{north + 0.012:.5f},{east + 0.015:.5f}"
     cache_key = f"osm_{south:.4f}_{west:.4f}_{north:.4f}_{east:.4f}.json"
     cache_path = os.path.join(CACHE_DIR, cache_key)
 
     if os.path.exists(cache_path):
-        with open(cache_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            if validate_overpass_payload(cached):
+                return cached
+        except Exception:
+            pass
+        try:
+            os.remove(cache_path)
+        except OSError:
+            pass
 
     query = f"""
     [out:json][timeout:30][bbox:{bbox}];
@@ -222,13 +260,12 @@ def fetch_osm_overpass(south, west, north, east):
             )
             if res.returncode == 0 and res.stdout:
                 parsed = json.loads(res.stdout)
-                if "remark" in parsed and "runtime error" in str(parsed.get("remark", "")).lower():
-                    last_err = parsed["remark"]
+                if not validate_overpass_payload(parsed):
+                    last_err = parsed.get("remark") or "Incomplete Overpass payload (missing nodes or ways)"
                     continue
-                if "elements" in parsed and len(parsed["elements"]) > 10:
-                    with open(cache_path, "w", encoding="utf-8") as f:
-                        json.dump(parsed, f)
-                    return parsed
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(parsed, f)
+                return parsed
         except Exception as e:
             last_err = e
             continue

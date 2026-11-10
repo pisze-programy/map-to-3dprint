@@ -22,31 +22,48 @@ class Map3DRequestHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=ROOT_DIR, **kwargs)
 
     def end_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        origin = self.headers.get("Origin", "")
+        if origin in ("http://127.0.0.1:8765", "http://localhost:8765"):
+            self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         super().end_headers()
 
-    def send_Error_403(self):
+    def _is_forbidden_path(self):
+        parsed = urllib.parse.urlparse(self.path)
+        req_path = urllib.parse.unquote(parsed.path or "/")
+        parts = [p for p in req_path.split("/") if p]
+        if any(p.startswith(".") or p == "__pycache__" for p in parts):
+            return True
+        if req_path.endswith((".py", ".pyc", ".pyo", ".sh", ".env")):
+            return True
+        return False
+
+    def send_Error_403(self, head_only=False):
         msg = b'{"error":"Forbidden"}'
         self.send_response(403)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(msg)))
         self.end_headers()
-        self.wfile.write(msg)
+        if not head_only:
+            self.wfile.write(msg)
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
 
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        req_path = urllib.parse.unquote(parsed.path or "/")
-        # Fix B17: Block direct HTTP access to hidden files (.git, .env) and Python backend scripts
-        if any(part.startswith(".") for part in req_path.split("/") if part) or req_path.endswith(".py"):
-            self.send_Error_403()
+    def do_HEAD(self):
+        if self._is_forbidden_path():
+            self.send_Error_403(head_only=True)
             return
+        return super().do_HEAD()
+
+    def do_GET(self):
+        if self._is_forbidden_path():
+            self.send_Error_403(head_only=False)
+            return
+        parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/gis":
             qs = urllib.parse.parse_qs(parsed.query)
             try:

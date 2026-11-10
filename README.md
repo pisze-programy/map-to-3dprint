@@ -78,7 +78,7 @@ Each tile features a solid mounting rim at `z = 0 mm` around all four edges with
 - **Operating System**: macOS, Linux, or Windows
 - **Python**: Version 3.9 or newer (standard library only; no `pip` packages required)
 - **Command-Line Tool**: `curl` (installed by default on macOS, Linux, and Windows 10/11)
-- **Web Browser**: Chrome, Firefox, Safari, or Edge with WebGL 1.0 (`OES_standard_derivatives` and `WEBGL_depth_texture`)
+- **Web Browser**: Chrome, Firefox, Safari, or Edge with WebGL 1.0 (`OES_standard_derivatives` and `WEBGL_depth_texture` are optional extensions with automatic fallback)
 
 ---
 
@@ -114,7 +114,7 @@ Follow these steps to run the application locally:
 3. Alternatively, click one of the world randomizer buttons (`🎲 Losuj Świat`, `⛰️ Góry`, `🏖️ Kurorty`, `🏯 Azja`, `🌍 Wschód/Zachód`) to load a test region.
 4. Drag the 2D map with the left mouse button to position the blue print frame. When a multi-tile format is active, dashed cyan lines on the 2D map show the exact tile boundaries (`R1C1` through `R4C2`).
 5. Scroll the mouse wheel on the 2D map (or click `+` and `-`) to change the map zoom level.
-6. Adjust the **Kadr** slider to set the physical ground width (`0.60 km` to `1.35 km`).
+6. Adjust the **Kadr** slider to set the physical ground width (`0.47 km` to `1.29 km`).
 7. Click **POBIERZ PRAWDZIWE DANE Z MAPY I RENDERUJ 3D** to download the GIS data and generate the 3D mesh.
 
 ### 6.2 Inspect and Select Buildings

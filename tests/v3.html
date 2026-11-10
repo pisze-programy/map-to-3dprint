@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>mesh audit v3</title></head>
+<body><pre id="out">RUNNING</pre>
+<script>
+// Independent verification harness v3 (read-only):
+//  - topology per layer and per tile (weld exactly like exporters: toFixed(3) mm)
+//  - building floating gap vs ACTUAL printed surface (top-most up-facing tri of base/water/greenery/roads)
+//  - vertical ray winding analysis: leaks (odd/unbalanced), self-overlap within a layer (winding>1),
+//    and volumetric overlap BETWEEN layers (multi-material ambiguity)
+//  - triangles outside own tile, sliver triangles
+function getText(u) { const x = new XMLHttpRequest(); x.open('GET', u, false); x.send(); if (x.status !== 200) throw new Error(u + ' ' + x.status); return x.responseText; }
+const P = new URLSearchParams(location.search);
+const SRC = P.get('src') || '../src/mesh_builder.js';
+const SCENES = (P.get('scenes') || '').split(',').filter(Boolean);
+const CONFIGS = JSON.parse(P.get('configs') || '[{"tileCols":1,"tileRows":1,"hollowBase":false}]');
+const BED = parseFloat(P.get('bed') || '320');
+const RAYS = parseInt(P.get('rays') || '160', 10);
+const KEYS = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted'];
+(0, eval)(getText(SRC));
+
+function analyseLayer(tris, scaleMm) {
+  const vmap = new Map(); let nv = 0;
+  const key = p => ((p[0] + 84.6) * scaleMm).toFixed(3) + '_' + ((p[1] + 84.6) * scaleMm).toFixed(3) + '_' + Math.max(0, p[2] * scaleMm).toFixed(3);
+  const vid = p => { const k = key(p); let i = vmap.get(k); if (i === undefined) { i = nv++; vmap.set(k, i); } return i; };
+  const und = new Map(), dir = new Map();
+  let degenerate = 0, sliver = 0; const faces = [];
+  for (const t of tris) {
+    const a = vid(t.v0), b = vid(t.v1), c = vid(t.v2);
+    if (a === b || b === c || a === c) { degenerate++; continue; }
+    // area in mm^2
+    const ux = (t.v1[0] - t.v0[0]) * scaleMm, uy = (t.v1[1] - t.v0[1]) * scaleMm, uz = (t.v1[2] - t.v0[2]) * scaleMm;
+    const vx = (t.v2[0] - t.v0[0]) * scaleMm, vy = (t.v2[1] - t.v0[1]) * scaleMm, vz = (t.v2[2] - t.v0[2]) * scaleMm;
+    const area = 0.5 * Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+    if (area < 1e-6) sliver++;
+    faces.push([a, b, c]);
+    for (const [u, v] of [[a, b], [b, c], [c, a]]) {
+      const dk = u + '_' + v; dir.set(dk, (dir.get(dk) || 0) + 1);
+      const uk = u < v ? u + '_' + v : v + '_' + u; und.set(uk, (und.get(uk) || 0) + 1);
+    }
+  }
+  let open = 0, nonMan = 0, dupDir = 0, unpaired = 0;
+  for (const [, c] of und) { if (c === 1) open++; else if (c > 2) nonMan++; }
+  for (const [k, c] of dir) { if (c > 1) dupDir++; const [u, v] = k.split('_'); if ((dir.get(v + '_' + u) || 0) !== c) unpaired++; }
+  const parent = new Int32Array(nv).map((_, i) => i);
+  const find = x => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  for (const [a, b, c] of faces) { const ra = find(a); parent[find(b)] = ra; parent[find(c)] = ra; }
+  const roots = new Set(); for (const [a] of faces) roots.add(find(a));
+  return { tris: tris.length, degenerate, sliverLt1e6mm2: sliver, openEdges: open, nonManifoldEdges: nonMan, sameDirDupEdges: dupDir, unpairedDirEdges: unpaired, shells: roots.size };
+}
+
+// Grid index of triangles by XY bbox for vertical ray queries
+function buildIndex(tris, G) {
+  const cells = new Map(); const cs = 169.2 / G;
+  const ci = v => Math.max(0, Math.min(G - 1, Math.floor((v + 84.6) / cs)));
+  tris.forEach((t, i) => {
+    const x0 = ci(Math.min(t.v0[0], t.v1[0], t.v2[0])), x1 = ci(Math.max(t.v0[0], t.v1[0], t.v2[0]));
+    const y0 = ci(Math.min(t.v0[1], t.v1[1], t.v2[1])), y1 = ci(Math.max(t.v0[1], t.v1[1], t.v2[1]));
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const k = y * G + x; let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(i); }
+  });
+  return { cells, G, cs, ci, tris };
+}
+// returns list of {z, s} crossings of a vertical ray at (px,py); s=+1 entering from above going down? we use upward ray: s = sign(n.z) of geometric normal
+function rayCross(idx, px, py) {
+  const k = idx.ci(py) * idx.G + idx.ci(px); const list = idx.cells.get(k) || []; const out = [];
+  for (const i of list) {
+    const t = idx.tris[i]; const a = t.v0, b = t.v1, c = t.v2;
+    const d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+    if (Math.abs(d) < 1e-12) continue; // vertical tri
+    const l1 = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / d;
+    const l2 = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / d;
+    const l3 = 1 - l1 - l2;
+    if (l1 < 0 || l2 < 0 || l3 < 0) continue;
+    const z = l1 * a[2] + l2 * b[2] + l3 * c[2];
+    out.push({ z, s: d > 0 ? 1 : -1 }); // d>0 => CCW in XY => normal +z (exit when going up)
+  }
+  out.sort((p, q) => p.z - q.z);
+  return out;
+}
+// convert crossings to inside intervals with winding (going up: +z normal = exit => winding -1; -z normal = entry => +1)
+function intervals(cr) {
+  let w = 0, maxW = 0, minW = 0; const iv = []; let start = null;
+  for (const c of cr) {
+    const nw = w + (c.s > 0 ? -1 : 1);
+    if (w <= 0 && nw > 0) start = c.z;
+    if (w > 0 && nw <= 0 && start !== null) { iv.push([start, c.z]); start = null; }
+    w = nw; if (w > maxW) maxW = w; if (w < minW) minW = w;
+  }
+  return { iv, endW: w, maxW, minW };
+}
+function overlapLen(A, B) { let s = 0; for (const [a0, a1] of A) for (const [b0, b1] of B) { const o = Math.min(a1, b1) - Math.max(a0, b0); if (o > 0) s += o; } return s; }
+
+const results = [];
+for (const sc of SCENES) {
+  const scene = JSON.parse(getText('../cache/' + sc)); if (P.get('fixGreen')==='1') scene.greeneryPolys = scene.greenPolys;
+  for (const cfg of CONFIGS) {
+    const state = Object.assign({ cropRatio: 0.88, _fetchedCropRatio: 0.88, cropCenterX: 0, cropCenterY: 0, zScale: 1.25, terrainScale: 1.15, bedSizeMm: BED, totalHeightMm: BED, hollowWallMm: 1.8,
+      layerVisible: { water: true, base: true, greenery: true, roads: true, buildings: true, highlighted: true } }, cfg);
+    const scaleMm = (state.bedSizeMm) / 169.2;
+    const t0 = performance.now();
+    const res = buildComplete3DModel(scene, state);
+    const buildMs = Math.round(performance.now() - t0);
+    const M = res.meshes;
+    const layers = {}; for (const k of KEYS) layers[k] = analyseLayer(M[k] || [], scaleMm);
+    const tc = state.tileCols || 1, tr = state.tileRows || 1, nT = tc * tr;
+    const perTile = [];
+    if (nT > 1) for (let t = 0; t < nT; t++) { const o = {}; for (const k of KEYS) { const a = analyseLayer((M[k] || []).filter(x => x.tileId === t), scaleMm); o[k] = [a.openEdges, a.nonManifoldEdges]; } perTile.push(o); }
+    // outside-tile (uses equal split of 169.2 like exporter shift)
+    const outside = {};
+    for (const k of KEYS) { let n = 0; for (const t of M[k] || []) { if (nT === 1) { for (const v of [t.v0, t.v1, t.v2]) if (Math.abs(v[0]) > 84.61 || Math.abs(v[1]) > 84.61) { n++; break; } continue; }
+      const c = t.tileId % tc, r = Math.floor(t.tileId / tc); const w = 169.2 / tc, h = 169.2 / tr;
+      const x0 = -84.6 + c * w - 0.01, x1 = x0 + w + 0.02, y0 = -84.6 + r * h - 0.01, y1 = y0 + h + 0.02;
+      for (const v of [t.v0, t.v1, t.v2]) if (v[0] < x0 || v[0] > x1 || v[1] < y0 || v[1] > y1) { n++; break; } } outside[k] = n; }
+    // ray analysis
+    const idx = {}; for (const k of KEYS) idx[k] = buildIndex(M[k] || [], 96);
+    const surfIdx = buildIndex([...(M.base || []), ...(M.water || []), ...(M.greenery || []), ...(M.roads || [])].filter(t => t.n[2] > 0.5), 96);
+    const ray = {}; for (const k of KEYS) ray[k] = { rays: 0, unbalanced: 0, selfOverlap: 0, negative: 0 };
+    const pairs = {}; let totalRays = 0;
+    for (let iy = 0; iy < RAYS; iy++) for (let ix = 0; ix < RAYS; ix++) {
+      const px = -84.6 + (ix + 0.5 + 0.0137) * 169.2 / RAYS, py = -84.6 + (iy + 0.5 + 0.0291) * 169.2 / RAYS; totalRays++;
+      const ivs = {};
+      for (const k of KEYS) { const cr = rayCross(idx[k], px, py); if (!cr.length) { ivs[k] = []; continue; } const r = intervals(cr); ray[k].rays++;
+        if (r.endW !== 0) ray[k].unbalanced++; if (r.maxW > 1) ray[k].selfOverlap++; if (r.minW < 0) ray[k].negative++; ivs[k] = r.iv; }
+      for (let i = 0; i < KEYS.length; i++) for (let j = i + 1; j < KEYS.length; j++) { const o = overlapLen(ivs[KEYS[i]], ivs[KEYS[j]]); if (o > 1e-4) { const pk = KEYS[i] + '∩' + KEYS[j]; const p = pairs[pk] || (pairs[pk] = { rays: 0, maxMm: 0, sumMm: 0 }); p.rays++; p.sumMm += o * scaleMm; if (o * scaleMm > p.maxMm) p.maxMm = o * scaleMm; } }
+    }
+    for (const pk in pairs) { pairs[pk].pctRays = +(100 * pairs[pk].rays / totalRays).toFixed(1); pairs[pk].avgMm = +(pairs[pk].sumMm / pairs[pk].rays).toFixed(3); pairs[pk].maxMm = +pairs[pk].maxMm.toFixed(3); delete pairs[pk].sumMm; }
+    // floating vs actual surface: for each building, sample footprint vertices + midpoints, slightly inset toward centroid
+    let floating = 0, worst = 0, checked = 0; const worstList = [];
+    for (const bb of res.buildingBounds) {
+      const b = bb.building; if (b.btype === 'pier') continue;
+      checked++;
+    }
+    // independent: group building tris by buildingId, take bottom-facing tris (n.z<-0.5), sample their vertices
+    const bottoms = new Map();
+    for (const t of [...(M.buildings || []), ...(M.highlighted || [])]) { if (t.n[2] > -0.5) continue; let a = bottoms.get(t.buildingId); if (!a) bottoms.set(t.buildingId, a = []); a.push(t); }
+    let bChecked = 0;
+    for (const [bid, tl] of bottoms) {
+      bChecked++; let maxGap = -1e9;
+      for (const t of tl) {
+        const cx = (t.v0[0] + t.v1[0] + t.v2[0]) / 3, cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3;
+        for (const v of [t.v0, t.v1, t.v2]) {
+          const px = v[0] * 0.98 + cx * 0.02, py = v[1] * 0.98 + cy * 0.02; // nudge inside
+          const cr = rayCross(surfIdx, px, py); if (!cr.length) continue;
+          let top = -1e9; for (const c of cr) if (c.z <= v[2] + 50) top = Math.max(top, c.z);
+          const g = (v[2] - top) * scaleMm; if (g > maxGap) maxGap = g;
+        }
+      }
+      if (maxGap > 0.05) { floating++; worstList.push(+maxGap.toFixed(2)); }
+      if (maxGap > worst) worst = maxGap;
+    }
+    worstList.sort((a, b) => b - a);
+
+    // (a) enclosed vertical cavities in the union of all layers
+    let cavRays = 0, cavMaxMm = 0, cavSumMm = 0;
+    for (let iy = 0; iy < RAYS; iy++) for (let ix = 0; ix < RAYS; ix++) {
+      const px = -84.6 + (ix + 0.5 + 0.0137) * 169.2 / RAYS, py = -84.6 + (iy + 0.5 + 0.0291) * 169.2 / RAYS;
+      let all = [];
+      for (const k of KEYS) { const cr = rayCross(idx[k], px, py); if (cr.length) all = all.concat(intervals(cr).iv); }
+      all.sort((a, b) => a[0] - b[0]);
+      const merged = []; for (const iv of all) { if (merged.length && iv[0] <= merged[merged.length - 1][1] + 1e-4) merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], iv[1]); else merged.push([iv[0], iv[1]]); }
+      let gap = 0; for (let i = 1; i < merged.length; i++) { if (merged[i - 1][0] <= 0.01) gap += merged[i][0] - merged[i - 1][1]; } // gap above a solid that starts on the bed
+      if (gap * scaleMm > 0.05) { cavRays++; cavSumMm += gap * scaleMm; cavMaxMm = Math.max(cavMaxMm, gap * scaleMm); }
+    }
+    // (b) floating trees and roads vs actual surface (skip where top surface is water)
+    const waterTopIdx = buildIndex((M.water || []).filter(t => t.n[2] > 0.5), 96);
+    const terrIdx = buildIndex([...(M.base || []), ...(M.greenery || [])].filter(t => t.n[2] > 0.5), 96);
+    function floatStats(tris) {
+      let n = 0, fl = 0, worst = 0;
+      for (const t of tris) { if (t.n[2] > -0.5) continue; const cx = (t.v0[0] + t.v1[0] + t.v2[0]) / 3, cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3;
+        const z = (t.v0[2] + t.v1[2] + t.v2[2]) / 3; const crT = rayCross(terrIdx, cx, cy); const crW = rayCross(waterTopIdx, cx, cy);
+        let topT = -1e9; for (const c of crT) if (c.z < z + 0.5) topT = Math.max(topT, c.z);
+        let topW = -1e9; for (const c of crW) topW = Math.max(topW, c.z);
+        if (topW > topT) continue; // over water (bridges) — skip
+        if (topT < -1e8) continue; n++; const g = (z - topT) * scaleMm; if (g > 0.05) { fl++; if (g > worst) worst = g; } }
+      return { bottomFaces: n, floatingGt005mm: fl, worstMm: +worst.toFixed(2) };
+    }
+    const treeTris = (M.greenery || []).filter(t => t.n[2] < -0.5 && t.layerId === 2);
+    const extraRes = { cavity: { rays: cavRays, pctRays: +(100 * cavRays / (RAYS * RAYS)).toFixed(1), maxMm: +cavMaxMm.toFixed(2), avgMm: cavRays ? +(cavSumMm / cavRays).toFixed(2) : 0 },
+      treeFloat: floatStats(treeTris), roadFloat: floatStats(M.roads || []) };
+    results.push({ extra: extraRes, scene: scene.title, cfg, buildMs, totalTriangles: res.totalTriangles, layers, perTile, outside, ray, layerOverlap: pairs,
+      floating: { buildingsChecked: bChecked, floatingGt005mm: floating, worstMm: +worst.toFixed(2), top: worstList.slice(0, 6) },
+      reported: res.printMetrics ? { isWatertightManifold: res.printMetrics.isWatertightManifold, floatingBuildingsCount: res.printMetrics.floatingBuildingsCount, outOfTileTrisCount: res.printMetrics.outOfTileTrisCount, totalVolumeMl: res.printMetrics.totalVolumeMl && +res.printMetrics.totalVolumeMl.toFixed(1), hollowSavingsPct: res.printMetrics.hollowSavingsPct, maxZMm: res.printMetrics.maxZMm && +res.printMetrics.maxZMm.toFixed(1) } : null });
+  }
+}
+document.getElementById('out').textContent = 'RESULT_JSON=' + JSON.stringify(results);
+</script></body></html>

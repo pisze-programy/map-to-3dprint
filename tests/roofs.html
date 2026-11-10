@@ -1,0 +1,19 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><pre id="out">RUNNING</pre><script>
+function getText(u){const x=new XMLHttpRequest();x.open('GET',u,false);x.send();return x.responseText;}
+const P = new URLSearchParams(location.search);
+let src=getText(P.get('src') || '../src/mesh_builder.js');
+src=src.replace("  if (!isSimplePolygon(ring)) {\n    ring = outerClean;","  window.__c.calls++; if (holesClean.length) window.__c.withHoles++;\n  if (!isSimplePolygon(ring)) {\n    if (holesClean.length) window.__c.courtyardLost++; else window.__c.nonSimpleOuter++;\n    ring = outerClean;");
+src=src.replace("  const canPitch = hasPitchedRoof","  if (layerId===4||layerId===5){ if(hasPitchedRoof) window.__c.wantPitched++; }\n  const canPitch = hasPitchedRoof");
+src=src.replace("  // 3. Watertight Top Roof Cap at zEaves / zRidge","  if ((layerId===4||layerId===5) && hasPitchedRoof && !canPitch) window.__c.pitchedToFlat++;\n  // 3. Watertight Top Roof Cap at zEaves / zRidge");
+(0,eval)(src);
+const out=[];
+for (const sc of (P.get('scenes')||'').split(',').filter(Boolean)) {
+  const scene=JSON.parse(getText('../cache/'+sc));
+  window.__c={calls:0,withHoles:0,courtyardLost:0,nonSimpleOuter:0,wantPitched:0,pitchedToFlat:0};
+  const state={cropRatio:0.88,_fetchedCropRatio:0.88,zScale:1.25,terrainScale:1.15,bedSizeMm:320,tileCols:1,tileRows:1,layerVisible:{water:true,base:true,greenery:true,roads:true,buildings:true,highlighted:true}};
+  const res=buildComplete3DModel(scene,state);
+  const holesIn = scene.buildings.filter(b=>b.holes && b.holes.length).length;
+  out.push({scene:scene.title, buildingsWithHolesInData:holesIn, counters:window.__c});
+}
+document.getElementById('out').textContent='RESULT_JSON='+JSON.stringify(out);
+</script></body></html>

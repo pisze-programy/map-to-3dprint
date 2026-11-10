@@ -171,12 +171,13 @@ const PRINT_PROFILES = {
   },
   fdm_256_1x1: {
     id: 'fdm_256_1x1',
-    name: 'Bambu Lab X1C / P1S • 246×246 mm (1 Kafel 1×1)',
+    name: 'Bambu Lab X1C / P1S • 220×220 mm (stół 256mm + wieża AMS)',
     printer: 'Bambu Lab (256×256 mm)',
     bedX: 256.0, bedY: 256.0, bedZ: 256.0,
-    totalWidthMm: 246, totalHeightMm: 246,
+    totalWidthMm: 220, totalHeightMm: 220,
     cols: 1, rows: 1,
-    isResin: false
+    isResin: false,
+    hasAmsTower: true
   },
   fdm_350_1x1: {
     id: 'fdm_350_1x1',
@@ -189,12 +190,13 @@ const PRINT_PROFILES = {
   },
   fdm_500_2x2: {
     id: 'fdm_500_2x2',
-    name: 'Format XL 4-Kafle FDM • 492×492 mm (2×2 po 246×246 mm)',
+    name: 'Format XL 4-Kafle FDM • 440×440 mm (2×2 po 220×220 mm)',
     printer: 'Bambu / Prusa (256×256 mm)',
     bedX: 256.0, bedY: 256.0, bedZ: 256.0,
-    totalWidthMm: 492, totalHeightMm: 492,
+    totalWidthMm: 440, totalHeightMm: 440,
     cols: 2, rows: 2,
-    isResin: false
+    isResin: false,
+    hasAmsTower: true
   }
 };
 
@@ -208,6 +210,9 @@ function escapeHtml(str) {
 }
 
 function initMap3DApp(initialScene) {
+  if (initialScene && !initialScene._fetchedCropRatio) {
+    initialScene._fetchedCropRatio = 0.88;
+  }
   const state = {
     mapCenterLat: initialScene ? initialScene.center[0] : 48.1338,
     mapCenterLon: initialScene ? initialScene.center[1] : 11.5855,
@@ -219,13 +224,15 @@ function initMap3DApp(initialScene) {
     tileCols: 1,
     tileRows: 1,
     tileExplode: 0.0,
+    isResin: false,
+    layerHeightMm: 0.20,
     hollowBase: false, // Fix B03: False by default on FDM (slicer generates infill); automatically enabled on SLA Resin profiles
     hollowWallMm: 1.8,
     exportTileFilter: 'all',
     printMetrics: null,
     cropRatio: 0.88,
-    cropCenterX: 0.04,
-    cropCenterY: 0.07,
+    cropCenterX: 0.0,
+    cropCenterY: 0.0,
     explodeFactor: 0.0,
     zScale: 1.25,
     terrainScale: 1.15,
@@ -290,10 +297,15 @@ function initMap3DApp(initialScene) {
   }
 
   function getSelectedBBoxLatLon() {
-    // Always compute a ~1.25km x 1.25km physical print frame around (mapCenterLat, mapCenterLon)
+    // Fix R10: Keep 2D blue frame and 3D model crop 100% 1:1 aligned (using _fetchedCropRatio and spanMeters)
+    const sc = state.sceneData;
+    const baseCrop = (sc && sc._fetchedCropRatio) || 0.88;
+    const effCrop = Math.min(1.0, Math.max(0.35, (state.cropRatio || 0.88) / baseCrop));
+    const spanMeters = ((sc && sc.spanMeters) || 1291.3) * effCrop;
+    const halfM = spanMeters * 0.5;
     const cosLat = Math.max(0.2, Math.cos(state.mapCenterLat * Math.PI / 180.0));
-    const dLat = 0.0058 * state.cropRatio / 0.88;
-    const dLon = (0.0058 / cosLat) * state.cropRatio / 0.88;
+    const dLat = halfM / 111320.0;
+    const dLon = halfM / (111320.0 * cosLat);
     const south = state.mapCenterLat - dLat;
     const north = state.mapCenterLat + dLat;
     const west = state.mapCenterLon - dLon;
@@ -584,7 +596,17 @@ function initMap3DApp(initialScene) {
       'https://overpass.kumi.systems/api/interpreter'
     ];
 
-    const demPromise = fetchTerrariumDemInBrowser(south, west, north, east, 64, 14);
+    // Fix B08: Sample DEM over the exact metric square matching vector projection
+    const centerLat = (south + north) * 0.5;
+    const centerLon = (west + east) * 0.5;
+    const cosLat = Math.max(0.2, Math.cos(centerLat * Math.PI / 180.0));
+    const spanLatM = (north - south) * 111320.0;
+    const spanLonM = (east - west) * 111320.0 * cosLat;
+    const spanM = Math.max(spanLatM, spanLonM);
+    const halfM = spanM * 0.5;
+    const sqDLat = halfM / 111320.0;
+    const sqDLon = halfM / (111320.0 * cosLat);
+    const demPromise = fetchTerrariumDemInBrowser(centerLat - sqDLat, centerLon - sqDLon, centerLat + sqDLat, centerLon + sqDLon, 64, 14);
     const osmPromise = Promise.any(endpoints.map(async (ep) => {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 36000);
@@ -606,12 +628,6 @@ function initMap3DApp(initialScene) {
 
     const [dem, osmRaw] = await Promise.all([demPromise, osmPromise]);
 
-    const centerLat = (south + north) * 0.5;
-    const centerLon = (west + east) * 0.5;
-    const cosLat = Math.cos(centerLat * Math.PI / 180.0);
-    const spanLatM = (north - south) * 111320.0;
-    const spanLonM = (east - west) * 111320.0 * cosLat;
-    const spanM = Math.max(spanLatM, spanLonM);
     const metersToUnits = 170.0 / spanM;
 
     const project = (lon, lat) => [
@@ -1189,9 +1205,9 @@ function initMap3DApp(initialScene) {
       tileGridSel.value = `${cols}x${rows}`;
     }
 
-    const baseCrop = (sc && sc._fetchedCropRatio) || 1.0;
+    const baseCrop = (sc && sc._fetchedCropRatio) || 0.88;
     const effCrop = Math.min(1.0, Math.max(0.35, (state.cropRatio || 0.88) / baseCrop));
-    const realSpanM = ((sc && sc.spanMeters) || 1350) * effCrop;
+    const realSpanM = ((sc && sc.spanMeters) || 1291.3) * effCrop;
     const scaleDenom = Math.round((realSpanM * 1000) / Math.max(1, dimW));
     const cropLbl = document.getElementById('cropSizeLabel');
     if (cropLbl) {
@@ -1218,7 +1234,9 @@ function initMap3DApp(initialScene) {
         ? `~${perTileMl.toFixed(1)} ml / ∑${Math.round(totalMl)} ml (${resinG}g)`
         : `~${totalMl.toFixed(1)} ml (${resinG} g)`;
     } else {
-      if (matTitle) matTitle.textContent = `Masa PLA (+ ~18g wieża AMS)`;
+      if (matTitle) {
+        matTitle.textContent = profile.hasAmsTower ? `Masa PLA (+ ~18g wieża AMS)` : `Masa PLA (Toolchanger • 0g wieży)`;
+      }
       document.getElementById('statFilament').textContent = `~${plaG} g PLA (~${Math.round(totalMl)} ml)`;
     }
 
@@ -1228,7 +1246,7 @@ function initMap3DApp(initialScene) {
     const hollowBadge = document.getElementById('hollowSavingsBadge');
     if (hollowBadge) {
       hollowBadge.textContent = state.hollowBase
-        ? `-${pm.hollowSavingsPct || 48}% żywicy`
+        ? `-${pm.hollowSavingsPct || 0}% żywicy`
         : `Pełna FDM (0%)`;
       hollowBadge.className = state.hollowBase
         ? 'text-xs font-mono font-bold text-emerald-400 shrink-0'
@@ -1237,16 +1255,19 @@ function initMap3DApp(initialScene) {
 
     const preflightBadge = document.getElementById('preflightStatusBadge');
     if (preflightBadge) {
-      const floatOk = (pm.floatingBuildingsCount || 0) === 0;
-      const tileOk = (pm.outOfTileTrisCount || 0) === 0;
-      if (profile.isResin) {
-        preflightBadge.textContent = (pm.fitsPhotonMono4 && floatOk && tileOk)
-          ? `Manifold ✓ • 0 lewit. • Mono 4 (${tileW}×${tileH}mm) ✓`
-          : `Manifold ✓ • Sprawdź wymiar (${tileW}×${tileH}mm)`;
+      const isManifold = !!pm.isWatertightManifold;
+      const openE = pm.openEdgesCount || 0;
+      const nonManE = pm.nonManifoldEdgesCount || 0;
+      const negW = pm.negativeWindingCount || 0;
+      const floatB = pm.floatingBuildingsCount || 0;
+      if (isManifold) {
+        preflightBadge.className = 'text-xs font-mono text-emerald-400';
+        preflightBadge.textContent = profile.isResin
+          ? `Manifold ✓ (0/0) • 0 lewit. • Mono 4 (${tileW}×${tileH}mm) ✓`
+          : `Manifold ✓ (0/0 kraw.) • 0 lewitujących • Bez ramki`;
       } else {
-        preflightBadge.textContent = (floatOk && tileOk)
-          ? `Manifold ✓ • 0 lewitujących • Bez ramki`
-          : `Manifold ✓ • Bez ramki w eksporcie`;
+        preflightBadge.className = 'text-xs font-mono text-amber-400';
+        preflightBadge.textContent = `⚠ Siatka: otw.${openE} nieman.${nonManE} ujem.${negW} lewit.${floatB}`;
       }
     }
   }
@@ -1526,11 +1547,15 @@ function initMap3DApp(initialScene) {
   }
 
   document.getElementById('cropSizeSlider').addEventListener('input', e => {
-    state.cropRatio = parseInt(e.target.value, 10) / 100;
     const sc = state.sceneData;
-    const baseCrop = (sc && sc._fetchedCropRatio) || 1.0;
+    const baseCrop = (sc && sc._fetchedCropRatio) || 0.88;
+    const rawVal = parseInt(e.target.value, 10) / 100;
+    state.cropRatio = Math.min(baseCrop, rawVal);
+    if (rawVal > baseCrop) {
+      e.target.value = Math.round(baseCrop * 100);
+    }
     const effCrop = Math.min(1.0, Math.max(0.35, state.cropRatio / baseCrop));
-    const realSpanM = ((sc && sc.spanMeters) || 1350) * effCrop;
+    const realSpanM = ((sc && sc.spanMeters) || 1291.3) * effCrop;
     const scaleDenom = Math.round((realSpanM * 1000) / Math.max(1, state.bedSizeMm || 320));
     document.getElementById('cropSizeLabel').textContent = `${(realSpanM / 1000).toFixed(2)} km (1:${scaleDenom})`;
     draw2DMap();
@@ -1622,7 +1647,9 @@ function initMap3DApp(initialScene) {
     state.tileCols = prof.cols;
     state.tileRows = prof.rows;
     state.exportTileFilter = 'all';
-    // Fix B03: Enable Hollow Base automatically on SLA Resin printers; disable on FDM so slicers use normal infill
+    // Fix R11 & B03: layerHeightMm comes strictly from the printer profile (0.05 mm SLA / 0.20 mm FDM), independent of hollowBase
+    state.isResin = !!prof.isResin;
+    state.layerHeightMm = prof.isResin ? 0.05 : 0.20;
     state.hollowBase = !!prof.isResin;
     const chkH = document.getElementById('chkHollowBase');
     if (chkH) chkH.checked = state.hollowBase;

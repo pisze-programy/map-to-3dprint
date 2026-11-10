@@ -7,10 +7,7 @@ import glob
 import os
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-ARTIFACT_PATH = os.environ.get(
-    "MAP3D_ARTIFACT_PATH",
-    "/Users/krystianblaszczyk/.gemini/antigravity/brain/3ca72a24-3cdc-4841-a6f2-02585746d8a3/map3d_studio.html",
-)
+ARTIFACT_PATH = os.environ.get("MAP3D_ARTIFACT_PATH", "")
 
 
 def build():
@@ -28,7 +25,9 @@ def build():
         with open(os.path.join(ROOT, jf), "r", encoding="utf-8") as f:
             js_bundle.append(f.read())
 
-    scene_file = os.path.join(ROOT, "cache/scene_v3_48.1280_11.5769_48.1396_11.5941.json")
+    scene_file = os.path.join(ROOT, "cache/scene_v4_48.1280_11.5769_48.1396_11.5941.json")
+    if not os.path.exists(scene_file):
+        scene_file = os.path.join(ROOT, "cache/scene_v3_48.1280_11.5769_48.1396_11.5941.json")
     with open(scene_file, "r", encoding="utf-8") as f:
         scene_json = f.read()
 
@@ -58,7 +57,7 @@ def build():
     index_path = os.path.join(ROOT, "index.html")
     with open(index_path, "w", encoding="utf-8") as f:
         f.write(out_html)
-    if os.path.isdir(os.path.dirname(ARTIFACT_PATH)):
+    if ARTIFACT_PATH and os.path.isdir(os.path.dirname(ARTIFACT_PATH)):
         with open(ARTIFACT_PATH, "w", encoding="utf-8") as f:
             f.write(out_html)
 
