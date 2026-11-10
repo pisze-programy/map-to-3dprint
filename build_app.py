@@ -7,7 +7,10 @@ import glob
 import os
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-ARTIFACT_PATH = "/Users/krystianblaszczyk/.gemini/antigravity/brain/3ca72a24-3cdc-4841-a6f2-02585746d8a3/map3d_studio.html"
+ARTIFACT_PATH = os.environ.get(
+    "MAP3D_ARTIFACT_PATH",
+    "/Users/krystianblaszczyk/.gemini/antigravity/brain/3ca72a24-3cdc-4841-a6f2-02585746d8a3/map3d_studio.html",
+)
 
 
 def build():

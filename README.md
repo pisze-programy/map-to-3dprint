@@ -67,7 +67,7 @@ The **Anycubic Photon Mono 4** provides a rectangular build volume of **`153.4 �
 
 ### Open Underside Hollow Shell (`1.8 mm` Wall + Solid `z = 0` Mounting Rim)
 
-Each tile features a solid 2-cell mounting rim at `z = 0 mm` around all four edges and a recessed underside vault that follows the DEM terrain contours. The cavity is fully open from underneath, preventing trapped uncured resin during SLA printing.
+Each tile features a solid mounting rim at `z = 0 mm` around all four edges with 4 perimeter resin drain/vent channels (one on each edge midpoint) and a recessed underside vault that follows the DEM terrain contours. The cavity is fully open from underneath and vented at the perimeter, preventing suction-cup pressure and trapped uncured resin during SLA printing.
 
 ![Anycubic Photon Mono 4 — Hollow Underside View](docs/screenshots/photon-mono4-hollow-bottom.png)
 
@@ -181,7 +181,7 @@ python3 build_app.py
 | `gis_pipeline.py` | Coordinate projection, polygon ring stitching, coastline water closure, and tree distribution |
 | `build_app.py` | Compiler that bundles `src/*` and initial scene data into `index.html` |
 | `src/template.html` | HTML5 layout and CSS variables |
-| `src/mesh_builder.js` | Multi-tile clipping, 18-step Marching-Squares DEM contouring, open SLA hollow vaulting, LoD2 roof extrusion, and volume calculation |
+| `src/mesh_builder.js` | Multi-tile clipping, 18-step analytical triangle-split DEM contouring (`0` open/non-manifold edges), open SLA hollow vaulting with 4 drain channels, keyhole courtyard bridging, LoD2 roof extrusion, and volume calculation |
 | `src/webgl_studio.js` | Custom WebGL 1.0 renderer with 2048×2048 PCF shadow mapping, studio hemisphere lighting, 3D tile explode, and Möller-Trumbore raycasting |
 | `src/exporters.js` | Client-side generators for vertex-welded `.3mf`, binary `.stl`, and multi-tile `.zip` archives (excluding `meshes.frame`) |
 | `src/ui_app.js` | State management, Anycubic Photon Mono 4 profiles, 2D slippy map with tile grid, Photon autocomplete, and event handlers |

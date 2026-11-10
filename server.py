@@ -28,12 +28,25 @@ class Map3DRequestHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         super().end_headers()
 
+    def send_Error_403(self):
+        msg = b'{"error":"Forbidden"}'
+        self.send_response(403)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(msg)))
+        self.end_headers()
+        self.wfile.write(msg)
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
+        req_path = urllib.parse.unquote(parsed.path or "/")
+        # Fix B17: Block direct HTTP access to hidden files (.git, .env) and Python backend scripts
+        if any(part.startswith(".") for part in req_path.split("/") if part) or req_path.endswith(".py"):
+            self.send_Error_403()
+            return
         if parsed.path == "/api/gis":
             qs = urllib.parse.parse_qs(parsed.query)
             try:

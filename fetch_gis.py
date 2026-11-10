@@ -181,11 +181,17 @@ def fetch_osm_overpass(south, west, north, east):
     [out:json][timeout:30][bbox:{bbox}];
     (
       way["building"];
+      relation["building"];
       way["building:part"];
+      relation["building:part"];
       way["natural"];
+      relation["natural"="water"];
       way["waterway"];
+      relation["waterway"="riverbank"];
       way["landuse"];
+      relation["landuse"];
       way["leisure"];
+      relation["leisure"="park"];
       node["natural"="tree"];
       way["highway"];
       way["railway"];
@@ -195,7 +201,7 @@ def fetch_osm_overpass(south, west, north, east):
       way["man_made"="groyne"];
     );
     out body qt;
-    node(w)({nbbox});
+    >;
     out skel qt;
     """
 
@@ -206,7 +212,7 @@ def fetch_osm_overpass(south, west, north, east):
                 [
                     "curl", "-4", "-s", "-f",
                     "--max-time", "38",
-                    "-A", "Map3DPrintStudio/1.0 (https://github.com/map3d-studio; research@example.org)",
+                    "-A", "Map3DPrintStudio/1.0 (https://github.com/pisze-programy/map-to-3dprint)",
                     endpoint,
                     "--data-urlencode", f"data={query}"
                 ],
@@ -216,7 +222,10 @@ def fetch_osm_overpass(south, west, north, east):
             )
             if res.returncode == 0 and res.stdout:
                 parsed = json.loads(res.stdout)
-                if "elements" in parsed and len(parsed["elements"]) > 0:
+                if "remark" in parsed and "runtime error" in str(parsed.get("remark", "")).lower():
+                    last_err = parsed["remark"]
+                    continue
+                if "elements" in parsed and len(parsed["elements"]) > 10:
                     with open(cache_path, "w", encoding="utf-8") as f:
                         json.dump(parsed, f)
                     return parsed

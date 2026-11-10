@@ -598,7 +598,7 @@ def add_building_record(buildings_list, osm_id, tags, outer_pts, inner_holes):
     is_church = (
         btype in ("church", "cathedral", "chapel") or
         tags.get("amenity") == "place_of_worship" or
-        any(w in name.lower() for w in ("kirche", "kościół", "bazylika", "katedra", "st. lukas", "lukaskirche"))
+        any(w in name.lower() for w in ("kirche", "kościół", "bazylika", "katedra", "church", "cathedral"))
     )
     is_tower = (
         btype in ("tower", "bell_tower", "water_tower") or
@@ -613,8 +613,6 @@ def add_building_record(buildings_list, osm_id, tags, outer_pts, inner_holes):
             height_m = 32.0
         elif is_tower:
             height_m = 52.0
-        elif "maximilianeum" in name.lower():
-            height_m = 29.0
         elif btype in ("public", "civic", "museum", "university", "palace", "government", "train_station", "hotel"):
             area = abs(poly_area_signed(outer_pts))
             height_m = 14.5 if (btype == "museum" and area > 250.0) else 22.0

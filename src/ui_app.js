@@ -163,8 +163,8 @@ const PRINT_PROFILES = {
   fdm_330_1x1: {
     id: 'fdm_330_1x1',
     name: 'Prusa XL 5-Toolhead • 320×320 mm (1 Kafel 1×1)',
-    printer: 'Prusa XL (330×330 mm)',
-    bedX: 330.0, bedY: 330.0, bedZ: 330.0,
+    printer: 'Prusa XL (360×360 mm)',
+    bedX: 360.0, bedY: 360.0, bedZ: 360.0,
     totalWidthMm: 320, totalHeightMm: 320,
     cols: 1, rows: 1,
     isResin: false
@@ -198,6 +198,15 @@ const PRINT_PROFILES = {
   }
 };
 
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function initMap3DApp(initialScene) {
   const state = {
     mapCenterLat: initialScene ? initialScene.center[0] : 48.1338,
@@ -210,7 +219,7 @@ function initMap3DApp(initialScene) {
     tileCols: 1,
     tileRows: 1,
     tileExplode: 0.0,
-    hollowBase: true,
+    hollowBase: false, // Fix B03: False by default on FDM (slicer generates infill); automatically enabled on SLA Resin profiles
     hollowWallMm: 1.8,
     exportTileFilter: 'all',
     printMetrics: null,
@@ -450,7 +459,8 @@ function initMap3DApp(initialScene) {
           ctx2d.fillStyle = 'rgba(15, 23, 42, 0.72)';
           ctx2d.fillRect(tx + 3, ty + 3, 28, 12);
           ctx2d.fillStyle = '#38bdf8';
-          ctx2d.fillText(`R${tRows - r}C${c + 1}`, tx + 5, ty + 12);
+          // Fix B34: R1 is always the northernmost (top) row on the 2D map and in exported .STL/.ZIP files
+          ctx2d.fillText(`R${r + 1}C${c + 1}`, tx + 5, ty + 12);
         }
       }
       ctx2d.restore();
@@ -564,7 +574,8 @@ function initMap3DApp(initialScene) {
   async function fetchRealGISInBrowser(south, west, north, east, title) {
     const bbox = `${south.toFixed(5)},${west.toFixed(5)},${north.toFixed(5)},${east.toFixed(5)}`;
     const nbbox = `${(south - 0.004).toFixed(5)},${(west - 0.005).toFixed(5)},${(north + 0.004).toFixed(5)},${(east + 0.005).toFixed(5)}`;
-    const query = `[out:json][timeout:30][bbox:${bbox}];(way["building"];way["building:part"];way["natural"];way["waterway"];way["landuse"];way["leisure"];node["natural"="tree"];way["highway"];way["railway"];way["man_made"="bridge"];);out body qt;node(w)(${nbbox});out skel qt;`;
+    // Fix B05: Include multipolygon relations for courtyard buildings, riverbanks, and parks
+    const query = `[out:json][timeout:30][bbox:${bbox}];(way["building"];relation["building"];way["building:part"];relation["building:part"];way["natural"];relation["natural"="water"];way["waterway"];relation["waterway"="riverbank"];way["landuse"];way["leisure"];relation["leisure"="park"];node["natural"="tree"];way["highway"];way["railway"];way["man_made"="bridge"];);out body qt;>;out skel qt;`;
 
     const endpoints = [
       'https://overpass-api.de/api/interpreter',
@@ -874,6 +885,8 @@ function initMap3DApp(initialScene) {
       }
 
       if (scene) {
+        // Fix B04 / U1: Record the cropRatio at which this bbox was fetched so 2D map frame matches 3D model 1:1
+        scene._fetchedCropRatio = state.cropRatio || 0.88;
         state.sceneData = scene;
         state.mapCenterLat = scene.center[0];
         state.mapCenterLon = scene.center[1];
@@ -883,11 +896,19 @@ function initMap3DApp(initialScene) {
         state.userClickedBuilding = false;
         const firstLandmark = (scene.buildings || []).find(b => b.church || b.landmark) || (scene.buildings || [])[0];
         state.selectedBuildingId = firstLandmark ? firstLandmark.id : null;
+        const errBanner = document.getElementById('gisErrorBanner');
+        if (errBanner) errBanner.classList.add('hidden');
         draw2DMap();
         rebuildModel3D();
       }
     } catch (err) {
       console.warn('GIS Fetch error:', err);
+      const errBanner = document.getElementById('gisErrorBanner');
+      const errText = document.getElementById('gisErrorText');
+      if (errBanner && errText) {
+        errText.textContent = `Nie udało się pobrać nowego kadru GIS (${err && err.message ? err.message : 'Timeout Overpass'}). Wyświetlam ostatni model.`;
+        errBanner.classList.remove('hidden');
+      }
       rebuildModel3D();
     } finally {
       if (statusOverlay) statusOverlay.classList.add('hidden');
@@ -1026,7 +1047,13 @@ function initMap3DApp(initialScene) {
     document.getElementById('inspOsmId').textContent =
       `OSM ID: ${b.osmId} • Kondygnacje: ${b.levels} • Części: ${activeBlds.length}`;
     const effMeters = Math.round(b.h * (b.heightMult || 1));
-    const printMm = (b.h * (scene.metersToUnits || 0.13) * state.zScale * (b.heightMult || 1) * (state.bedSizeMm / 170)).toFixed(1);
+    // Fix B19: Compute printed height in mm directly from the actual extruded 3D mesh bounds
+    const gid = b._groupId || b.id;
+    const bb = (state.buildingBounds || []).find(x => x.groupId === gid || x.building.id === b.id);
+    const scaleMm = (state.bedSizeMm || 320) / 169.2;
+    const printMm = bb
+      ? Math.max(1.0, (bb.maxZ - bb.minZ) * scaleMm).toFixed(1)
+      : (b.h * (scene.metersToUnits || 0.13) * state.zScale * (b.heightMult || 1) * scaleMm).toFixed(1);
     document.getElementById('inspRealHeight').textContent = `${effMeters} m`;
     document.getElementById('inspPrintHeight').textContent = `${printMm} mm w druku`;
 
@@ -1115,7 +1142,9 @@ function initMap3DApp(initialScene) {
     sel.appendChild(optAll);
 
     if (numTiles > 1) {
-      for (let tr = 0; tr < rows; tr++) {
+      let idx = 1;
+      for (let tr = rows - 1; tr >= 0; tr--) {
+        const northRow = rows - tr;
         for (let tc = 0; tc < cols; tc++) {
           const tid = tr * cols + tc;
           const vMl = (pm.tileVolumesMl && pm.tileVolumesMl[tid] !== undefined)
@@ -1123,7 +1152,7 @@ function initMap3DApp(initialScene) {
             : ((pm.totalVolumeMl || 30) / numTiles).toFixed(1);
           const opt = document.createElement('option');
           opt.value = String(tid);
-          opt.textContent = `Kafel ${tid + 1}/${numTiles} (R${tr + 1}•C${tc + 1} — ${tw}×${th} mm • ~${vMl} ml żywicy)`;
+          opt.textContent = `Kafel ${idx++}/${numTiles} (R${northRow}•C${tc + 1} — ${tw}×${th} mm • ~${vMl} ml)`;
           sel.appendChild(opt);
         }
       }
@@ -1155,9 +1184,18 @@ function initMap3DApp(initialScene) {
     document.getElementById('meshStatsBadge').textContent =
       `${state.totalTriangles.toLocaleString('pl-PL')} trójkątów • ${bCount} budynków • ${tCount} drzew 3D`;
 
-    const tileSplitLbl = document.getElementById('tileSplitLabel');
-    if (tileSplitLbl) {
-      tileSplitLbl.textContent = `Kafle (${cols}×${rows}):`;
+    const tileGridSel = document.getElementById('tileGridSelect');
+    if (tileGridSel) {
+      tileGridSel.value = `${cols}x${rows}`;
+    }
+
+    const baseCrop = (sc && sc._fetchedCropRatio) || 1.0;
+    const effCrop = Math.min(1.0, Math.max(0.35, (state.cropRatio || 0.88) / baseCrop));
+    const realSpanM = ((sc && sc.spanMeters) || 1350) * effCrop;
+    const scaleDenom = Math.round((realSpanM * 1000) / Math.max(1, dimW));
+    const cropLbl = document.getElementById('cropSizeLabel');
+    if (cropLbl) {
+      cropLbl.textContent = `${(realSpanM / 1000).toFixed(2)} km (1:${scaleDenom})`;
     }
 
     if (numTiles > 1) {
@@ -1165,7 +1203,7 @@ function initMap3DApp(initialScene) {
       document.getElementById('bboxScaleBadge').textContent = `${(dimW / 10).toFixed(1)}×${(dimH / 10).toFixed(1)} cm (${cols}×${rows})`;
     } else {
       document.getElementById('statDimensions').textContent = `${dimW}×${dimH}×${maxZ} mm`;
-      document.getElementById('bboxScaleBadge').textContent = `${(dimW / 10).toFixed(1)}×${(dimH / 10).toFixed(1)} cm`;
+      document.getElementById('bboxScaleBadge').textContent = `${(dimW / 10).toFixed(1)}×${(dimH / 10).toFixed(1)} cm (1:${scaleDenom})`;
     }
 
     const totalMl = pm.totalVolumeMl !== undefined ? pm.totalVolumeMl : 42.0;
@@ -1180,8 +1218,8 @@ function initMap3DApp(initialScene) {
         ? `~${perTileMl.toFixed(1)} ml / ∑${Math.round(totalMl)} ml (${resinG}g)`
         : `~${totalMl.toFixed(1)} ml (${resinG} g)`;
     } else {
-      if (matTitle) matTitle.textContent = `Żywica SLA / Masa PLA`;
-      document.getElementById('statFilament').textContent = `~${Math.round(totalMl)} ml / ~${plaG} g PLA`;
+      if (matTitle) matTitle.textContent = `Masa PLA (+ ~18g wieża AMS)`;
+      document.getElementById('statFilament').textContent = `~${plaG} g PLA (~${Math.round(totalMl)} ml)`;
     }
 
     const activeVols = Object.keys(state.layerVisible).filter(k => state.layerVisible[k]).length;
@@ -1191,20 +1229,24 @@ function initMap3DApp(initialScene) {
     if (hollowBadge) {
       hollowBadge.textContent = state.hollowBase
         ? `-${pm.hollowSavingsPct || 48}% żywicy`
-        : `Pełna baza (0%)`;
+        : `Pełna FDM (0%)`;
       hollowBadge.className = state.hollowBase
-        ? 'text-xs font-mono font-bold text-emerald-400'
-        : 'text-xs font-mono font-bold text-amber-400';
+        ? 'text-xs font-mono font-bold text-emerald-400 shrink-0'
+        : 'text-xs font-mono font-bold text-amber-400 shrink-0';
     }
 
     const preflightBadge = document.getElementById('preflightStatusBadge');
     if (preflightBadge) {
+      const floatOk = (pm.floatingBuildingsCount || 0) === 0;
+      const tileOk = (pm.outOfTileTrisCount || 0) === 0;
       if (profile.isResin) {
-        preflightBadge.textContent = pm.fitsPhotonMono4
-          ? `Manifold ✓ • Mono 4 (${tileW}×${tileH}≤153×87mm) ✓`
-          : `Manifold ✓ • Bez ramki`;
+        preflightBadge.textContent = (pm.fitsPhotonMono4 && floatOk && tileOk)
+          ? `Manifold ✓ • 0 lewit. • Mono 4 (${tileW}×${tileH}mm) ✓`
+          : `Manifold ✓ • Sprawdź wymiar (${tileW}×${tileH}mm)`;
       } else {
-        preflightBadge.textContent = `Manifold ✓ • Bez ramki w eksporcie`;
+        preflightBadge.textContent = (floatOk && tileOk)
+          ? `Manifold ✓ • 0 lewitujących • Bez ramki`
+          : `Manifold ✓ • Bez ramki w eksporcie`;
       }
     }
   }
@@ -1250,7 +1292,7 @@ function initMap3DApp(initialScene) {
         tooltip.classList.remove('hidden');
         tooltip.style.left = `${e.clientX - rect.left + 14}px`;
         tooltip.style.top = `${e.clientY - rect.top + 14}px`;
-        tooltip.innerHTML = `<strong>${hit.name}</strong><br/><span class="text-blue-300 font-mono">Wysokość: ${hit.h}m (${hit.levels} p.) • Klik: zaznacz • Shift+Klik: dodaj</span>`;
+        tooltip.innerHTML = `<strong>${escapeHtml(hit.name)}</strong><br/><span class="text-blue-300 font-mono">Wysokość: ${escapeHtml(hit.h)}m (${escapeHtml(hit.levels)} p.) • Klik: zaznacz • Shift+Klik: dodaj</span>`;
       } else {
         state.hoveredBuildingId = null;
         tooltip.classList.add('hidden');
@@ -1374,8 +1416,8 @@ function initMap3DApp(initialScene) {
       row.className = 'w-full text-left px-3 py-2 hover:bg-blue-500/15 transition flex items-center justify-between gap-2';
       row.innerHTML = `
         <div class="min-w-0">
-          <div class="text-xs font-bold text-[var(--foreground)] truncate">${item.name}</div>
-          <div class="text-xs text-[var(--muted-foreground)] truncate">${item.sub || 'Świat'}</div>
+          <div class="text-xs font-bold text-[var(--foreground)] truncate">${escapeHtml(item.name)}</div>
+          <div class="text-xs text-[var(--muted-foreground)] truncate">${escapeHtml(item.sub || 'Świat')}</div>
         </div>
         <span class="text-xs font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 shrink-0">${item.lat.toFixed(2)}°, ${item.lon.toFixed(2)}°</span>
       `;
@@ -1468,10 +1510,29 @@ function initMap3DApp(initialScene) {
     fetchRealGISAndRender(null, state.plaqueText);
   });
 
+  const btnRetryGis = document.getElementById('btnRetryGis');
+  if (btnRetryGis) {
+    btnRetryGis.addEventListener('click', () => {
+      fetchRealGISAndRender(null, state.plaqueText);
+    });
+  }
+
+  let sliderRebuildTimer = null;
+  function scheduleRebuildModel3D() {
+    clearTimeout(sliderRebuildTimer);
+    sliderRebuildTimer = setTimeout(() => {
+      rebuildModel3D();
+    }, 80);
+  }
+
   document.getElementById('cropSizeSlider').addEventListener('input', e => {
     state.cropRatio = parseInt(e.target.value, 10) / 100;
-    const km = (state.cropRatio * 1.35).toFixed(2);
-    document.getElementById('cropSizeLabel').textContent = `${km} km`;
+    const sc = state.sceneData;
+    const baseCrop = (sc && sc._fetchedCropRatio) || 1.0;
+    const effCrop = Math.min(1.0, Math.max(0.35, state.cropRatio / baseCrop));
+    const realSpanM = ((sc && sc.spanMeters) || 1350) * effCrop;
+    const scaleDenom = Math.round((realSpanM * 1000) / Math.max(1, state.bedSizeMm || 320));
+    document.getElementById('cropSizeLabel').textContent = `${(realSpanM / 1000).toFixed(2)} km (1:${scaleDenom})`;
     draw2DMap();
   });
   document.getElementById('cropSizeSlider').addEventListener('change', () => rebuildModel3D());
@@ -1494,16 +1555,36 @@ function initMap3DApp(initialScene) {
     if (target > 0) studio.camera.pitch = 0.42;
   });
 
-  // Multi-Tile Split Explode slider & toggle (Anycubic Photon Mono 4 / FDM XL)
+  // Independent Tile Grid Selector (U4 / B22: Works on ANY printer without overwriting printer selection!)
+  const tileGridSelect = document.getElementById('tileGridSelect');
+  if (tileGridSelect) {
+    tileGridSelect.addEventListener('change', e => {
+      const [cStr, rStr] = (e.target.value || '1x1').split('x');
+      state.tileCols = Math.max(1, Math.min(4, parseInt(cStr, 10) || 1));
+      state.tileRows = Math.max(1, Math.min(4, parseInt(rStr, 10) || 1));
+      state.exportTileFilter = 'all';
+      if (state.tileCols === 1 && state.tileRows === 1) {
+        state.tileExplode = 0;
+        if (tileExplodeSlider) tileExplodeSlider.value = 0;
+        const lbl = document.getElementById('tileExplodeValueLabel');
+        if (lbl) lbl.textContent = '0%';
+      }
+      draw2DMap();
+      rebuildModel3D();
+    });
+  }
+
+  // Multi-Tile Split Explode slider & toggle (preserves active printer while enabling 2x2 or 2x3 split if in 1x1!)
   const tileExplodeSlider = document.getElementById('tileExplodeSlider');
   if (tileExplodeSlider) {
     tileExplodeSlider.addEventListener('input', e => {
       const val = parseInt(e.target.value, 10);
       if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1 && val > 0) {
-        // Automatically switch to Anycubic Photon Mono 4 2x3 (6 tiles) if user slides tile explode while in 1x1!
-        applyPrinterProfile('mono4_252_2x3');
-        const pSel = document.getElementById('printerSelect');
-        if (pSel) pSel.value = 'mono4_252_2x3';
+        const prof = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.fdm_330_1x1;
+        state.tileCols = 2;
+        state.tileRows = prof.isResin ? 3 : 2;
+        draw2DMap();
+        rebuildModel3D();
       }
       state.tileExplode = val / 100;
       const lbl = document.getElementById('tileExplodeValueLabel');
@@ -1515,9 +1596,11 @@ function initMap3DApp(initialScene) {
   if (btnQuickTileExplode) {
     btnQuickTileExplode.addEventListener('click', () => {
       if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1) {
-        applyPrinterProfile('mono4_252_2x3');
-        const pSel = document.getElementById('printerSelect');
-        if (pSel) pSel.value = 'mono4_252_2x3';
+        const prof = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.fdm_330_1x1;
+        state.tileCols = 2;
+        state.tileRows = prof.isResin ? 3 : 2;
+        draw2DMap();
+        rebuildModel3D();
       }
       const target = state.tileExplode > 0.15 ? 0 : 65;
       if (tileExplodeSlider) tileExplodeSlider.value = target;
@@ -1539,6 +1622,10 @@ function initMap3DApp(initialScene) {
     state.tileCols = prof.cols;
     state.tileRows = prof.rows;
     state.exportTileFilter = 'all';
+    // Fix B03: Enable Hollow Base automatically on SLA Resin printers; disable on FDM so slicers use normal infill
+    state.hollowBase = !!prof.isResin;
+    const chkH = document.getElementById('chkHollowBase');
+    if (chkH) chkH.checked = state.hollowBase;
     if (prof.cols === 1 && prof.rows === 1) {
       state.tileExplode = 0;
       if (tileExplodeSlider) tileExplodeSlider.value = 0;
@@ -1574,7 +1661,7 @@ function initMap3DApp(initialScene) {
     const mult = parseInt(e.target.value, 10) / 100;
     targets.forEach(b => { b.heightMult = mult; });
     document.getElementById('inspHeightMultLabel').textContent = `${e.target.value}%`;
-    rebuildModel3D();
+    scheduleRebuildModel3D();
   });
 
   // Camera Presets
@@ -1622,13 +1709,13 @@ function initMap3DApp(initialScene) {
   document.getElementById('zScaleSlider').addEventListener('input', e => {
     state.zScale = parseInt(e.target.value, 10) / 100;
     document.getElementById('zScaleLabel').textContent = `${state.zScale.toFixed(2)}×`;
-    rebuildModel3D();
+    scheduleRebuildModel3D();
   });
 
   document.getElementById('terrainScaleSlider').addEventListener('input', e => {
     state.terrainScale = parseInt(e.target.value, 10) / 100;
     document.getElementById('terrainScaleLabel').textContent = `${state.terrainScale.toFixed(2)}×`;
-    rebuildModel3D();
+    scheduleRebuildModel3D();
   });
 
   document.getElementById('sunAngleSlider').addEventListener('input', e => {

@@ -66,8 +66,8 @@
             <option value="mono4_252_2x3">Photon Mono 4 • Duży 252×252 mm (6 Kafli 2×3 po 126×84 mm)</option>
             <option value="mono4_296_2x4">Photon Mono 4 • Format XL 296×296 mm (8 Kafli 2×4 po 148×74 mm)</option>
           </optgroup>
-          <optgroup label="Wielokolorowe FDM (z marginesem stołu 5 mm)">
-            <option value="fdm_330_1x1" selected>Prusa XL 5-Toolhead (320×320 mm na stole 330 mm)</option>
+          <optgroup label="Wielokolorowe FDM (z marginesem stołu)">
+            <option value="fdm_330_1x1" selected>Prusa XL 5-Toolhead (320×320 mm na stole 360×360 mm)</option>
             <option value="fdm_256_1x1">Bambu Lab X1C / P1S / A1 + AMS (246×246 mm na stole 256 mm)</option>
             <option value="fdm_350_1x1">Voron 2.4 350 + ERCF (340×340 mm na stole 350 mm)</option>
             <option value="fdm_500_2x2">Format XL 4-Kafle FDM (492×492 mm — 2×2 po 246×246 mm)</option>
@@ -149,17 +149,23 @@
             <button id="btnZoomIn2D" title="Przybliż mapę" class="w-6 h-6 rounded bg-black/75 hover:bg-black text-white font-bold text-xs flex items-center justify-center shadow">＋</button>
             <button id="btnZoomOut2D" title="Oddal mapę (cały świat)" class="w-6 h-6 rounded bg-black/75 hover:bg-black text-white font-bold text-xs flex items-center justify-center shadow">－</button>
           </div>
-          <div class="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none text-xs">
-            <span class="px-2 py-0.5 rounded bg-black/70 text-gray-200 font-mono">
-              Przeciągnij mapę / Scroll: Zoom • 100% Live GIS
+          <div class="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none text-xs gap-1">
+            <span class="px-1.5 py-0.5 rounded bg-black/70 text-gray-200 font-mono truncate">
+              Przeciągnij / Zoom • © OpenStreetMap contributors (ODbL)
             </span>
           </div>
+        </div>
+
+        <!-- Visible GIS Error Banner (B28) -->
+        <div id="gisErrorBanner" class="hidden bg-red-500/15 border border-red-500/40 text-red-400 rounded-lg px-2.5 py-1.5 text-xs flex items-center justify-between gap-2">
+          <span id="gisErrorText" class="truncate">Błąd pobierania danych GIS (Overpass API).</span>
+          <button id="btnRetryGis" class="px-2 py-0.5 rounded bg-red-600 hover:bg-red-500 text-white font-semibold shrink-0">Ponów</button>
         </div>
 
         <div class="flex items-center gap-2">
           <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Kadr:</span>
           <input id="cropSizeSlider" type="range" min="55" max="98" value="88" class="flex-1" />
-          <span id="cropSizeLabel" class="text-xs font-mono w-14 text-right">1.19 km</span>
+          <span id="cropSizeLabel" class="text-xs font-mono whitespace-nowrap text-right">1.19 km (1:3720)</span>
         </div>
 
         <!-- Live GIS Fetch & Render Button -->
@@ -254,18 +260,25 @@
             </button>
           </div>
 
-          <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-2">
-            <span id="tileSplitLabel" class="text-xs font-bold text-cyan-400 whitespace-nowrap">Kafle (1×1):</span>
-            <input id="tileExplodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[70px]" />
+          <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+            <span id="tileSplitLabel" class="text-xs font-bold text-cyan-400 whitespace-nowrap">Kafle:</span>
+            <select id="tileGridSelect" title="Wybierz siatkę podziału na kafle" class="bg-[var(--background)] border border-cyan-500/40 rounded px-1 py-0.5 text-xs font-mono font-bold text-cyan-400 focus:outline-none cursor-pointer">
+              <option value="1x1" selected>1×1</option>
+              <option value="1x2">1×2</option>
+              <option value="2x2">2×2</option>
+              <option value="2x3">2×3</option>
+              <option value="2x4">2×4</option>
+            </select>
+            <input id="tileExplodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[55px]" />
             <span id="tileExplodeValueLabel" class="text-xs font-mono font-bold text-cyan-400 w-8 text-right">0%</span>
             <button id="btnQuickTileExplode" class="px-2 py-0.5 rounded bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-500 transition whitespace-nowrap">
-              Rozsuń kafle
+              Rozsuń
             </button>
           </div>
         </div>
 
         <!-- 3D WebGL Canvas Container -->
-        <div class="relative flex-1 min-h-[460px] rounded-xl overflow-hidden border border-[var(--border)] bg-[#f7f8fa]">
+        <div class="relative flex-1 min-h-[340px] lg:min-h-[460px] rounded-xl overflow-hidden border border-[var(--border)] bg-[#f7f8fa]">
           <canvas id="view3dCanvas" class="w-full h-full block cursor-grab active:cursor-grabbing"></canvas>
 
           <!-- Loading Live GIS Overlay -->
@@ -331,21 +344,21 @@
     </section>
 
     <!-- RIGHT PANEL: PALETTES, LAYERS & SLICER EXPORT -->
-    <section class="lg:col-span-3 flex flex-col gap-3">
-      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+    <section class="lg:col-span-3 flex flex-col gap-2">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-2.5 flex flex-col gap-1.5 shadow-sm">
         <h2 class="text-sm font-semibold text-[var(--foreground)]">3. Paleta Kolorów Filamentu</h2>
         <div class="grid grid-cols-2 gap-1.5" id="paletteButtonsContainer"></div>
       </div>
 
-      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm flex-1">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-2.5 flex flex-col gap-1.5 shadow-sm">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold text-[var(--foreground)]">4. Warstwy i Nierówności</h2>
           <button id="btnShowAllLayers" class="text-xs text-blue-500 hover:underline font-medium">Pokaż wszystkie</button>
         </div>
 
-        <div id="layersListContainer" class="flex flex-col gap-1.5 custom-scroll overflow-y-auto pr-0.5"></div>
+        <div id="layersListContainer" class="flex flex-col gap-1 max-h-[225px] custom-scroll overflow-y-auto pr-0.5"></div>
 
-        <div class="border-t border-[var(--border)] pt-2 mt-1 space-y-1.5">
+        <div class="border-t border-[var(--border)] pt-1.5 mt-0.5 space-y-1">
           <div class="flex items-center justify-between gap-2">
             <span class="text-xs text-[var(--muted-foreground)]">Skala wysokości budynków i drzew:</span>
             <span id="zScaleLabel" class="text-xs font-mono font-bold">1.25×</span>
@@ -361,7 +374,7 @@
       </div>
 
       <!-- SLICER & RESIN EXPORT SUMMARY (ANYCUBIC PHOTON MONO 4 & FDM) -->
-      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-2.5 flex flex-col gap-1.5 shadow-sm">
         <div class="flex items-center justify-between gap-1">
           <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Eksport i Zużycie Żywicy / PLA</h3>
           <span id="preflightStatusBadge" class="text-xs font-mono text-emerald-500 font-semibold">Manifold ✓ • Bez ramki</span>
@@ -369,11 +382,11 @@
 
         <!-- Hollow Base Optimization Toggle (SLA Resin / FDM Fill Saver) -->
         <label class="flex items-center justify-between gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 cursor-pointer">
-          <div class="flex items-center gap-1.5">
-            <input id="chkHollowBase" type="checkbox" checked class="rounded accent-emerald-500" />
-            <span class="text-xs font-semibold text-[var(--foreground)]">Odchudź bazę od spodu (Hollow Shell 1.8 mm)</span>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <input id="chkHollowBase" type="checkbox" class="rounded accent-emerald-500 shrink-0" />
+            <span class="text-xs font-semibold text-[var(--foreground)] truncate">Odchudź bazę SLA (Hollow 1.8mm + Drenaż)</span>
           </div>
-          <span id="hollowSavingsBadge" class="text-xs font-mono font-bold text-emerald-400">-48% żywicy</span>
+          <span id="hollowSavingsBadge" class="text-xs font-mono font-bold text-amber-400 shrink-0">Pełna FDM</span>
         </label>
 
         <div class="grid grid-cols-3 gap-1.5 text-center">
@@ -392,16 +405,16 @@
         </div>
 
         <!-- Anycubic Photon Mono 4 Fit & Tile Selector -->
-        <div class="flex items-center gap-1.5">
-          <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Kafel:</span>
-          <select id="exportTileSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs flex-1 text-[var(--foreground)] font-mono focus:outline-none">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap shrink-0">Kafel:</span>
+          <select id="exportTileSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs flex-1 min-w-0 truncate text-[var(--foreground)] font-mono focus:outline-none">
             <option value="all">Wszystkie kafle (Cały model / .ZIP)</option>
           </select>
         </div>
 
-        <div class="flex items-center gap-1.5">
-          <select id="singleLayerStlSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-xs flex-1 text-[var(--foreground)] focus:outline-none">
-            <option value="all">Wszystkie warstwy razem (.STL / .ZIP bez ramki)</option>
+        <div class="flex items-center gap-1.5 min-w-0">
+          <select id="singleLayerStlSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-xs flex-1 min-w-0 truncate text-[var(--foreground)] focus:outline-none">
+            <option value="all">Wszystkie warstwy (.STL / .ZIP bez ramki)</option>
             <option value="highlighted">Tylko Wyróżnione Budynki (Insert)</option>
             <option value="buildings">Tylko Budynki i Dachy LoD2</option>
             <option value="roads">Tylko Ulice, Mola i Mosty</option>
@@ -409,7 +422,7 @@
             <option value="base">Tylko Warstwice Terenu DEM</option>
             <option value="water">Tylko Woda i Batymetria</option>
           </select>
-          <button id="btnExportLayerSTL" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs whitespace-nowrap transition">
+          <button id="btnExportLayerSTL" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs whitespace-nowrap shrink-0 transition">
             Pobierz .STL / .ZIP
           </button>
         </div>

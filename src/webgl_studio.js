@@ -89,7 +89,7 @@ function createWebGLStudio(canvas3d, state) {
     uniform float uTileCols;
     uniform float uTileRows;
     uniform float uTileExplode;
-    uniform float uSelectedIds[16];
+    uniform float uSelectedIds[64];
     uniform float uHoveredBuildingId;
 
     varying vec3 vWorldPos;
@@ -125,7 +125,7 @@ function createWebGLStudio(canvas3d, state) {
       float sel = 0.0;
       float hov = 0.0;
       if (aBuildingId > 0.0) {
-        for (int i = 0; i < 16; i++) {
+        for (int i = 0; i < 64; i++) {
           if (uSelectedIds[i] > 0.0 && abs(aBuildingId - uSelectedIds[i]) < 0.2) {
             sel = 1.0;
           }
@@ -263,12 +263,21 @@ function createWebGLStudio(canvas3d, state) {
       vec3 V = normalize(uEyePos - vWorldPos);
       vec3 H = normalize(L + V);
 
-      // Double-sided illumination when inspecting the underside hollow vault (N.z < -0.5)
+      // Double-sided illumination when inspecting the underside hollow vault (N.z < -0.1)
       float diff = max(dot(N, L), 0.0);
-      if (N.z < -0.5 && uEyePos.z < 0.0) {
+      if (N.z < -0.1 && uEyePos.z < 0.0) {
         diff = max(dot(-N, L), 0.35);
+        // Highlight recessed hollow vault cavity and 4 perimeter SLA resin drain channels vs z=0 build-plate rim!
+        if (vRawPos.z > 0.08) {
+          baseCol = mix(baseCol * 0.72, vec3(0.88, 0.72, 0.52), 0.45);
+        } else {
+          baseCol *= 1.06;
+        }
+        if (abs(N.z) < 0.92) {
+          baseCol *= 0.68;
+        }
       }
-      float shadow = (N.z < -0.5) ? 0.85 : computeShadow(vLightSpacePos, N, L);
+      float shadow = (N.z < -0.1) ? 0.88 : computeShadow(vLightSpacePos, N, L);
 
       float sky = 0.5 + 0.5 * abs(N.z);
       float bounce = 0.5 + 0.5 * dot(N.xy, vec2(-L.x, -L.y));
@@ -361,6 +370,8 @@ function createWebGLStudio(canvas3d, state) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
   const glBuffers = {};
+  let meshUploadVersion = 0;
+  let lastRenderSig = '';
 
   const floorBuf = gl.createBuffer();
   (function initFloor() {
@@ -404,6 +415,8 @@ function createWebGLStudio(canvas3d, state) {
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
       glBuffers[key].count = tris.length * 3;
     });
+    meshUploadVersion++;
+    lastRenderSig = '';
   }
 
   function mat4Perspective(fovRad, aspect, near, far) {
@@ -482,16 +495,25 @@ function createWebGLStudio(canvas3d, state) {
     ];
   }
 
-  const selectedIdsBuffer = new Float32Array(16);
+  const selectedIdsBuffer = new Float32Array(64);
 
-  function render() {
+  function render(force = false) {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = Math.floor(canvas3d.clientWidth * dpr);
     const h = Math.floor(canvas3d.clientHeight * dpr);
     if (canvas3d.width !== w || canvas3d.height !== h) {
       canvas3d.width = w;
       canvas3d.height = h;
+      lastRenderSig = '';
     }
+
+    // Fix B21: On-demand dirty-state check so idle frames perform 0 GPU draw calls
+    const selKey = state.selectedBuildingIds ? Array.from(state.selectedBuildingIds).join(',') : String(state.selectedBuildingId || '');
+    const visKey = Object.values(state.layerVisible || {}).map(v => v ? '1' : '0').join('');
+    const colKey = Object.values(state.colors || {}).join(',');
+    const sig = `${meshUploadVersion}|${w}x${h}|${camera.yaw.toFixed(4)},${camera.pitch.toFixed(4)},${camera.distance.toFixed(2)},${camera.target[0].toFixed(2)},${camera.target[1].toFixed(2)},${camera.target[2].toFixed(2)}|${state.sunAngleDeg}|${state.explodeFactor}|${state.tileCols}x${state.tileRows}|${state.tileExplode}|${state.exportTileFilter}|${state.showFrame}|${state.studioBg}|${state.showLayerLines}|${state.frameStyle}|${state.hoveredBuildingId}|${state.userClickedBuilding}|${selKey}|${visKey}|${colKey}`;
+    if (!force && sig === lastRenderSig) return;
+    lastRenderSig = sig;
 
     const sunRad = state.sunAngleDeg * Math.PI / 180;
     const sunDir = [Math.cos(sunRad) * 0.68, Math.sin(sunRad) * 0.68, 0.73];
@@ -594,7 +616,7 @@ function createWebGLStudio(canvas3d, state) {
       if (state.selectedBuildingIds && state.selectedBuildingIds.size > 0) {
         let idx = 0;
         for (const id of state.selectedBuildingIds) {
-          if (idx < 16) selectedIdsBuffer[idx++] = id;
+          if (idx < 64) selectedIdsBuffer[idx++] = id;
         }
       } else if (state.selectedBuildingId) {
         selectedIdsBuffer[0] = state.selectedBuildingId;
