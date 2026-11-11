@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Map3D Video Preview Studio — Generator Animacji 2D→3D & Demo Zamówienia w Ramce</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --background: #f8fafc;
+      --foreground: #0f172a;
+      --card: #ffffff;
+      --border: #cbd5e1;
+      --muted-foreground: #64748b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #0f172a;
+        --foreground: #f8fafc;
+        --card: #1e293b;
+        --border: #334155;
+        --muted-foreground: #94a3b8;
+      }
+    }
+    * { box-sizing: border-box; user-select: none; }
+    html, body { margin: 0; padding: 0; overflow-x: hidden; max-width: 100vw; }
+    .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.35); border-radius: 9999px; }
+    input[type="range"] { accent-color: #2563eb; min-width: 0; }
+    input[type="color"] { -webkit-appearance: none; border: none; padding: 0; overflow: hidden; cursor: pointer; }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch { border: none; border-radius: 6px; }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased min-h-screen flex flex-col overflow-x-hidden max-w-full">
+
+  <!-- TOP HEADER BAR -->
+  <header class="bg-[var(--card)] border-b border-[var(--border)] px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-3 sticky top-0 z-30 max-w-full overflow-x-hidden">
+    <div class="flex items-center gap-2.5 min-w-0 max-w-full">
+      <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm shrink-0">
+        3D
+      </div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <h1 class="font-bold text-base tracking-tight text-[var(--foreground)]">Map3D Print Studio</h1>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-semibold border border-emerald-500/30 truncate max-w-full">
+            100% Prawdziwe Dane: OpenStreetMap + AWS Terrarium DEM
+          </span>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground)] truncate">
+          Schodkowe warstwice terenu DEM • Batymetria wody • Parki i drzewa 3D • Ulice i mosty z filarami • Budynki LoD2 z dachami i dziedzińcami
+        </p>
+      </div>
+    </div>
+
+    <!-- Module Switcher + Printer Profile & Export Buttons -->
+    <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0 max-w-full">
+      <div class="flex items-center bg-[var(--background)] border border-[var(--border)] rounded-lg p-0.5 gap-0.5">
+        <button id="btnSwitchTo3DPrint" type="button" class="px-2.5 py-1 rounded-md bg-blue-600 text-white font-semibold text-xs transition flex items-center gap-1">
+          🛠️ Druk 3D (.3MF/.STL)
+        </button>
+        <button id="btnSwitchToVideoStudio" type="button" class="px-2.5 py-1 rounded-md text-[var(--foreground)] hover:bg-blue-500/15 font-semibold text-xs transition flex items-center gap-1">
+          🎬 Studio Wideo &amp; Demo Zamówienia
+        </button>
+        <a href="video_studio.html" target="_blank" title="Otwórz Moduł Wideo jako osobną stronę" class="px-1.5 py-1 rounded-md text-[var(--muted-foreground)] hover:text-blue-400 text-xs font-mono transition">↗</a>
+      </div>
+
+      <div id="printHeaderControls" class="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0 max-w-full">
+      <div class="flex items-center gap-1.5 bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1.5 min-w-0 max-w-full">
+        <span class="text-xs text-[var(--muted-foreground)] shrink-0">Format:</span>
+        <select id="printerSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none cursor-pointer min-w-0 max-w-[220px] sm:max-w-none truncate">
+          <optgroup label="Żywica SLA/MSLA — Anycubic Photon Mono 4 (153.4 × 87 × 165 mm, max 2.2 L)">
+            <option value="mono4_84_1x1">Photon Mono 4 • Mały Kwadrat 84×84 mm (1 Kafel 1×1 na płasko)</option>
+            <option value="mono4_150_1x2">Photon Mono 4 • Kwadrat 150×150 mm (2 Kafle 1×2 po 150×75 mm)</option>
+            <option value="mono4_168_2x2">Photon Mono 4 • Kwadrat 168×168 mm (4 Kafle 2×2 po 84×84 mm)</option>
+            <option value="mono4_252_2x3">Photon Mono 4 • Duży 252×252 mm (6 Kafli 2×3 po 126×84 mm)</option>
+            <option value="mono4_296_2x4">Photon Mono 4 • Format XL 296×296 mm (8 Kafli 2×4 po 148×74 mm)</option>
+          </optgroup>
+          <optgroup label="Wielokolorowe FDM (z marginesem stołu)">
+            <option value="fdm_330_1x1" selected>Prusa XL 5-Toolhead (320×320 mm na stole 360×360 mm)</option>
+            <option value="fdm_256_1x1">Bambu Lab X1C / P1S / A1 + AMS (220×220 mm + rezerwa wieży AMS)</option>
+            <option value="fdm_350_1x1">Voron 2.4 350 + ERCF (340×340 mm na stole 350 mm)</option>
+            <option value="fdm_500_2x2">Format XL 4-Kafle FDM (492×492 mm — 2×2 po 246×246 mm)</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <button id="btnExport3MF" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"/></svg>
+        Eksportuj .3MF
+      </button>
+
+      <button id="btnExportSTL" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-[var(--background)] hover:opacity-80 text-[var(--foreground)] border border-[var(--border)] font-semibold text-xs flex items-center gap-1.5 transition">
+        Pobierz .STL
+      </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE GRID (3D PRINT CONFIGURATOR) -->
+  <div id="print3dStudioRoot" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-2.5 sm:p-3 max-w-full overflow-x-hidden">
+
+    <!-- LEFT PANEL: INTERACTIVE WORLD MAP + LIVE GIS FETCH + INSPECTOR -->
+    <section class="lg:col-span-3 flex flex-col gap-3 min-w-0 max-w-full">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2.5 shadow-sm">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            1. Interaktywna Mapa (Wybór Kadru)
+          </h2>
+          <span id="bboxScaleBadge" class="text-xs font-mono px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)]">33×33 cm</span>
+        </div>
+
+        <!-- Search Any Place on Earth with Live Autocomplete (Photon OSM) -->
+        <div class="relative">
+          <div class="flex items-center gap-1.5">
+            <input id="placeSearchInput" type="text" autocomplete="off" placeholder="Wpisz miasto, górę, kurort, wyspę na Ziemi..." class="bg-[var(--background)] border border-[var(--border)] rounded-lg text-xs px-2.5 py-1.5 flex-1 text-[var(--foreground)] focus:outline-none focus:border-blue-500" />
+            <button id="btnSearchPlace" class="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition whitespace-nowrap">
+              Szukaj
+            </button>
+          </div>
+          <div id="searchSuggestionsDropdown" style="background-color: var(--card); z-index: 100;" class="hidden absolute left-0 right-0 top-full mt-1 border-2 border-blue-500/40 rounded-lg shadow-2xl max-h-56 overflow-y-auto divide-y divide-[var(--border)]"></div>
+        </div>
+
+        <!-- Universal World Randomizer (Mountains, Resorts, Asia, East/West, Global) -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-[var(--muted-foreground)]">Losuj obszar testowy na świecie:</span>
+            <span id="currentRegionBadge" class="text-xs font-mono text-blue-400 truncate max-w-[165px]">Europa • Monachium</span>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <button data-random-cat="all" class="px-2 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition flex items-center gap-1 shadow-sm">
+              🎲 Losuj Świat
+            </button>
+            <button data-random-cat="mountains" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
+              ⛰️ Góry
+            </button>
+            <button data-random-cat="resorts" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
+              🏖️ Kurorty
+            </button>
+            <button data-random-cat="asia" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
+              🏯 Azja
+            </button>
+            <button data-random-cat="west_east" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
+              🌍 Wschód/Zachód
+            </button>
+          </div>
+        </div>
+
+        <!-- Interactive 2D Slippy Map Canvas -->
+        <div class="relative rounded-lg overflow-hidden border border-[var(--border)] bg-[#dce6f0]" style="height: 220px;">
+          <canvas id="map2dCanvas" class="w-full h-full cursor-grab active:cursor-grabbing block"></canvas>
+          <div class="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none">
+            <span id="mapStatusPill" class="text-xs px-2 py-0.5 rounded bg-black/75 text-white font-mono">
+              N 48.1280°..48.1396° • E 11.5769°..11.5941°
+            </span>
+          </div>
+          <!-- 2D Map Zoom Controls -->
+          <div class="absolute top-8 right-1.5 flex flex-col gap-1">
+            <button id="btnZoomIn2D" title="Przybliż mapę" class="w-6 h-6 rounded bg-black/75 hover:bg-black text-white font-bold text-xs flex items-center justify-center shadow">＋</button>
+            <button id="btnZoomOut2D" title="Oddal mapę (cały świat)" class="w-6 h-6 rounded bg-black/75 hover:bg-black text-white font-bold text-xs flex items-center justify-center shadow">－</button>
+          </div>
+          <div class="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none text-xs gap-1">
+            <span class="px-1.5 py-0.5 rounded bg-black/70 text-gray-200 font-mono truncate">
+              Przeciągnij / Zoom • © OpenStreetMap contributors (ODbL)
+            </span>
+          </div>
+        </div>
+
+        <!-- Visible GIS Error Banner (B28) -->
+        <div id="gisErrorBanner" class="hidden bg-red-500/15 border border-red-500/40 text-red-400 rounded-lg px-2.5 py-1.5 text-xs flex items-center justify-between gap-2">
+          <span id="gisErrorText" class="truncate">Błąd pobierania danych GIS (Overpass API).</span>
+          <button id="btnRetryGis" class="px-2 py-0.5 rounded bg-red-600 hover:bg-red-500 text-white font-semibold shrink-0">Ponów</button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Kadr:</span>
+          <input id="cropSizeSlider" type="range" min="55" max="98" value="88" class="flex-1" />
+          <span id="cropSizeLabel" class="text-xs font-mono whitespace-nowrap text-right">1.19 km (1:3720)</span>
+        </div>
+
+        <!-- Live GIS Fetch & Render Button -->
+        <button id="btnRender3D" class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-1.5 shadow-md transition">
+          Pobierz Prawdziwe Dane z Mapy i Renderuj 3D
+        </button>
+      </div>
+
+      <!-- BUILDING INSPECTOR & HIGHLIGHTING -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm flex-1">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            Inspektor Budynku (OSM)
+          </h2>
+          <span id="highlightedCountBadge" class="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 font-semibold border border-amber-500/30">
+            Wyróżnione: 0
+          </span>
+        </div>
+
+        <div id="buildingInspectorEmpty" class="hidden text-xs text-[var(--muted-foreground)] py-3 text-center border border-dashed border-[var(--border)] rounded-lg">
+          Kliknij dowolny budynek w <strong>widoku 3D</strong>, aby go wyróżnić lub zmienić wysokość.
+        </div>
+
+        <div id="buildingInspectorContent" class="flex flex-col gap-2">
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2 flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span id="inspName" class="font-bold text-xs text-[var(--foreground)] truncate">St. Lukas (Lukaskirche)</span>
+                <span id="inspTagBadge" class="text-xs px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-mono">DACH: GABLED</span>
+              </div>
+              <p id="inspOsmId" class="text-xs font-mono text-[var(--muted-foreground)] mt-0.5">OSM ID: 19330628 • Kondygnacje: 9</p>
+            </div>
+            <div class="text-right shrink-0">
+              <div id="inspRealHeight" class="text-xs font-bold text-[var(--foreground)]">32 m</div>
+              <div id="inspPrintHeight" class="text-xs font-mono text-blue-400">12.4 mm</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5">
+            <button id="btnToggleHighlight" class="py-1.5 px-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition">
+              ★ Wyróżnij budynek
+            </button>
+            <button id="btnToggleHideBuilding" class="py-1.5 px-2 rounded-lg bg-[var(--background)] hover:opacity-80 text-[var(--foreground)] border border-[var(--border)] font-semibold text-xs transition">
+              Ukryj / Przywróć
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Skala wys.:</span>
+            <input id="inspHeightMultiplier" type="range" min="40" max="240" value="100" class="flex-1" />
+            <span id="inspHeightMultLabel" class="text-xs font-mono w-10 text-right">100%</span>
+          </div>
+        </div>
+
+        <div>
+          <span class="text-xs text-[var(--muted-foreground)] block mb-1">Obiekty z nazwą w kadrze OSM:</span>
+          <div id="landmarkChips" class="flex flex-wrap gap-1"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CENTER PANEL: STUDIO 3D VIEWPORT -->
+    <section class="lg:col-span-6 flex flex-col gap-3">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2.5 shadow-sm flex-1">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <h2 class="text-sm font-semibold text-[var(--foreground)]">2. Fotorealistyczny Podgląd 3D (WebGL + Soft Shadows)</h2>
+            <span id="meshStatsBadge" class="text-xs font-mono px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)]">
+              Ładowanie siatki...
+            </span>
+          </div>
+
+          <div class="flex items-center gap-1 flex-wrap">
+            <button data-cam="studio" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Ujęcie Studio</button>
+            <button data-cam="top" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Z góry</button>
+            <button data-cam="side" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Profil warstw</button>
+            <button data-cam="tiles" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Podział kafli</button>
+            <button data-cam="bottom" class="cam-btn px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">Od spodu (Hollow SLA)</button>
+            <button id="btnAutoRotate" class="px-2 py-1 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-medium hover:border-blue-500 transition">↻ Obrót</button>
+          </div>
+        </div>
+
+        <!-- EXPLODED VIEW & MULTI-TILE SPLIT / HOLLOW BASE CONTROLS -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+            <span class="text-xs font-bold text-blue-500 whitespace-nowrap">Warstwy Z:</span>
+            <input id="explodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[70px]" />
+            <span id="explodeValueLabel" class="text-xs font-mono font-bold text-blue-500 w-8 text-right">0%</span>
+            <button id="btnQuickExplode" class="px-2 py-0.5 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-500 transition whitespace-nowrap">
+              Rozbij Z
+            </button>
+          </div>
+
+          <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+            <span id="tileSplitLabel" class="text-xs font-bold text-cyan-400 whitespace-nowrap">Kafle:</span>
+            <select id="tileGridSelect" title="Wybierz siatkę podziału na kafle" class="bg-[var(--background)] border border-cyan-500/40 rounded px-1 py-0.5 text-xs font-mono font-bold text-cyan-400 focus:outline-none cursor-pointer">
+              <option value="1x1" selected>1×1</option>
+              <option value="1x2">1×2</option>
+              <option value="2x2">2×2</option>
+              <option value="2x3">2×3</option>
+              <option value="2x4">2×4</option>
+            </select>
+            <input id="tileExplodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[55px]" />
+            <span id="tileExplodeValueLabel" class="text-xs font-mono font-bold text-cyan-400 w-8 text-right">0%</span>
+            <button id="btnQuickTileExplode" class="px-2 py-0.5 rounded bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-500 transition whitespace-nowrap">
+              Rozsuń
+            </button>
+          </div>
+        </div>
+
+        <!-- 3D WebGL Canvas Container -->
+        <div class="relative flex-1 min-h-[340px] lg:min-h-[460px] rounded-xl overflow-hidden border border-[var(--border)] bg-[#f7f8fa]">
+          <canvas id="view3dCanvas" class="w-full h-full block cursor-grab active:cursor-grabbing"></canvas>
+
+          <!-- Loading Live GIS Overlay -->
+          <div id="loadingOverlay3D" class="hidden absolute inset-0 bg-black/65 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-30">
+            <div class="w-9 h-9 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+            <div id="loadingStatusText" class="text-white font-semibold text-sm">Pobieranie prawdziwych danych GIS z OpenStreetMap i AWS Terrarium DEM...</div>
+            <div class="text-gray-300 text-xs mt-1">Budowanie schodkowych warstwic terenu, batymetrii wody, drzew 3D i dachów LoD2</div>
+          </div>
+
+          <!-- Hover Tooltip -->
+          <div id="hoverTooltip" class="hidden absolute pointer-events-none px-2.5 py-1.5 rounded-lg bg-black/85 text-white text-xs border border-white/15 shadow-lg backdrop-blur-sm z-20"></div>
+
+          <!-- Exploded Layer Legend Overlay -->
+          <div id="explodedLegendOverlay" class="hidden absolute top-3 left-3 bg-black/80 border border-white/15 rounded-lg p-2.5 text-white text-xs backdrop-blur-sm pointer-events-none space-y-1">
+            <div class="font-bold text-blue-300 mb-1">Struktura warstw modelu 3D (oś Z):</div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block"></span><span>5. Wyróżnione budynki (Akcent)</span></div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-white inline-block"></span><span>4B. Budynki, dziedzińce i dachy spadziste LoD2</span></div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-gray-200 inline-block"></span><span>4A. Ulice, place, koleje i mosty z filarami</span></div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-600 inline-block"></span><span>3. Trawa, parki, nabrzeża i korony drzew 3D</span></div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-[#dfb888] inline-block"></span><span>2. Schodkowe warstwice terenu DEM (Nierówności)</span></div>
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-[#82bce0] inline-block"></span><span>1. Woda i batymetria schodkowa (Rzeki/Jeziora)</span></div>
+          </div>
+
+          <!-- Bottom Viewport Toggles -->
+          <div class="absolute bottom-2.5 left-3 right-3 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+            <div class="px-2.5 py-1 rounded-md bg-black/70 text-gray-100 text-xs backdrop-blur-sm">
+              LPM: Obracaj 360° • Klik: Zaznacz • Shift+Klik: Zaznacz wiele • PPM: Przesuwaj
+            </div>
+            <div class="flex items-center gap-2 pointer-events-auto">
+              <label class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/70 text-gray-100 text-xs cursor-pointer backdrop-blur-sm">
+                <input id="chkStudioBg" type="checkbox" checked class="rounded" />
+                Tło Studio
+              </label>
+              <label class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/70 text-gray-100 text-xs cursor-pointer backdrop-blur-sm">
+                <input id="chkShowFrame" type="checkbox" checked class="rounded" />
+                Rama
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Environment & Frame Bar -->
+        <div class="grid grid-cols-3 gap-2">
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2">
+            <span class="text-xs text-[var(--muted-foreground)]">Rama:</span>
+            <select id="frameStyleSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none">
+              <option value="black" selected>Czarny Mat (Lichtbild)</option>
+              <option value="oak">Dąb Naturalny</option>
+              <option value="walnut">Orzech Ciemny</option>
+              <option value="white">Biały</option>
+            </select>
+          </div>
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+            <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Światło:</span>
+            <input id="sunAngleSlider" type="range" min="0" max="360" value="132" class="w-full" />
+          </div>
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+            <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Tytuł:</span>
+            <input id="plaqueTextInput" type="text" value="MÜNCHEN" maxlength="22" class="bg-transparent text-xs font-mono font-bold text-[var(--foreground)] w-full focus:outline-none text-right" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT PANEL: PALETTES, LAYERS & SLICER EXPORT -->
+    <section class="lg:col-span-3 flex flex-col gap-2">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-2.5 flex flex-col gap-1.5 shadow-sm">
+        <h2 class="text-sm font-semibold text-[var(--foreground)]">3. Paleta Kolorów Filamentu</h2>
+        <div class="grid grid-cols-2 gap-1.5" id="paletteButtonsContainer"></div>
+      </div>
+
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-2.5 flex flex-col gap-1.5 shadow-sm">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-[var(--foreground)]">4. Warstwy i Nierówności</h2>
+          <button id="btnShowAllLayers" class="text-xs text-blue-500 hover:underline font-medium">Pokaż wszystkie</button>
+        </div>
+
+        <div id="layersListContainer" class="flex flex-col gap-1 max-h-[225px] custom-scroll overflow-y-auto pr-0.5"></div>
+
+        <div class="border-t border-[var(--border)] pt-1.5 mt-0.5 space-y-1">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-[var(--muted-foreground)]">Skala wysokości budynków i drzew:</span>
+            <span id="zScaleLabel" class="text-xs font-mono font-bold">1.25×</span>
+          </div>
+          <input id="zScaleSlider" type="range" min="60" max="220" value="125" class="w-full" />
+
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-[var(--muted-foreground)]">Przewyższenie warstwic terenu DEM:</span>
+            <span id="terrainScaleLabel" class="text-xs font-mono font-bold">1.15×</span>
+          </div>
+          <input id="terrainScaleSlider" type="range" min="40" max="250" value="115" class="w-full" />
+        </div>
+      </div>
+
+      <!-- SLICER & RESIN EXPORT SUMMARY (ANYCUBIC PHOTON MONO 4 & FDM) -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-2.5 flex flex-col gap-1.5 shadow-sm">
+        <div class="flex items-center justify-between gap-1">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Eksport i Zużycie Żywicy / PLA</h3>
+          <span id="preflightStatusBadge" class="text-xs font-mono text-emerald-500 font-semibold">Manifold ✓ • Bez ramki</span>
+        </div>
+
+        <!-- Hollow Base Optimization Toggle (SLA Resin / FDM Fill Saver) -->
+        <label class="flex items-center justify-between gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 cursor-pointer">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <input id="chkHollowBase" type="checkbox" class="rounded accent-emerald-500 shrink-0" />
+            <span class="text-xs font-semibold text-[var(--foreground)] truncate">Odchudź bazę SLA (Hollow 1.8mm + Drenaż)</span>
+          </div>
+          <span id="hollowSavingsBadge" class="text-xs font-mono font-bold text-amber-400 shrink-0">Pełna FDM</span>
+        </label>
+
+        <div class="grid grid-cols-3 gap-1.5 text-center">
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
+            <div class="text-xs text-[var(--muted-foreground)]">Wymiar / Kafel</div>
+            <div id="statDimensions" class="text-xs font-bold font-mono mt-0.5">320×320×24 mm</div>
+          </div>
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
+            <div id="statMaterialTitle" class="text-xs text-[var(--muted-foreground)]">Żywica SLA / PLA</div>
+            <div id="statFilament" class="text-xs font-bold font-mono text-emerald-400 mt-0.5">~42 ml (47 g)</div>
+          </div>
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
+            <div class="text-xs text-[var(--muted-foreground)]">Kafle / Bryły</div>
+            <div id="statVolumes" class="text-xs font-bold font-mono mt-0.5">1×1 (6 warstw)</div>
+          </div>
+        </div>
+
+        <!-- Anycubic Photon Mono 4 Fit & Tile Selector -->
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap shrink-0">Kafel:</span>
+          <select id="exportTileSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs flex-1 min-w-0 truncate text-[var(--foreground)] font-mono focus:outline-none">
+            <option value="all">Wszystkie kafle (Cały model / .ZIP)</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-1.5 min-w-0">
+          <select id="singleLayerStlSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-xs flex-1 min-w-0 truncate text-[var(--foreground)] focus:outline-none">
+            <option value="all">Wszystkie warstwy (.STL / .ZIP bez ramki)</option>
+            <option value="highlighted">Tylko Wyróżnione Budynki (Insert)</option>
+            <option value="buildings">Tylko Budynki i Dachy LoD2</option>
+            <option value="roads">Tylko Ulice, Mola i Mosty</option>
+            <option value="greenery">Tylko Zieleń i Drzewa 3D</option>
+            <option value="base">Tylko Warstwice Terenu DEM</option>
+            <option value="water">Tylko Woda i Batymetria</option>
+          </select>
+          <button id="btnExportLayerSTL" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs whitespace-nowrap shrink-0 transition">
+            Pobierz .STL / .ZIP
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ======================================================================== -->
+  <!-- SEPARATE MODULE: BROWSER VIDEO PREVIEW & FRAMED ORDER DEMO STUDIO        -->
+  <!-- ======================================================================== -->
+  <div id="videoStudioRoot" class="hidden flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-2.5 sm:p-3 max-w-full overflow-x-hidden">
+
+    <!-- LEFT COLUMN: FRAGMENT SELECTION + ELEMENT FILTERING (1 OR SEVERAL ELEMENTS) -->
+    <section class="lg:col-span-3 flex flex-col gap-3 min-w-0 max-w-full">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+            1. Wybór Fragmentu Mapy
+          </h2>
+          <button id="btnVidSyncFrom3D" type="button" class="text-[11px] px-2 py-0.5 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 font-semibold transition">
+            ⇄ Z Konfiguratora 3D
+          </button>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <span class="text-[11px] text-[var(--muted-foreground)]">Gotowe sceny 3D (1-klik, w tym Dubaj z wideo konkurencji):</span>
+          <div id="vidQuickPresetsContainer" class="grid grid-cols-2 gap-1"></div>
+        </div>
+
+        <div class="relative">
+          <div class="flex items-center gap-1.5">
+            <input id="vidPlaceSearchInput" type="text" autocomplete="off" placeholder="Szukaj dowolnego adresu, miasta, góry..." class="bg-[var(--background)] border border-[var(--border)] rounded-lg text-xs px-2.5 py-1.5 flex-1 text-[var(--foreground)] focus:outline-none focus:border-blue-500" />
+            <button id="btnVidSearchPlace" type="button" class="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition">Szukaj</button>
+          </div>
+          <div id="vidSearchDropdown" style="background-color: var(--card); z-index: 100;" class="hidden absolute left-0 right-0 top-full mt-1 border border-blue-500/40 rounded-lg shadow-2xl max-h-48 overflow-y-auto divide-y divide-[var(--border)]"></div>
+        </div>
+
+        <div class="relative rounded-lg overflow-hidden border border-[var(--border)] bg-[#dce6f0]" style="height: 175px;">
+          <canvas id="vidMap2dCanvas" class="w-full h-full cursor-grab active:cursor-grabbing block"></canvas>
+          <div class="absolute top-1.5 right-1.5 flex flex-col gap-1">
+            <button id="btnVidZoomIn2D" type="button" class="w-6 h-6 rounded bg-black/75 hover:bg-black text-white font-bold text-xs flex items-center justify-center">＋</button>
+            <button id="btnVidZoomOut2D" type="button" class="w-6 h-6 rounded bg-black/75 hover:bg-black text-white font-bold text-xs flex items-center justify-center">－</button>
+          </div>
+          <div class="absolute bottom-1 left-1.5 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-gray-200 font-mono pointer-events-none">
+            Przeciągnij kadr • Scroll = Zoom
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-1 flex-wrap">
+          <span class="text-[11px] text-[var(--muted-foreground)]">Kadr: <strong id="vidSpanBadge" class="font-mono text-[var(--foreground)]">1.2 km</strong></span>
+          <div class="flex gap-1">
+            <button type="button" data-vid-span-km="0.6" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[10px]">0.6km</button>
+            <button type="button" data-vid-span-km="1.2" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[10px]">1.2km</button>
+            <button type="button" data-vid-span-km="2.5" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[10px]">2.5km</button>
+            <button type="button" data-vid-span-km="8.0" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[10px]">8km</button>
+          </div>
+        </div>
+
+        <button id="btnVidFetchGis" type="button" class="w-full py-1.5 px-3 rounded-lg bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-xs shadow transition">
+          Pobierz Wybrany Fragment Mapy do Wideo
+        </button>
+      </div>
+
+      <!-- ELEMENT FILTER: 1 OR SEVERAL ELEMENTS -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm flex-1">
+        <h2 class="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+          2. Preview 1 lub Kilku Elementów
+        </h2>
+
+        <div class="flex flex-wrap gap-1">
+          <button type="button" data-elem-preset="all" class="px-2 py-0.5 rounded bg-blue-500/15 border border-blue-500/40 text-blue-400 text-[11px] font-semibold">Wszystkie (6)</button>
+          <button type="button" data-elem-preset="arch" class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px]">Styl (Budynki+Ulice)</button>
+          <button type="button" data-elem-preset="spotlight_only" class="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-400 text-[11px] font-semibold">★ Tylko Wybrany Obiekt</button>
+          <button type="button" data-elem-preset="hydro_relief" class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px]">Woda + Teren DEM</button>
+          <button type="button" data-elem-preset="urban_grid" class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px]">Urban Grid</button>
+        </div>
+
+        <div id="vidElementsChecklist" class="grid grid-cols-1 gap-1"></div>
+
+        <label class="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] cursor-pointer pt-0.5">
+          <input id="chkVidGhostLayers" type="checkbox" class="rounded accent-blue-600" />
+          <span>Pokazuj ukryte warstwy jako duch CAD (15%)</span>
+        </label>
+
+        <div class="border-t border-[var(--border)] pt-1.5">
+          <span class="text-[11px] text-[var(--muted-foreground)] block mb-1">Kliknij budynek, aby wyróżnić go w animacji (★):</span>
+          <div id="vidLandmarkChips" class="flex flex-wrap gap-1"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CENTER COLUMN: CINEMA PREVIEW PLAYER, TIMELINE & VIDEO RECORDER -->
+    <section class="lg:col-span-6 flex flex-col gap-3 min-w-0 max-w-full">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2.5 shadow-sm flex-1">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
+              🎬 Generator Preview Wideo (Mapa 2D → Obiekt 3D → Produkt w Ramie)
+            </h2>
+            <p id="vidStoryboardDesc" class="text-[11px] text-[var(--muted-foreground)] mt-0.5">
+              Pełna choreografia inspirowana spotem: dane UTM, kadrowanie 2D z motion-blur, wyrost 3D i złożenie ramki.
+            </p>
+          </div>
+          <span id="vidPhaseBadge" class="text-xs font-mono px-2.5 py-1 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/30 font-semibold">
+            Faza 1/5 • Gotowy
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center bg-[var(--background)] border border-[var(--border)] rounded-lg p-2">
+          <span class="sm:col-span-3 text-xs font-bold text-blue-400">Scenariusz Animacji:</span>
+          <select id="vidStoryboardSelect" class="sm:col-span-9 bg-[var(--card)] border border-[var(--border)] rounded-md px-2.5 py-1.5 text-xs font-semibold text-[var(--foreground)] focus:outline-none"></select>
+        </div>
+
+        <div class="relative flex-1 min-h-[320px] flex items-center justify-center rounded-xl overflow-hidden border border-[var(--border)] bg-[#05070b] p-1">
+          <div id="videoCanvasAspectWrap" style="aspect-ratio: 16 / 9;" class="relative w-full max-h-[480px] flex items-center justify-center overflow-hidden rounded-lg shadow-2xl">
+            <canvas id="videoPreviewCanvas" width="1280" height="720" class="w-full h-full object-contain block cursor-grab active:cursor-grabbing"></canvas>
+          </div>
+
+          <div id="vidLoadingOverlay" class="hidden absolute inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-30">
+            <div class="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+            <div id="vidLoadingText" class="text-white font-semibold text-xs">Budowanie geometrii 3D do animacji...</div>
+          </div>
+
+          <div id="vidRecordingBanner" class="hidden absolute inset-x-4 top-3 bg-red-950/90 border border-red-500/60 rounded-xl p-3 text-white shadow-2xl z-20">
+            <div class="flex items-center justify-between text-xs font-bold mb-1.5">
+              <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span> Nagrywanie Wideo w Przeglądarce (16 Mbps)...</span>
+              <span id="vidRecordingProgressText" class="font-mono">0%</span>
+            </div>
+            <div class="w-full h-2 rounded-full bg-black/50 overflow-hidden">
+              <div id="vidRecordingProgressBar" style="width: 0%" class="h-full bg-gradient-to-r from-red-500 to-amber-400 transition-all"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-2.5 flex flex-col gap-2">
+          <div class="flex items-center gap-2">
+            <button id="btnVidPlayPause" type="button" class="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition shrink-0">⏸ Pauza</button>
+            <button id="btnVidRestart" type="button" class="px-2 py-1 rounded-lg bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-xs font-semibold transition shrink-0">⏮ Od początku</button>
+            <input id="vidTimelineScrubber" type="range" min="0" max="1000" value="0" class="flex-1" />
+            <span id="vidTimecodeBadge" class="text-xs font-mono font-bold text-[var(--foreground)] w-24 text-right shrink-0">0.00s / 8.5s</span>
+            <button id="btnVidJumpPackshot" type="button" title="Przejdź do finałowego złożonego produktu" class="px-2 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/25 transition shrink-0">🖼 Finał Ramki</button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-[var(--border)]">
+            <button id="btnVidRecordExport" type="button" class="py-2 px-3 rounded-lg bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow transition">
+              ⏺ Nagraj i Pobierz Wideo (.WEBM / .MP4)
+            </button>
+            <button id="btnVidDownloadPng" type="button" class="py-2 px-3 rounded-lg bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+              📸 Pobierz Packshot Ramki (.PNG)
+            </button>
+            <button id="btnVidOpenOrderDemo" type="button" class="py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow transition">
+              🛒 Demo Zamówienia (Karta Produktu)
+            </button>
+          </div>
+        </div>
+
+        <div id="vidExportResultCard" class="hidden bg-emerald-500/10 border border-emerald-500/40 rounded-xl p-3 flex flex-col sm:flex-row items-center gap-3">
+          <video id="vidRecordedPlayer" controls loop muted playsinline class="w-full sm:w-52 rounded-lg border border-white/20 bg-black"></video>
+          <div class="flex-1 flex flex-col gap-1.5 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-bold text-emerald-400">✓ Wideo wygenerowane w przeglądarce!</span>
+              <span id="vidRecordedMetaBadge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-black/40 text-gray-200">1280×720 • 30 FPS</span>
+            </div>
+            <p class="text-xs text-[var(--muted-foreground)]">Gotowy plik wideo możesz osadzić na karcie produktu, wysłać klientowi jako podgląd zamówienia lub opublikować w social media.</p>
+            <div>
+              <a id="btnVidDownloadFile" href="#" download="preview_map3d.webm" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">
+                ⬇ Pobierz Plik Wideo
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div class="flex flex-col gap-1">
+            <span class="text-[11px] text-[var(--muted-foreground)]">Fala Przejścia 2D→3D:</span>
+            <select id="vidWaveModeSelect" class="bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1 font-semibold">
+              <option value="none" selected>Płynny wyrost Z (Klasyczny)</option>
+              <option value="diagonal">Skaner Laserowy (Diagonalny)</option>
+              <option value="radial">Fala Radialna od Centrum</option>
+              <option value="zslicer">Głowica Druku Z-Slicer</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-[11px] text-[var(--muted-foreground)]">Styl Shadera:</span>
+            <select id="vidStyleSelect" class="bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1 font-semibold">
+              <option value="wire_to_studio" selected>CAD Wireframe → Studio</option>
+              <option value="pure_studio">Czysty Fotorealizm Studio</option>
+              <option value="pure_blueprint">Tylko Blueprint CAD Dark</option>
+              <option value="hybrid_cad">Hybryda Siatka CAD + Kolor</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-[11px] text-[var(--muted-foreground)]">Format &amp; Rozdzielczość:</span>
+            <select id="vidAspectSelect" class="bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1 font-semibold">
+              <option value="16x9_720" selected>16:9 HD (1280×720)</option>
+              <option value="16x9_1080">16:9 FullHD (1920×1080)</option>
+              <option value="1x1_1080">1:1 Kwadrat (1080×1080)</option>
+              <option value="9x16_1280">9:16 Reels (720×1280)</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-[11px] text-[var(--muted-foreground)]">Dynamika (Easing):</span>
+            <select id="vidEasingSelect" class="bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1 font-semibold">
+              <option value="cubic" selected>Cubic Smooth</option>
+              <option value="quint">Quintic Snappy</option>
+              <option value="spring">Spring Overshoot</option>
+              <option value="linear">Linear</option>
+            </select>
+          </div>
+
+          <div class="col-span-2 sm:col-span-4 flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[var(--border)]">
+            <label class="flex items-center gap-1 cursor-pointer"><input id="chkVidTelemetry" type="checkbox" checked class="rounded" /><span>Intro Telemetrii UTM</span></label>
+            <label class="flex items-center gap-1 cursor-pointer"><input id="chkVidWhipPan" type="checkbox" checked class="rounded" /><span>Whip-Pan 2D + Motion Blur</span></label>
+            <label class="flex items-center gap-1 cursor-pointer"><input id="chkVidOrderHud" type="checkbox" checked class="rounded" /><span>Metryczka Produktu HUD</span></label>
+            <div class="flex items-center gap-1.5">
+              <span class="text-[var(--muted-foreground)]">Czas:</span>
+              <input id="vidDurationSlider" type="range" min="4" max="15" step="0.5" value="8.5" class="w-20" />
+              <span id="vidDurationLabel" class="font-mono font-bold">8.5 s</span>
+              <select id="vidFpsSelect" class="bg-[var(--card)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">
+                <option value="30" selected>30 FPS</option>
+                <option value="60">60 FPS</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN: FRAMED PRODUCT COMPOSER & MULTI-ITEM ORDER DEMO -->
+    <section class="lg:col-span-3 flex flex-col gap-3 min-w-0 max-w-full">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            3. Złóż Gotowy Produkt Ramki
+          </h2>
+          <label class="flex items-center gap-1 text-xs cursor-pointer">
+            <input id="chkVidShowFrame" type="checkbox" checked class="rounded" />
+            <span>Rama 3D</span>
+          </label>
+        </div>
+
+        <div class="flex flex-wrap gap-1 items-center">
+          <span class="text-[11px] text-[var(--muted-foreground)]">Wymiar:</span>
+          <button type="button" data-vid-frame-dim="20x20" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono">20×20</button>
+          <button type="button" data-vid-frame-dim="30x30" class="px-1.5 py-0.5 rounded bg-blue-500/15 border border-blue-500/40 text-blue-400 text-[11px] font-mono font-bold">30×30</button>
+          <button type="button" data-vid-frame-dim="30x40" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono">30×40</button>
+          <button type="button" data-vid-frame-dim="50x50" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono">50×50</button>
+          <button type="button" data-vid-frame-dim="64x64" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono" title="Format Gallery XL">64×64 XL</button>
+        </div>
+
+        <div class="space-y-1.5 text-xs">
+          <div>
+            <span class="text-[11px] text-[var(--muted-foreground)] block mb-0.5">Paleta Kolorów Makiety:</span>
+            <select id="vidPaletteSelect" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1.5 font-semibold"></select>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5">
+            <div>
+              <span class="text-[11px] text-[var(--muted-foreground)] block mb-0.5">Profil Ramy 45°:</span>
+              <select id="vidFrameFinishSelect" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 font-semibold">
+                <option value="black" selected>Czarny Mat Alu</option>
+                <option value="oak">Dąb Naturalny</option>
+                <option value="walnut">Orzech Ciemny</option>
+                <option value="white">Biała Galeryjna</option>
+                <option value="gold">Złoto Szczotk.</option>
+              </select>
+            </div>
+            <div>
+              <span class="text-[11px] text-[var(--muted-foreground)] block mb-0.5">Montaż Ramy:</span>
+              <select id="vidFrameAnimSelect" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 font-semibold">
+                <option value="z_drop" selected>Zjazd Pionowy Z</option>
+                <option value="snap_4rail">Zatrzask 4 Listew</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5">
+            <div>
+              <span class="text-[11px] text-[var(--muted-foreground)] block mb-0.5">Passe-partout:</span>
+              <select id="vidMatStyleSelect" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 font-semibold">
+                <option value="none" selected>Pełny Kadr (Bez Mat)</option>
+                <option value="gallery_white">Galeryjne Białe</option>
+                <option value="museum_cream">Muzealny Krem</option>
+                <option value="obsidian_dark">Czarne Kontrast</option>
+              </select>
+            </div>
+            <div>
+              <span class="text-[11px] text-[var(--muted-foreground)] block mb-0.5">Tło Podkładu / Studio:</span>
+              <select id="vidBackingSelect" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 font-semibold">
+                <option value="obsidian" selected>Podkład: Czarny</option>
+                <option value="white">Podkład: Biały</option>
+                <option value="slate">Podkład: Grafit</option>
+                <option value="sand">Podkład: Piasek</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <span class="text-[11px] text-[var(--muted-foreground)] block mb-0.5">Otoczenie Studia Wideo:</span>
+            <select id="vidBgThemeSelect" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 font-semibold">
+              <option value="dark_to_white" selected>Czerń CAD → Białe Studio</option>
+              <option value="studio_white">Jasna Cyklorama Galeryjna</option>
+              <option value="obsidian_tech">Ciemne Studio Obsidian</option>
+              <option value="warm_gallery">Ciepła Ściana Salonu</option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5 pt-1">
+            <label class="flex items-center gap-1.5 bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 cursor-pointer">
+              <input id="chkVidShowPlaque" type="checkbox" checked class="rounded" />
+              <span>Plakietka / Grawer</span>
+            </label>
+            <label class="flex items-center gap-1.5 bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 cursor-pointer">
+              <input id="chkVidShowGlass" type="checkbox" checked class="rounded" />
+              <span>Szyba Akrylowa</span>
+            </label>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5">
+            <input id="vidTitleInput" type="text" value="MÜNCHEN" maxlength="22" placeholder="Tytuł (np. DUBAI)" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 font-mono font-bold text-xs" />
+            <input id="vidSubtitleInput" type="text" value="ARCHITECTURAL 3D EDITION" maxlength="36" placeholder="Podtytuł / Dedykacja" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 font-mono text-xs" />
+          </div>
+
+          <div class="border-t border-[var(--border)] pt-1.5 space-y-1">
+            <div class="flex justify-between"><span class="text-[11px] text-[var(--muted-foreground)]">Wysokość brył 3D:</span><span id="vidZScaleLabel" class="font-mono font-bold">1.28×</span></div>
+            <input id="vidZScaleSlider" type="range" min="60" max="240" value="128" class="w-full" />
+            <div class="flex justify-between"><span class="text-[11px] text-[var(--muted-foreground)]">Warstwice DEM:</span><span id="vidTerrainScaleLabel" class="font-mono font-bold">1.15×</span></div>
+            <input id="vidTerrainScaleSlider" type="range" min="40" max="240" value="115" class="w-full" />
+            <div class="flex justify-between"><span class="text-[11px] text-[var(--muted-foreground)]">Kąt światła i cieni:</span></div>
+            <input id="vidSunSlider" type="range" min="0" max="360" value="132" class="w-full" />
+          </div>
+        </div>
+      </div>
+
+      <!-- MULTI-ELEMENT SET & ORDER DEMO COMPOSER -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm flex-1">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Zestaw Demo Zamówienia</h3>
+          <span id="vidSetCountBadge" class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">Solo (1 Ramka)</span>
+        </div>
+
+        <div id="vidPinnedSlotsList" class="flex flex-col gap-1"></div>
+
+        <div class="grid grid-cols-2 gap-1">
+          <button id="btnVidAddSlot" type="button" class="px-2 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[11px] transition">➕ Dodaj do zestawu (2–3)</button>
+          <button id="btnVidResetSolo" type="button" class="px-2 py-1.5 rounded-lg bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 font-semibold text-[11px] transition">↺ Solo (1 Ramka)</button>
+          <button id="btnVidLayerTriptych" type="button" class="px-2 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25 font-semibold text-[11px] transition">⚡ Tryptyk 3 Warstw</button>
+          <button id="btnVidWorldTriptych" type="button" class="px-2 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 font-semibold text-[11px] transition">⚡ Tryptyk 3 Miast</button>
+        </div>
+
+        <div class="mt-auto bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2.5 flex items-center justify-between gap-2">
+          <div class="min-w-0">
+            <div class="text-[11px] text-[var(--muted-foreground)]">Wycena Demo Produktu:</div>
+            <div id="vidOrderSpecSummary" class="text-[11px] text-[var(--foreground)] truncate">1× Format 30×30 cm • Czarny Mat</div>
+          </div>
+          <div id="vidOrderPriceLabel" class="text-sm font-extrabold font-mono text-emerald-400 shrink-0">118 €</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ORDER DEMO PREVIEW CHECKOUT MODAL -->
+  <div id="vidOrderDemoModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl max-w-2xl w-full p-5 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-[var(--border)] pb-3">
+        <div>
+          <h3 class="text-base font-bold text-[var(--foreground)]">🛒 Podgląd Gotowego Zamówienia (Demo Produktu w Ramce)</h3>
+          <p class="text-xs text-[var(--muted-foreground)]">Kompletna specyfikacja produkcyjna druku 3D, oprawy stolarskiej, szyby akrylowej i graweru.</p>
+        </div>
+        <button id="btnCloseOrderModal" type="button" class="px-2.5 py-1 rounded-lg bg-[var(--background)] border border-[var(--border)] text-xs font-bold">✕ Zamknij</button>
+      </div>
+
+      <div class="rounded-xl overflow-hidden border border-[var(--border)] bg-black">
+        <img id="orderModalPackshotImg" alt="Packshot Zamówienia 3D" class="w-full h-56 object-contain" />
+      </div>
+
+      <div id="orderModalItemsList" class="flex flex-col gap-2"></div>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+        <div>
+          <div class="text-xs text-[var(--muted-foreground)]">Suma zamówienia demo (z oprawą i wysyłką 5–7 dni):</div>
+          <div id="orderModalTotalPrice" class="text-lg font-extrabold font-mono text-emerald-400">118 € (~507 zł)</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btnDownloadOrderSpecJson" type="button" class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition">
+            ⬇ Pobierz Specyfikację Zamówienia (.JSON)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- BUNDLED ENGINE & INITIAL REAL GIS SCENE -->
+  <script src="src/geometry_2d.js"></script>
+  <script src="src/mesh_extrude.js"></script>
+  <script src="src/mesh_topology.js"></script>
+  <script src="src/mesh_builder.js"></script>
+  <script src="src/webgl_shaders_math.js"></script>
+  <script src="src/webgl_studio.js"></script>
+  <script src="src/export_stl_zip.js"></script>
+  <script src="src/export_3mf.js"></script>
+  <script src="src/ui_config.js"></script>
+  <script src="src/ui_map2d.js"></script>
+  <script src="src/ui_gis_client.js"></script>
+  <script src="src/ui_panels.js"></script>
+  <script src="src/video/video_config.js"></script>
+  <script src="src/video/video_math_mesh.js"></script>
+  <script src="src/video/video_shaders.js"></script>
+  <script src="src/video/video_shader_main_fs.js"></script>
+  <script src="src/video/video_frame_builder.js"></script>
+  <script src="src/video/video_timeline_2d.js"></script>
+  <script src="src/video/video_recorder.js"></script>
+  <script src="src/video/video_gl_engine.js"></script>
+  <script src="src/video/ui_video_map_gis.js"></script>
+  <script src="src/video/ui_video_order_demo.js"></script>
+  <script src="src/video/ui_video_controls.js"></script>
+  <script src="src/video/ui_video_studio.js"></script>
+  <script src="src/ui_app.js"></script>
+  <script src="src/initial_scene.js"></script>
+  <script>
+window.MAP3D_STANDALONE_VIDEO_MODULE = true;
+function boot() {
+  try {
+    initMap3DApp(INITIAL_REAL_SCENE);
+  } catch (e) {
+    console.error('Boot error:', e);
+    const b = document.getElementById('meshStatsBadge');
+    if (b) b.textContent = 'ERR: ' + (e && e.message ? e.message : String(e));
+  }
+}
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+  </script>
+</body>
+</html>

@@ -5,6 +5,18 @@
 
 const PALETTES = [
   {
+    id: 'white',
+    name: 'Pure Architectural White',
+    colors: {
+      water: '#dce5ed',
+      base: '#f4f5f7',
+      greenery: '#e8ecef',
+      roads: '#f0f2f5',
+      buildings: '#ffffff',
+      highlighted: '#2563eb'
+    }
+  },
+  {
     id: 'lichtbild_studio',
     name: 'Lichtbild Studio (4-Kolory)',
     colors: {
@@ -96,6 +108,7 @@ const WORLD_LOCATIONS = [
   { cat: 'asia', title: 'BUSAN', region: 'Azja • Pusan (Haeundae)', lat: 35.1587, lon: 129.1520 },
 
   // East & West Metropolises & River Cities
+  { cat: 'west_east', title: 'DUBAI', region: 'ZEA • Dubaj (Burj Khalifa & Downtown)', lat: 25.1923, lon: 55.2724 },
   { cat: 'west_east', title: 'MÜNCHEN', region: 'Europa • Monachium (Isar)', lat: 48.1338, lon: 11.5855 },
   { cat: 'west_east', title: 'KRAKÓW', region: 'Europa • Kraków (Wawel & Wisła)', lat: 50.0543, lon: 19.9365 },
   { cat: 'west_east', title: 'WARSZAWA', region: 'Europa • Warszawa (Skarpa & Wisła)', lat: 52.2470, lon: 21.0135 },

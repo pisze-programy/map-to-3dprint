@@ -730,6 +730,51 @@ function initMap3DApp(initialScene) {
 
   window.addEventListener('resize', draw2DMap);
 
+  // ==========================================================================
+  // SEPARATE VIDEO PREVIEW & ORDER DEMO MODULE INITIALIZATION & TAB SWITCHER
+  // ==========================================================================
+  const videoStudio = (typeof initVideoStudioModule === 'function')
+    ? initVideoStudioModule({
+        getState: () => state,
+        getSceneData: () => state.sceneData
+      })
+    : null;
+
+  const printRoot = document.getElementById('print3dStudioRoot');
+  const videoRoot = document.getElementById('videoStudioRoot');
+  const printHeaderCtrls = document.getElementById('printHeaderControls');
+  const btnTab3D = document.getElementById('btnSwitchTo3DPrint');
+  const btnTabVideo = document.getElementById('btnSwitchToVideoStudio');
+
+  function switchToModule(mode, skipSync = false) {
+    const isVideo = (mode === 'video');
+    if (printRoot) printRoot.classList.toggle('hidden', isVideo);
+    if (videoRoot) videoRoot.classList.toggle('hidden', !isVideo);
+    if (printHeaderCtrls) printHeaderCtrls.classList.toggle('hidden', isVideo);
+
+    if (btnTab3D && btnTabVideo) {
+      btnTab3D.className = isVideo
+        ? 'px-2.5 py-1 rounded-md text-[var(--foreground)] hover:bg-blue-500/15 font-semibold text-xs transition flex items-center gap-1'
+        : 'px-2.5 py-1 rounded-md bg-blue-600 text-white font-semibold text-xs transition flex items-center gap-1';
+      btnTabVideo.className = isVideo
+        ? 'px-2.5 py-1 rounded-md bg-indigo-600 text-white font-semibold text-xs transition flex items-center gap-1 shadow-sm'
+        : 'px-2.5 py-1 rounded-md text-[var(--foreground)] hover:bg-blue-500/15 font-semibold text-xs transition flex items-center gap-1';
+    }
+
+    if (videoStudio) {
+      if (isVideo) {
+        videoStudio.activateModule(!skipSync);
+      } else {
+        videoStudio.deactivateModule();
+        draw2DMap();
+        studio.render(true);
+      }
+    }
+  }
+
+  if (btnTab3D) btnTab3D.addEventListener('click', () => switchToModule('3d'));
+  if (btnTabVideo) btnTabVideo.addEventListener('click', () => switchToModule('video'));
+
   // URL Query Parameter Hooks for Automated Multi-Angle & Multi-Location Inspection
   (async function applyUrlParams() {
     try {
@@ -834,16 +879,61 @@ function initMap3DApp(initialScene) {
         studio.camera.yaw = -0.42; studio.camera.pitch = -0.68; studio.camera.distance = 248;
         studio.camera.target = [0, 0, 1.0];
       }
+
+      // Standalone / Integrated Video Studio URL Hooks
+      if (window.MAP3D_STANDALONE_VIDEO_MODULE || params.get('mode') === 'video') {
+        switchToModule('video', true);
+        if (videoStudio) {
+          const vPreset = params.get('preset') || (window.MAP3D_STANDALONE_VIDEO_MODULE ? 'dubai' : null);
+          if (vPreset) {
+            await videoStudio.loadPresetById(vPreset);
+          }
+          if (params.get('storyboard')) videoStudio.vState.storyboard = params.get('storyboard');
+          if (params.get('wave')) videoStudio.vState.waveMode = params.get('wave');
+          if (params.get('mat')) videoStudio.vState.matStyle = params.get('mat');
+          if (params.get('frame')) videoStudio.vState.frameStyle = params.get('frame');
+          if (params.get('palette')) {
+            const pal = PALETTES.find(x => x.id === params.get('palette'));
+            if (pal) {
+              videoStudio.vState.paletteId = pal.id;
+              videoStudio.vState.colors = { ...pal.colors };
+              if (pal.id === 'white') videoStudio.vState.colors.water = '#161b24';
+            }
+          }
+          videoStudio.syncControlsFromState();
+          if (params.get('triptych') === 'layers') {
+            const b = document.getElementById('btnVidLayerTriptych');
+            if (b) b.click();
+          } else {
+            videoStudio.activateModule(false);
+          }
+          if (params.get('t') !== null) {
+            videoStudio.vState.isPlaying = false;
+            videoStudio.vState.tNorm = Math.max(0, Math.min(1, parseFloat(params.get('t')) || 0));
+            const scrub = document.getElementById('vidTimelineScrubber');
+            if (scrub) {
+              scrub.value = Math.round(videoStudio.vState.tNorm * 1000);
+              scrub.dispatchEvent(new Event('input'));
+            }
+          }
+          if (params.get('order_modal') === '1') {
+            const bm = document.getElementById('btnVidOpenOrderDemo');
+            if (bm) bm.click();
+          }
+        }
+      }
     } catch (e) {
       console.warn('URL param error:', e);
     }
   })();
 
   function animate() {
-    if (state.autoRotate) {
-      studio.camera.yaw += 0.004;
+    if (!videoStudio || !videoStudio.vState.isActiveModule) {
+      if (state.autoRotate) {
+        studio.camera.yaw += 0.004;
+      }
+      studio.render();
     }
-    studio.render();
     requestAnimationFrame(animate);
   }
   requestAnimationFrame(animate);

@@ -13,6 +13,9 @@ ARTIFACT_PATH = os.environ.get("MAP3D_ARTIFACT_PATH", "")
 def build():
     with open(os.path.join(ROOT, "src/template.html"), "r", encoding="utf-8") as f:
         tpl = f.read()
+    with open(os.path.join(ROOT, "src/video/video_studio_view.html"), "r", encoding="utf-8") as f:
+        video_view_html = f.read()
+    tpl = tpl.replace("<!--__VIDEO_STUDIO_VIEW__-->", video_view_html)
 
     js_files = [
         "src/geometry_2d.js",
@@ -27,6 +30,18 @@ def build():
         "src/ui_map2d.js",
         "src/ui_gis_client.js",
         "src/ui_panels.js",
+        "src/video/video_config.js",
+        "src/video/video_math_mesh.js",
+        "src/video/video_shaders.js",
+        "src/video/video_shader_main_fs.js",
+        "src/video/video_frame_builder.js",
+        "src/video/video_timeline_2d.js",
+        "src/video/video_recorder.js",
+        "src/video/video_gl_engine.js",
+        "src/video/ui_video_map_gis.js",
+        "src/video/ui_video_order_demo.js",
+        "src/video/ui_video_controls.js",
+        "src/video/ui_video_studio.js",
         "src/ui_app.js",
     ]
     js_bundle = []
@@ -72,6 +87,18 @@ def build():
     index_path = os.path.join(ROOT, "index.html")
     with open(index_path, "w", encoding="utf-8") as f:
         f.write(modular_html)
+
+    # Standalone Video Preview & Order Demo Module Entry Point (video_studio.html)
+    video_boot = "window.MAP3D_STANDALONE_VIDEO_MODULE = true;\n" + boot_code
+    video_block = f"{script_tags}\n  <script>\n{video_boot}\n  </script>"
+    video_html = tpl.replace("  <script>\n/*__BUNDLE_SCRIPT__*/\n  </script>", video_block)
+    video_html = video_html.replace(
+        "<title>Map3D Studio — Fotorealistyczny Konfigurator GIS & Eksporter .3MF / .STL</title>",
+        "<title>Map3D Video Preview Studio — Generator Animacji 2D→3D & Demo Zamówienia w Ramce</title>",
+    )
+    video_path = os.path.join(ROOT, "video_studio.html")
+    with open(video_path, "w", encoding="utf-8") as f:
+        f.write(video_html)
 
     # Single-file standalone bundle for artifact preview if requested
     if ARTIFACT_PATH and os.path.isdir(os.path.dirname(ARTIFACT_PATH)):

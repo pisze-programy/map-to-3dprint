@@ -201,6 +201,20 @@ python3 build_app.py
 | `src/mesh_builder.js` | Core 3D map & SLA hollow vault builder (`buildComplete3DModel`: DEM terraces, bathymetry, disjoint feature slabs, bridges, buildings) |
 | `src/webgl_shaders_math.js` | GLSL shadow/studio shaders, 4×4 matrix math, and Möller–Trumbore ray-triangle intersection |
 | `src/webgl_studio.js` | WebGL 1.0 studio renderer (`createWebGLStudio`) with 2048×2048 PCF shadow mapping, 3D tile explode, and building picking |
+| `src/video/video_studio_view.html` | HTML layout partial for the Video Preview & Framed Order Demo Studio (`#videoStudioRoot` & `#vidOrderDemoModal`) |
+| `src/video/video_config.js` | Video presets (including Dubai Burj Khalifa), 5 storyboards, aspect ratios, and frame/passe-partout/studio catalogs |
+| `src/video/video_math_mesh.js` | Easing curves (`applyVideoEasing`) and coplanar-diagonal-suppressing barycentric mesh packer (`packMeshForVideoGL`) |
+| `src/video/video_shaders.js` | Vertex deformation & 2048×2048 shadow map GLSL shaders (`VIDEO_SHADOW_VS`, `VIDEO_MAIN_VS`) |
+| `src/video/video_shader_main_fs.js` | Cinema fragment shader (`buildVideoMainFS`: PCF shadows, cyclorama floor, swept acrylic glass, plaque UV, CAD↔Studio blend) |
+| `src/video/video_frame_builder.js` | Parametric 45° mitered 4-rail frame, backing, passe-partout, engraved plaque texture & glass (`buildVideoProductFrameBuffers`) |
+| `src/video/video_timeline_2d.js` | Deterministic timeline choreographer (`evaluateVideoTimeline`) & 2D UTM telemetry, whip-pan motion blur, and packshot HUD |
+| `src/video/video_recorder.js` | High-bitrate (`16 Mbps`) browser `.mp4`/`.webm` `MediaRecorder` exporter (`recordCanvasVideoBlob`) |
+| `src/video/video_gl_engine.js` | Multi-slot GPU manager & 2-pass WebGL renderer (`createVideoPreviewEngine`) |
+| `src/video/ui_video_map_gis.js` | 2D fragment selector, Photon place search, cached preset loader, and live GIS fetcher (`createVideoMapGisController`) |
+| `src/video/ui_video_order_demo.js` | Solo/Duet/Triptych set composer, EUR/PLN pricing, Order Demo modal & `.JSON` spec export (`createVideoOrderDemoController`) |
+| `src/video/ui_video_controls.js` | Element & landmark chips, storyboard/frame/shader DOM bindings, state sync & `.WEBM`/`.MP4`/`.PNG` export triggers (`createVideoControlsController`) |
+| `src/video/ui_video_studio.js` | Main coordinator, playback RAF loop, interactive orbit & 3D configurator sync (`initVideoStudioModule`) |
+| `video_studio.html` | Standalone entry point for the Browser Video Preview & Order Demo Studio module |
 | `src/export_stl_zip.js` | CRC32, ZIP archive builder, binary `.STL` exporter, and multi-tile Anycubic Photon Mono 4 `.ZIP` packager |
 | `src/export_3mf.js` | Multi-volume `.3MF` exporter with vertex welding and per-tile `<object>` assemblies |
 | `src/ui_config.js` | Palettes, layer metadata, global world locations, and printer profiles |
