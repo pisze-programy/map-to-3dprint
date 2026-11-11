@@ -1,5 +1,5 @@
 // ============================================================================
-// src/ui_config.js
+// src/ui/ui_config.js
 // Palettes, Layer Metadata, Global World Locations, Printer Profiles & Helpers
 // ============================================================================
 
@@ -76,9 +76,7 @@ const LAYERS_META = [
   { key: 'highlighted', id: 5, name: '5. Wyróżnione Budynki ★ (Opcja)',     extruder: 'Kolor 5 (Akcent)',  zDesc: 'Wyróżnienie' }
 ];
 
-// Global Pool of Diverse Real-World Locations for Universal Testing
 const WORLD_LOCATIONS = [
-  // Mountains & Alpine Valleys
   { cat: 'mountains', title: 'ZERMATT', region: 'Alpy • Zermatt (Szwajcaria)', lat: 46.0207, lon: 7.7491 },
   { cat: 'mountains', title: 'CHAMONIX', region: 'Alpy • Chamonix-Mont-Blanc', lat: 45.9237, lon: 6.8694 },
   { cat: 'mountains', title: 'ZAKOPANE', region: 'Tatry • Zakopane (Polska)', lat: 49.2965, lon: 19.9510 },
@@ -88,7 +86,6 @@ const WORLD_LOCATIONS = [
   { cat: 'mountains', title: 'BANFF', region: 'Góry Skaliste • Banff (Kanada)', lat: 51.1760, lon: -115.5710 },
   { cat: 'mountains', title: 'QUEENSTOWN', region: 'Alpy Płd. • Queenstown (NZ)', lat: -45.0312, lon: 168.6626 },
 
-  // Coastal Resorts, Fjords & Lakes
   { cat: 'resorts', title: 'POSITANO', region: 'Wybrzeże Amalfi • Positano', lat: 40.6281, lon: 14.4850 },
   { cat: 'resorts', title: 'HALLSTATT', region: 'Alpy Salzburskie • Hallstatt', lat: 47.5622, lon: 13.6493 },
   { cat: 'resorts', title: 'DUBROVNIK', region: 'Adriatyk • Dubrownik', lat: 42.6410, lon: 18.1085 },
@@ -98,7 +95,6 @@ const WORLD_LOCATIONS = [
   { cat: 'resorts', title: 'COMO', region: 'Jezioro Como • Włochy', lat: 45.8112, lon: 9.0825 },
   { cat: 'resorts', title: 'SOPOT', region: 'Bałtyk • Sopot & Molo', lat: 54.4446, lon: 18.5686 },
 
-  // Asia & East
   { cat: 'asia', title: 'TOKYO', region: 'Azja • Tokio (Sumida & Asakusa)', lat: 35.7118, lon: 139.8015 },
   { cat: 'asia', title: 'KYOTO', region: 'Azja • Kioto (Rzeka Kamo & Gion)', lat: 35.0037, lon: 135.7715 },
   { cat: 'asia', title: 'HONG KONG', region: 'Azja • Hongkong (Victoria Peak)', lat: 22.2795, lon: 114.1588 },
@@ -108,14 +104,13 @@ const WORLD_LOCATIONS = [
   { cat: 'asia', title: 'YOKOHAMA', region: 'Azja • Jokohama (Minato Mirai)', lat: 35.4550, lon: 139.6360 },
   { cat: 'asia', title: 'BUSAN', region: 'Azja • Pusan (Haeundae)', lat: 35.1587, lon: 129.1520 },
 
-  // East & West Metropolises & River Cities
   { cat: 'west_east', title: 'DUBAI', region: 'ZEA • Dubaj (Burj Khalifa & Downtown)', lat: 25.1923, lon: 55.2724 },
   { cat: 'west_east', title: 'MÜNCHEN', region: 'Europa • Monachium (Isar)', lat: 48.1338, lon: 11.5855 },
   { cat: 'west_east', title: 'KRAKÓW', region: 'Europa • Kraków (Wawel & Wisła)', lat: 50.0543, lon: 19.9365 },
   { cat: 'west_east', title: 'WARSZAWA', region: 'Europa • Warszawa (Skarpa & Wisła)', lat: 52.2470, lon: 21.0135 },
   { cat: 'west_east', title: 'HEIDELBERG', region: 'Europa • Heidelberg (Neckar)', lat: 49.4130, lon: 8.7085 },
   { cat: 'west_east', title: 'SAN FRANCISCO', region: 'USA • San Francisco (Telegraph Hill)', lat: 37.8024, lon: -122.4058 },
-  { cat: 'west_east', title: 'NEW YORK', region: 'USA • Manhattan (Wall St & East River)', lat: 40.7061, lon: -74.0092 },
+  { cat: 'west_east', title: 'NEW YORK', region: 'USA • Manhattan (Central Park South)', lat: 40.7664, lon: -73.9784 },
   { cat: 'west_east', title: 'RIO DE JANEIRO', region: 'Ameryka Płd. • Rio (Pão de Açúcar)', lat: -22.9486, lon: -43.1635 },
   { cat: 'west_east', title: 'SYDNEY', region: 'Australia • Sydney (Opera & Port)', lat: -33.8587, lon: 151.2140 },
   { cat: 'west_east', title: 'ISTANBUL', region: 'Turcja • Stambuł (Złoty Róg & Galata)', lat: 41.0256, lon: 28.9741 },
@@ -175,8 +170,8 @@ const PRINT_PROFILES = {
     name: 'Anycubic Photon Mono 4 • Dowolny Format cm (Auto-Siatka)',
     printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
     bedX: 153.4, bedY: 87.0, bedZ: 165.0,
-    totalWidthMm: 200, totalHeightMm: 200,
-    cols: 2, rows: 3,
+    totalWidthMm: 500, totalHeightMm: 500,
+    cols: 4, rows: 6,
     isResin: true,
     isCustomMono4: true
   },
@@ -229,24 +224,12 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-/**
- * Validates whether a tile of tileWidthMm × tileHeightMm fits within Anycubic Photon Mono 4
- * build plate (153.4 × 87.0 × 165.0 mm), evaluating both 0° and 90° rotations.
- */
 function checkTileFitsMono4(tileWidthMm, tileHeightMm, maxZMm = 22.0) {
   const fits0 = (tileWidthMm <= 153.45 && tileHeightMm <= 87.05);
   const fits90 = (tileHeightMm <= 153.45 && tileWidthMm <= 87.05);
   return (fits0 || fits90) && maxZMm <= 165.0;
 }
 
-/**
- * Computes optimal Anycubic Photon Mono 4 (153.4 × 87.0 mm) tile grid (Cols × Rows)
- * for a finished print size of widthMm × heightMm, checking both 0° and 90° orientations
- * with a safe printable margin (defaults safeMaxW = 150.0, safeMaxH = 85.0 mm).
- *
- * Minimizes total tiles (cols * rows) and tie-breaks by balanced aspect ratio / larger margin.
- * Returns { cols, rows, tileW, tileH, rotated90, totalTiles }.
- */
 function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH = 85.0) {
   const w = Math.max(10.0, Number(widthMm) || 200.0);
   const h = Math.max(10.0, Number(heightMm) || 200.0);
@@ -267,29 +250,20 @@ function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH =
         const aspect = tileW > tileH ? tileW / tileH : tileH / tileW;
 
         const candidate = {
-          cols,
-          rows,
+          cols, rows,
           tileW: Math.round(tileW * 10) / 10,
           tileH: Math.round(tileH * 10) / 10,
-          rotated90,
-          totalTiles,
-          margin: bestMargin,
-          aspect
+          rotated90, totalTiles,
+          margin: bestMargin, aspect
         };
 
-        if (!best) {
-          best = candidate;
-        } else if (candidate.totalTiles < best.totalTiles) {
+        if (!best || candidate.totalTiles < best.totalTiles) {
           best = candidate;
         } else if (candidate.totalTiles === best.totalTiles) {
-          // Tie-break 1: Most balanced aspect ratio (closer to 1.0)
           if (Math.abs(candidate.aspect - 1.0) < Math.abs(best.aspect - 1.0) - 0.05) {
             best = candidate;
-          } else if (Math.abs(candidate.aspect - best.aspect) <= 0.05) {
-            // Tie-break 2: Larger margin
-            if (candidate.margin > best.margin) {
-              best = candidate;
-            }
+          } else if (Math.abs(candidate.aspect - best.aspect) <= 0.05 && candidate.margin > best.margin) {
+            best = candidate;
           }
         }
       }
@@ -300,8 +274,7 @@ function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH =
     const cols = Math.ceil(w / safeMaxW);
     const rows = Math.ceil(h / safeMaxH);
     return {
-      cols,
-      rows,
+      cols, rows,
       tileW: Math.round((w / cols) * 10) / 10,
       tileH: Math.round((h / rows) * 10) / 10,
       rotated90: false,
@@ -317,4 +290,8 @@ function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH =
     rotated90: best.rotated90,
     totalTiles: best.totalTiles
   };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { PALETTES, LAYERS_META, WORLD_LOCATIONS, PRINT_PROFILES, escapeHtml, checkTileFitsMono4, computeOptimalMono4Grid };
 }

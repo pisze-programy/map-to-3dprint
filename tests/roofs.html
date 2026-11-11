@@ -3,9 +3,28 @@ function getText(u){const x=new XMLHttpRequest();x.open('GET',u,false);x.send();
 const P = new URLSearchParams(location.search);
 const SRC_FILES = P.get('src')
   ? P.get('src').split(',')
-  : ['../src/geometry_2d.js', '../src/mesh_extrude.js', '../src/mesh_topology.js', '../src/mesh_builder.js'];
+  : [
+      '../src/geometry/polygon_2d.js',
+      '../src/geometry/obb_medial_2d.js',
+      '../src/geometry/marching_squares_2d.js',
+      '../src/mesh/mesh_primitives.js',
+      '../src/mesh/mesh_clipper_3d.js',
+      '../src/mesh/roof_shapes.js',
+      '../src/mesh/roof_architectural.js',
+      '../src/mesh/terrain_dem_grid.js',
+      '../src/mesh/terrain_masks.js',
+      '../src/mesh/terrain_base_water.js',
+      '../src/mesh/features_roads_parks.js',
+      '../src/mesh/features_bridges.js',
+      '../src/mesh/buildings_prepare.js',
+      '../src/mesh/buildings_s3db.js',
+      '../src/mesh/mesh_topology.js',
+      '../src/mesh/mesh_builder.js'
+    ];
 let src = SRC_FILES.map(getText).join('\n');
-src=src.replace("  if (!isSimplePolygon(ring)) {\n    ring = outerClean;","  window.__c.calls++; if (holesClean.length) window.__c.withHoles++;\n  if (!isSimplePolygon(ring)) {\n    if (holesClean.length) window.__c.courtyardLost++; else window.__c.nonSimpleOuter++;\n    ring = outerClean;");
+const targetKeyhole = "  let ring = holesClean.length > 0 ? mergeHolesIntoOuterKeyhole(outerClean, holesClean) : outerClean;\n  if (ring.length < 3) return;\n  if (!isSimplePolygon(ring)) {\n    ring = outerClean;";
+const replKeyhole = "  let ring = holesClean.length > 0 ? mergeHolesIntoOuterKeyhole(outerClean, holesClean) : outerClean;\n  if (ring.length < 3) return;\n  window.__c.calls++; if (holesClean.length) window.__c.withHoles++;\n  if (!isSimplePolygon(ring)) {\n    if (holesClean.length) window.__c.courtyardLost++; else window.__c.nonSimpleOuter++;\n    ring = outerClean;";
+src=src.replace(targetKeyhole, replKeyhole);
 src=src.replace("  const canPitch = hasPitchedRoof","  if (layerId===4||layerId===5){ if(hasPitchedRoof) window.__c.wantPitched++; }\n  const canPitch = hasPitchedRoof");
 src=src.replace("  // 3. Watertight Top Roof Cap at zEaves / zRidge","  if ((layerId===4||layerId===5) && hasPitchedRoof && !canPitch) window.__c.pitchedToFlat++;\n  // 3. Watertight Top Roof Cap at zEaves / zRidge");
 (0,eval)(src);

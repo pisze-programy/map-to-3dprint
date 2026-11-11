@@ -71,6 +71,7 @@
         <span class="text-xs text-[var(--muted-foreground)] shrink-0">Format:</span>
         <select id="printerSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none cursor-pointer min-w-0 max-w-[220px] sm:max-w-none truncate">
           <optgroup label="Żywica SLA/MSLA — Anycubic Photon Mono 4 (153.4 × 87 × 165 mm, max 2.2 L)">
+            <option value="mono4_custom" selected>Photon Mono 4 • Dowolny Format cm (Auto-Siatka)</option>
             <option value="mono4_84_1x1">Photon Mono 4 • Mały Kwadrat 84×84 mm (1 Kafel 1×1 na płasko)</option>
             <option value="mono4_150_1x2">Photon Mono 4 • Kwadrat 150×150 mm (2 Kafle 1×2 po 150×75 mm)</option>
             <option value="mono4_168_2x2">Photon Mono 4 • Kwadrat 168×168 mm (4 Kafle 2×2 po 84×84 mm)</option>
@@ -78,7 +79,7 @@
             <option value="mono4_296_2x4">Photon Mono 4 • Format XL 296×296 mm (8 Kafli 2×4 po 148×74 mm)</option>
           </optgroup>
           <optgroup label="Wielokolorowe FDM (z marginesem stołu)">
-            <option value="fdm_330_1x1" selected>Prusa XL 5-Toolhead (320×320 mm na stole 360×360 mm)</option>
+            <option value="fdm_330_1x1">Prusa XL 5-Toolhead (320×320 mm na stole 360×360 mm)</option>
             <option value="fdm_256_1x1">Bambu Lab X1C / P1S / A1 + AMS (220×220 mm + rezerwa wieży AMS)</option>
             <option value="fdm_350_1x1">Voron 2.4 350 + ERCF (340×340 mm na stole 350 mm)</option>
             <option value="fdm_500_2x2">Format XL 4-Kafle FDM (492×492 mm — 2×2 po 246×246 mm)</option>
@@ -109,43 +110,57 @@
             <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
             1. Interaktywna Mapa (Wybór Kadru)
           </h2>
-          <span id="bboxScaleBadge" class="text-xs font-mono px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)]">33×33 cm</span>
+          <span id="bboxScaleBadge" class="text-xs font-mono px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)]">50×50 cm (4×6)</span>
+        </div>
+
+        <!-- Target Finished Wall-Art Dimensions in cm & Photon Mono 4 Auto-Grid -->
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2 flex flex-col gap-1.5">
+          <div class="flex items-center justify-between gap-1">
+            <span class="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1">
+              <svg class="w-3.5 h-3.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+              Wymiar obrazu (cm):
+            </span>
+            <span id="mono4GridBadge" class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-bold truncate max-w-[175px]" title="Optymalna siatka kafli Anycubic Photon Mono 4">Mono 4: 4×6 (24 k. • 125×83.3mm)</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5">
+            <div class="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1">
+              <span class="text-xs text-[var(--muted-foreground)] shrink-0">Szer:</span>
+              <input id="targetWidthCmInput" type="number" min="8" max="120" step="1" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
+              <span class="text-xs text-[var(--muted-foreground)] shrink-0">cm</span>
+            </div>
+            <div class="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1">
+              <span class="text-xs text-[var(--muted-foreground)] shrink-0">Wys:</span>
+              <input id="targetHeightCmInput" type="number" min="8" max="120" step="1" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
+              <span class="text-xs text-[var(--muted-foreground)] shrink-0">cm</span>
+            </div>
+          </div>
+
+          <!-- Quick Standard Picture Frame Chips -->
+          <div class="flex flex-wrap gap-1 items-center">
+            <span class="text-[11px] text-[var(--muted-foreground)] shrink-0">Ramka:</span>
+            <button type="button" data-frame-size="20x20" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">20×20</button>
+            <button type="button" data-frame-size="30x30" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">30×30</button>
+            <button type="button" data-frame-size="30x40" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">30×40</button>
+            <button type="button" data-frame-size="40x50" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">40×50</button>
+            <button type="button" data-frame-size="50x50" class="px-1.5 py-0.5 rounded bg-blue-600 text-white border border-blue-500 text-[11px] font-mono transition">50×50</button>
+            <button type="button" data-frame-size="50x70" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">50×70</button>
+          </div>
         </div>
 
         <!-- Search Any Place on Earth with Live Autocomplete (Photon OSM) -->
-        <div class="relative">
+        <div class="relative flex flex-col gap-1">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-[var(--muted-foreground)]">Wyszukaj lokalizację na świecie:</span>
+            <span id="currentRegionBadge" class="text-xs font-mono text-blue-400 truncate max-w-[175px]">Europa • Monachium</span>
+          </div>
           <div class="flex items-center gap-1.5">
-            <input id="placeSearchInput" type="text" autocomplete="off" placeholder="Wpisz miasto, górę, kurort, wyspę na Ziemi..." class="bg-[var(--background)] border border-[var(--border)] rounded-lg text-xs px-2.5 py-1.5 flex-1 text-[var(--foreground)] focus:outline-none focus:border-blue-500" />
+            <input id="placeSearchInput" type="text" autocomplete="off" placeholder="Wpisz miasto, adres, górę, jezioro..." class="bg-[var(--background)] border border-[var(--border)] rounded-lg text-xs px-2.5 py-1.5 flex-1 text-[var(--foreground)] focus:outline-none focus:border-blue-500" />
             <button id="btnSearchPlace" class="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition whitespace-nowrap">
               Szukaj
             </button>
           </div>
           <div id="searchSuggestionsDropdown" style="background-color: var(--card); z-index: 100;" class="hidden absolute left-0 right-0 top-full mt-1 border-2 border-blue-500/40 rounded-lg shadow-2xl max-h-56 overflow-y-auto divide-y divide-[var(--border)]"></div>
-        </div>
-
-        <!-- Universal World Randomizer (Mountains, Resorts, Asia, East/West, Global) -->
-        <div class="flex flex-col gap-1">
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-[var(--muted-foreground)]">Losuj obszar testowy na świecie:</span>
-            <span id="currentRegionBadge" class="text-xs font-mono text-blue-400 truncate max-w-[165px]">Europa • Monachium</span>
-          </div>
-          <div class="flex flex-wrap gap-1">
-            <button data-random-cat="all" class="px-2 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition flex items-center gap-1 shadow-sm">
-              🎲 Losuj Świat
-            </button>
-            <button data-random-cat="mountains" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
-              ⛰️ Góry
-            </button>
-            <button data-random-cat="resorts" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
-              🏖️ Kurorty
-            </button>
-            <button data-random-cat="asia" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
-              🏯 Azja
-            </button>
-            <button data-random-cat="west_east" class="px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-xs font-medium transition">
-              🌍 Wschód/Zachód
-            </button>
-          </div>
         </div>
 
         <!-- Interactive 2D Slippy Map Canvas -->
@@ -163,7 +178,7 @@
           </div>
           <div class="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none text-xs gap-1">
             <span class="px-1.5 py-0.5 rounded bg-black/70 text-gray-200 font-mono truncate">
-              Przeciągnij / Zoom • © OpenStreetMap contributors (ODbL)
+              Przeciągnij / Zoom / Obróć uchwyt • © OpenStreetMap
             </span>
           </div>
         </div>
@@ -174,10 +189,39 @@
           <button id="btnRetryGis" class="px-2 py-0.5 rounded bg-red-600 hover:bg-red-500 text-white font-semibold shrink-0">Ponów</button>
         </div>
 
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Kadr:</span>
-          <input id="cropSizeSlider" type="range" min="55" max="98" value="88" class="flex-1" />
-          <span id="cropSizeLabel" class="text-xs font-mono whitespace-nowrap text-right">1.19 km (1:3720)</span>
+        <!-- Unified Kadr (Map Span) Slider & Quick Presets -->
+        <div class="flex flex-col gap-1 bg-[var(--background)] border border-[var(--border)] rounded-lg p-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-semibold text-[var(--foreground)] whitespace-nowrap">Kadr (Zasięg terenu):</span>
+            <span id="cropSizeLabel" class="text-xs font-mono font-bold text-blue-400 whitespace-nowrap text-right">1.20 km (1:2400)</span>
+          </div>
+          <input id="cropSizeSlider" type="range" min="0.4" max="12.0" step="0.1" value="1.2" class="w-full" />
+          <div class="flex flex-wrap gap-1 items-center">
+            <span class="text-[11px] text-[var(--muted-foreground)] shrink-0">Zasięg:</span>
+            <button type="button" data-span-km="0.6" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">0.6 km</button>
+            <button type="button" data-span-km="1.2" class="px-1.5 py-0.5 rounded bg-blue-600 text-white border border-blue-500 text-[11px] font-mono transition">1.2 km</button>
+            <button type="button" data-span-km="2.5" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">2.5 km</button>
+            <button type="button" data-span-km="5.0" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">5.0 km</button>
+            <button type="button" data-span-km="12.0" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">12.0 km</button>
+          </div>
+        </div>
+
+        <!-- Area Rotation (Orientacja Północy / Obrót Kadru) -->
+        <div class="flex flex-col gap-1 bg-[var(--background)] border border-[var(--border)] rounded-lg p-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-semibold text-[var(--foreground)] whitespace-nowrap">Obrót kadru (Orientacja):</span>
+            <span id="mapRotationLabel" class="text-xs font-mono font-bold text-emerald-400 whitespace-nowrap text-right">0° (Północ ↑)</span>
+          </div>
+          <input id="mapRotationSlider" type="range" min="-180" max="180" step="1" value="0" class="w-full" />
+          <div class="flex flex-wrap gap-1 items-center">
+            <span class="text-[11px] text-[var(--muted-foreground)] shrink-0">Kąt:</span>
+            <button type="button" data-rot-deg="-90" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">-90° (W)</button>
+            <button type="button" data-rot-deg="-45" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">-45°</button>
+            <button type="button" data-rot-deg="0" class="px-1.5 py-0.5 rounded bg-blue-600 text-white border border-blue-500 text-[11px] font-mono transition">0° (N ↑)</button>
+            <button type="button" data-rot-deg="45" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">+45°</button>
+            <button type="button" data-rot-deg="90" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">+90° (E)</button>
+            <button type="button" data-rot-deg="180" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">180° (S)</button>
+          </div>
         </div>
 
         <!-- Live GIS Fetch & Render Button -->
@@ -272,20 +316,33 @@
             </button>
           </div>
 
-          <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+          <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 flex-wrap">
             <span id="tileSplitLabel" class="text-xs font-bold text-cyan-400 whitespace-nowrap">Kafle:</span>
             <select id="tileGridSelect" title="Wybierz siatkę podziału na kafle" class="bg-[var(--background)] border border-cyan-500/40 rounded px-1 py-0.5 text-xs font-mono font-bold text-cyan-400 focus:outline-none cursor-pointer">
-              <option value="1x1" selected>1×1</option>
+              <option value="1x1">1×1</option>
               <option value="1x2">1×2</option>
               <option value="2x2">2×2</option>
               <option value="2x3">2×3</option>
               <option value="2x4">2×4</option>
+              <option value="2x5">2×5</option>
+              <option value="3x3">3×3</option>
+              <option value="3x4">3×4</option>
+              <option value="3x5">3×5</option>
+              <option value="3x6">3×6</option>
+              <option value="4x4">4×4</option>
+              <option value="4x6" selected>4×6</option>
+              <option value="5x6">5×6</option>
+              <option value="6x5">6×5</option>
             </select>
             <input id="tileExplodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[55px]" />
             <span id="tileExplodeValueLabel" class="text-xs font-mono font-bold text-cyan-400 w-8 text-right">0%</span>
             <button id="btnQuickTileExplode" class="px-2 py-0.5 rounded bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-500 transition whitespace-nowrap">
               Rozsuń
             </button>
+            <button id="btnAutoFitMono4" class="hidden px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs whitespace-nowrap transition" title="Oblicz optymalny podział na stół Anycubic Photon Mono 4">
+              Dopasuj do Mono 4
+            </button>
+            <span id="mono4FitWarning" class="hidden text-xs font-mono font-bold text-amber-400 whitespace-nowrap">⚠ >153×87mm</span>
           </div>
         </div>
 
@@ -297,7 +354,13 @@
           <div id="loadingOverlay3D" class="hidden absolute inset-0 bg-black/65 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-30">
             <div class="w-9 h-9 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
             <div id="loadingStatusText" class="text-white font-semibold text-sm">Pobieranie prawdziwych danych GIS z OpenStreetMap i AWS Terrarium DEM...</div>
-            <div class="text-gray-300 text-xs mt-1">Budowanie schodkowych warstwic terenu, batymetrii wody, drzew 3D i dachów LoD2</div>
+            <div id="loadingSubText" class="text-gray-300 text-xs mt-1">Budowanie schodkowych warstwic terenu, batymetrii wody, drzew 3D i dachów LoD2</div>
+            <div class="w-64 max-w-full bg-white/15 rounded-full h-2 mt-3 overflow-hidden border border-white/10">
+              <div id="loadingProgressBar" class="bg-blue-500 h-full transition-all duration-300" style="width: 15%"></div>
+            </div>
+            <button id="btnCancelGisFetch" type="button" class="mt-3 px-3 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-semibold border border-white/20 transition">
+              Anuluj / Zatrzymaj pobieranie
+            </button>
           </div>
 
           <!-- Hover Tooltip -->
@@ -395,11 +458,24 @@
         <!-- Hollow Base Optimization Toggle (SLA Resin / FDM Fill Saver) -->
         <label class="flex items-center justify-between gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 cursor-pointer">
           <div class="flex items-center gap-1.5 min-w-0">
-            <input id="chkHollowBase" type="checkbox" class="rounded accent-emerald-500 shrink-0" />
-            <span class="text-xs font-semibold text-[var(--foreground)] truncate">Odchudź bazę SLA (Hollow 1.8mm + Drenaż)</span>
+            <input id="chkHollowBase" type="checkbox" checked class="rounded accent-emerald-500 shrink-0" />
+            <span class="text-xs font-semibold text-[var(--foreground)] truncate">Odchudź bazę SLA (Hollow 1.8mm + 4 kanały drenażowe SLA)</span>
           </div>
           <span id="hollowSavingsBadge" class="text-xs font-mono font-bold text-amber-400 shrink-0">Pełna FDM</span>
         </label>
+
+        <!-- Kerf and Modular Frame Export Toggles -->
+        <div class="grid grid-cols-2 gap-1.5 items-center bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
+          <label class="flex items-center gap-1.5 cursor-pointer min-w-0" title="Dodaje modularne segmenty ramki 3D do paczki ZIP">
+            <input id="chkExportFrame" type="checkbox" class="rounded accent-blue-600 shrink-0" />
+            <span class="text-xs font-medium text-[var(--foreground)] truncate">Dołącz ramkę 3D do ZIP</span>
+          </label>
+          <div class="flex items-center justify-end gap-1 min-w-0" title="Kompensacja szczeliny utwardzania żywicy SLA">
+            <span class="text-[11px] text-[var(--muted-foreground)] whitespace-nowrap">Kerf:</span>
+            <input id="kerfMmInput" type="number" min="0" max="0.5" step="0.01" value="0.08" class="w-14 bg-[var(--card)] border border-[var(--border)] rounded px-1 py-0.5 text-xs font-mono font-bold text-[var(--foreground)] text-right focus:outline-none" />
+            <span class="text-[11px] text-[var(--muted-foreground)]">mm</span>
+          </div>
+        </div>
 
         <div class="grid grid-cols-3 gap-1.5 text-center">
           <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
@@ -832,18 +908,43 @@
 
 
   <!-- BUNDLED ENGINE & INITIAL REAL GIS SCENE -->
-  <script src="src/geometry_2d.js"></script>
-  <script src="src/mesh_extrude.js"></script>
-  <script src="src/mesh_topology.js"></script>
-  <script src="src/mesh_builder.js"></script>
-  <script src="src/webgl_shaders_math.js"></script>
-  <script src="src/webgl_studio.js"></script>
-  <script src="src/export_stl_zip.js"></script>
-  <script src="src/export_3mf.js"></script>
-  <script src="src/ui_config.js"></script>
-  <script src="src/ui_map2d.js"></script>
-  <script src="src/ui_gis_client.js"></script>
-  <script src="src/ui_panels.js"></script>
+  <script src="src/geometry/polygon_2d.js"></script>
+  <script src="src/geometry/obb_medial_2d.js"></script>
+  <script src="src/geometry/marching_squares_2d.js"></script>
+  <script src="src/mesh/mesh_primitives.js"></script>
+  <script src="src/mesh/mesh_clipper_3d.js"></script>
+  <script src="src/mesh/roof_shapes.js"></script>
+  <script src="src/mesh/roof_architectural.js"></script>
+  <script src="src/mesh/terrain_dem_grid.js"></script>
+  <script src="src/mesh/terrain_masks.js"></script>
+  <script src="src/mesh/terrain_base_water.js"></script>
+  <script src="src/mesh/features_roads_parks.js"></script>
+  <script src="src/mesh/features_bridges.js"></script>
+  <script src="src/mesh/buildings_prepare.js"></script>
+  <script src="src/mesh/buildings_s3db.js"></script>
+  <script src="src/mesh/mesh_topology.js"></script>
+  <script src="src/mesh/mesh_builder.js"></script>
+  <script src="src/render/webgl_math.js"></script>
+  <script src="src/render/webgl_shaders.js"></script>
+  <script src="src/render/webgl_studio.js"></script>
+  <script src="src/export/crc32_zip.js"></script>
+  <script src="src/export/stl_writer.js"></script>
+  <script src="src/export/zip_packager.js"></script>
+  <script src="src/export/export_3mf.js"></script>
+  <script src="src/gis_client/overpass_dem_fetch.js"></script>
+  <script src="src/gis_client/s3db_client_matcher.js"></script>
+  <script src="src/gis_client/osm_scene_builder.js"></script>
+  <script src="src/gis_client/overpass_chunk_grid.js"></script>
+  <script src="src/gis_client/gis_chunk_streamer.js"></script>
+  <script src="src/ui/ui_config.js"></script>
+  <script src="src/ui/map_rotation.js"></script>
+  <script src="src/ui/fast_render_manager.js"></script>
+  <script src="src/ui/ui_map2d.js"></script>
+  <script src="src/ui/ui_panels_layers.js"></script>
+  <script src="src/ui/ui_panels_buildings.js"></script>
+  <script src="src/ui/ui_viewport_search.js"></script>
+  <script src="src/ui/ui_controls_bind.js"></script>
+  <script src="src/ui/ui_url_hooks.js"></script>
   <script src="src/video/video_config.js"></script>
   <script src="src/video/video_math_mesh.js"></script>
   <script src="src/video/video_shaders.js"></script>
@@ -856,7 +957,7 @@
   <script src="src/video/ui_video_order_demo.js"></script>
   <script src="src/video/ui_video_controls.js"></script>
   <script src="src/video/ui_video_studio.js"></script>
-  <script src="src/ui_app.js"></script>
+  <script src="src/ui/ui_app.js"></script>
   <script src="src/initial_scene.js"></script>
   <script>
 window.MAP3D_STANDALONE_VIDEO_MODULE = true;

@@ -1,7 +1,11 @@
 // ============================================================================
-// src/export_3mf.js
+// src/export/export_3mf.js
 // Real Multi-Volume .3MF (ZIP + 3D Manufacturing XML) Exporter with Per-Tile Assemblies
 // ============================================================================
+
+if (typeof createZipArchive === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./crc32_zip.js'));
+}
 
 function exportMultiColor3MF(state) {
   const totalWidthMm = (state && state.bedSizeMm) || 320.0;
@@ -34,7 +38,6 @@ function exportMultiColor3MF(state) {
   <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>`;
 
-  // Strictly 6 printable layers ONLY — meshes.frame is NEVER exported in map tiles
   const exportLayers = [
     { key: 'water',       objId: 1, matIdx: 0, name: '1_Woda_i_Batymetria' },
     { key: 'base',        objId: 2, matIdx: 1, name: '2_Teren_Warstwice_DEM' },
@@ -44,7 +47,6 @@ function exportMultiColor3MF(state) {
     { key: 'highlighted', objId: 6, matIdx: 5, name: '6_Wyroznione_Budynki' }
   ];
 
-  // If exporting a single tile, shift its local minimum XY to (0, 0) on the printer plate
   let shiftXScene = halfW;
   let shiftYScene = halfH;
   if (tileFilter >= 0) {
@@ -63,11 +65,11 @@ function exportMultiColor3MF(state) {
     const vChunks = [];
     const tChunks = [];
 
-    function getWeldedVertexIndex(pt) {
+    function getWeldedVertexIndex(pt, shellTag) {
       const vx = ((pt[0] + shiftX) * scaleMm).toFixed(3);
       const vy = ((pt[1] + shiftY) * scaleMm).toFixed(3);
       const vz = Math.max(0, pt[2] * scaleMm).toFixed(3);
-      const key = `${vx}_${vy}_${vz}`;
+      const key = `${shellTag}_${vx}_${vy}_${vz}`;
       let idx = vertexMap.get(key);
       if (idx === undefined) {
         idx = vChunks.length;
@@ -79,9 +81,10 @@ function exportMultiColor3MF(state) {
 
     for (let i = 0; i < tris.length; i++) {
       const t = tris[i];
-      const i0 = getWeldedVertexIndex(t.v0);
-      const i1 = getWeldedVertexIndex(t.v1);
-      const i2 = getWeldedVertexIndex(t.v2);
+      const shellTag = `${t.tileId ?? 0}_${t.shellId ?? t.buildingId ?? 0}`;
+      const i0 = getWeldedVertexIndex(t.v0, shellTag);
+      const i1 = getWeldedVertexIndex(t.v1, shellTag);
+      const i2 = getWeldedVertexIndex(t.v2, shellTag);
       if (i0 === i1 || i1 === i2 || i2 === i0) continue;
       tChunks.push(`<triangle v1="${i0}" v2="${i1}" v3="${i2}" pid="10" p1="${matIdx}"/>`);
     }
@@ -104,7 +107,6 @@ function exportMultiColor3MF(state) {
     : (numTiles > 1 ? `_${tileCols}x${tileRows}_Kafli_${Math.round(totalWidthMm)}x${Math.round(totalHeightMm)}mm` : `_${Math.round(totalWidthMm)}x${Math.round(totalHeightMm)}mm`);
 
   if (tileFilter < 0 && numTiles > 1) {
-    // Multi-tile assembly: group into per-tile assembly objects so slicers can plate each tile separately
     for (let tid = 0; tid < numTiles; tid++) {
       let tileComponentsXml = '';
       const tc = tid % tileCols;

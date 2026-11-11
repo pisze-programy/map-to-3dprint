@@ -1,7 +1,7 @@
 // ============================================================================
-// src/geometry_2d.js
-// 2D Polygon Geometry, Keyhole Courtyard Merging, Convex/Box Clipping,
-// Ear-Clipping Triangulation & Simple-Polygon Validators
+// src/geometry/polygon_2d.js
+// Core 2D Polygon Predicates, Cleaning, Ear-Clipping, Keyhole Courtyard Merging,
+// Sutherland-Hodgman Box/Convex Clipping & Centroid/Min-Span Dilation
 // ============================================================================
 
 function signedArea2D(poly) {
@@ -47,6 +47,15 @@ function dxSq(a, b) {
   return dx * dx + dy * dy;
 }
 
+function pointToSegmentDistSq2D(p, a, b) {
+  const vx = b[0] - a[0], vy = b[1] - a[1];
+  const l2 = vx * vx + vy * vy;
+  if (l2 < 1e-12) return (p[0] - a[0]) ** 2 + (p[1] - a[1]) ** 2;
+  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2));
+  const projX = a[0] + t * vx, projY = a[1] + t * vy;
+  return (p[0] - projX) ** 2 + (p[1] - projY) ** 2;
+}
+
 function segmentsIntersectProper(a, b, c, d) {
   const ccw = (p1, p2, p3) => (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0]);
   const d1 = ccw(a, b, c), d2 = ccw(a, b, d);
@@ -55,17 +64,16 @@ function segmentsIntersectProper(a, b, c, d) {
          ((d3 > 1e-6 && d4 < -1e-6) || (d3 < -1e-6 && d4 > 1e-6));
 }
 
-// Removes duplicate and collinear vertices so wall loops and cap triangulations share identical vertices
 function cleanPolygonRing(ptsInput, wantCCW = true) {
   if (!ptsInput || ptsInput.length < 3) return [];
   let pts = [];
   for (let i = 0; i < ptsInput.length; i++) {
     const p = ptsInput[i];
-    if (pts.length === 0 || Math.hypot(p[0] - pts[pts.length - 1][0], p[1] - pts[pts.length - 1][1]) > 0.03) {
+    if (pts.length === 0 || Math.hypot(p[0] - pts[pts.length - 1][0], p[1] - pts[pts.length - 1][1]) > 0.008) {
       pts.push([p[0], p[1]]);
     }
   }
-  if (pts.length >= 2 && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) <= 0.03) {
+  if (pts.length >= 2 && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) <= 0.008) {
     pts.pop();
   }
   if (pts.length < 3) return [];
@@ -73,7 +81,6 @@ function cleanPolygonRing(ptsInput, wantCCW = true) {
   if (Math.abs(area) < 1e-4) return [];
   if (wantCCW ? (area < 0) : (area > 0)) pts.reverse();
 
-  // Iteratively strip collinear vertices and zero-area spikes
   let changed = true;
   while (changed && pts.length >= 3) {
     changed = false;
@@ -86,12 +93,12 @@ function cleanPolygonRing(ptsInput, wantCCW = true) {
       const ux = b[0] - a[0], uy = b[1] - a[1];
       const vx = c[0] - b[0], vy = c[1] - b[1];
       const l1 = Math.hypot(ux, uy), l2 = Math.hypot(vx, vy);
-      if (l1 < 0.02 || Math.hypot(c[0] - a[0], c[1] - a[1]) < 0.02) {
+      if (l1 < 0.008 || Math.hypot(c[0] - a[0], c[1] - a[1]) < 0.008) {
         changed = true;
         continue;
       }
       const sinTheta = Math.abs(ux * vy - uy * vx) / ((l1 * l2) || 1e-9);
-      if (sinTheta < 1e-3) {
+      if (sinTheta < 0.006) {
         changed = true;
         continue;
       }
@@ -101,20 +108,18 @@ function cleanPolygonRing(ptsInput, wantCCW = true) {
   }
   if (pts.length < 3 || Math.abs(signedArea2D(pts)) < 1e-4) return [];
 
-  // Deduplicate any self-pinching vertex (where non-adjacent vertices share identical coordinates)
   const seen = new Map();
   for (let i = 0; i < pts.length; i++) {
-    const k = pts[i][0].toFixed(2) + '_' + pts[i][1].toFixed(2);
+    const k = pts[i][0].toFixed(3) + '_' + pts[i][1].toFixed(3);
     if (seen.has(k)) {
       const ang = (i * 1.6180339) * Math.PI * 2;
-      pts[i] = [pts[i][0] + Math.cos(ang) * 0.008, pts[i][1] + Math.sin(ang) * 0.008];
+      pts[i] = [pts[i][0] + Math.cos(ang) * 0.004, pts[i][1] + Math.sin(ang) * 0.004];
     }
     seen.set(k, i);
   }
   return pts;
 }
 
-// Robust Ear-Clipping polygon triangulator that NEVER drops boundary vertices without emitting a triangle
 function triangulateSimplePoly(pts) {
   if (!pts || pts.length < 3) return [];
   const indices = pts.map((_, i) => i);
@@ -135,7 +140,6 @@ function triangulateSimplePoly(pts) {
       const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
       if (cross <= 1e-7) continue;
 
-      // Diagonal midpoint must be inside the remaining polygon
       const mid = [(a[0] + c[0]) * 0.5, (a[1] + c[1]) * 0.5];
       const polyRem = indices.map(idx => pts[idx]);
       if (!pointInPoly2D(mid[0], mid[1], polyRem)) continue;
@@ -187,7 +191,6 @@ function triangulateSimplePoly(pts) {
       continue;
     }
 
-    // Fallback: pick strictly positive-area ear (never cross <= 1e-9!) to avoid inverted triangles
     let fallbackIdx = -1;
     let bestCross = 1e-9;
     for (let i = 0; i < n; i++) {
@@ -214,30 +217,26 @@ function triangulateSimplePoly(pts) {
   if (indices.length === 3) {
     const a = pts[indices[0]], b = pts[indices[1]], c = pts[indices[2]];
     const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    if (cross > 1e-9) {
-      tris.push([a, b, c]);
-    }
+    if (cross > 1e-9) tris.push([a, b, c]);
   }
   return tris;
 }
 
-// Global alias for triangulateSimplePoly with robust ear-clipping contracts
 function earcutPolygon2D(ring) {
   return triangulateSimplePoly(ring);
 }
 
-// Connects inner courtyard hole rings into outer ring via validated non-intersecting zero-width visibility keyhole bridge
 function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
   if (!outerInput || outerInput.length < 3) return [];
   let outer = outerInput.map(p => [p[0], p[1]]);
-  if (signedArea2D(outer) < 0) outer.reverse(); // Ensure CCW
+  if (signedArea2D(outer) < 0) outer.reverse();
   if (!holesInput || holesInput.length === 0) return outer;
 
   const validHoles = holesInput
     .filter(h => h && h.length >= 3)
     .map(h => {
       const copy = h.map(p => [p[0], p[1]]);
-      if (signedArea2D(copy) > 0) copy.reverse(); // Ensure CW for holes
+      if (signedArea2D(copy) > 0) copy.reverse();
       let maxX = -Infinity, maxIdx = 0;
       for (let i = 0; i < copy.length; i++) {
         if (copy[i][0] > maxX || (copy[i][0] === maxX && copy[i][1] > copy[maxIdx][1])) {
@@ -247,14 +246,13 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
       }
       return { ring: copy, maxX, maxIdx };
     })
-    .sort((a, b) => b.maxX - a.maxX); // Sort by max X descending
+    .sort((a, b) => b.maxX - a.maxX);
 
   for (const hObj of validHoles) {
     const hRing = hObj.ring;
     const hi = hObj.maxIdx;
     const H = hRing[hi];
 
-    // Find nearest visible vertex on outer
     const candidates = [];
     for (let oi = 0; oi < outer.length; oi++) {
       const ox = outer[oi][0], oy = outer[oi][1];
@@ -269,7 +267,6 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
       const V = outer[oi];
       const mid = [(H[0] + V[0]) * 0.5, (H[1] + V[1]) * 0.5];
 
-      // Segment HV must not intersect any edge of outer (proper intersection)
       let intersects = false;
       const nOut = outer.length;
       for (let i = 0; i < nOut; i++) {
@@ -281,7 +278,6 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
       }
       if (intersects) continue;
 
-      // Segment HV must not intersect any edge of hRing
       const nHole = hRing.length;
       for (let i = 0; i < nHole; i++) {
         if (i === hi || (i + 1) % nHole === hi) continue;
@@ -291,8 +287,6 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
         }
       }
       if (intersects) continue;
-
-      // Midpoint should be inside outer
       if (!pointInPoly2D(mid[0], mid[1], outer)) continue;
 
       bestOi = oi;
@@ -300,20 +294,16 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
     }
 
     if (bestOi >= 0) {
-      // Splice hole into outer at bestOi with zero-width coincident keyhole bridge
       const V = outer[bestOi];
       const spliced = [];
       for (let i = 0; i <= bestOi; i++) spliced.push(outer[i]);
-      for (let i = 0; i < hRing.length; i++) {
-        spliced.push(hRing[(hi + i) % hRing.length]);
-      }
+      for (let i = 0; i < hRing.length; i++) spliced.push(hRing[(hi + i) % hRing.length]);
       spliced.push([hRing[hi][0], hRing[hi][1]]);
       spliced.push([V[0], V[1]]);
       for (let i = bestOi + 1; i < outer.length; i++) spliced.push(outer[i]);
       outer = spliced;
     }
   }
-
   return outer;
 }
 
@@ -386,12 +376,8 @@ function clipPolyByConvex(subjectPoly, convexClipPoly, edgeMargin = 0.0) {
 function insetPolygonCentroid(poly, insetDist) {
   if (!poly || poly.length < 3 || insetDist <= 0) return poly;
   let cx = 0, cy = 0;
-  for (let i = 0; i < poly.length; i++) {
-    cx += poly[i][0];
-    cy += poly[i][1];
-  }
-  cx /= poly.length;
-  cy /= poly.length;
+  for (let i = 0; i < poly.length; i++) { cx += poly[i][0]; cy += poly[i][1]; }
+  cx /= poly.length; cy /= poly.length;
   return poly.map(p => {
     const dx = p[0] - cx, dy = p[1] - cy;
     const len = Math.hypot(dx, dy);
@@ -401,144 +387,29 @@ function insetPolygonCentroid(poly, insetDist) {
   });
 }
 
-function isConvexPoly(poly) {
-  const n = poly.length;
-  if (n < 3) return false;
-  for (let i = 0; i < n; i++) {
-    const a = poly[(i + n - 1) % n];
-    const b = poly[i];
-    const c = poly[(i + 1) % n];
-    const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    if (cross <= 1e-5) return false;
-  }
-  return true;
-}
-
-function pointToSegmentDistSq2D(p, a, b) {
-  const vx = b[0] - a[0], vy = b[1] - a[1];
-  const l2 = vx * vx + vy * vy;
-  if (l2 < 1e-12) return (p[0] - a[0]) ** 2 + (p[1] - a[1]) ** 2;
-  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2));
-  const projX = a[0] + t * vx, projY = a[1] + t * vy;
-  return (p[0] - projX) ** 2 + (p[1] - projY) ** 2;
-}
-
-function isSimplePolygon(poly) {
-  const n = poly.length;
-  if (n < 3) return false;
-  for (let i = 0; i < n; i++) {
-    const a1 = poly[i], a2 = poly[(i + 1) % n];
-    for (let j = i + 2; j < n; j++) {
-      if (i === 0 && j === n - 1) continue;
-      const b1 = poly[j], b2 = poly[(j + 1) % n];
-
-      // Skip coincident bridge pair edges (e.g. forward and reverse keyhole slit)
-      const isReverseBridge = (Math.hypot(a1[0] - b2[0], a1[1] - b2[1]) < 1e-5 && Math.hypot(a2[0] - b1[0], a2[1] - b1[1]) < 1e-5);
-      const isForwardBridge = (Math.hypot(a1[0] - b1[0], a1[1] - b1[1]) < 1e-5 && Math.hypot(a2[0] - b2[0], a2[1] - b2[1]) < 1e-5);
-      if (isReverseBridge || isForwardBridge) continue;
-
-      if (segmentsIntersectProper(a1, a2, b1, b2)) return false;
-
-      // Check interior point-to-segment distance only if point is not an endpoint
-      const endTouchA1 = Math.hypot(a1[0] - b1[0], a1[1] - b1[1]) < 1e-5 || Math.hypot(a1[0] - b2[0], a1[1] - b2[1]) < 1e-5;
-      const endTouchA2 = Math.hypot(a2[0] - b1[0], a2[1] - b1[1]) < 1e-5 || Math.hypot(a2[0] - b2[0], a2[1] - b2[1]) < 1e-5;
-      if (!endTouchA1 && pointToSegmentDistSq2D(a1, b1, b2) < 1e-7) return false;
-      if (!endTouchA2 && pointToSegmentDistSq2D(a2, b1, b2) < 1e-7) return false;
-    }
-  }
-  return true;
-}
-
-function hasSelfTouchingEdge2D(poly, tolSq = 1e-4) {
-  const n = poly.length;
-  if (n < 3) return true;
-  for (let i = 0; i < n; i++) {
-    const a1 = poly[i], a2 = poly[(i + 1) % n];
-    for (let j = i + 2; j < n; j++) {
-      if (i === 0 && j === n - 1) continue;
-      const b1 = poly[j], b2 = poly[(j + 1) % n];
-      if (segmentsIntersectProper(a1, a2, b1, b2)) return true;
-      if (pointToSegmentDistSq2D(a1, b1, b2) < tolSq) return true;
-      if (pointToSegmentDistSq2D(a2, b1, b2) < tolSq) return true;
-      if (pointToSegmentDistSq2D(b1, a1, a2) < tolSq) return true;
-      if (pointToSegmentDistSq2D(b2, a1, a2) < tolSq) return true;
-    }
-  }
-  return false;
-}
-
-// Returns true if (px, py) is inside ring or within Euclidean distance tol of any segment of ring
-function pointInPolyOrNear2D(px, py, ring, tol = 0.15) {
-  if (!ring || ring.length < 3) return false;
-  if (pointInPoly2D(px, py, ring)) return true;
-  const tolSq = tol * tol;
-  const p = [px, py];
-  const n = ring.length;
-  for (let i = 0; i < n; i++) {
-    if (pointToSegmentDistSq2D(p, ring[i], ring[(i + 1) % n]) <= tolSq) return true;
-  }
-  return false;
-}
-
-// Minimum Euclidean distance from (px, py) to all segments of outerRing and holeRings
-function distToPolygonBoundary2D(px, py, outerRing, holeRings) {
-  let minDSq = Infinity;
-  const p = [px, py];
-  if (outerRing && outerRing.length >= 2) {
-    const n = outerRing.length;
-    for (let i = 0; i < n; i++) {
-      const d = pointToSegmentDistSq2D(p, outerRing[i], outerRing[(i + 1) % n]);
-      if (d < minDSq) minDSq = d;
-    }
-  }
-  if (holeRings && holeRings.length > 0) {
-    for (let h = 0; h < holeRings.length; h++) {
-      const ring = holeRings[h];
-      if (!ring || ring.length < 2) continue;
-      const n = ring.length;
-      for (let i = 0; i < n; i++) {
-        const d = pointToSegmentDistSq2D(p, ring[i], ring[(i + 1) % n]);
-        if (d < minDSq) minDSq = d;
-      }
-    }
-  }
-  return minDSq === Infinity ? 0 : Math.sqrt(minDSq);
-}
-
-// Computes centroid and min span; radially scales vertices outward if min span < minSpanUnits
 function dilatePolygonMinSpan2D(ring, minSpanUnits) {
   if (!ring || ring.length < 3) return ring;
   let cx = 0, cy = 0;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (let i = 0; i < ring.length; i++) {
     const x = ring[i][0], y = ring[i][1];
-    cx += x;
-    cy += y;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
+    cx += x; cy += y;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
   }
-  cx /= ring.length;
-  cy /= ring.length;
-
-  const spanX = maxX - minX;
-  const spanY = maxY - minY;
-  const minSpan = Math.min(spanX, spanY);
+  cx /= ring.length; cy /= ring.length;
+  const minSpan = Math.min(maxX - minX, maxY - minY);
   if (minSpan >= minSpanUnits) {
     const copy = ring.map(p => [p[0], p[1]]);
     if (signedArea2D(copy) < 0) copy.reverse();
     return copy;
   }
-
   const scale = minSpan > 1e-5 ? (minSpanUnits / minSpan) : 1.0;
   const out = [];
   for (let i = 0; i < ring.length; i++) {
-    const dx = ring[i][0] - cx;
-    const dy = ring[i][1] - cy;
-    if (minSpan > 1e-5) {
-      out.push([cx + dx * scale, cy + dy * scale]);
-    } else {
+    const dx = ring[i][0] - cx, dy = ring[i][1] - cy;
+    if (minSpan > 1e-5) out.push([cx + dx * scale, cy + dy * scale]);
+    else {
       const ang = (i / ring.length) * Math.PI * 2;
       const r = minSpanUnits * 0.5;
       out.push([cx + Math.cos(ang) * r, cy + Math.sin(ang) * r]);
@@ -554,6 +425,7 @@ if (typeof module !== 'undefined' && module.exports) {
     pointInPoly2D,
     pointInTri2D,
     dxSq,
+    pointToSegmentDistSq2D,
     segmentsIntersectProper,
     cleanPolygonRing,
     triangulateSimplePoly,
@@ -562,12 +434,6 @@ if (typeof module !== 'undefined' && module.exports) {
     clipPolyToBox,
     clipPolyByConvex,
     insetPolygonCentroid,
-    isConvexPoly,
-    pointToSegmentDistSq2D,
-    isSimplePolygon,
-    hasSelfTouchingEdge2D,
-    pointInPolyOrNear2D,
-    distToPolygonBoundary2D,
     dilatePolygonMinSpan2D
   };
 }

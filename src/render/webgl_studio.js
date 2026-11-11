@@ -1,17 +1,16 @@
 // ============================================================================
-// src/webgl_studio.js
-// Hardened Studio Photo WebGL Renderer with:
-// - 2048x2048 Real Orthographic Shadow Mapping (RGBA Depth Packing + 9-tap PCF)
-// - Hard GPU Inner-Frame Clipping (zero protruding geometry outside [-84.85, 84.85])
-// - Multi-Selection Support (uSelectedIds[16] for Shift+Click) + Anti-Z-Fighting NDC Bias
-// - Exact Möller–Trumbore 3D Ray-Triangle Picking (with AABB broadphase)
+// src/render/webgl_studio.js
+// Studio Photo WebGL Renderer with:
+// - 2048x2048 Orthographic Shadow Mapping (RGBA Depth Packing + 9-tap PCF)
+// - Compact 16-bit PickID Selection & Hover (Zero Float32 OSM-ID Collisions!)
+// - Exact Möller–Trumbore 3D Ray-Triangle Picking (Supporting Multi-Tile Explode)
 // ============================================================================
 
 function createWebGLStudio(canvas3d, state) {
   const gl =
     canvas3d.getContext('webgl', { antialias: true, alpha: false, depth: true, preserveDrawingBuffer: true }) ||
     canvas3d.getContext('experimental-webgl', { antialias: true, alpha: false, depth: true, preserveDrawingBuffer: true });
-  if (!gl) throw new Error("WebGL not supported");
+  if (!gl) throw new Error('WebGL not supported');
 
   const camera = {
     yaw: -0.48,
@@ -20,8 +19,8 @@ function createWebGLStudio(canvas3d, state) {
     target: [2, 5, 3.2]
   };
 
-  const shadowProg = compileWebGLProgram(gl, WEBGL_SHADOW_VS, WEBGL_SHADOW_FS, "shadow");
-  const mainProg = compileWebGLProgram(gl, WEBGL_MAIN_VS, WEBGL_MAIN_FS, "main");
+  const shadowProg = compileWebGLProgram(gl, WEBGL_SHADOW_VS, WEBGL_SHADOW_FS, 'shadow');
+  const mainProg = compileWebGLProgram(gl, WEBGL_MAIN_VS, WEBGL_MAIN_FS, 'main');
   const SHADOW_RES = 2048;
   const shadowTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, shadowTex);
@@ -103,6 +102,33 @@ function createWebGLStudio(canvas3d, state) {
     ];
   }
 
+  // Maps any stored selection token (pickId, groupId, osmId, or id) to its exact 16-bit pickId!
+  function resolveSelectedPickIds() {
+    const out = new Set();
+    if (!state.userClickedBuilding) return out;
+    const rawSet = new Set(state.selectedBuildingIds || []);
+    if (rawSet.size === 0 && state.selectedBuildingId) rawSet.add(state.selectedBuildingId);
+
+    const pickMap = state.pickIdMap;
+    if (pickMap && pickMap.size > 0) {
+      rawSet.forEach(tok => {
+        if (pickMap.has(tok)) {
+          out.add(tok);
+          return;
+        }
+        for (const [pid, info] of pickMap.entries()) {
+          if (info.groupId === tok || info.buildings.some(b => b.id === tok || b.osmId === tok)) {
+            out.add(pid);
+            break;
+          }
+        }
+      });
+    } else {
+      rawSet.forEach(tok => { if (typeof tok === 'number') out.add(tok); });
+    }
+    return out;
+  }
+
   const selectedIdsBuffer = new Float32Array(64);
 
   function render(force = false) {
@@ -115,15 +141,14 @@ function createWebGLStudio(canvas3d, state) {
       lastRenderSig = '';
     }
 
-    // Calculate isotropic scene half-extents for square & rectangular models
     const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 320);
     const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
     const maxDim = Math.max(dimW, dimH) || 320;
     const halfW = 84.6 * (dimW / maxDim);
     const halfH = 84.6 * (dimH / maxDim);
 
-    // Fix B21: On-demand dirty-state check so idle frames perform 0 GPU draw calls
-    const selKey = state.selectedBuildingIds ? Array.from(state.selectedBuildingIds).join(',') : String(state.selectedBuildingId || '');
+    const selPickIds = resolveSelectedPickIds();
+    const selKey = Array.from(selPickIds).join(',');
     const visKey = Object.values(state.layerVisible || {}).map(v => v ? '1' : '0').join('');
     const colKey = Object.values(state.colors || {}).join(',');
     const sig = `${meshUploadVersion}|${w}x${h}|${camera.yaw.toFixed(4)},${camera.pitch.toFixed(4)},${camera.distance.toFixed(2)},${camera.target[0].toFixed(2)},${camera.target[1].toFixed(2)},${camera.target[2].toFixed(2)}|${state.sunAngleDeg}|${state.explodeFactor}|${state.tileCols}x${state.tileRows}|${state.tileExplode}|${state.exportTileFilter}|${state.showFrame}|${state.studioBg}|${state.showLayerLines}|${state.frameStyle}|${state.hoveredBuildingId}|${state.userClickedBuilding}|${selKey}|${visKey}|${colKey}|${halfW.toFixed(1)}x${halfH.toFixed(1)}`;
@@ -186,16 +211,11 @@ function createWebGLStudio(canvas3d, state) {
     // PASS 2: STUDIO CAMERA RENDER
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, w, h);
-    if (state.studioBg) {
-      gl.clearColor(0.985, 0.986, 0.99, 1.0);
-    } else {
-      gl.clearColor(0.075, 0.105, 0.165, 1.0);
-    }
+    if (state.studioBg) gl.clearColor(0.985, 0.986, 0.99, 1.0);
+    else gl.clearColor(0.075, 0.105, 0.165, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     gl.useProgram(mainProg);
-
-    // High-precision depth range (near=25, far=680 gives >11x better depth precision than near=2!)
     const proj = mat4Perspective(34 * Math.PI / 180, (w / h) || 1, 25.0, 680.0);
     const eye = getCameraEye();
     const view = mat4LookAt(eye, camera.target, [0, 0, 1]);
@@ -231,23 +251,10 @@ function createWebGLStudio(canvas3d, state) {
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorFrame'), frameCol);
 
     selectedIdsBuffer.fill(-999.0);
-    if (state.userClickedBuilding) {
-      let idx = 0;
-      const targetGids = new Set(state.selectedBuildingIds);
-      if (targetGids.size === 0 && state.selectedBuildingId) {
-        targetGids.add(state.selectedBuildingId);
-      }
-      targetGids.forEach(gid => {
-        const members = state.groupIdMap ? state.groupIdMap.get(gid) : null;
-        if (members && members.length > 0) {
-          members.forEach(m => {
-            if (idx < 64) selectedIdsBuffer[idx++] = m.id;
-          });
-        } else if (typeof gid === 'number' && idx < 64) {
-          selectedIdsBuffer[idx++] = gid;
-        }
-      });
-    }
+    let idx = 0;
+    selPickIds.forEach(pid => {
+      if (idx < 64) selectedIdsBuffer[idx++] = pid;
+    });
     gl.uniform1fv(gl.getUniformLocation(mainProg, 'uSelectedIds[0]'), selectedIdsBuffer);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uHoveredBuildingId'), state.hoveredBuildingId || -999);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uShowLayerLines'), state.showLayerLines ? 1.0 : 0.0);
@@ -295,7 +302,6 @@ function createWebGLStudio(canvas3d, state) {
     if (locTile >= 0) gl.disableVertexAttribArray(locTile);
   }
 
-
   function pickBuilding(clientX, clientY, buildingBounds) {
     const rect = canvas3d.getBoundingClientRect();
     const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -308,12 +314,12 @@ function createWebGLStudio(canvas3d, state) {
     const flen = Math.hypot(fx, fy, fz) || 1;
     fx /= flen; fy /= flen; fz /= flen;
 
-    let rx = fy, ry = -fx, rz = 0;
-    const rlen = Math.hypot(rx, ry, rz) || 1;
+    let rx = fy, ry = -fx;
+    const rlen = Math.hypot(rx, ry) || 1;
     rx /= rlen; ry /= rlen;
 
-    const ux = ry * fz - rz * fy;
-    const uy = rz * fx - rx * fz;
+    const ux = ry * fz;
+    const uy = -rx * fz;
     const uz = rx * fy - ry * fx;
 
     const tanHalfFov = Math.tan(17 * Math.PI / 180);
@@ -321,25 +327,32 @@ function createWebGLStudio(canvas3d, state) {
 
     let dx = fx + rx * (nx * aspect * tanHalfFov) + ux * (ny * tanHalfFov);
     let dy = fy + ry * (nx * aspect * tanHalfFov) + uy * (ny * tanHalfFov);
-    let dz = fz + rz * (nx * aspect * tanHalfFov) + uz * (ny * tanHalfFov);
+    let dz = fz + uz * (ny * tanHalfFov);
     const dlen = Math.hypot(dx, dy, dz) || 1;
     dx /= dlen; dy /= dlen; dz /= dlen;
 
-    // 1. Broadphase AABB candidate set
-    const candidateIds = new Set();
-    const bldById = new Map();
+    const tCols = state.tileCols || 1;
+    const tRows = state.tileRows || 1;
+    const tExplode = state.tileExplode || 0.0;
+    const maxShiftX = (tCols > 1 && tExplode > 0) ? ((tCols - 1) * 0.5 * tExplode * 15.0) : 0;
+    const maxShiftY = (tRows > 1 && tExplode > 0) ? ((tRows - 1) * 0.5 * tExplode * 15.0) : 0;
+
+    // 1. Broadphase AABB candidate set using exact 16-bit pickId
+    const candidatePickIds = new Set();
+    const bldByPickId = new Map();
     for (let i = 0; i < buildingBounds.length; i++) {
       const bb = buildingBounds[i];
+      const pid = bb.pickId || bb.building._pickId || bb.building.id;
       const lift = bb.layerId * state.explodeFactor * 14.0;
       const minZ = bb.minZ + lift;
       const maxZ = bb.maxZ + lift;
 
-      const tx1 = (bb.minX - eye[0]) / (dx || 1e-9);
-      const tx2 = (bb.maxX - eye[0]) / (dx || 1e-9);
+      const tx1 = ((bb.minX - maxShiftX) - eye[0]) / (dx || 1e-9);
+      const tx2 = ((bb.maxX + maxShiftX) - eye[0]) / (dx || 1e-9);
       let tmin = Math.min(tx1, tx2), tmax = Math.max(tx1, tx2);
 
-      const ty1 = (bb.minY - eye[1]) / (dy || 1e-9);
-      const ty2 = (bb.maxY - eye[1]) / (dy || 1e-9);
+      const ty1 = ((bb.minY - maxShiftY) - eye[1]) / (dy || 1e-9);
+      const ty2 = ((bb.maxY + maxShiftY) - eye[1]) / (dy || 1e-9);
       tmin = Math.max(tmin, Math.min(ty1, ty2));
       tmax = Math.min(tmax, Math.max(ty1, ty2));
 
@@ -349,34 +362,48 @@ function createWebGLStudio(canvas3d, state) {
       tmax = Math.min(tmax, Math.max(tz1, tz2));
 
       if (tmax >= Math.max(0, tmin)) {
-        const gid = bb.groupId || bb.building.id;
-        candidateIds.add(gid);
-        if (!bldById.has(gid)) bldById.set(gid, bb.building);
+        candidatePickIds.add(pid);
+        if (!bldByPickId.has(pid)) {
+          const info = state.pickIdMap ? state.pickIdMap.get(pid) : null;
+          bldByPickId.set(pid, (info && info.primaryBuilding) ? info.primaryBuilding : bb.building);
+        }
       }
     }
 
-    if (candidateIds.size === 0) return null;
+    if (candidatePickIds.size === 0) return null;
 
-    // 2. Narrowphase exact triangle hit test on candidate buildings
-    let bestId = -1;
+    // 2. Narrowphase exact triangle hit test (respecting tile explode shifts!)
+    let bestPickId = -1;
     let bestT = Infinity;
     const lists = [state.layerMeshes.buildings || [], state.layerMeshes.highlighted || []];
     for (let l = 0; l < lists.length; l++) {
       const tris = lists[l];
       for (let i = 0; i < tris.length; i++) {
         const tri = tris[i];
-        if (!candidateIds.has(tri.buildingId)) continue;
+        if (!candidatePickIds.has(tri.buildingId)) continue;
         const liftZ = tri.layerId * state.explodeFactor * 14.0;
-        const t = rayTriangleIntersect(eye[0], eye[1], eye[2], dx, dy, dz, tri.v0, tri.v1, tri.v2, liftZ);
+        let shiftX = 0, shiftY = 0;
+        if ((tCols > 1 || tRows > 1) && tExplode > 0 && tri.tileId >= 0) {
+          const tid = Math.round(tri.tileId);
+          const tc = tid % tCols;
+          const tr = Math.floor(tid / tCols);
+          shiftX = (tc - (tCols - 1) * 0.5) * tExplode * 15.0;
+          shiftY = (tr - (tRows - 1) * 0.5) * tExplode * 15.0;
+        }
+        const t = rayTriangleIntersect(eye[0], eye[1], eye[2], dx, dy, dz, tri.v0, tri.v1, tri.v2, liftZ, shiftX, shiftY);
         if (t > 0 && t < bestT) {
           bestT = t;
-          bestId = tri.buildingId;
+          bestPickId = tri.buildingId;
         }
       }
     }
 
-    return bestId > 0 ? (bldById.get(bestId) || null) : null;
+    return bestPickId > 0 ? (bldByPickId.get(bestPickId) || null) : null;
   }
 
   return { camera, uploadMeshes, render, pickBuilding };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { createWebGLStudio };
 }

@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -25,6 +26,7 @@ BASE_URL = "http://127.0.0.1:8765"
 
 SCENES = [
     "scene_v5_48.1280_11.5769_48.1396_11.5941.json",
+    "scene_v5_40.7606_-73.9839_40.7722_-73.9729.json",
     "scene_v5_50.0488_19.9280_50.0598_19.9450.json",
     "scene_v5_52.2415_21.0050_52.2525_21.0220.json",
     "scene_v5_54.4381_18.5575_54.4511_18.5797.json",
@@ -40,19 +42,25 @@ CONFIGS = [
 ]
 
 
-def run_chrome_dom(url, window_size="1440,900", budget_ms=30000):
-    cmd = [
-        CHROME_BIN,
-        "--headless=new",
-        "--enable-webgl",
-        "--ignore-gpu-blocklist",
-        "--use-gl=angle",
-        f"--window-size={window_size}",
-        f"--virtual-time-budget={budget_ms}",
-        "--dump-dom",
-        url,
-    ]
-    return subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+def run_chrome_dom(url, window_size="1440,900", budget_ms=None):
+    with tempfile.TemporaryDirectory(prefix="map3d_chrome_") as profile_dir:
+        cmd = [
+            CHROME_BIN,
+            f"--user-data-dir={profile_dir}",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--headless=new",
+            "--enable-webgl",
+            "--ignore-gpu-blocklist",
+            "--use-gl=angle",
+            "--use-angle=metal",
+            f"--window-size={window_size}",
+            "--dump-dom",
+            url,
+        ]
+        return subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL, timeout=180)
 
 
 def check_http_status(path, method="GET"):
@@ -64,10 +72,36 @@ def check_http_status(path, method="GET"):
         return e.code
 
 
+MESH_AND_EXPORT_FILES = [
+    "../src/geometry/polygon_2d.js",
+    "../src/geometry/obb_medial_2d.js",
+    "../src/geometry/marching_squares_2d.js",
+    "../src/mesh/mesh_primitives.js",
+    "../src/mesh/mesh_clipper_3d.js",
+    "../src/mesh/roof_shapes.js",
+    "../src/mesh/roof_architectural.js",
+    "../src/mesh/terrain_dem_grid.js",
+    "../src/mesh/terrain_masks.js",
+    "../src/mesh/terrain_base_water.js",
+    "../src/mesh/features_roads_parks.js",
+    "../src/mesh/features_bridges.js",
+    "../src/mesh/buildings_prepare.js",
+    "../src/mesh/buildings_s3db.js",
+    "../src/mesh/mesh_topology.js",
+    "../src/mesh/mesh_builder.js",
+    "../src/export/crc32_zip.js",
+    "../src/export/stl_writer.js",
+    "../src/export/zip_packager.js",
+    "../src/export/export_3mf.js",
+    "../src/ui/ui_config.js",
+]
+
+
 def run_stl_and_ui_checks():
+    files_json = json.dumps(MESH_AND_EXPORT_FILES)
     html = """<!DOCTYPE html><html><body><pre id="out">RUNNING</pre><script>
 function getText(u){const x=new XMLHttpRequest();x.open('GET',u,false);x.send();return x.responseText;}
-for(const f of ['../src/geometry_2d.js','../src/mesh_extrude.js','../src/mesh_topology.js','../src/mesh_builder.js','../src/export_stl_zip.js','../src/export_3mf.js','../src/ui_config.js']){
+for(const f of __FILES_JSON__){
   (0,eval)(getText(f));
 }
 
@@ -155,7 +189,7 @@ document.getElementById('out').textContent = 'STL_JSON=' + JSON.stringify({
   munichIsarTile2,
   dubaiBurjTile1
 });
-</script></body></html>"""
+</script></body></html>""".replace("__FILES_JSON__", files_json)
     tmp_path = os.path.join(ROOT_DIR, "tests", "_tmp_stl_check.html")
     with open(tmp_path, "w", encoding="utf-8") as f:
         f.write(html)
@@ -202,14 +236,17 @@ def main():
             )
 
     print(f"\n2. Running tests/roofs.html across {len(SCENES)} scenes...")
-    url_roofs = f"{BASE_URL}/tests/roofs.html?scenes={','.join(SCENES)}"
-    dom_roofs = run_chrome_dom(url_roofs, budget_ms=25000)
-    mr = re.search(r'<pre id="out">RESULT_JSON=(\[.*?\])</pre>', dom_roofs, re.S)
-    if not mr:
-        raise RuntimeError("roofs.html failed")
-    roofs_results = json.loads(mr.group(1))
-    for r in roofs_results:
-        print(f"  ROOFS {r['scene'][:22]:22s} | holesInData={r['buildingsWithHolesInData']} | {r['counters']}")
+    roofs_results = []
+    for sc in SCENES:
+        url_roofs = f"{BASE_URL}/tests/roofs.html?scenes={sc}"
+        dom_roofs = run_chrome_dom(url_roofs, budget_ms=25000)
+        mr = re.search(r'<pre id="out">RESULT_JSON=(\[.*?\])</pre>', dom_roofs, re.S)
+        if not mr:
+            raise RuntimeError(f"roofs.html failed on {sc}")
+        sc_roofs = json.loads(mr.group(1))
+        roofs_results.extend(sc_roofs)
+        for r in sc_roofs:
+            print(f"  ROOFS {r['scene'][:22]:22s} | holesInData={r['buildingsWithHolesInData']} | {r['counters']}")
 
     print("\n3. Running Combined SLA Resin .STL Winding Check & Mono 4 Grid Verification...")
     stl_check = run_stl_and_ui_checks()

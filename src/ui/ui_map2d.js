@@ -1,5 +1,5 @@
 // ============================================================================
-// src/ui_map2d.js
+// src/ui/ui_map2d.js
 // Web Mercator Tile Projection & Interactive 2D Slippy Map Canvas Renderer
 // ============================================================================
 
@@ -19,17 +19,14 @@ function tileF2lat(y, z) {
   return (180.0 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
 }
 
-
 function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
   function getSelectionBBox() {
     const sc = state.sceneData;
-    const baseCrop = (sc && sc._fetchedCropRatio) || 0.88;
-    const effCrop = Math.min(1.0, Math.max(0.15, (state.cropRatio || 0.88) / baseCrop));
-    const baseSpan = (state.mapSpanMeters || (sc && sc.spanMeters) || 1291.3) * effCrop;
+    const baseSpan = Number(state.mapSpanMeters) || (sc && sc.spanMeters) || 1200;
 
-    const totalWidthMm = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 320);
+    const totalWidthMm = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 500);
     const totalHeightMm = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : totalWidthMm);
-    const maxDimMm = Math.max(totalWidthMm, totalHeightMm) || 320;
+    const maxDimMm = Math.max(totalWidthMm, totalHeightMm) || 500;
 
     const spanX = baseSpan * (totalWidthMm / maxDimMm);
     const spanY = baseSpan * (totalHeightMm / maxDimMm);
@@ -44,16 +41,30 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
     const west = state.mapCenterLon - dLon;
     const east = state.mapCenterLon + dLon;
 
-    return { south, west, north, east, spanX, spanY };
+    const rotDeg = Number(state.mapRotationDeg) || 0;
+    const rad = Math.abs(rotDeg) * Math.PI / 180.0;
+    const absCos = Math.abs(Math.cos(rad));
+    const absSin = Math.abs(Math.sin(rad));
+    const envHalfMx = Math.min(Math.max(halfMx, halfMy) * 1.25, halfMx * absCos + halfMy * absSin);
+    const envHalfMy = Math.min(Math.max(halfMx, halfMy) * 1.25, halfMx * absSin + halfMy * absCos);
+    const fetchDLat = envHalfMy / 111320.0;
+    const fetchDLon = envHalfMx / (111320.0 * cosLat);
+
+    return {
+      south, west, north, east, spanX, spanY,
+      fetchSouth: state.mapCenterLat - fetchDLat,
+      fetchWest: state.mapCenterLon - fetchDLon,
+      fetchNorth: state.mapCenterLat + fetchDLat,
+      fetchEast: state.mapCenterLon + fetchDLon
+    };
   }
 
   function getSelectedBBoxLatLon() {
     const b = getSelectionBBox();
     const arr = [b.south, b.west, b.north, b.east];
-    arr.south = b.south;
-    arr.west = b.west;
-    arr.north = b.north;
-    arr.east = b.east;
+    arr.south = b.south; arr.west = b.west; arr.north = b.north; arr.east = b.east;
+    arr.fetchSouth = b.fetchSouth; arr.fetchWest = b.fetchWest;
+    arr.fetchNorth = b.fetchNorth; arr.fetchEast = b.fetchEast;
     return arr;
   }
 
@@ -68,11 +79,9 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
 
     ctx2d.save();
     ctx2d.scale(dpr, dpr);
-
     ctx2d.fillStyle = '#dce6f0';
     ctx2d.fillRect(0, 0, cw, ch);
 
-    // 1. Draw live CartoDB Voyager Slippy Map Tiles (zero OSM Referer blocks!)
     const z = Math.round(state.mapZoom);
     const nTiles = Math.pow(2, z);
     const centerTileX = lon2tileF(state.mapCenterLon, z);
@@ -106,15 +115,14 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
       }
     }
 
-    // 2. Project loaded GIS vectors at their TRUE geographic coordinates (so panning moves them smoothly!)
-    const scene = state.sceneData;
-    if (scene && scene.center && z >= 12) {
-      const scLat = scene.center[0];
-      const scLon = scene.center[1];
-      const mToU = scene.metersToUnits || 0.13;
+    const rawScene = state.sceneData;
+    const geoScene = (rawScene && rawScene._unrotatedSnapshot) ? rawScene._unrotatedSnapshot : rawScene;
+    if (rawScene && rawScene.center && z >= 11) {
+      const scLat = rawScene.center[0];
+      const scLon = rawScene.center[1];
+      const mToU = rawScene.metersToUnits || 0.13;
       const cosLat = Math.max(0.2, Math.cos(scLat * Math.PI / 180.0));
 
-      // Convert scene unit [x, y] -> [lat, lon] -> screen pixel [sx, sy]
       const toScreenGeo = (pt) => {
         const lon = scLon + (pt[0] / mToU) / (111320.0 * cosLat);
         const lat = scLat + (pt[1] / mToU) / 111320.0;
@@ -125,9 +133,8 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
 
       const [scCenterSx, scCenterSy] = toScreenGeo([0, 0]);
       if (Math.hypot(scCenterSx - cw / 2, scCenterSy - ch / 2) < Math.max(cw, ch) * 1.5) {
-        // Subtle blue tint for loaded water/sea polygons on 2D map
         ctx2d.fillStyle = 'rgba(14, 165, 233, 0.24)';
-        (scene.waterPolys || []).forEach(wp => {
+        ((geoScene && geoScene.waterPolys) || []).forEach(wp => {
           ctx2d.beginPath();
           wp.outer.forEach((p, i) => {
             const [sx, sy] = toScreenGeo(p);
@@ -137,28 +144,30 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
           ctx2d.fill();
         });
 
-        // Highlighted / Selected buildings overlay on 2D map
-        (scene.buildings || []).forEach(b => {
-          if (b.hidden) return;
-          const gid = b._groupId || b.id;
-          const isSel = state.userClickedBuilding && (state.selectedBuildingIds.has(gid) || state.selectedBuildingId === gid);
-          if (!isSel && !b.highlighted) return;
+        const geoBlds = (geoScene && geoScene.buildings) || [];
+        const curBlds = (rawScene && rawScene.buildings) || [];
+        for (let bi = 0; bi < curBlds.length; bi++) {
+          const b = curBlds[bi];
+          const gb = geoBlds[bi] || b;
+          if (b.hidden) continue;
+          const pid = b._pickId || b.id;
+          const isSel = state.userClickedBuilding && (state.selectedBuildingIds.has(pid) || state.selectedBuildingId === pid);
+          if (!isSel && !b.highlighted) continue;
           ctx2d.fillStyle = b.highlighted ? 'rgba(245, 158, 11, 0.85)' : 'rgba(37, 99, 235, 0.85)';
           ctx2d.strokeStyle = '#ffffff';
           ctx2d.lineWidth = 1.0;
           ctx2d.beginPath();
-          b.outer.forEach((p, i) => {
+          gb.outer.forEach((p, i) => {
             const [sx, sy] = toScreenGeo(p);
             if (i === 0) ctx2d.moveTo(sx, sy); else ctx2d.lineTo(sx, sy);
           });
           ctx2d.closePath();
           ctx2d.fill();
           ctx2d.stroke();
-        });
+        }
       }
     }
 
-    // 3. Draw Blue Print Frame Bounding Box at current [south, west, north, east]
     const [south, west, north, east] = getSelectedBBoxLatLon();
     const bx0 = cw / 2 + (lon2tileF(west, z) - centerTileX) * 256.0;
     const bx1 = cw / 2 + (lon2tileF(east, z) - centerTileX) * 256.0;
@@ -166,63 +175,99 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
     const by1 = ch / 2 + (lat2tileF(south, z) - centerTileY) * 256.0;
     const bw = Math.max(16, bx1 - bx0);
     const bh = Math.max(16, by1 - by0);
+    const fcx = (bx0 + bx1) * 0.5;
+    const fcy = (by0 + by1) * 0.5;
+    const rotDeg = Number(state.mapRotationDeg) || 0;
+    const rotRad = rotDeg * Math.PI / 180.0;
 
-    ctx2d.fillStyle = 'rgba(15, 23, 42, 0.32)';
-    ctx2d.fillRect(0, 0, cw, Math.max(0, by0));
-    ctx2d.fillRect(0, Math.min(ch, by0 + bh), cw, Math.max(0, ch - (by0 + bh)));
-    ctx2d.fillRect(0, Math.max(0, by0), Math.max(0, bx0), Math.min(ch, bh));
-    ctx2d.fillRect(Math.min(cw, bx0 + bw), Math.max(0, by0), Math.max(0, cw - (bx0 + bw)), Math.min(ch, bh));
+    ctx2d.save();
+    ctx2d.beginPath();
+    ctx2d.rect(0, 0, cw, ch);
+    const cosR = Math.cos(rotRad), sinR = Math.sin(rotRad);
+    const hw = bw * 0.5, hh = bh * 0.5;
+    const corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(
+      ([dx, dy]) => [fcx + dx * cosR - dy * sinR, fcy + dx * sinR + dy * cosR]
+    );
+    ctx2d.moveTo(corners[0][0], corners[0][1]);
+    ctx2d.lineTo(corners[1][0], corners[1][1]);
+    ctx2d.lineTo(corners[2][0], corners[2][1]);
+    ctx2d.lineTo(corners[3][0], corners[3][1]);
+    ctx2d.closePath();
+    ctx2d.fillStyle = 'rgba(15, 23, 42, 0.34)';
+    ctx2d.fill('evenodd');
+    ctx2d.restore();
 
+    ctx2d.save();
+    ctx2d.translate(fcx, fcy);
+    ctx2d.rotate(rotRad);
     ctx2d.strokeStyle = '#2563eb';
     ctx2d.lineWidth = 2.2;
-    ctx2d.strokeRect(bx0, by0, bw, bh);
+    ctx2d.strokeRect(-hw, -hh, bw, bh);
 
-    // Draw Multi-Tile Grid Split Overlay (e.g., 1x2, 2x2, 2x3, 2x4 for Anycubic Photon Mono 4)
     const tCols = state.tileCols || 1;
     const tRows = state.tileRows || 1;
     if (tCols > 1 || tRows > 1) {
-      ctx2d.save();
       ctx2d.strokeStyle = 'rgba(6, 182, 212, 0.9)';
-      ctx2d.lineWidth = 1.4;
+      ctx2d.lineWidth = 1.25;
       ctx2d.setLineDash([4, 3]);
       for (let c = 1; c < tCols; c++) {
-        const sx = bx0 + (c / tCols) * bw;
-        ctx2d.beginPath();
-        ctx2d.moveTo(sx, by0);
-        ctx2d.lineTo(sx, by0 + bh);
-        ctx2d.stroke();
+        const sx = -hw + (c / tCols) * bw;
+        ctx2d.beginPath(); ctx2d.moveTo(sx, -hh); ctx2d.lineTo(sx, hh); ctx2d.stroke();
       }
       for (let r = 1; r < tRows; r++) {
-        const sy = by0 + (r / tRows) * bh;
-        ctx2d.beginPath();
-        ctx2d.moveTo(bx0, sy);
-        ctx2d.lineTo(bx0 + bw, sy);
-        ctx2d.stroke();
+        const sy = -hh + (r / tRows) * bh;
+        ctx2d.beginPath(); ctx2d.moveTo(-hw, sy); ctx2d.lineTo(hw, sy); ctx2d.stroke();
       }
       ctx2d.setLineDash([]);
-      ctx2d.font = 'bold 9px monospace';
+      ctx2d.font = 'bold 8.5px monospace';
+      const tw = bw / tCols, th = bh / tRows;
+      const showLabels = tw >= 22 && th >= 14;
       for (let r = 0; r < tRows; r++) {
         for (let c = 0; c < tCols; c++) {
           const tid = (tRows - 1 - r) * tCols + c;
-          const tx = bx0 + (c / tCols) * bw;
-          const ty = by0 + (r / tRows) * bh;
-          const tw = bw / tCols;
-          const th = bh / tRows;
+          const tx = -hw + c * tw, ty = -hh + r * th;
           if (state.exportTileFilter !== 'all' && parseInt(state.exportTileFilter, 10) === tid) {
             ctx2d.fillStyle = 'rgba(6, 182, 212, 0.25)';
             ctx2d.fillRect(tx, ty, tw, th);
           }
-          ctx2d.fillStyle = 'rgba(15, 23, 42, 0.72)';
-          ctx2d.fillRect(tx + 2, ty + 2, Math.min(34, tw - 4), 13);
-          ctx2d.fillStyle = '#38bdf8';
-          // Fix B34: R1 is always the northernmost (top) row on the 2D map and in exported .STL/.ZIP files
-          ctx2d.fillText(`R${r + 1}C${c + 1}`, tx + 4, ty + 12);
+          if (showLabels) {
+            ctx2d.fillStyle = 'rgba(15, 23, 42, 0.72)';
+            ctx2d.fillRect(tx + 1.5, ty + 1.5, Math.min(30, tw - 3), 11);
+            ctx2d.fillStyle = '#38bdf8';
+            ctx2d.fillText(`R${r + 1}C${c + 1}`, tx + 3, ty + 10);
+          }
         }
       }
-      ctx2d.restore();
     }
 
-    // Crosshair in center of frame
+    const handleDist = Math.min(18, Math.max(11, hh * 0.22));
+    ctx2d.strokeStyle = '#10b981';
+    ctx2d.lineWidth = 1.8;
+    ctx2d.beginPath(); ctx2d.moveTo(0, -hh); ctx2d.lineTo(0, -hh - handleDist); ctx2d.stroke();
+    ctx2d.fillStyle = '#10b981';
+    ctx2d.beginPath(); ctx2d.arc(0, -hh - handleDist, 6.5, 0, Math.PI * 2); ctx2d.fill();
+    ctx2d.strokeStyle = '#ffffff';
+    ctx2d.lineWidth = 1.4;
+    ctx2d.stroke();
+
+    if (rotDeg !== 0) {
+      const badgeTxt = `${rotDeg > 0 ? '+' : ''}${Math.round(rotDeg)}°`;
+      ctx2d.fillStyle = 'rgba(16, 185, 129, 0.92)';
+      ctx2d.fillRect(-20, -hh + 2, 40, 13);
+      ctx2d.fillStyle = '#ffffff';
+      ctx2d.font = 'bold 9px monospace';
+      ctx2d.textAlign = 'center';
+      ctx2d.fillText(badgeTxt, 0, -hh + 11.5);
+      ctx2d.textAlign = 'start';
+    }
+    ctx2d.restore();
+
+    state._rotHandleScreen = {
+      x: fcx - (-hh - handleDist) * sinR,
+      y: fcy + (-hh - handleDist) * cosR,
+      fcx, fcy
+    };
+
     ctx2d.strokeStyle = 'rgba(37, 99, 235, 0.65)';
     ctx2d.lineWidth = 1.0;
     ctx2d.beginPath();
@@ -232,14 +277,13 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
 
     const pill = document.getElementById('mapStatusPill');
     if (pill) {
-      const dimW = (state.bedSizeMm ? state.bedSizeMm / 10 : (state.targetWidthCm || 32)).toFixed(0);
-      const dimH = (state.totalHeightMm ? state.totalHeightMm / 10 : (state.targetHeightCm || 32)).toFixed(0);
-      pill.textContent = `N ${south.toFixed(4)}°..${north.toFixed(4)}° • E ${west.toFixed(4)}°..${east.toFixed(4)}° • ${dimW}×${dimH} cm`;
+      const dimW = (state.bedSizeMm ? state.bedSizeMm / 10 : (state.targetWidthCm || 50)).toFixed(0);
+      const dimH = (state.totalHeightMm ? state.totalHeightMm / 10 : (state.targetHeightCm || 50)).toFixed(0);
+      const rotSuffix = rotDeg ? ` • ↻${rotDeg > 0 ? '+' : ''}${Math.round(rotDeg)}°` : '';
+      pill.textContent = `N ${south.toFixed(4)}°..${north.toFixed(4)}° • E ${west.toFixed(4)}°..${east.toFixed(4)}° • ${dimW}×${dimH} cm${rotSuffix}`;
     }
-
     ctx2d.restore();
   }
-
 
   return { getSelectedBBoxLatLon, getSelectionBBox, draw2DMap };
 }

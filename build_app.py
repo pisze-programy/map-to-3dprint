@@ -18,18 +18,50 @@ def build():
     tpl = tpl.replace("<!--__VIDEO_STUDIO_VIEW__-->", video_view_html)
 
     js_files = [
-        "src/geometry_2d.js",
-        "src/mesh_extrude.js",
-        "src/mesh_topology.js",
-        "src/mesh_builder.js",
-        "src/webgl_shaders_math.js",
-        "src/webgl_studio.js",
-        "src/export_stl_zip.js",
-        "src/export_3mf.js",
-        "src/ui_config.js",
-        "src/ui_map2d.js",
-        "src/ui_gis_client.js",
-        "src/ui_panels.js",
+        # 1. 2D Geometry & Marching Squares
+        "src/geometry/polygon_2d.js",
+        "src/geometry/obb_medial_2d.js",
+        "src/geometry/marching_squares_2d.js",
+        # 2. 3D Mesh Generation, Architectural Roofs & 2-Manifold Topology
+        "src/mesh/mesh_primitives.js",
+        "src/mesh/mesh_clipper_3d.js",
+        "src/mesh/roof_shapes.js",
+        "src/mesh/roof_architectural.js",
+        "src/mesh/terrain_dem_grid.js",
+        "src/mesh/terrain_masks.js",
+        "src/mesh/terrain_base_water.js",
+        "src/mesh/features_roads_parks.js",
+        "src/mesh/features_bridges.js",
+        "src/mesh/buildings_prepare.js",
+        "src/mesh/buildings_s3db.js",
+        "src/mesh/mesh_topology.js",
+        "src/mesh/mesh_builder.js",
+        # 3. Studio WebGL Renderer & Shaders
+        "src/render/webgl_math.js",
+        "src/render/webgl_shaders.js",
+        "src/render/webgl_studio.js",
+        # 4. Binary .STL / .ZIP / .3MF Exporters
+        "src/export/crc32_zip.js",
+        "src/export/stl_writer.js",
+        "src/export/zip_packager.js",
+        "src/export/export_3mf.js",
+        # 5. In-Browser Overpass + Terrarium DEM GIS Pipeline
+        "src/gis_client/overpass_dem_fetch.js",
+        "src/gis_client/s3db_client_matcher.js",
+        "src/gis_client/osm_scene_builder.js",
+        "src/gis_client/overpass_chunk_grid.js",
+        "src/gis_client/gis_chunk_streamer.js",
+        # 6. Modular UI Controllers
+        "src/ui/ui_config.js",
+        "src/ui/map_rotation.js",
+        "src/ui/fast_render_manager.js",
+        "src/ui/ui_map2d.js",
+        "src/ui/ui_panels_layers.js",
+        "src/ui/ui_panels_buildings.js",
+        "src/ui/ui_viewport_search.js",
+        "src/ui/ui_controls_bind.js",
+        "src/ui/ui_url_hooks.js",
+        # 7. Video Preview & Order Demo Studio
         "src/video/video_config.js",
         "src/video/video_math_mesh.js",
         "src/video/video_shaders.js",
@@ -42,7 +74,8 @@ def build():
         "src/video/ui_video_order_demo.js",
         "src/video/ui_video_controls.js",
         "src/video/ui_video_studio.js",
-        "src/ui_app.js",
+        # 8. Main Application Bootstrap
+        "src/ui/ui_app.js",
     ]
     js_bundle = []
     for jf in js_files:

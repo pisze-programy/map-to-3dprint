@@ -12,7 +12,24 @@ function getText(u) { const x = new XMLHttpRequest(); x.open('GET', u, false); x
 const P = new URLSearchParams(location.search);
 const SRC_FILES = P.get('src')
   ? P.get('src').split(',')
-  : ['../src/geometry_2d.js', '../src/mesh_extrude.js', '../src/mesh_topology.js', '../src/mesh_builder.js'];
+  : [
+      '../src/geometry/polygon_2d.js',
+      '../src/geometry/obb_medial_2d.js',
+      '../src/geometry/marching_squares_2d.js',
+      '../src/mesh/mesh_primitives.js',
+      '../src/mesh/mesh_clipper_3d.js',
+      '../src/mesh/roof_shapes.js',
+      '../src/mesh/roof_architectural.js',
+      '../src/mesh/terrain_dem_grid.js',
+      '../src/mesh/terrain_masks.js',
+      '../src/mesh/terrain_base_water.js',
+      '../src/mesh/features_roads_parks.js',
+      '../src/mesh/features_bridges.js',
+      '../src/mesh/buildings_prepare.js',
+      '../src/mesh/buildings_s3db.js',
+      '../src/mesh/mesh_topology.js',
+      '../src/mesh/mesh_builder.js'
+    ];
 const SCENES = (P.get('scenes') || '').split(',').filter(Boolean);
 const CONFIGS = JSON.parse(P.get('configs') || '[{"tileCols":1,"tileRows":1,"hollowBase":false}]');
 const BED = parseFloat(P.get('bed') || '320');
@@ -22,12 +39,13 @@ for (const sf of SRC_FILES) (0, eval)(getText(sf));
 
 function analyseLayer(tris, scaleMm) {
   const vmap = new Map(); let nv = 0;
-  const key = p => ((p[0] + 84.6) * scaleMm).toFixed(3) + '_' + ((p[1] + 84.6) * scaleMm).toFixed(3) + '_' + Math.max(0, p[2] * scaleMm).toFixed(3);
-  const vid = p => { const k = key(p); let i = vmap.get(k); if (i === undefined) { i = nv++; vmap.set(k, i); } return i; };
+  const key = (p, tag) => tag + '_' + ((p[0] + 84.6) * scaleMm).toFixed(3) + '_' + ((p[1] + 84.6) * scaleMm).toFixed(3) + '_' + Math.max(0, p[2] * scaleMm).toFixed(3);
+  const vid = (p, tag) => { const k = key(p, tag); let i = vmap.get(k); if (i === undefined) { i = nv++; vmap.set(k, i); } return i; };
   const und = new Map(), dir = new Map();
   let degenerate = 0, sliver = 0; const faces = [];
   for (const t of tris) {
-    const a = vid(t.v0), b = vid(t.v1), c = vid(t.v2);
+    const tag = (t.tileId ?? 0) + '_' + (t.shellId ?? t.buildingId ?? 0);
+    const a = vid(t.v0, tag), b = vid(t.v1, tag), c = vid(t.v2, tag);
     if (a === b || b === c || a === c) { degenerate++; continue; }
     // area in mm^2
     const ux = (t.v1[0] - t.v0[0]) * scaleMm, uy = (t.v1[1] - t.v0[1]) * scaleMm, uz = (t.v1[2] - t.v0[2]) * scaleMm;
@@ -73,7 +91,7 @@ function rayCross(idx, px, py) {
     const l3 = 1 - l1 - l2;
     if (l1 < 0 || l2 < 0 || l3 < 0) continue;
     const z = l1 * a[2] + l2 * b[2] + l3 * c[2];
-  out.push({ z, s: d > 0 ? 1 : -1, bId: t.buildingId }); // d>0 => CCW in XY => normal +z (exit when going up)
+  out.push({ z, s: d > 0 ? 1 : -1, bId: t.buildingId, sId: t.shellId ?? t.buildingId }); // d>0 => CCW in XY => normal +z (exit when going up)
   }
   out.sort((p, q) => Math.abs(p.z - q.z) < 1e-5 ? (q.s - p.s) : (p.z - q.z));
   return out;
@@ -132,11 +150,11 @@ for (const sc of SCENES) {
       const b = bb.building; if (b.btype === 'pier') continue;
       checked++;
     }
-    // independent: group building tris by buildingId, take bottom-facing tris (n.z<-0.5), sample their vertices
+    // independent: group building tris by shellId/buildingId, take bottom-facing tris (n.z<-0.5), sample their vertices
     const bottoms = new Map();
-    for (const t of [...(M.buildings || []), ...(M.highlighted || [])]) { if (t.n[2] > -0.5) continue; let a = bottoms.get(t.buildingId); if (!a) bottoms.set(t.buildingId, a = []); a.push(t); }
+    for (const t of [...(M.buildings || []), ...(M.highlighted || [])]) { if (t.n[2] > -0.5) continue; const sid = t.shellId ?? t.buildingId; let a = bottoms.get(sid); if (!a) bottoms.set(sid, a = []); a.push(t); }
     let bChecked = 0;
-    for (const [bid, tl] of bottoms) {
+    for (const [sid, tl] of bottoms) {
       bChecked++; let maxGap = -1e9;
       for (const t of tl) {
         const cx = (t.v0[0] + t.v1[0] + t.v2[0]) / 3, cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3;
@@ -145,7 +163,7 @@ for (const sc of SCENES) {
           const cr = rayCross(surfIdx, px, py); if (!cr.length) continue;
           let top = -1e9;
           for (const c of cr) {
-            if (c.z <= v[2] + 1e-3 && (c.bId === undefined || c.bId === -1 || c.bId !== bid)) {
+            if (c.z <= v[2] + 1e-3 && (c.sId === undefined || c.sId !== sid)) {
               top = Math.max(top, c.z);
             }
           }
@@ -175,7 +193,9 @@ for (const sc of SCENES) {
     // (b) floating trees and roads vs actual surface (with bridge pier & span support check)
     const waterTopIdx = buildIndex((M.water || []).filter(t => t.n[2] > 0.5), 96);
     const terrIdx = buildIndex([...(M.base || []), ...(M.greenery || [])].filter(t => t.n[2] > 0.5), 96);
-    const bridgeSupports = [];
+    const BS_G = 64, BS_CS = 169.2 / BS_G;
+    const bsCells = new Map();
+    const bsIdx = v => Math.max(0, Math.min(BS_G - 1, Math.floor((v + 84.6) / BS_CS)));
     if (M.roads) {
       for (const t of M.roads) {
         if (t.n[2] <= 0.5) continue;
@@ -185,7 +205,10 @@ for (const sc of SCENES) {
         let topW = -1e9; for (const c of crW) topW = Math.max(topW, c.z);
         let topT = -1e9; for (const c of crT) topT = Math.max(topT, c.z);
         if (topT >= topW || topW > -1e8) {
-          bridgeSupports.push([cx, cy]);
+          const bk = bsIdx(cy) * BS_G + bsIdx(cx);
+          let arr = bsCells.get(bk);
+          if (!arr) bsCells.set(bk, arr = []);
+          arr.push([cx, cy]);
         }
       }
     }
@@ -208,9 +231,17 @@ for (const sc of SCENES) {
           }
           n++;
           let minDist = 1e9;
-          for (const s of bridgeSupports) {
-            const d = Math.hypot(cx - s[0], cy - s[1]);
-            if (d < minDist) minDist = d;
+          const bx0 = Math.max(0, bsIdx(cx) - 3), bx1 = Math.min(BS_G - 1, bsIdx(cx) + 3);
+          const by0 = Math.max(0, bsIdx(cy) - 3), by1 = Math.min(BS_G - 1, bsIdx(cy) + 3);
+          for (let by = by0; by <= by1; by++) {
+            for (let bx = bx0; bx <= bx1; bx++) {
+              const arr = bsCells.get(by * BS_G + bx);
+              if (!arr) continue;
+              for (const s of arr) {
+                const d = Math.hypot(cx - s[0], cy - s[1]);
+                if (d < minDist) minDist = d;
+              }
+            }
           }
           const distMm = minDist * scaleMm;
           if (distMm > 8.0) {
