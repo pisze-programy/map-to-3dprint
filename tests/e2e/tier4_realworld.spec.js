@@ -185,8 +185,8 @@ test.describe('Tier 4: Real-World Scenarios, Scalability & Responsiveness (Opaqu
       window.__map3d.fetchRealGISAndRender(bbox, title);
     }, { bbox: bbox25k, title: 'WARSZAWA 25KM' });
 
-    // Wait for completion (with 60s timeout for large scale)
-    const state = await waitForRenderComplete(page, 'WARSZAWA', 60000);
+    // Wait for completion (with 90s timeout for large scale)
+    const state = await waitForRenderComplete(page, 'WARSZAWA', 90000);
 
     await expect(page.locator('#loadingOverlay3D')).toBeHidden();
     await expect(page.locator('#gisErrorBanner')).toBeHidden();

@@ -92,7 +92,9 @@ function buildParksStreetsFootpathsAndTreesSync(scene, ctx, baseInfo, state, mes
   const greenVisible = !state.layerVisible || state.layerVisible.greenery !== false;
   const lod = (state && state.lodSettings) || {};
   const spanKm = Number(state.spanKm) || (Number(state.mapSpanMeters) / 1000) || ((scene.spanMeters || 1200) / 1000);
-  const treeThresholdKm = (lod.treeThresholdKm !== undefined) ? Number(lod.treeThresholdKm) : 4.0;
+  const treeThresholdKm = (lod.treeThresholdKm !== undefined)
+    ? Number(lod.treeThresholdKm)
+    : (lod.treeMaxSpanKm !== undefined ? Number(lod.treeMaxSpanKm) : 4.0);
   const userEnableTrees = (lod.enableTrees !== undefined) ? Boolean(lod.enableTrees) : true;
   const allowTreesByScale = spanKm <= treeThresholdKm;
   const treesVisible = (!state.layerVisible || state.layerVisible.trees !== false) &&
@@ -290,7 +292,9 @@ async function buildParksStreetsFootpathsAndTreesProgressive(scene, ctx, baseInf
   const greenVisible = !state.layerVisible || state.layerVisible.greenery !== false;
   const lod = (state && state.lodSettings) || {};
   const spanKm = Number(state.spanKm) || (Number(state.mapSpanMeters) / 1000) || ((scene.spanMeters || 1200) / 1000);
-  const treeThresholdKm = (lod.treeThresholdKm !== undefined) ? Number(lod.treeThresholdKm) : 4.0;
+  const treeThresholdKm = (lod.treeThresholdKm !== undefined)
+    ? Number(lod.treeThresholdKm)
+    : (lod.treeMaxSpanKm !== undefined ? Number(lod.treeMaxSpanKm) : 4.0);
   const userEnableTrees = (lod.enableTrees !== undefined) ? Boolean(lod.enableTrees) : true;
   const allowTreesByScale = spanKm <= treeThresholdKm;
   const treesVisible = (!state.layerVisible || state.layerVisible.trees !== false) &&

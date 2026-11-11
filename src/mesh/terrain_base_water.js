@@ -10,7 +10,8 @@ if (typeof emitUndersideIdPatch === 'undefined' && typeof require !== 'undefined
   Object.assign(global, require('./roof_architectural.js'));
 }
 
-function buildTerrainBaseAndWaterMeshes(ctx, state, meshes) {
+function buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options = {}) {
+  const isExport = Boolean((options && options.isExport) || (state && state.isExport) || (ctx && ctx.isExport));
   const {
     scaleMm, mmPerUnit, halfW, halfH, tileCols, tileRows, numTiles,
     TERRAIN_RES_X, TERRAIN_RES_Y, cellStepX, cellStepY, hollowBase,
@@ -182,7 +183,7 @@ function buildTerrainBaseAndWaterMeshes(ctx, state, meshes) {
           if (avgFloor > 0) vaultSavedSceneVol += avgFloor * tileStepX * tileStepY;
 
           const isIdCell = (gx >= startGx && gx <= endGx && gy === idGy);
-          if (isIdCell) {
+          if (isExport && isIdCell) {
             const chars = (tileCols === 1 && tileRows === 1) ? ['1', '-', '1', ' ', '↑'] : ['R', String(tr + 1), 'C', String(tc + 1), '↑'];
             const debossDepth = Math.max(0.12, Math.min(0.40 / scaleMm, cellMinTopZ[gy * TERRAIN_RES_X + gx] - idFbase - 0.4));
             emitUndersideIdPatch(x0, y0, x1, y1, f00, f10, f11, f01, chars[gx - startGx], debossDepth, tileId, meshes.base);
@@ -192,21 +193,41 @@ function buildTerrainBaseAndWaterMeshes(ctx, state, meshes) {
             pushTri(meshes.base, pf00, pf11, pf10, computeFaceNormal(pf00, pf11, pf10), 1, -1, tileId);
           }
 
-          if (gy === gy0) {
-            emitBoundaryStaircaseWall(x0, y0, v00, f00, x1, y0, v10, f10, [0, -1, 0], tileId);
-            emitWaterBoundaryWall(x0, y0, v00, x1, y0, v10, [0, -1, 0], tileId);
-          }
-          if (gy === gy1 - 1) {
-            emitBoundaryStaircaseWall(x1, y1, v11, f11, x0, y1, v01, f01, [0, 1, 0], tileId);
-            emitWaterBoundaryWall(x1, y1, v11, x0, y1, v01, [0, 1, 0], tileId);
-          }
-          if (gx === gx0) {
-            emitBoundaryStaircaseWall(x0, y1, v01, f01, x0, y0, v00, f00, [-1, 0, 0], tileId);
-            emitWaterBoundaryWall(x0, y1, v01, x0, y0, v00, [-1, 0, 0], tileId);
-          }
-          if (gx === gx1 - 1) {
-            emitBoundaryStaircaseWall(x1, y0, v10, f10, x1, y1, v11, f11, [1, 0, 0], tileId);
-            emitWaterBoundaryWall(x1, y0, v10, x1, y1, v11, [1, 0, 0], tileId);
+          if (isExport || (tileCols === 1 && tileRows === 1)) {
+            if (gy === gy0) {
+              emitBoundaryStaircaseWall(x0, y0, v00, f00, x1, y0, v10, f10, [0, -1, 0], tileId);
+              emitWaterBoundaryWall(x0, y0, v00, x1, y0, v10, [0, -1, 0], tileId);
+            }
+            if (gy === gy1 - 1) {
+              emitBoundaryStaircaseWall(x1, y1, v11, f11, x0, y1, v01, f01, [0, 1, 0], tileId);
+              emitWaterBoundaryWall(x1, y1, v11, x0, y1, v01, [0, 1, 0], tileId);
+            }
+            if (gx === gx0) {
+              emitBoundaryStaircaseWall(x0, y1, v01, f01, x0, y0, v00, f00, [-1, 0, 0], tileId);
+              emitWaterBoundaryWall(x0, y1, v01, x0, y0, v00, [-1, 0, 0], tileId);
+            }
+            if (gx === gx1 - 1) {
+              emitBoundaryStaircaseWall(x1, y0, v10, f10, x1, y1, v11, f11, [1, 0, 0], tileId);
+              emitWaterBoundaryWall(x1, y0, v10, x1, y1, v11, [1, 0, 0], tileId);
+            }
+          } else {
+            // Live preview on multi-tile grids: skip internal kerf walls, emit only outer model perimeter walls
+            if (tr === 0 && gy === gy0) {
+              emitBoundaryStaircaseWall(x0, y0, v00, f00, x1, y0, v10, f10, [0, -1, 0], tileId);
+              emitWaterBoundaryWall(x0, y0, v00, x1, y0, v10, [0, -1, 0], tileId);
+            }
+            if (tr === tileRows - 1 && gy === gy1 - 1) {
+              emitBoundaryStaircaseWall(x1, y1, v11, f11, x0, y1, v01, f01, [0, 1, 0], tileId);
+              emitWaterBoundaryWall(x1, y1, v11, x0, y1, v01, [0, 1, 0], tileId);
+            }
+            if (tc === 0 && gx === gx0) {
+              emitBoundaryStaircaseWall(x0, y1, v01, f01, x0, y0, v00, f00, [-1, 0, 0], tileId);
+              emitWaterBoundaryWall(x0, y1, v01, x0, y0, v00, [-1, 0, 0], tileId);
+            }
+            if (tc === tileCols - 1 && gx === gx1 - 1) {
+              emitBoundaryStaircaseWall(x1, y0, v10, f10, x1, y1, v11, f11, [1, 0, 0], tileId);
+              emitWaterBoundaryWall(x1, y0, v10, x1, y1, v11, [1, 0, 0], tileId);
+            }
           }
 
           const vMax = Math.max(v00, v10, v11, v01);

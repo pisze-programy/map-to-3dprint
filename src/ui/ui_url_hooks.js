@@ -143,10 +143,18 @@ function loadActiveConfig() {
       }
     }
     if (parsed.lod && typeof parsed.lod === 'object') {
+      const minBld = typeof parsed.lod.minBuildingFootprintM === 'number'
+        ? parsed.lod.minBuildingFootprintM
+        : (typeof parsed.lod.minBuildingMeters === 'number' ? parsed.lod.minBuildingMeters : 0);
+      const treeKm = typeof parsed.lod.treeMaxSpanKm === 'number'
+        ? parsed.lod.treeMaxSpanKm
+        : (typeof parsed.lod.treeThresholdKm === 'number' ? parsed.lod.treeThresholdKm : 4.0);
       sanitized.lod = {
-        minBuildingFootprintM: typeof parsed.lod.minBuildingFootprintM === 'number' ? parsed.lod.minBuildingFootprintM : 0,
+        minBuildingFootprintM: minBld,
+        minBuildingMeters: minBld,
         enableTrees: typeof parsed.lod.enableTrees === 'boolean' ? parsed.lod.enableTrees : true,
-        treeMaxSpanKm: typeof parsed.lod.treeMaxSpanKm === 'number' ? parsed.lod.treeMaxSpanKm : 4.0,
+        treeMaxSpanKm: treeKm,
+        treeThresholdKm: treeKm,
         roadDetail: typeof parsed.lod.roadDetail === 'string' ? parsed.lod.roadDetail : 'all'
       };
     }

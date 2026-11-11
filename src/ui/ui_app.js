@@ -45,9 +45,9 @@ function initMap3DApp(initialScene) {
     : ((savedConfig && typeof savedConfig.hollowBase === 'boolean') ? savedConfig.hollowBase : true);
   const initPrinter = (urlParams && urlParams.get('printer')) || (savedConfig && savedConfig.printerProfileId) || 'mono4_custom';
 
-  const initLodMinBld = (urlParams && urlParams.get('lod_bld') !== null && !isNaN(Number(urlParams.get('lod_bld'))))
-    ? Math.max(0, Math.min(100, Number(urlParams.get('lod_bld'))))
-    : ((savedConfig && savedConfig.lod && typeof savedConfig.lod.minBuildingFootprintM === 'number') ? savedConfig.lod.minBuildingFootprintM : 0);
+  const initLodMinBld = (urlParams && (urlParams.get('lod_min_bld') !== null || urlParams.get('lod_bld') !== null))
+    ? Math.max(0, Math.min(100, Number(urlParams.get('lod_min_bld') || urlParams.get('lod_bld')) || 0))
+    : ((savedConfig && savedConfig.lod && typeof (savedConfig.lod.minBuildingFootprintM ?? savedConfig.lod.minBuildingMeters) === 'number') ? (savedConfig.lod.minBuildingFootprintM ?? savedConfig.lod.minBuildingMeters) : 0);
 
   const initLodTrees = (urlParams && urlParams.get('lod_trees') !== null)
     ? (urlParams.get('lod_trees') === '1' || urlParams.get('lod_trees') === 'true')
@@ -55,7 +55,7 @@ function initMap3DApp(initialScene) {
 
   const initLodTreeMaxSpan = (urlParams && urlParams.get('lod_tree_km') !== null && !isNaN(Number(urlParams.get('lod_tree_km'))))
     ? Math.max(1.0, Math.min(20.0, Number(urlParams.get('lod_tree_km'))))
-    : ((savedConfig && savedConfig.lod && typeof savedConfig.lod.treeMaxSpanKm === 'number') ? savedConfig.lod.treeMaxSpanKm : 4.0);
+    : ((savedConfig && savedConfig.lod && typeof (savedConfig.lod.treeMaxSpanKm ?? savedConfig.lod.treeThresholdKm) === 'number') ? (savedConfig.lod.treeMaxSpanKm ?? savedConfig.lod.treeThresholdKm) : 4.0);
 
   const initLodRoads = (urlParams && urlParams.get('lod_roads'))
     ? urlParams.get('lod_roads')
@@ -63,8 +63,10 @@ function initMap3DApp(initialScene) {
 
   const initLodSettings = {
     minBuildingFootprintM: initLodMinBld,
+    minBuildingMeters: initLodMinBld,
     enableTrees: initLodTrees,
     treeMaxSpanKm: initLodTreeMaxSpan,
+    treeThresholdKm: initLodTreeMaxSpan,
     roadDetail: initLodRoads
   };
 
@@ -114,7 +116,10 @@ function initMap3DApp(initialScene) {
     layerMeshes: {},
     buildingBounds: [],
     pickIdMap: new Map(),
-    totalTriangles: 0
+    totalTriangles: 0,
+    selectedBuildingIds: new Set(),
+    hoveredBuildingId: null,
+    userClickedBuilding: false
   };
 
   const canvas3d = document.getElementById('view3dCanvas');
@@ -284,7 +289,11 @@ function initMap3DApp(initialScene) {
     }
     state.cropCenterX = 0;
     state.cropCenterY = 0;
-    state.selectedBuildingIds.clear();
+    if (state.selectedBuildingIds && typeof state.selectedBuildingIds.clear === 'function') {
+      state.selectedBuildingIds.clear();
+    } else {
+      state.selectedBuildingIds = new Set();
+    }
     state.hoveredBuildingId = null;
     state.userClickedBuilding = false;
     const firstLandmark = (scene.buildings || []).find(b => b.church || b.landmark) || (scene.buildings || [])[0];

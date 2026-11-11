@@ -230,6 +230,7 @@ function bindStudioPanelControls(ctx) {
       }
       if (!state.lodSettings) state.lodSettings = {};
       state.lodSettings.minBuildingFootprintM = val;
+      state.lodSettings.minBuildingMeters = val;
       if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
     });
   }
@@ -276,6 +277,7 @@ function bindStudioPanelControls(ctx) {
       if (lodTreeThresholdLabel) lodTreeThresholdLabel.textContent = `${val.toFixed(1)} km`;
       if (!state.lodSettings) state.lodSettings = {};
       state.lodSettings.treeMaxSpanKm = val;
+      state.lodSettings.treeThresholdKm = val;
       updateLodTreeBadge();
       if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
     });

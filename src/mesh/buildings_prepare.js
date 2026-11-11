@@ -169,9 +169,11 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     const minPrintUnits = minPrintMm / scaleMm;
 
     // Scale-adaptive or user-configured minimum building footprint in meters
-    const userMinBuildingMeters = (state.lodSettings && typeof state.lodSettings.minBuildingMeters === 'number')
-      ? state.lodSettings.minBuildingMeters
-      : 0;
+    const lodMin = state.lodSettings && (
+      typeof state.lodSettings.minBuildingFootprintM === 'number' ? state.lodSettings.minBuildingFootprintM :
+      typeof state.lodSettings.minBuildingMeters === 'number' ? state.lodSettings.minBuildingMeters : 0
+    );
+    const userMinBuildingMeters = lodMin || 0;
     const effectiveMinMeters = Math.max(userMinBuildingMeters, minPrintMm * metersPerMm);
 
     const footprintSpanMeters = minSpan / mToU;

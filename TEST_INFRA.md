@@ -56,7 +56,7 @@ tests/e2e/
 | # | Feature | Requirements | Test Suite | Verification Invariant |
 |---|---|---|---|---|
 | 1 | Automated E2E Benchmark | R1, User Feedback | `baseline_runner.spec.js` | Measures city selection to 3D render timing; logs triangles, epochs, and WebGL renderer |
-| 2 | Spatial Proximity Cache Matching | R3 | `tier1_features.spec.js:1.1-1.3` | Resolves preset scenes within 1.5 km to static cache in <50ms without network misses |
+| 2 | Live Progressive GIS Streaming Pipeline | R3, User Feedback | `tier1_features.spec.js:1.1-1.3` | Every render performs live progressive streaming directly without relying on deleted spatial proximity cache matching |
 | 3 | Resilient Overpass Fetching & Mirrored Fallback | R3, User Feedback | `tier2_boundary.spec.js:2.7-2.10` | Recovers from HTTP 500, network drops, and Overpass mirror timeouts to DEM relief fallback |
 | 4 | Inactivity-Based Watchdog | R3, User Feedback | `tier2_boundary.spec.js:2.9`, `tier4_uncached_visual.spec.js:4.V6` | Inactivity timer resets on progressive chunk/stage progress; hard 20s timeout fires only on true network freeze |
 | 5 | Adaptive Terrarium DEM Zoom | R5 | `tier4_realworld.spec.js:4.3-4.4` | Zoom 11–14 dynamically selected based on span; eliminates multi-tile download hangs |
@@ -126,5 +126,5 @@ Rather than brittle 1:1 golden image hashing (which fails across OS rendering en
 | **Unhandled Promise Rejections** | 0 allowed | **0 rejections** | **MET** |
 | **Main-Thread Freeze Ceiling** | < 2,000 ms continuous | **Max single task: 221 ms** | **MET** |
 | **Uncached GIS Streaming** | No timeout / freeze | **Cape Town completed in 10.8s** | **MET** |
-| **Visual Verification Artifacts** | All files non-empty & valid PNG | **6 staged PNGs verified (>340 KB)** | **MET** |
+| **Visual Verification Artifacts** | All files non-empty & valid PNG | **8 staged PNGs verified (>340 KB)** | **MET** |
 | **Settings Persistence** | 100% restored across reload | **Warsaw & New York verified** | **MET** |

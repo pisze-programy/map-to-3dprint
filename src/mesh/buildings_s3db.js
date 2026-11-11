@@ -15,7 +15,7 @@ if (typeof prepareAndClusterS3DBBuildings === 'undefined' && typeof require !== 
 }
 
 function buildS3DBBuildingsMesh(scene, ctx, baseInfo, state, meshes) {
-  const { tileCols, tileRows, mToU, tileBounds, quantizeZUnits } = ctx;
+  const { tileCols, tileRows, mToU, tileBounds, quantizeZUnits, halfW, halfH } = ctx;
   const { prepared, clusters, pickIdMap } = prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state);
   const buildingBounds = [];
 

@@ -80,14 +80,14 @@ Staged visual screenshots captured directly from the running WebGL canvas during
 
 | Artifact Path | Stage / Test Scenario | File Size | Dimensions | WebGL Status |
 |:---|:---|:---:|:---:|:---:|
-| `tests/e2e/screenshots/stage1_boot_munich.png` | Initial boot & empty frame | > 15 KB | 1280 × 800 | Valid PNG Header, Canvas Readable |
-| `tests/e2e/screenshots/stage2_search_warsaw.png` | Autocomplete search dropdown | > 15 KB | 1280 × 800 | Valid PNG Header, 2D Overlay Visible |
-| `tests/e2e/screenshots/stage3_rendered_warsaw.png` | Warsaw Old Town 3D preview | > 45 KB | 1280 × 800 | Valid PNG Header, Pixel Diversity > 2 |
-| `tests/e2e/screenshots/stage4_expanded_scale_50km.png` | 50 km expanded crop boundary | > 15 KB | 1280 × 800 | Valid PNG Header, Canvas Readable |
-| `tests/e2e/screenshots/stage5_lod_filtered.png` | LoD detail filters applied | > 15 KB | 1280 × 800 | Valid PNG Header, Canvas Readable |
-| `tests/e2e/screenshots/stage6_white_palette.png` | Architectural White palette | > 45 KB | 1280 × 800 | Valid PNG Header, Pixel Diversity > 2 |
-| `tests/e2e/screenshots/stage7_clean_viewport.png` | Clean viewport during 3D orbit | > 45 KB | 1280 × 800 | Valid PNG Header, Pixel Diversity > 2 |
-| `tests/e2e/screenshots/stage8_capetown_uncached.png` | Cape Town live progressive stream | > 45 KB | 1280 × 800 | Valid PNG Header, Pixel Diversity > 2 |
+| `tests/e2e/screenshots/01_bootstrap_initial.png` | Initial boot & empty frame UI state | 179,131 bytes | 1280 × 720 | Valid PNG Header, Canvas Readable |
+| `tests/e2e/screenshots/01_bootstrap_canvas.png` | Initial clean WebGL 3D canvas surface | 20,440 bytes | 594 × 952 | Valid PNG Header, Canvas Readable |
+| `tests/e2e/screenshots/02_parameters_decoupled.png` | Decoupled 2D parameter adjustment | 166,797 bytes | 1280 × 720 | Valid PNG Header, 2D Overlay Visible |
+| `tests/e2e/screenshots/03_progressive_streaming.png` | Warsaw progressive streaming during render | 280,734 bytes | 1280 × 720 | Valid PNG Header, Progressive Layers |
+| `tests/e2e/screenshots/04_render_canvas.png` | Warsaw 3D model rendered WebGL canvas | 265,399 bytes | 594 × 952 | Valid PNG Header, Pixel Diversity > 2 |
+| `tests/e2e/screenshots/04_render_complete.png` | Complete Warsaw 3D render with UI panels | 470,990 bytes | 1280 × 720 | Valid PNG Header, Pixel Diversity > 2 |
+| `tests/e2e/screenshots/05_capetown_progressive.png` | Cape Town live progressive stream stage | 185,577 bytes | 1280 × 720 | Valid PNG Header, Live Stream Active |
+| `tests/e2e/screenshots/05_capetown_complete.png` | Cape Town complete 3D preview stage | 342,006 bytes | 1280 × 720 | Valid PNG Header, Pixel Diversity > 2 |
 
 ---
 

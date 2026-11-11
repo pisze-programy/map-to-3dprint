@@ -60,11 +60,11 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
     const renderBtn = page.locator('#btnRender3D');
     await expect(renderBtn).toBeVisible();
     const btnText = ((await renderBtn.textContent()) || '').trim();
-    expect(btnText).toMatch(/Render/i);
+    expect(btnText).toBe('Render');
 
-    // On fresh boot, clean empty frame (0 initial geo triangles) waiting for explicit Render
+    // On fresh boot, clean empty frame (<=12 initial bed slab triangles) waiting for explicit Render
     const initialTriangles = await page.evaluate(() => window.__map3d?.state?.totalTriangles || 0);
-    expect(initialTriangles).toBeGreaterThanOrEqual(0);
+    expect(initialTriangles).toBeLessThanOrEqual(12);
 
     // 1. Mutate 2D Map parameters without triggering unprompted 3D rebuild
     const mapPill = page.locator('#mapStatusPill');
@@ -72,31 +72,34 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
 
     // 2. Adjust Kadr (span presets) updates label and 2D state
     const spanChip = page.locator('button[data-span-km="2.5"]');
-    if (await spanChip.count() > 0) {
-      await spanChip.click();
-      await expect(page.locator('#cropSizeLabel')).toContainText('2.50 km');
-    }
+    await expect(spanChip).toBeVisible();
+    await spanChip.click();
+    await expect(page.locator('#cropSizeLabel')).toContainText('2.50 km');
 
     // 3. Adjust Area Rotation
     const rotChip = page.locator('button[data-rot-deg="45"]');
-    if (await rotChip.count() > 0) {
-      await rotChip.click();
-      await expect(page.locator('#mapRotationLabel')).toContainText('45°');
-    }
+    await expect(rotChip).toBeVisible();
+    await rotChip.click();
+    await expect(page.locator('#mapRotationLabel')).toContainText('45°');
 
     // 4. Adjust Frame Dimensions (e.g. 40x50 or 50x50)
     const chipFrame = page.locator('button[data-frame-size="40x50"]');
-    if (await chipFrame.count() > 0) {
-      await chipFrame.click();
-      expect(await page.locator('#targetWidthCmInput').inputValue()).toBe('40');
-      expect(await page.locator('#targetHeightCmInput').inputValue()).toBe('50');
-    }
+    await expect(chipFrame).toBeVisible();
+    await chipFrame.click();
+    expect(await page.locator('#targetWidthCmInput').inputValue()).toBe('40');
+    expect(await page.locator('#targetHeightCmInput').inputValue()).toBe('50');
 
     // 5. 2D Map Zoom controls
     const zoomInBtn = page.locator('#btnZoomIn2D');
-    if (await zoomInBtn.count() > 0) {
-      await zoomInBtn.click();
-    }
+    await expect(zoomInBtn).toBeVisible();
+    await zoomInBtn.click();
+
+    // Verify explicit decoupling: parameter adjustments did NOT trigger 3D rebuild
+    await expect(page.locator('#loadingOverlay3D')).toBeHidden();
+    expect(await page.locator('#loadingOverlay3D').isVisible()).toBe(false);
+    const preRenderTriangles = await page.evaluate(() => window.__map3d?.state?.totalTriangles || 0);
+    expect(preRenderTriangles).toBe(initialTriangles);
+    expect(preRenderTriangles).toBeLessThanOrEqual(12);
 
     // 6. Explicitly clicking #btnRender3D initiates the 3D build
     await renderBtn.click();
@@ -117,38 +120,57 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
 
-    // 1. Verify crop slider range supports expansive area coverage
+    // 1. Verify crop slider range supports expansive area coverage up to 50 km
     const slider = page.locator('#cropSizeSlider');
     await expect(slider).toBeVisible();
     const minVal = parseFloat((await slider.getAttribute('min')) || '0.4');
     expect(minVal).toBeLessThanOrEqual(0.4);
     const maxVal = parseFloat((await slider.getAttribute('max')) || '12.0');
-    expect(maxVal).toBeGreaterThanOrEqual(12.0);
+    expect(maxVal).toBeGreaterThanOrEqual(50.0);
 
-    // 2. Verify span preset chips exist and operate cleanly
+    // 2. Verify span preset chips exist and operate cleanly (including 25km and 50km chips)
+    const chip50k = page.locator('button[data-span-km="50.0"], button[data-span-km="50"]');
+    await expect(chip50k).toBeVisible();
+    await chip50k.click();
+    await expect(page.locator('#cropSizeLabel')).toContainText('50.00 km');
+    const span50M = await page.evaluate(() => window.__map3d.state.mapSpanMeters);
+    expect(span50M).toBe(50000);
+
+    const chip25k = page.locator('button[data-span-km="25.0"], button[data-span-km="25"]');
+    await expect(chip25k).toBeVisible();
+    await chip25k.click();
+    await expect(page.locator('#cropSizeLabel')).toContainText('25.00 km');
+    const span25M = await page.evaluate(() => window.__map3d.state.mapSpanMeters);
+    expect(span25M).toBe(25000);
+
     const chip12k = page.locator('button[data-span-km="12.0"], button[data-span-km="12"]');
-    if (await chip12k.count() > 0) {
-      await chip12k.click();
-      await expect(page.locator('#cropSizeLabel')).toContainText('12.00 km');
-      const spanM = await page.evaluate(() => window.__map3d.state.mapSpanMeters);
-      expect(spanM).toBe(12000);
-    }
+    await expect(chip12k).toBeVisible();
+    await chip12k.click();
+    await expect(page.locator('#cropSizeLabel')).toContainText('12.00 km');
+    const span12M = await page.evaluate(() => window.__map3d.state.mapSpanMeters);
+    expect(span12M).toBe(12000);
 
-    // 3. Verify width and height inputs allow expansive frame sizes
+    // 3. Verify width and height inputs allow expansive frame sizes (up to 150 cm)
     const widthInput = page.locator('#targetWidthCmInput');
     const heightInput = page.locator('#targetHeightCmInput');
     await expect(widthInput).toBeVisible();
     await expect(heightInput).toBeVisible();
     expect(Number(await widthInput.getAttribute('min'))).toBeLessThanOrEqual(8);
-    expect(Number(await widthInput.getAttribute('max'))).toBeGreaterThanOrEqual(120);
+    expect(Number(await widthInput.getAttribute('max'))).toBeGreaterThanOrEqual(150);
+    expect(Number(await heightInput.getAttribute('max'))).toBeGreaterThanOrEqual(150);
 
-    // 4. Verify frame size chips update dimensions
+    // 4. Verify frame size chips update dimensions (including 50x100 panoramic chip)
+    const chip50x100 = page.locator('button[data-frame-size="50x100"]');
+    await expect(chip50x100).toBeVisible();
+    await chip50x100.click();
+    expect(await widthInput.inputValue()).toBe('50');
+    expect(await heightInput.inputValue()).toBe('100');
+
     const chip50x70 = page.locator('button[data-frame-size="50x70"]');
-    if (await chip50x70.count() > 0) {
-      await chip50x70.click();
-      expect(await widthInput.inputValue()).toBe('50');
-      expect(await heightInput.inputValue()).toBe('70');
-    }
+    await expect(chip50x70).toBeVisible();
+    await chip50x70.click();
+    expect(await widthInput.inputValue()).toBe('50');
+    expect(await heightInput.inputValue()).toBe('70');
 
     // 5. Verify Photon Mono 4 auto-grid calculation badge updates
     const badge = page.locator('#mono4GridBadge');
@@ -165,25 +187,52 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
 
-    // 1. Inspect LoD controls if present
+    // 1. Unconditionally assert visible LoD detail controls in the DOM
     const lodPanel = page.locator('#lodFilterPanel');
-    if (await lodPanel.count() > 0) {
-      await expect(lodPanel).toBeVisible();
-      const minBuildingSlider = page.locator('#lodMinBuildingSlider');
-      const enableTreesCheck = page.locator('#lodEnableTrees');
-      const roadDetailSelect = page.locator('#lodRoadDetailSelect');
-      await expect(minBuildingSlider).toBeVisible();
-      await expect(enableTreesCheck).toBeVisible();
-      await expect(roadDetailSelect).toBeVisible();
-    }
+    await expect(lodPanel).toBeVisible();
+    const minBuildingSlider = page.locator('#lodMinBuildingSizeSlider');
+    const enableTreesCheck = page.locator('#lodEnableTreesCheck');
+    const treeThresholdSlider = page.locator('#lodTreeThresholdSlider');
+    const roadDetailSelect = page.locator('#lodRoadDetailSelect');
+    const lodStatusBadge = page.locator('#lodStatusBadge');
 
-    // 2. Test scale adaptation: set expansive span (12-25 km)
+    await expect(minBuildingSlider).toBeVisible();
+    await expect(enableTreesCheck).toBeVisible();
+    await expect(treeThresholdSlider).toBeVisible();
+    await expect(roadDetailSelect).toBeVisible();
+    await expect(lodStatusBadge).toBeVisible();
+
+    // 2. Test user overrides and persistence in state
+    await minBuildingSlider.fill('20');
+    await minBuildingSlider.dispatchEvent('input');
+    await expect(page.locator('#lodMinBuildingSizeLabel')).toHaveText('20 m');
+    const stateMinFootprint = await page.evaluate(() => window.__map3d.state.lodSettings?.minBuildingFootprintM);
+    const stateMinMeters = await page.evaluate(() => window.__map3d.state.lodSettings?.minBuildingMeters);
+    expect(stateMinFootprint).toBe(20);
+    expect(stateMinMeters).toBe(20);
+
+    await enableTreesCheck.uncheck();
+    const stateTrees = await page.evaluate(() => window.__map3d.state.lodSettings?.enableTrees);
+    expect(stateTrees).toBe(false);
+    await expect(page.locator('#lodTreesStateBadge')).toHaveText('Wyłączone');
+
+    // Re-enable trees
+    await enableTreesCheck.check();
+    const stateTreesReenabled = await page.evaluate(() => window.__map3d.state.lodSettings?.enableTrees);
+    expect(stateTreesReenabled).toBe(true);
+
+    await roadDetailSelect.selectOption('major');
+    const stateRoads = await page.evaluate(() => window.__map3d.state.lodSettings?.roadDetail);
+    expect(stateRoads).toBe('major');
+
+    // 3. Test scale adaptation: set expansive span (25 km)
     await page.evaluate(() => {
       window.__map3d.state.mapSpanMeters = 25000;
       if (typeof window.__map3d.draw2DMap === 'function') window.__map3d.draw2DMap();
+      if (typeof window.updateLodTreeBadge === 'function') window.updateLodTreeBadge();
     });
 
-    // 3. Verify memory and state stability at large span
+    // 4. Verify memory and state stability at large span
     const spanM = await page.evaluate(() => window.__map3d.state.mapSpanMeters);
     expect(spanM).toBe(25000);
 
@@ -207,24 +256,33 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
     await waitForAppReady(page);
     await waitForRenderComplete(page);
 
-    // 1. Verify canvas container
+    // 1. Explicit negative assertions: clean viewport must have NO inspector card or lingering elements
+    expect(await page.locator('#buildingInspectorCard').count()).toBe(0);
+    expect(await page.locator('#buildingInspectorEmpty').count()).toBe(0);
+    expect(await page.locator('#buildingInspectorContent').count()).toBe(0);
+    expect(await page.locator('#buildingInspectorPanel').count()).toBe(0);
+    expect(await page.locator('#highlightedCountBadge').count()).toBe(0);
+    expect(await page.locator('text=Inspektor Budynku').count()).toBe(0);
+    expect(await page.textContent('body')).not.toContain('Inspektor Budynku');
+
+    // 2. Verify canvas container
     const canvas = page.locator('#view3dCanvas');
     await expect(canvas).toBeVisible();
     const box = await canvas.boundingBox();
     expect(box).toBeTruthy();
 
-    // 2. Verify hover tooltip is not obstructing
+    // 3. Verify hover tooltip is not obstructing
     const tooltip = page.locator('#hoverTooltip');
     if (await tooltip.count() > 0) {
       await expect(tooltip).toBeHidden();
     }
 
-    // 3. Test clean click on 3D canvas does not throw
+    // 4. Test clean click on 3D canvas does not throw
     if (box) {
       await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
     }
 
-    // 4. Test orbit navigation drag and wheel zoom
+    // 5. Test orbit navigation drag and wheel zoom
     const startYaw = await page.evaluate(() => window.__map3d?.studio?.camera?.yaw || 0);
     const startDist = await page.evaluate(() => window.__map3d?.studio?.camera?.distance || 0);
 
@@ -252,7 +310,15 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
 
-    // 1. Verify white palette exists in PALETTES definition
+    // 1. Unconditionally assert initial boot defaults without any state mutations or button clicks
+    const bootPalette = await page.evaluate(() => window.__map3d?.state?.activePalette);
+    expect(bootPalette).toBe('white');
+
+    const bootColors = await page.evaluate(() => window.__map3d?.state?.colors);
+    expect(bootColors.buildings.toLowerCase()).toBe('#ffffff');
+    expect(bootColors.base.toLowerCase()).toBe('#f4f5f7');
+
+    // 2. Verify white palette exists in PALETTES definition
     const whiteDef = await page.evaluate(() => {
       const list = (typeof PALETTES !== 'undefined' ? PALETTES : (window.__map3d?.PALETTES || []));
       const p = list.find(x => x.id === 'white');
@@ -263,23 +329,10 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
     expect(whiteDef?.buildings.toLowerCase()).toBe('#ffffff');
     expect(whiteDef?.base.toLowerCase()).toBe('#f4f5f7');
 
-    // 2. Select white palette via button or state
-    const whiteBtn = page.locator('button[data-palette-id="white"]');
-    if (await whiteBtn.count() > 0) {
-      await whiteBtn.click();
-    } else {
-      await page.evaluate(() => {
-        window.__map3d.state.activePalette = 'white';
-        const list = (typeof PALETTES !== 'undefined' ? PALETTES : (window.__map3d?.PALETTES || []));
-        const pal = list.find(p => p.id === 'white');
-        if (pal) window.__map3d.state.colors = { ...pal.colors };
-      });
-    }
-
-    // 3. Verify active state colors reflect Pure Architectural White
-    const currentColors = await page.evaluate(() => window.__map3d.state.colors);
-    expect(currentColors.buildings.toLowerCase()).toBe('#ffffff');
-    expect(currentColors.base.toLowerCase()).toBe('#f4f5f7');
+    // 3. Verify palette UI rendered in paletteButtonsContainer with Pure Architectural White
+    const paletteButtons = page.locator('#paletteButtonsContainer button');
+    await expect(paletteButtons.first()).toBeVisible();
+    await expect(paletteButtons.first()).toContainText('Pure Architectural White');
   });
 
   // --------------------------------------------------------------------------
@@ -303,6 +356,11 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
       window.__map3d.fetchRealGISAndRender(bbox, 'CAPE TOWN');
     }, { bbox: ctBbox, center: ctCenter });
 
+    // Capture progressive streaming screenshot while loading overlay is active
+    await page.waitForTimeout(400);
+    const ctProg = await captureAndInspectScreenshot(page, null, '05_capetown_progressive.png', { minBytes: 15000 });
+    expect(ctProg.size).toBeGreaterThan(15000);
+
     // Await render completion (ensuring watchdog resets on progress without 20s killswitch)
     const result = await waitForRenderComplete(page, 'CAPE TOWN', 90000);
     expect(result.totalTriangles).toBeGreaterThan(0);
@@ -314,6 +372,13 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
       expect(bannerText).toContain('Załadowano model terenu DEM');
     }
     await expect(page.locator('#btnRender3D')).toBeEnabled();
+
+    // Capture final completion screenshot
+    const ctComplete = await captureAndInspectScreenshot(page, null, '05_capetown_complete.png', { minBytes: 15000 });
+    expect(ctComplete.size).toBeGreaterThan(15000);
+
+    // Verify WebGL Canvas pixel diversity via gl.readPixels
+    await assertWebGLCanvasNotBlank(page);
   });
 
   // --------------------------------------------------------------------------
@@ -333,8 +398,11 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
 
     // Stage 2: Parameter adjustment visual state
     const spanBtn = page.locator('button[data-span-km="2.5"]');
-    if (await spanBtn.count() > 0) await spanBtn.click();
+    await expect(spanBtn).toBeVisible();
+    await spanBtn.click();
     const rotBtn = page.locator('button[data-rot-deg="45"]');
+    await expect(rotBtn).toBeVisible();
+    await rotBtn.click();
     if (await rotBtn.count() > 0) await rotBtn.click();
 
     const s2Page = await captureAndInspectScreenshot(page, null, '02_parameters_decoupled.png', { minBytes: 15000 });

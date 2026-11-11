@@ -56,14 +56,13 @@ async function setupOverpassProxy(page) {
   try {
     await page.route('**/*interpreter*', async (route) => {
       try {
-        const fetchPromise = route.fetch({
+        const resp = await route.fetch({
           headers: {
             ...route.request().headers(),
             'User-Agent': 'Map3DStudio/2.0 (OpenStreetMap 3D Print Studio)'
-          }
+          },
+          timeout: 15000
         });
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('ProxyTimeout')), 3500));
-        const resp = await Promise.race([fetchPromise, timeoutPromise]);
         if (resp && resp.status() < 400) {
           await route.fulfill({ response: resp });
           return;
@@ -72,21 +71,44 @@ async function setupOverpassProxy(page) {
       try {
         const url = route.request().url();
         const postData = route.request().postData() || '';
+        const decoded = decodeURIComponent(postData);
         const cacheDir = path.resolve(__dirname, '../../cache');
         if (fs.existsSync(cacheDir)) {
           const files = fs.readdirSync(cacheDir).filter(f => f.startsWith('osm_') && f.endsWith('.json'));
           let bestFile = null;
-          for (const f of files) {
-            const parts = f.replace('osm_', '').replace('.json', '').split('_').map(Number);
-            if (parts.length === 4) {
-              const latStr = parts[0].toFixed(2);
-              if (url.includes(latStr) || postData.includes(latStr)) {
-                bestFile = f;
-                break;
+
+          // Check if requested bounding box overlaps with any locally cached scene
+          const m = decoded.match(/\[bbox:([0-9.-]+),([0-9.-]+),([0-9.-]+),([0-9.-]+)\]/) ||
+                    decoded.match(/\(([0-9.-]+),([0-9.-]+),([0-9.-]+),([0-9.-]+)\)/) ||
+                    url.match(/bbox=([0-9.-]+),([0-9.-]+),([0-9.-]+),([0-9.-]+)/);
+          if (m) {
+            const qS = parseFloat(m[1]), qW = parseFloat(m[2]), qN = parseFloat(m[3]), qE = parseFloat(m[4]);
+            for (const f of files) {
+              const parts = f.replace('osm_', '').replace('.json', '').split('_').map(Number);
+              if (parts.length === 4) {
+                const fMidLat = (parts[0] + parts[2]) * 0.5;
+                const fMidLon = (parts[1] + parts[3]) * 0.5;
+                if (fMidLat >= qS && fMidLat <= qN && fMidLon >= qW && fMidLon <= qE) {
+                  bestFile = f;
+                  break;
+                }
               }
             }
           }
-          if (!bestFile && files.length > 0) bestFile = files[0];
+
+          if (!bestFile) {
+            for (const f of files) {
+              const parts = f.replace('osm_', '').replace('.json', '').split('_').map(Number);
+              if (parts.length === 4) {
+                const latStr = parts[0].toFixed(2);
+                if (url.includes(latStr) || decoded.includes(latStr)) {
+                  bestFile = f;
+                  break;
+                }
+              }
+            }
+          }
+
           if (bestFile) {
             const data = fs.readFileSync(path.join(cacheDir, bestFile), 'utf-8');
             await route.fulfill({
@@ -132,44 +154,6 @@ function setupConsoleHygiene(page) {
 
   // Resilient Overpass proxy with genuine User-Agent and cache fallback
   setupOverpassProxy(page);
-
-  page.addInitScript(() => {
-    try {
-      window.halfW = 84.6;
-      window.halfH = 84.6;
-    } catch (_) {}
-    try {
-      if (!('selectedBuildingIds' in Object.prototype)) {
-        Object.defineProperty(Object.prototype, 'selectedBuildingIds', {
-          configurable: true,
-          enumerable: false,
-          get() {
-            if (!this._hiddenSelBldIds) this._hiddenSelBldIds = new Set();
-            return this._hiddenSelBldIds;
-          },
-          set(v) {
-            this._hiddenSelBldIds = v;
-          }
-        });
-      }
-    } catch (_) {}
-    try {
-      let map3dVal = undefined;
-      Object.defineProperty(window, '__map3d', {
-        configurable: true,
-        enumerable: true,
-        get() { return map3dVal; },
-        set(v) {
-          map3dVal = v;
-          if (v && v.state) {
-            if (!v.state.selectedBuildingIds) v.state.selectedBuildingIds = new Set();
-            if (!v.state.hoveredBuildingId) v.state.hoveredBuildingId = null;
-            if (typeof v.state.userClickedBuilding === 'undefined') v.state.userClickedBuilding = false;
-          }
-        }
-      });
-    } catch (_) {}
-  }).catch(() => {});
 
   return {
     pageErrors,
@@ -221,13 +205,6 @@ async function waitForAppReady(page, timeout = 45000) {
 
   // Verify WebGL context on #view3dCanvas
   const webglStatus = await page.evaluate(() => {
-    window.halfW = 84.6;
-    window.halfH = 84.6;
-    if (window.__map3d && window.__map3d.state) {
-      if (!window.__map3d.state.selectedBuildingIds) window.__map3d.state.selectedBuildingIds = new Set();
-      if (!window.__map3d.state.hoveredBuildingId) window.__map3d.state.hoveredBuildingId = null;
-      if (typeof window.__map3d.state.userClickedBuilding === 'undefined') window.__map3d.state.userClickedBuilding = false;
-    }
     const canvas = /** @type {HTMLCanvasElement | null} */ (document.getElementById('view3dCanvas'));
     if (!canvas) return { ok: false, reason: 'missing_canvas' };
     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');

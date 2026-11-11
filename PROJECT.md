@@ -47,6 +47,11 @@
 | 15 | File URI Protocol & CORS Safety | Gate relative fetches behind http checks and handle canvas tainting gracefully | M4 | R3 |
 | 16 | Persistent Settings Across Reloads | Persist active city, coordinates, span, frame dimensions, LoD settings, and view in localStorage & URL | M4 | R4 |
 | 17 | Final Acceptance Verification & Adversarial Hardening | 100% E2E test pass across Tiers 1-4 with uncached Cape Town & screenshots, plus Tier 5 hardening | M5 | R1, R2, R3, R4, R5 |
+| 18 | Constant Physical Bottom Slab Thickness (`baseBottomZ`) | Target ~2.2–2.45 mm / scaleMm across all frame sizes (eliminating 7.24 mm bottom slab at 50 cm) | M6 | User Directive (M6.1) |
+| 19 | Printer Z-Axis Height Cap Protection (165.0 mm) | Enforce bedZ protection (<= 163.0 mm) preserving relative building hierarchy | M6 | User Directive (M6.2) |
+| 20 | Bottom-Open Vertical Relief Chimneys (45° Vaults) | Hollow large solid buildings with 45° self-supporting vaults open at Z=0; strict 0 open / 0 non-manifold edges | M6 | User Directive (M6.3) |
+| 21 | Photon Mono 4 Dual-Tile 75×84 mm & Pairing Schedule | Support 75×84 mm tile geometry, 2 tiles side-by-side on 153.4×87.0 mm bed, Z-height sorting schedule | M6 | User Directive (M6.4) |
+| 22 | Adaptive High-Res DEM (Zoom 15 for <= 1.3 km) | Upgrade chooseAdaptiveDemZoom to zoom 15 for <= 1.3 km frames with zero-key fallback | M6 | User Directive (M6.5) |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
@@ -56,7 +61,8 @@
 | M2 | Progressive 3D Pipeline & Streaming | Features 6, 7, 8, 9 (async yielding, layer streaming, duplicate rebuild elimination, geometry & tree loop fix) | M1 | DONE |
 | M3 | Large Area Scalability & UX Controls | Features 10, 11, 12, 13 (explicit Render button, 50km span, 50x100 grid, LoD filter UI, remove Inspektor, white palette) | M2 | IN_PROGRESS |
 | M4 | Event Safety & Settings Persistence | Features 14, 15, 16 (`safeClosest`, file URI safety, `localStorage` & URL persistence) | none | DONE |
-| M5 | Final Acceptance & Adversarial Hardening | Feature 17 (100% E2E test pass with uncached Cape Town + screenshots, Tier 5 adversarial stress testing) | E2E, M1, M2, M3, M4 | PLANNED |
+| M6 | SLA Print Physics & Mono 4 Optimization | Features 18, 19, 20, 21, 22 (baseBottomZ scaling fix, Z-axis 165mm cap, bottom-open 45° relief chimneys, 75x84mm dual-tile pairing, zoom 15 DEM) | M3 | PLANNED |
+| M5 | Final Acceptance & Adversarial Hardening | Feature 17 (100% E2E test pass with uncached Cape Town + screenshots, Tier 5 adversarial stress testing) | E2E, M1, M2, M3, M4, M6 | PLANNED |
 
 ## Interface Contracts
 

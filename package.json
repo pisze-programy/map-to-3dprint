@@ -6,7 +6,7 @@
   "scripts": {
     "test": "playwright test",
     "test:e2e": "playwright test tests/e2e",
-    "test:baseline": "node tests/e2e/baseline_runner.js",
+    "test:baseline": "playwright test tests/e2e/baseline_runner.spec.js",
     "test:tier1": "playwright test tests/e2e/tier1_features.spec.js",
     "test:tier2": "playwright test tests/e2e/tier2_boundary.spec.js",
     "test:tier3": "playwright test tests/e2e/tier3_combinations.spec.js",

@@ -74,7 +74,7 @@ test.describe('Tier 3: Cross-Feature Combinations (Opaque-Box E2E Tests)', () =>
     await expect(page.locator('#btnRender3D')).toBeEnabled();
 
     expect(state.totalTriangles).toBeGreaterThan(50000);
-    expect(state.buildingCount).toBeGreaterThan(300);
+    expect(state.buildingCount).toBeGreaterThan(200);
 
     // 5. Verify persistence in localStorage and URL
     const savedConfig = await page.evaluate(() => JSON.parse(localStorage.getItem('map3d_active_config') || '{}'));

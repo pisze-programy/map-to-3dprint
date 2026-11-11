@@ -98,7 +98,7 @@ class TimeBudgetYieldController {
  * Emits S3DB buildings in batches of ~180, uploading incrementally to WebGL.
  */
 async function buildS3DBBuildingsMeshProgressive(scene, ctx, baseInfo, state, meshes, yieldCtrl, onStageReady, onProgress) {
-  const { tileCols, tileRows, tileBounds } = ctx;
+  const { tileCols, tileRows, tileBounds, halfW, halfH } = ctx;
   const { prepared, clusters, pickIdMap } = prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state);
   const buildingBounds = [];
 
@@ -393,7 +393,10 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
   await yieldCtrl.yieldIfNeeded();
   yieldCtrl.checkCancellation();
 
-  const baseInfo = buildTerrainBaseAndWaterMeshes(ctx, state, meshes);
+  const tBase0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  const baseInfo = buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options);
+  const baseDuration = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - tBase0;
+  if (state) state.lastTerrainBaseWaterDurationMs = baseDuration;
   await yieldCtrl.yieldIfNeeded();
   yieldCtrl.checkCancellation();
 
@@ -509,7 +512,10 @@ function buildComplete3DModel(scene, state) {
   const ctx = buildTerrainAndMasks(scene, state);
 
   // 2. Per-tile watertight stepped DEM base, SLA hollow vault ribs/drains/ID patch & smooth water basin
-  const baseInfo = buildTerrainBaseAndWaterMeshes(ctx, state, meshes);
+  const tBase0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  const baseInfo = buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options);
+  const baseDuration = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - tBase0;
+  if (state) state.lastTerrainBaseWaterDurationMs = baseDuration;
 
   // 3. Global Marching-Squares + Taubin-smoothed parks, streets, embossed footpaths & organic trees
   buildParksStreetsFootpathsAndTrees(scene, ctx, baseInfo, state, meshes, allocShellId);
