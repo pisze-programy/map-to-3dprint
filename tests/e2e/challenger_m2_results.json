@@ -1,0 +1,57 @@
+{
+  "exp1_rapid_50_rebuilds": {
+    "pass": true,
+    "totalTriggers": 50,
+    "durationMs": 4819,
+    "rejectedCount": 0,
+    "completedCount": 1,
+    "finalTriangles": 483815,
+    "expectedTriangles": 483815,
+    "newUnhandledErrors": 0
+  },
+  "exp2_interleaved_cancellation": {
+    "pass": true,
+    "durationMs": 91357,
+    "finalTriangles": 483815,
+    "expectedTriangles": 483815,
+    "activeBuffers": 0,
+    "createdBuffersTotal": 3213,
+    "deletedBuffersTotal": 3213,
+    "newErrors": 0,
+    "layerBufferStates": [
+      {
+        "layer": "water",
+        "count": 17128
+      },
+      {
+        "layer": "base",
+        "count": 126448
+      },
+      {
+        "layer": "greenery",
+        "count": 56756
+      },
+      {
+        "layer": "roads",
+        "count": 183631
+      },
+      {
+        "layer": "buildings",
+        "count": 99804
+      },
+      {
+        "layer": "highlighted",
+        "count": 0
+      },
+      {
+        "layer": "frame",
+        "count": 48
+      }
+    ]
+  },
+  "exp3_rapid_city_switches": null,
+  "exp4_webgl_buffer_leaks": null,
+  "exp5_main_thread_slices": null,
+  "verdict": "REQUEST_CHANGES",
+  "fatalError": "TimeoutError: page.waitForFunction: Timeout 30000ms exceeded."
+}

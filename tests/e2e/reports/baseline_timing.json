@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "meta": {
+    "milestone": "M1_BASELINE",
+    "timestamp": "2026-11-11T14:03:08.648Z",
+    "epochStartMs": 1794405737573,
+    "epochEndMs": 1794405788649,
+    "platform": "darwin",
+    "arch": "arm64",
+    "nodeVersion": "v26.7.0",
+    "browser": "Chromium 158.0.8127.18",
+    "webgl": {
+      "supported": true,
+      "vendor": "Google Inc. (Apple)",
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+      "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)",
+      "shadingLanguageVersion": "WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)"
+    }
+  },
+  "benchmarks": {
+    "warsaw_1_2km": {
+      "id": "warsaw_1_2km",
+      "city": "WARSZAWA",
+      "displayName": "Warsaw (Old Town)",
+      "bbox": [
+        52.2415,
+        21.005,
+        52.2525,
+        21.022
+      ],
+      "spanKm": 1.2,
+      "cacheHit": true,
+      "iterations": [
+        {
+          "run": 1,
+          "timings": {
+            "startEpochMs": 1794405758282,
+            "triggerEpochMs": 1794405758282,
+            "renderCompleteEpochMs": 1794405771840,
+            "harnessElapsedMs": 13557.44,
+            "browserInternalMs": 13557.8
+          },
+          "sceneMetrics": {
+            "totalTriangles": 560072,
+            "buildingCount": 1229,
+            "waterPolys": 0,
+            "roadCount": 1828,
+            "greeneryCount": 0,
+            "spanMeters": 1200,
+            "title": "WARSZAWA — STARE MIASTO"
+          }
+        }
+      ],
+      "stats": {
+        "runsCount": 1,
+        "meanHarnessElapsedMs": 13557.44,
+        "meanBrowserInternalMs": 13557.8,
+        "minElapsedMs": 13557.44,
+        "maxElapsedMs": 13557.44
+      },
+      "health": {
+        "status": "PASS",
+        "pageErrorsCount": 0,
+        "consoleErrorsCount": 0,
+        "closestErrorsDetected": false,
+        "fileUriErrorsDetected": false
+      }
+    },
+    "new_york_1_2km": {
+      "id": "new_york_1_2km",
+      "city": "NEW YORK",
+      "displayName": "New York (Central Park)",
+      "bbox": [
+        40.7606,
+        -73.9839,
+        40.7722,
+        -73.9729
+      ],
+      "spanKm": 1.2,
+      "cacheHit": true,
+      "iterations": [
+        {
+          "run": 1,
+          "timings": {
+            "startEpochMs": 1794405771871,
+            "triggerEpochMs": 1794405771871,
+            "renderCompleteEpochMs": 1794405788559,
+            "harnessElapsedMs": 16687.84,
+            "browserInternalMs": 16686.7
+          },
+          "sceneMetrics": {
+            "totalTriangles": 371249,
+            "buildingCount": 1427,
+            "waterPolys": 0,
+            "roadCount": 581,
+            "greeneryCount": 0,
+            "spanMeters": 1200,
+            "title": "NYC CENTRAL PARK"
+          }
+        }
+      ],
+      "stats": {
+        "runsCount": 1,
+        "meanHarnessElapsedMs": 16687.84,
+        "meanBrowserInternalMs": 16686.7,
+        "minElapsedMs": 16687.84,
+        "maxElapsedMs": 16687.84
+      },
+      "health": {
+        "status": "PASS",
+        "pageErrorsCount": 0,
+        "consoleErrorsCount": 0,
+        "closestErrorsDetected": false,
+        "fileUriErrorsDetected": false
+      }
+    }
+  }
+}

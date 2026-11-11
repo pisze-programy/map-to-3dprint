@@ -1,13 +1,33 @@
+# Dependencies
+node_modules/
+package-lock.json.bak
+
+# Test artifacts & Playwright
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+tests/e2e/screenshots/*.png
+!tests/e2e/screenshots/baseline_*.png
+
+# Build & runtime artifacts
+dist/
+build/
+*.log
+npm-debug.log*
+
 # macOS & IDE
 .DS_Store
 .idea/
 .vscode/
 
-# Python bytecode
+# Python bytecode & cache
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 
-# Raw GIS & DEM download cache (keep only initial bundled scene)
+# Raw GIS & DEM download cache (keep bundled scenes)
 cache/*
 !cache/scene_v3_48.1280_11.5769_48.1396_11.5941.json
+!cache/scene_v5_48.1280_11.5769_48.1396_11.5941.json

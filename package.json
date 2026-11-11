@@ -1,0 +1,21 @@
+{
+  "name": "map-to-3dprint",
+  "version": "1.0.0",
+  "description": "3D Map to 3D Print Studio & Progressive WebGL Pipeline",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:e2e": "playwright test tests/e2e",
+    "test:baseline": "node tests/e2e/baseline_runner.js",
+    "test:tier1": "playwright test tests/e2e/tier1_features.spec.js",
+    "test:tier2": "playwright test tests/e2e/tier2_boundary.spec.js",
+    "test:tier3": "playwright test tests/e2e/tier3_combinations.spec.js",
+    "test:tier4": "playwright test tests/e2e/tier4_realworld.spec.js tests/e2e/tier4_uncached_visual.spec.js",
+    "test:tier4:visual": "playwright test tests/e2e/tier4_uncached_visual.spec.js",
+    "test:all": "playwright test tests/e2e/"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "playwright": "^1.65.0"
+  }
+}

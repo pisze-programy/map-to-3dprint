@@ -1,0 +1,307 @@
+{
+  "config": {
+    "argv": [
+      "/opt/homebrew/Cellar/node/26.7.0/bin/node",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/node_modules/.bin/playwright",
+      "test",
+      "tests/e2e/baseline_runner.spec.js"
+    ],
+    "configFile": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/playwright.config.js",
+    "rootDir": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "/.*\\.spec\\.js$/"
+        ],
+        "timeout": 90000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "",
+        "testDir": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e",
+        "snapshotDir": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e",
+        "testIgnore": [],
+        "testMatch": {},
+        "timeout": 90000,
+        "use": {
+          "baseURL": "http://127.0.0.1:8765",
+          "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.8127.18 Safari/537.36",
+          "viewport": {
+            "width": 1280,
+            "height": 720
+          },
+          "screen": {
+            "width": 1920,
+            "height": 1080
+          },
+          "deviceScaleFactor": 1,
+          "isMobile": false,
+          "hasTouch": false,
+          "defaultBrowserType": "chromium",
+          "channel": "chromium",
+          "headless": true,
+          "launchOptions": {
+            "args": [
+              "--use-gl=angle",
+              "--use-angle=metal",
+              "--enable-webgl",
+              "--enable-webgl2-compute-context",
+              "--ignore-gpu-blocklist",
+              "--enable-gpu-rasterization",
+              "--no-sandbox",
+              "--disable-dev-shm-usage"
+            ]
+          }
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "tests/e2e/reports/test_results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.65.0",
+    "workers": 1,
+    "webServer": {
+      "command": "python3 server.py",
+      "port": 8765,
+      "reuseExistingServer": true,
+      "timeout": 10000
+    }
+  },
+  "suites": [
+    {
+      "title": "baseline_runner.spec.js",
+      "file": "baseline_runner.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Milestone 1 — Baseline Runner & Test Harness",
+          "file": "baseline_runner.spec.js",
+          "line": 28,
+          "column": 6,
+          "specs": [
+            {
+              "title": "Baseline city selection to 3D preview: Warsaw (Old Town)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 5963,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "[BASELINE SPEC] Warsaw (Old Town):\n"
+                        },
+                        {
+                          "text": "  - Start Epoch:          2026-11-11T20:05:24.851Z (1794427524851 ms)\n"
+                        },
+                        {
+                          "text": "  - City Selection Epoch: 2026-11-11T20:05:25.615Z (1794427525615 ms)\n"
+                        },
+                        {
+                          "text": "  - Render Complete Epoch:2026-11-11T20:05:30.306Z (1794427530306 ms)\n"
+                        },
+                        {
+                          "text": "  - Harness Elapsed:      4690.85 ms\n"
+                        },
+                        {
+                          "text": "  - In-Page Elapsed:      4692.00 ms\n"
+                        },
+                        {
+                          "text": "  - Total Triangles:      399,469\n"
+                        },
+                        {
+                          "text": "  - WebGL Renderer:       ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-11T20:05:23.451Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "86d988e49495e24f7510-85f01de86ed903698d97",
+              "file": "baseline_runner.spec.js",
+              "line": 30,
+              "column": 5
+            },
+            {
+              "title": "Baseline city selection to 3D preview: New York (Central Park)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4262,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "[BASELINE SPEC] New York (Central Park):\n"
+                        },
+                        {
+                          "text": "  - Start Epoch:          2026-11-11T20:05:30.614Z (1794427530614 ms)\n"
+                        },
+                        {
+                          "text": "  - City Selection Epoch: 2026-11-11T20:05:31.144Z (1794427531144 ms)\n"
+                        },
+                        {
+                          "text": "  - Render Complete Epoch:2026-11-11T20:05:34.548Z (1794427534548 ms)\n"
+                        },
+                        {
+                          "text": "  - Harness Elapsed:      3403.99 ms\n"
+                        },
+                        {
+                          "text": "  - In-Page Elapsed:      3403.80 ms\n"
+                        },
+                        {
+                          "text": "  - Total Triangles:      246,420\n"
+                        },
+                        {
+                          "text": "  - WebGL Renderer:       ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-11T20:05:30.417Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "86d988e49495e24f7510-0325c5de4349d953e13b",
+              "file": "baseline_runner.spec.js",
+              "line": 30,
+              "column": 5
+            },
+            {
+              "title": "Baseline city selection via URL parameters: Warsaw",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2727,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "[BASELINE SPEC] Warsaw via URL params: 2531.12 ms | Triangles: 12\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-11T20:05:34.691Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "86d988e49495e24f7510-65361f5c6ec51bc1e8f8",
+              "file": "baseline_runner.spec.js",
+              "line": 164,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-11T20:05:23.024Z",
+    "duration": 14493.373,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
