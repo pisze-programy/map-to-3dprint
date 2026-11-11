@@ -10,7 +10,9 @@ function choose2DZoomForSpan(spanMeters) {
   if (s <= 1800) return 14;
   if (s <= 3600) return 13;
   if (s <= 7500) return 12;
-  return 11;
+  if (s <= 16000) return 11;
+  if (s <= 32000) return 10;
+  return 9;
 }
 
 function bindViewportAndSearchControls(ctx) {
@@ -48,36 +50,12 @@ function bindViewportAndSearchControls(ctx) {
       }
       return;
     }
-
-    const rect = canvas3d.getBoundingClientRect();
-    if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
-      const hit = studio.pickBuilding(e.clientX, e.clientY, state.buildingBounds);
-      const tooltip = document.getElementById('hoverTooltip');
-      if (hit) {
-        const pid = hit._pickId || hit.id;
-        state.hoveredBuildingId = pid;
-        const info = (state.pickIdMap && state.pickIdMap.get(pid)) || null;
-        const dispName = (info && info.name) || hit.name || `Budynek OSM #${hit.osmId || hit.id}`;
-        const dispH = Math.round((info && info.maxH) || hit.h || 10);
-        const dispLvls = Math.max(1, hit.levels || Math.round(dispH / 3.5));
-        const partsNote = (info && info.buildings && info.buildings.length > 1) ? ` • ${info.buildings.length} brył` : '';
-        tooltip.classList.remove('hidden');
-        tooltip.style.left = `${e.clientX - rect.left + 14}px`;
-        tooltip.style.top = `${e.clientY - rect.top + 14}px`;
-        tooltip.innerHTML = `<strong>${escapeHtml(dispName)}</strong><br/><span class="text-blue-300 font-mono">Wysokość: ${dispH}m (${dispLvls} p.)${partsNote} • Klik: zaznacz • Shift+Klik: dodaj</span>`;
-      } else {
-        state.hoveredBuildingId = null;
-        tooltip.classList.add('hidden');
-      }
-    }
   });
 
   window.addEventListener('mouseup', e => {
     if (isDragging3D) {
-      const dist = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]);
-      if (dist < 5 && e.target === canvas3d && e.button === 0) {
-        const hit = studio.pickBuilding(e.clientX, e.clientY, state.buildingBounds);
-        if (hit) handleSelectBuilding(hit, e.shiftKey);
+      if (typeof scheduleSaveActiveConfig === 'function') {
+        scheduleSaveActiveConfig(state, 200);
       }
     }
     isDragging3D = false;
@@ -88,6 +66,9 @@ function bindViewportAndSearchControls(ctx) {
   canvas3d.addEventListener('wheel', e => {
     e.preventDefault();
     studio.camera.distance = Math.max(22, Math.min(480, studio.camera.distance + e.deltaY * 0.16));
+    if (typeof scheduleSaveActiveConfig === 'function') {
+      scheduleSaveActiveConfig(state, 250);
+    }
   }, { passive: false });
 
   // 2. 2D Slippy Map Panning, Zooming & Rotation Handle
@@ -113,7 +94,6 @@ function bindViewportAndSearchControls(ctx) {
       const rh = state._rotHandleScreen || { fcx: rect.width * 0.5, fcy: rect.height * 0.5 };
       const angleDeg = Math.round(Math.atan2(mx - rh.fcx, -(my - rh.fcy)) * 180 / Math.PI);
       setMapRotationDeg(angleDeg, false);
-      scheduleRebuildModel3D();
       return;
     }
     if (!isDragging2D) return;
@@ -131,7 +111,10 @@ function bindViewportAndSearchControls(ctx) {
   window.addEventListener('mouseup', () => {
     if (isRotating2D) {
       isRotating2D = false;
-      rebuildModel3D();
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+    }
+    if (isDragging2D) {
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
     }
     isDragging2D = false;
   });
@@ -140,15 +123,18 @@ function bindViewportAndSearchControls(ctx) {
     e.preventDefault();
     state.mapZoom = Math.max(3, Math.min(16, state.mapZoom + (e.deltaY < 0 ? 1 : -1)));
     draw2DMap();
+    if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 250);
   }, { passive: false });
 
   document.getElementById('btnZoomIn2D').addEventListener('click', () => {
     state.mapZoom = Math.min(16, state.mapZoom + 1);
     draw2DMap();
+    if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 250);
   });
   document.getElementById('btnZoomOut2D').addEventListener('click', () => {
     state.mapZoom = Math.max(3, state.mapZoom - 1);
     draw2DMap();
+    if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 250);
   });
 
   // 3. Photon Komoot Place Search & Autocomplete
@@ -182,15 +168,18 @@ function bindViewportAndSearchControls(ctx) {
     }
   }
 
-  async function jumpToLatLonAndRender(lat, lon, shortTitle, regionDesc) {
+  function jumpToLatLon(lat, lon, shortTitle, regionDesc) {
     state.mapCenterLat = lat;
     state.mapCenterLon = lon;
     state.mapZoom = choose2DZoomForSpan(state.mapSpanMeters);
     state.plaqueText = shortTitle;
+    state.regionLabel = regionDesc;
     const pInput = document.getElementById('plaqueTextInput');
     if (pInput) pInput.value = shortTitle;
+    const regBadge = document.getElementById('currentRegionBadge');
+    if (regBadge && regionDesc) regBadge.textContent = regionDesc;
     draw2DMap();
-    await fetchRealGISAndRender(null, shortTitle, regionDesc);
+    if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
   }
 
   function renderSuggestionsDropdown(items) {
@@ -214,7 +203,7 @@ function bindViewportAndSearchControls(ctx) {
       row.addEventListener('click', () => {
         suggestionsBox.classList.add('hidden');
         placeInput.value = `${item.name}${item.sub ? ', ' + item.sub : ''}`;
-        jumpToLatLonAndRender(item.lat, item.lon, item.name.toUpperCase().slice(0, 20), `${item.sub || 'Świat'} • ${item.name}`);
+        jumpToLatLon(item.lat, item.lon, item.name.toUpperCase().slice(0, 20), `${item.sub || 'Świat'} • ${item.name}`);
       });
       suggestionsBox.appendChild(row);
     });
@@ -231,7 +220,10 @@ function bindViewportAndSearchControls(ctx) {
   });
 
   document.addEventListener('click', e => {
-    if (!placeInput.contains(e.target) && !suggestionsBox.contains(e.target)) {
+    const target = e && e.target;
+    const inInput = typeof safeClosest === 'function' ? safeClosest(target, '#placeSearchInput') : (placeInput && typeof placeInput.contains === 'function' && placeInput.contains(target));
+    const inDropdown = typeof safeClosest === 'function' ? safeClosest(target, '#searchSuggestionsDropdown') : (suggestionsBox && typeof suggestionsBox.contains === 'function' && suggestionsBox.contains(target));
+    if (!inInput && !inDropdown) {
       suggestionsBox.classList.add('hidden');
     }
   });
@@ -246,8 +238,10 @@ function bindViewportAndSearchControls(ctx) {
       const items = await queryPlaceSuggestions(q);
       if (items.length > 0) {
         const best = items[0];
-        await jumpToLatLonAndRender(best.lat, best.lon, best.name.toUpperCase().slice(0, 20), `${best.sub || 'Świat'} • ${best.name}`);
+        jumpToLatLon(best.lat, best.lon, best.name.toUpperCase().slice(0, 20), `${best.sub || 'Świat'} • ${best.name}`);
       }
+    } catch (err) {
+      console.warn('Search place error:', err);
     } finally {
       if (btn) btn.textContent = 'Szukaj';
     }

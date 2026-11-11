@@ -72,8 +72,7 @@ const LAYERS_META = [
   { key: 'greenery',    id: 2, name: '3A. Trawa, Parki i Lasy (Murawa)',     extruder: 'Kolor 3 (Zieleń)',  zDesc: '+0.3 – 1.0 mm' },
   { key: 'trees',       id: 2, name: '3B. Drzewa 3D (Korony i Pnie)',        extruder: 'Kolor 3 (Zieleń)',  zDesc: '+1.5 – 3.2 mm', isTree: true },
   { key: 'roads',       id: 3, name: '4A. Ulice, Aleje, Koleje i Mosty',    extruder: 'Kolor 4 (Kość sł.)',zDesc: '+0.4 – 2.2 mm' },
-  { key: 'buildings',   id: 4, name: '4B. Budynki, Dziedzińce i Dachy LoD2',extruder: 'Kolor 4 (Biel)',    zDesc: '+1.5 – 28 mm' },
-  { key: 'highlighted', id: 5, name: '5. Wyróżnione Budynki ★ (Opcja)',     extruder: 'Kolor 5 (Akcent)',  zDesc: 'Wyróżnienie' }
+  { key: 'buildings',   id: 4, name: '4B. Budynki, Dziedzińce i Dachy LoD2',extruder: 'Kolor 4 (Biel)',    zDesc: '+1.5 – 28 mm' }
 ];
 
 const WORLD_LOCATIONS = [
@@ -292,6 +291,40 @@ function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH =
   };
 }
 
+// ============================================================================
+// Safe Event Delegation & Extension Event Guards
+// ============================================================================
+function safeClosest(target, selector) {
+  if (!target || !selector || typeof selector !== 'string') return null;
+  try {
+    if (typeof target.closest === 'function') return target.closest(selector);
+    const parent = target.parentElement || target.parentNode;
+    if (parent && typeof parent.closest === 'function') return parent.closest(selector);
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.safeClosest = safeClosest;
+  if (typeof Window !== 'undefined' && Window.prototype && !Window.prototype.closest) {
+    Window.prototype.closest = function() { return null; };
+  }
+  if (typeof Document !== 'undefined' && Document.prototype && !Document.prototype.closest) {
+    Document.prototype.closest = function() { return null; };
+  }
+  if (typeof Text !== 'undefined' && Text.prototype && !Text.prototype.closest) {
+    Text.prototype.closest = function(selector) {
+      return (this.parentElement && typeof this.parentElement.closest === 'function')
+        ? this.parentElement.closest(selector)
+        : (this.parentNode && typeof this.parentNode.closest === 'function')
+          ? this.parentNode.closest(selector)
+          : null;
+    };
+  }
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { PALETTES, LAYERS_META, WORLD_LOCATIONS, PRINT_PROFILES, escapeHtml, checkTileFitsMono4, computeOptimalMono4Grid };
+  module.exports = { PALETTES, LAYERS_META, WORLD_LOCATIONS, PRINT_PROFILES, escapeHtml, checkTileFitsMono4, computeOptimalMono4Grid, safeClosest };
 }

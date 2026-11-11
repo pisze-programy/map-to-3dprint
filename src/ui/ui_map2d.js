@@ -97,11 +97,13 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
         const key = `${z}/${wrappedTx}/${ty}`;
         if (!osmTileCache[key]) {
           const img = new Image();
+          img.crossOrigin = 'anonymous';
           img.onload = () => { osmTileCache[key].loaded = true; draw2DMap(); };
           img.onerror = () => {
             if (!img._triedFallback) {
               img._triedFallback = true;
               const sub = ['a', 'b', 'c'][(wrappedTx + ty) % 3];
+              img.crossOrigin = 'anonymous';
               img.src = `https://${sub}.tile.openstreetmap.fr/hot/${z}/${wrappedTx}/${ty}.png`;
             }
           };
@@ -110,7 +112,9 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
         } else if (osmTileCache[key].loaded) {
           const sx = cw / 2 + (tx - centerTileX) * 256;
           const sy = ch / 2 + (ty - centerTileY) * 256;
-          ctx2d.drawImage(osmTileCache[key].img, sx, sy, 256, 256);
+          try {
+            ctx2d.drawImage(osmTileCache[key].img, sx, sy, 256, 256);
+          } catch (_) {}
         }
       }
     }

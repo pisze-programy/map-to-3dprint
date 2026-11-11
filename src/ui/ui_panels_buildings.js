@@ -64,6 +64,8 @@ function createUIPanelsController(state, draw2DMap, onRebuildNeeded) {
   }
 
   function updateInspectorUI() {
+    const hlCountBadge = document.getElementById('highlightedCountBadge');
+    if (!hlCountBadge) return;
     const scene = state.sceneData;
     if (!scene) return;
 
@@ -73,7 +75,7 @@ function createUIPanelsController(state, draw2DMap, onRebuildNeeded) {
     });
     const hlCount = hlPickIds.size;
     const selCount = state.selectedBuildingIds.size || (state.selectedBuildingId ? 1 : 0);
-    document.getElementById('highlightedCountBadge').textContent =
+    hlCountBadge.textContent =
       selCount > 1 ? `Zaznaczone: ${selCount} • Wyróżnione: ${hlCount}` : `Wyróżnione: ${hlCount}`;
 
     const activeBlds = getActiveTargetBuildings();
@@ -200,7 +202,7 @@ function createUIPanelsController(state, draw2DMap, onRebuildNeeded) {
         isSel ? 'border-amber-500 bg-amber-500/15 text-amber-500 font-semibold' : 'border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] hover:opacity-80'
       }`;
       chip.textContent = `${entry.highlighted ? '★ ' : ''}${entry.name.slice(0, 22)}`;
-      chip.addEventListener('click', (e) => handleSelectBuilding(entry.b, e.shiftKey));
+      chip.addEventListener('click', (e) => handleSelectBuilding(entry.b, !!(e && e.shiftKey)));
       container.appendChild(chip);
     });
   }
