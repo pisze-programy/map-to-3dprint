@@ -3,43 +3,43 @@
     {
       "extra": {
         "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
+          "rays": 95,
+          "pctRays": 0.4,
+          "maxMm": 4.4,
+          "avgMm": 1.75
         },
         "treeFloat": {
-          "bottomFaces": 9147,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 2105,
+          "floatingGt005mm": 22,
+          "worstMm": 0.6
         },
         "roadFloat": {
-          "bottomFaces": 9338,
+          "bottomFaces": 3572,
           "floatingGt005mm": 0,
           "worstMm": 0
         }
       },
-      "scene": "MÜNCHEN",
+      "scene": "MUNCHEN",
       "cfg": {
         "tileCols": 1,
         "tileRows": 1,
         "hollowBase": false
       },
-      "buildMs": 765,
-      "totalTriangles": 285952,
+      "buildMs": 1105,
+      "totalTriangles": 133656,
       "layers": {
         "water": {
-          "tris": 3008,
+          "tris": 5336,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
-          "sameDirDupEdges": 974,
-          "unpairedDirEdges": 974,
-          "shells": 5
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 14
         },
         "base": {
-          "tris": 57464,
+          "tris": 28844,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
@@ -49,34 +49,34 @@
           "shells": 1
         },
         "greenery": {
-          "tris": 53524,
-          "degenerate": 1590,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4624
-        },
-        "roads": {
-          "tris": 55020,
-          "degenerate": 1876,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4787
-        },
-        "buildings": {
-          "tris": 116936,
+          "tris": 13620,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
           "sameDirDupEdges": 0,
           "unpairedDirEdges": 0,
-          "shells": 7462
+          "shells": 1285
+        },
+        "roads": {
+          "tris": 22044,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1939
+        },
+        "buildings": {
+          "tris": 63812,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1564
         },
         "highlighted": {
           "tris": 0,
@@ -100,7 +100,7 @@
       },
       "ray": {
         "water": {
-          "rays": 1191,
+          "rays": 2512,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -112,21 +112,21 @@
           "negative": 0
         },
         "greenery": {
-          "rays": 2066,
+          "rays": 1348,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
         },
         "roads": {
-          "rays": 2301,
+          "rays": 2410,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 26,
           "negative": 0
         },
         "buildings": {
-          "rays": 5233,
+          "rays": 7744,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 1,
           "negative": 0
         },
         "highlighted": {
@@ -136,62 +136,82 @@
           "negative": 0
         }
       },
-      "layerOverlap": {},
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 264,
+          "maxMm": 1.2,
+          "pctRays": 1,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 18,
+          "maxMm": 0.6,
+          "pctRays": 0.1,
+          "avgMm": 0.6
+        }
+      },
       "floating": {
-        "buildingsChecked": 673,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
+        "buildingsChecked": 1499,
+        "floatingGt005mm": 87,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
       },
       "reported": {
         "isWatertightManifold": true,
         "floatingBuildingsCount": 0,
         "outOfTileTrisCount": 0,
-        "totalVolumeMl": 1488.6,
+        "totalVolumeMl": 761.6,
         "hollowSavingsPct": 0,
-        "maxZMm": 33.6
+        "maxZMm": 24.7
       }
     },
     {
       "extra": {
         "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
+          "rays": 77,
+          "pctRays": 0.3,
+          "maxMm": 2.4,
+          "avgMm": 1.8
         },
         "treeFloat": {
-          "bottomFaces": 9147,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 2111,
+          "floatingGt005mm": 22,
+          "worstMm": 0.6
         },
         "roadFloat": {
-          "bottomFaces": 9338,
+          "bottomFaces": 3570,
           "floatingGt005mm": 0,
           "worstMm": 0
         }
       },
-      "scene": "MÜNCHEN",
+      "scene": "MUNCHEN",
       "cfg": {
         "tileCols": 1,
         "tileRows": 1,
         "hollowBase": true
       },
-      "buildMs": 727,
-      "totalTriangles": 285952,
+      "buildMs": 1071,
+      "totalTriangles": 133822,
       "layers": {
         "water": {
-          "tris": 3008,
+          "tris": 5336,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
-          "sameDirDupEdges": 974,
-          "unpairedDirEdges": 974,
-          "shells": 5
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 14
         },
         "base": {
-          "tris": 57464,
+          "tris": 29068,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
@@ -201,34 +221,34 @@
           "shells": 1
         },
         "greenery": {
-          "tris": 53524,
-          "degenerate": 1590,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4624
-        },
-        "roads": {
-          "tris": 55020,
-          "degenerate": 1876,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4787
-        },
-        "buildings": {
-          "tris": 116936,
+          "tris": 13672,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
           "sameDirDupEdges": 0,
           "unpairedDirEdges": 0,
-          "shells": 7462
+          "shells": 1292
+        },
+        "roads": {
+          "tris": 22036,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1939
+        },
+        "buildings": {
+          "tris": 63710,
+          "degenerate": 10,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1563
         },
         "highlighted": {
           "tris": 0,
@@ -252,7 +272,7 @@
       },
       "ray": {
         "water": {
-          "rays": 1191,
+          "rays": 2509,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -264,21 +284,21 @@
           "negative": 0
         },
         "greenery": {
-          "rays": 2066,
+          "rays": 1349,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
         },
         "roads": {
-          "rays": 2301,
+          "rays": 2410,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 26,
           "negative": 0
         },
         "buildings": {
-          "rays": 5233,
+          "rays": 7743,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 1,
           "negative": 0
         },
         "highlighted": {
@@ -288,62 +308,82 @@
           "negative": 0
         }
       },
-      "layerOverlap": {},
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 265,
+          "maxMm": 1.2,
+          "pctRays": 1,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 18,
+          "maxMm": 0.6,
+          "pctRays": 0.1,
+          "avgMm": 0.6
+        }
+      },
       "floating": {
-        "buildingsChecked": 673,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
+        "buildingsChecked": 1499,
+        "floatingGt005mm": 86,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
       },
       "reported": {
         "isWatertightManifold": true,
         "floatingBuildingsCount": 0,
         "outOfTileTrisCount": 0,
-        "totalVolumeMl": 659.2,
-        "hollowSavingsPct": 56,
-        "maxZMm": 33.6
+        "totalVolumeMl": 571.5,
+        "hollowSavingsPct": 25,
+        "maxZMm": 24.7
       }
     },
     {
       "extra": {
         "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
+          "rays": 84,
+          "pctRays": 0.3,
+          "maxMm": 4.4,
+          "avgMm": 1.82
         },
         "treeFloat": {
-          "bottomFaces": 9108,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 2108,
+          "floatingGt005mm": 22,
+          "worstMm": 0.6
         },
         "roadFloat": {
-          "bottomFaces": 9304,
+          "bottomFaces": 3605,
           "floatingGt005mm": 0,
           "worstMm": 0
         }
       },
-      "scene": "MÜNCHEN",
+      "scene": "MUNCHEN",
       "cfg": {
         "tileCols": 2,
         "tileRows": 3,
         "hollowBase": true
       },
-      "buildMs": 679,
-      "totalTriangles": 288346,
+      "buildMs": 1082,
+      "totalTriangles": 143706,
       "layers": {
         "water": {
-          "tris": 3056,
+          "tris": 5456,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
-          "sameDirDupEdges": 990,
-          "unpairedDirEdges": 990,
-          "shells": 9
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 21
         },
         "base": {
-          "tris": 58928,
+          "tris": 33244,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
@@ -353,34 +393,34 @@
           "shells": 6
         },
         "greenery": {
-          "tris": 53430,
-          "degenerate": 1528,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4623
-        },
-        "roads": {
-          "tris": 54904,
-          "degenerate": 1816,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4780
-        },
-        "buildings": {
-          "tris": 118028,
+          "tris": 13644,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
           "sameDirDupEdges": 0,
           "unpairedDirEdges": 0,
-          "shells": 7709
+          "shells": 1288
+        },
+        "roads": {
+          "tris": 22276,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1944
+        },
+        "buildings": {
+          "tris": 69086,
+          "degenerate": 12,
+          "sliverLt1e6mm2": 2,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1667
         },
         "highlighted": {
           "tris": 0,
@@ -561,7 +601,7 @@
       },
       "ray": {
         "water": {
-          "rays": 1191,
+          "rays": 2508,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -573,21 +613,21 @@
           "negative": 0
         },
         "greenery": {
-          "rays": 2062,
+          "rays": 1348,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
         },
         "roads": {
-          "rays": 2308,
+          "rays": 2407,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 26,
           "negative": 0
         },
         "buildings": {
-          "rays": 5224,
+          "rays": 7743,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 1,
           "negative": 0
         },
         "highlighted": {
@@ -597,366 +637,426 @@
           "negative": 0
         }
       },
-      "layerOverlap": {},
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 265,
+          "maxMm": 1.2,
+          "pctRays": 1,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 18,
+          "maxMm": 0.6,
+          "pctRays": 0.1,
+          "avgMm": 0.6
+        }
+      },
       "floating": {
-        "buildingsChecked": 673,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
+        "buildingsChecked": 1501,
+        "floatingGt005mm": 85,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
       },
       "reported": {
         "isWatertightManifold": true,
         "floatingBuildingsCount": 0,
         "outOfTileTrisCount": 0,
-        "totalVolumeMl": 891.4,
-        "hollowSavingsPct": 40,
-        "maxZMm": 33.6
+        "totalVolumeMl": 605.7,
+        "hollowSavingsPct": 21,
+        "maxZMm": 24.7
       }
     },
     {
       "extra": {
         "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
+          "rays": 94,
+          "pctRays": 0.4,
+          "maxMm": 1.8,
+          "avgMm": 1.66
         },
         "treeFloat": {
-          "bottomFaces": 5880,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 2104,
+          "floatingGt005mm": 11,
+          "worstMm": 0.6
         },
         "roadFloat": {
-          "bottomFaces": 8176,
+          "bottomFaces": 4066,
           "floatingGt005mm": 0,
           "worstMm": 0
         }
       },
-      "scene": "KRAKÓW",
+      "scene": "KRAKOW",
       "cfg": {
         "tileCols": 1,
         "tileRows": 1,
         "hollowBase": false
       },
-      "buildMs": 794,
-      "totalTriangles": 263134,
+      "buildMs": 1300,
+      "totalTriangles": 144600,
       "layers": {
         "water": {
-          "tris": 2580,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 536,
-          "unpairedDirEdges": 536,
-          "shells": 1
-        },
-        "base": {
-          "tris": 41136,
+          "tris": 2624,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
           "sameDirDupEdges": 0,
           "unpairedDirEdges": 0,
-          "shells": 1
-        },
-        "greenery": {
-          "tris": 34354,
-          "degenerate": 1302,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 3012
-        },
-        "roads": {
-          "tris": 48644,
-          "degenerate": 1912,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4280
-        },
-        "buildings": {
-          "tris": 136420,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 7926
-        },
-        "highlighted": {
-          "tris": 0,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 0
-        }
-      },
-      "perTile": [],
-      "outside": {
-        "water": 0,
-        "base": 0,
-        "greenery": 0,
-        "roads": 0,
-        "buildings": 0,
-        "highlighted": 0
-      },
-      "ray": {
-        "water": {
-          "rays": 1745,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "base": {
-          "rays": 25600,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "greenery": {
-          "rays": 2562,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "roads": {
-          "rays": 3320,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "buildings": {
-          "rays": 4212,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "highlighted": {
-          "rays": 0,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        }
-      },
-      "layerOverlap": {},
-      "floating": {
-        "buildingsChecked": 640,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
-      },
-      "reported": {
-        "isWatertightManifold": true,
-        "floatingBuildingsCount": 0,
-        "outOfTileTrisCount": 0,
-        "totalVolumeMl": 1130.5,
-        "hollowSavingsPct": 0,
-        "maxZMm": 39
-      }
-    },
-    {
-      "extra": {
-        "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
-        },
-        "treeFloat": {
-          "bottomFaces": 5880,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        },
-        "roadFloat": {
-          "bottomFaces": 8176,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        }
-      },
-      "scene": "KRAKÓW",
-      "cfg": {
-        "tileCols": 1,
-        "tileRows": 1,
-        "hollowBase": true
-      },
-      "buildMs": 751,
-      "totalTriangles": 263134,
-      "layers": {
-        "water": {
-          "tris": 2580,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 536,
-          "unpairedDirEdges": 536,
-          "shells": 1
-        },
-        "base": {
-          "tris": 41136,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1
-        },
-        "greenery": {
-          "tris": 34354,
-          "degenerate": 1302,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 3012
-        },
-        "roads": {
-          "tris": 48644,
-          "degenerate": 1912,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4280
-        },
-        "buildings": {
-          "tris": 136420,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 7926
-        },
-        "highlighted": {
-          "tris": 0,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 0
-        }
-      },
-      "perTile": [],
-      "outside": {
-        "water": 0,
-        "base": 0,
-        "greenery": 0,
-        "roads": 0,
-        "buildings": 0,
-        "highlighted": 0
-      },
-      "ray": {
-        "water": {
-          "rays": 1745,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "base": {
-          "rays": 25600,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "greenery": {
-          "rays": 2562,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "roads": {
-          "rays": 3320,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "buildings": {
-          "rays": 4212,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "highlighted": {
-          "rays": 0,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        }
-      },
-      "layerOverlap": {},
-      "floating": {
-        "buildingsChecked": 640,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
-      },
-      "reported": {
-        "isWatertightManifold": true,
-        "floatingBuildingsCount": 0,
-        "outOfTileTrisCount": 0,
-        "totalVolumeMl": 498,
-        "hollowSavingsPct": 56,
-        "maxZMm": 39
-      }
-    },
-    {
-      "extra": {
-        "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
-        },
-        "treeFloat": {
-          "bottomFaces": 5865,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        },
-        "roadFloat": {
-          "bottomFaces": 8144,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        }
-      },
-      "scene": "KRAKÓW",
-      "cfg": {
-        "tileCols": 2,
-        "tileRows": 3,
-        "hollowBase": true
-      },
-      "buildMs": 924,
-      "totalTriangles": 265100,
-      "layers": {
-        "water": {
-          "tris": 2612,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 540,
-          "unpairedDirEdges": 540,
           "shells": 2
         },
         "base": {
-          "tris": 42372,
+          "tris": 25996,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1
+        },
+        "greenery": {
+          "tris": 13300,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1195
+        },
+        "roads": {
+          "tris": 24580,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 5,
+          "sameDirDupEdges": 10,
+          "unpairedDirEdges": 0,
+          "shells": 2076
+        },
+        "buildings": {
+          "tris": 78100,
+          "degenerate": 18,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 2,
+          "sameDirDupEdges": 4,
+          "unpairedDirEdges": 0,
+          "shells": 1543
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 1910,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 1728,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 3864,
+          "unbalanced": 0,
+          "selfOverlap": 20,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 7175,
+          "unbalanced": 0,
+          "selfOverlap": 19,
+          "negative": 0
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "greenery∩roads": {
+          "rays": 30,
+          "maxMm": 0.6,
+          "pctRays": 0.1,
+          "avgMm": 0.6
+        },
+        "base∩buildings": {
+          "rays": 357,
+          "maxMm": 1.2,
+          "pctRays": 1.4,
+          "avgMm": 1.2
+        }
+      },
+      "floating": {
+        "buildingsChecked": 1476,
+        "floatingGt005mm": 106,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": false,
+        "floatingBuildingsCount": 3,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 719.5,
+        "hollowSavingsPct": 0,
+        "maxZMm": 25.8
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 92,
+          "pctRays": 0.4,
+          "maxMm": 1.8,
+          "avgMm": 1.68
+        },
+        "treeFloat": {
+          "bottomFaces": 2104,
+          "floatingGt005mm": 11,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 4066,
+          "floatingGt005mm": 0,
+          "worstMm": 0
+        }
+      },
+      "scene": "KRAKOW",
+      "cfg": {
+        "tileCols": 1,
+        "tileRows": 1,
+        "hollowBase": true
+      },
+      "buildMs": 1172,
+      "totalTriangles": 144520,
+      "layers": {
+        "water": {
+          "tris": 2624,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 2
+        },
+        "base": {
+          "tris": 25996,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1
+        },
+        "greenery": {
+          "tris": 13300,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1195
+        },
+        "roads": {
+          "tris": 24580,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 5,
+          "sameDirDupEdges": 10,
+          "unpairedDirEdges": 0,
+          "shells": 2076
+        },
+        "buildings": {
+          "tris": 78020,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 2,
+          "sameDirDupEdges": 4,
+          "unpairedDirEdges": 0,
+          "shells": 1540
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 1910,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 1728,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 3864,
+          "unbalanced": 0,
+          "selfOverlap": 20,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 7174,
+          "unbalanced": 0,
+          "selfOverlap": 19,
+          "negative": 0
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "greenery∩roads": {
+          "rays": 30,
+          "maxMm": 0.6,
+          "pctRays": 0.1,
+          "avgMm": 0.6
+        },
+        "base∩buildings": {
+          "rays": 357,
+          "maxMm": 1.2,
+          "pctRays": 1.4,
+          "avgMm": 1.2
+        }
+      },
+      "floating": {
+        "buildingsChecked": 1475,
+        "floatingGt005mm": 106,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": false,
+        "floatingBuildingsCount": 1,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 514.4,
+        "hollowSavingsPct": 29,
+        "maxZMm": 25.8
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 93,
+          "pctRays": 0.4,
+          "maxMm": 1.8,
+          "avgMm": 1.67
+        },
+        "treeFloat": {
+          "bottomFaces": 2108,
+          "floatingGt005mm": 11,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 4067,
+          "floatingGt005mm": 0,
+          "worstMm": 0
+        }
+      },
+      "scene": "KRAKOW",
+      "cfg": {
+        "tileCols": 2,
+        "tileRows": 3,
+        "hollowBase": true
+      },
+      "buildMs": 1191,
+      "totalTriangles": 153402,
+      "layers": {
+        "water": {
+          "tris": 2656,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 3
+        },
+        "base": {
+          "tris": 30104,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
@@ -966,34 +1066,1380 @@
           "shells": 6
         },
         "greenery": {
-          "tris": 34308,
-          "degenerate": 1280,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 3010
-        },
-        "roads": {
-          "tris": 48510,
-          "degenerate": 1878,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4271
-        },
-        "buildings": {
-          "tris": 137298,
+          "tris": 13320,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
           "sameDirDupEdges": 0,
           "unpairedDirEdges": 0,
-          "shells": 8336
+          "shells": 1196
+        },
+        "roads": {
+          "tris": 24596,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 5,
+          "sameDirDupEdges": 10,
+          "unpairedDirEdges": 0,
+          "shells": 2079
+        },
+        "buildings": {
+          "tris": 82726,
+          "degenerate": 16,
+          "sliverLt1e6mm2": 3,
+          "openEdges": 0,
+          "nonManifoldEdges": 2,
+          "sameDirDupEdges": 4,
+          "unpairedDirEdges": 0,
+          "shells": 1630
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            5
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            1
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            1
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        }
+      ],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 1910,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 1728,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 3860,
+          "unbalanced": 0,
+          "selfOverlap": 20,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 7174,
+          "unbalanced": 0,
+          "selfOverlap": 19,
+          "negative": 0
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "greenery∩roads": {
+          "rays": 30,
+          "maxMm": 0.6,
+          "pctRays": 0.1,
+          "avgMm": 0.6
+        },
+        "base∩buildings": {
+          "rays": 357,
+          "maxMm": 1.2,
+          "pctRays": 1.4,
+          "avgMm": 1.2
+        }
+      },
+      "floating": {
+        "buildingsChecked": 1475,
+        "floatingGt005mm": 106,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": false,
+        "floatingBuildingsCount": 1,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 555.3,
+        "hollowSavingsPct": 23,
+        "maxZMm": 25.8
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 71,
+          "pctRays": 0.3,
+          "maxMm": 1.8,
+          "avgMm": 1.53
+        },
+        "treeFloat": {
+          "bottomFaces": 2743,
+          "floatingGt005mm": 22,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 5432,
+          "floatingGt005mm": 3,
+          "worstMm": 0.6
+        }
+      },
+      "scene": "WARSZAWA_OLD_TOWN",
+      "cfg": {
+        "tileCols": 1,
+        "tileRows": 1,
+        "hollowBase": false
+      },
+      "buildMs": 953,
+      "totalTriangles": 120342,
+      "layers": {
+        "water": {
+          "tris": 3400,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 5
+        },
+        "base": {
+          "tris": 26888,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1
+        },
+        "greenery": {
+          "tris": 17176,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1509
+        },
+        "roads": {
+          "tris": 32652,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 2730
+        },
+        "buildings": {
+          "tris": 40226,
+          "degenerate": 26,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 19,
+          "sameDirDupEdges": 38,
+          "unpairedDirEdges": 0,
+          "shells": 791
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 2712,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 2084,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 4949,
+          "unbalanced": 0,
+          "selfOverlap": 30,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 5059,
+          "unbalanced": 0,
+          "selfOverlap": 20,
+          "negative": 0
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "greenery∩roads": {
+          "rays": 46,
+          "maxMm": 0.6,
+          "pctRays": 0.2,
+          "avgMm": 0.6
+        },
+        "base∩buildings": {
+          "rays": 430,
+          "maxMm": 2.4,
+          "pctRays": 1.7,
+          "avgMm": 1.233
+        }
+      },
+      "floating": {
+        "buildingsChecked": 690,
+        "floatingGt005mm": 71,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": false,
+        "floatingBuildingsCount": 3,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 746.5,
+        "hollowSavingsPct": 0,
+        "maxZMm": 22.4
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 58,
+          "pctRays": 0.2,
+          "maxMm": 1.8,
+          "avgMm": 1.67
+        },
+        "treeFloat": {
+          "bottomFaces": 2743,
+          "floatingGt005mm": 22,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 5432,
+          "floatingGt005mm": 3,
+          "worstMm": 0.6
+        }
+      },
+      "scene": "WARSZAWA_OLD_TOWN",
+      "cfg": {
+        "tileCols": 1,
+        "tileRows": 1,
+        "hollowBase": true
+      },
+      "buildMs": 884,
+      "totalTriangles": 120550,
+      "layers": {
+        "water": {
+          "tris": 3400,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 5
+        },
+        "base": {
+          "tris": 26992,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1
+        },
+        "greenery": {
+          "tris": 17176,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1509
+        },
+        "roads": {
+          "tris": 32652,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 2730
+        },
+        "buildings": {
+          "tris": 40330,
+          "degenerate": 34,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 19,
+          "sameDirDupEdges": 38,
+          "unpairedDirEdges": 0,
+          "shells": 817
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 2712,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 2084,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 4949,
+          "unbalanced": 0,
+          "selfOverlap": 30,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 5058,
+          "unbalanced": 0,
+          "selfOverlap": 20,
+          "negative": 0
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "greenery∩roads": {
+          "rays": 46,
+          "maxMm": 0.6,
+          "pctRays": 0.2,
+          "avgMm": 0.6
+        },
+        "base∩buildings": {
+          "rays": 433,
+          "maxMm": 2.4,
+          "pctRays": 1.7,
+          "avgMm": 1.233
+        }
+      },
+      "floating": {
+        "buildingsChecked": 690,
+        "floatingGt005mm": 73,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": false,
+        "floatingBuildingsCount": 7,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 501.8,
+        "hollowSavingsPct": 33,
+        "maxZMm": 22.4
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 59,
+          "pctRays": 0.2,
+          "maxMm": 1.8,
+          "avgMm": 1.67
+        },
+        "treeFloat": {
+          "bottomFaces": 2747,
+          "floatingGt005mm": 22,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 5454,
+          "floatingGt005mm": 3,
+          "worstMm": 0.6
+        }
+      },
+      "scene": "WARSZAWA_OLD_TOWN",
+      "cfg": {
+        "tileCols": 2,
+        "tileRows": 3,
+        "hollowBase": true
+      },
+      "buildMs": 931,
+      "totalTriangles": 129254,
+      "layers": {
+        "water": {
+          "tris": 3460,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 6
+        },
+        "base": {
+          "tris": 31092,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 6
+        },
+        "greenery": {
+          "tris": 17200,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1511
+        },
+        "roads": {
+          "tris": 32808,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 2733
+        },
+        "buildings": {
+          "tris": 44694,
+          "degenerate": 44,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 19,
+          "sameDirDupEdges": 38,
+          "unpairedDirEdges": 0,
+          "shells": 893
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            19
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        }
+      ],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 2713,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 2085,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 4933,
+          "unbalanced": 0,
+          "selfOverlap": 30,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 5059,
+          "unbalanced": 0,
+          "selfOverlap": 20,
+          "negative": 0
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "greenery∩roads": {
+          "rays": 45,
+          "maxMm": 0.6,
+          "pctRays": 0.2,
+          "avgMm": 0.6
+        },
+        "base∩buildings": {
+          "rays": 436,
+          "maxMm": 2.4,
+          "pctRays": 1.7,
+          "avgMm": 1.233
+        }
+      },
+      "floating": {
+        "buildingsChecked": 690,
+        "floatingGt005mm": 73,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": false,
+        "floatingBuildingsCount": 7,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 550.3,
+        "hollowSavingsPct": 26,
+        "maxZMm": 22.4
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 32,
+          "pctRays": 0.1,
+          "maxMm": 1.8,
+          "avgMm": 1.65
+        },
+        "treeFloat": {
+          "bottomFaces": 1687,
+          "floatingGt005mm": 5,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 3043,
+          "floatingGt005mm": 6,
+          "worstMm": 0.6
+        }
+      },
+      "scene": "SOPOT",
+      "cfg": {
+        "tileCols": 1,
+        "tileRows": 1,
+        "hollowBase": false
+      },
+      "buildMs": 934,
+      "totalTriangles": 127818,
+      "layers": {
+        "water": {
+          "tris": 6848,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 10
+        },
+        "base": {
+          "tris": 25420,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1
+        },
+        "greenery": {
+          "tris": 10590,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 943
+        },
+        "roads": {
+          "tris": 18864,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1673
+        },
+        "buildings": {
+          "tris": 66096,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1638
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 6781,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 1020,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 2542,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 3816,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 53,
+          "maxMm": 1.2,
+          "pctRays": 0.2,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 26,
+          "maxMm": 0.6,
+          "pctRays": 0.1,
+          "avgMm": 0.6
+        }
+      },
+      "floating": {
+        "buildingsChecked": 1637,
+        "floatingGt005mm": 65,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": true,
+        "floatingBuildingsCount": 0,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 563.6,
+        "hollowSavingsPct": 0,
+        "maxZMm": 21.6
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 28,
+          "pctRays": 0.1,
+          "maxMm": 1.8,
+          "avgMm": 1.63
+        },
+        "treeFloat": {
+          "bottomFaces": 1687,
+          "floatingGt005mm": 5,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 3043,
+          "floatingGt005mm": 6,
+          "worstMm": 0.6
+        }
+      },
+      "scene": "SOPOT",
+      "cfg": {
+        "tileCols": 1,
+        "tileRows": 1,
+        "hollowBase": true
+      },
+      "buildMs": 877,
+      "totalTriangles": 127818,
+      "layers": {
+        "water": {
+          "tris": 6848,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 10
+        },
+        "base": {
+          "tris": 25420,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1
+        },
+        "greenery": {
+          "tris": 10590,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 943
+        },
+        "roads": {
+          "tris": 18864,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1673
+        },
+        "buildings": {
+          "tris": 66096,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1638
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 6781,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 1020,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 2542,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 3816,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 53,
+          "maxMm": 1.2,
+          "pctRays": 0.2,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 26,
+          "maxMm": 0.6,
+          "pctRays": 0.1,
+          "avgMm": 0.6
+        }
+      },
+      "floating": {
+        "buildingsChecked": 1637,
+        "floatingGt005mm": 65,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": true,
+        "floatingBuildingsCount": 0,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 409.6,
+        "hollowSavingsPct": 27,
+        "maxZMm": 21.6
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 32,
+          "pctRays": 0.1,
+          "maxMm": 1.8,
+          "avgMm": 1.65
+        },
+        "treeFloat": {
+          "bottomFaces": 1689,
+          "floatingGt005mm": 5,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 3041,
+          "floatingGt005mm": 6,
+          "worstMm": 0.6
+        }
+      },
+      "scene": "SOPOT",
+      "cfg": {
+        "tileCols": 2,
+        "tileRows": 3,
+        "hollowBase": true
+      },
+      "buildMs": 967,
+      "totalTriangles": 135508,
+      "layers": {
+        "water": {
+          "tris": 7020,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 13
+        },
+        "base": {
+          "tris": 29516,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 6
+        },
+        "greenery": {
+          "tris": 10594,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 942
+        },
+        "roads": {
+          "tris": 18860,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1674
+        },
+        "buildings": {
+          "tris": 69518,
+          "degenerate": 16,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1708
         },
         "highlighted": {
           "tris": 0,
@@ -1174,7 +2620,7 @@
       },
       "ray": {
         "water": {
-          "rays": 1745,
+          "rays": 6781,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -1186,19 +2632,19 @@
           "negative": 0
         },
         "greenery": {
-          "rays": 2566,
+          "rays": 1017,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
         },
         "roads": {
-          "rays": 3319,
+          "rays": 2544,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
         },
         "buildings": {
-          "rays": 4194,
+          "rays": 3816,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -1210,62 +2656,82 @@
           "negative": 0
         }
       },
-      "layerOverlap": {},
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 52,
+          "maxMm": 1.2,
+          "pctRays": 0.2,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 26,
+          "maxMm": 0.6,
+          "pctRays": 0.1,
+          "avgMm": 0.6
+        }
+      },
       "floating": {
-        "buildingsChecked": 640,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
+        "buildingsChecked": 1637,
+        "floatingGt005mm": 65,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
       },
       "reported": {
         "isWatertightManifold": true,
         "floatingBuildingsCount": 0,
         "outOfTileTrisCount": 0,
-        "totalVolumeMl": 699.3,
-        "hollowSavingsPct": 38,
-        "maxZMm": 39
+        "totalVolumeMl": 438.7,
+        "hollowSavingsPct": 22,
+        "maxZMm": 21.6
       }
     },
     {
       "extra": {
         "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
+          "rays": 236,
+          "pctRays": 0.9,
+          "maxMm": 58.8,
+          "avgMm": 2.01
         },
         "treeFloat": {
-          "bottomFaces": 5785,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 1662,
+          "floatingGt005mm": 18,
+          "worstMm": 0.6
         },
         "roadFloat": {
-          "bottomFaces": 9009,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 4116,
+          "floatingGt005mm": 6,
+          "worstMm": 0.6
         }
       },
-      "scene": "WARSZAWA",
+      "scene": "SINGAPORE",
       "cfg": {
         "tileCols": 1,
         "tileRows": 1,
         "hollowBase": false
       },
-      "buildMs": 644,
-      "totalTriangles": 219884,
+      "buildMs": 649,
+      "totalTriangles": 90812,
       "layers": {
         "water": {
-          "tris": 3332,
+          "tris": 9236,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
-          "sameDirDupEdges": 560,
-          "unpairedDirEdges": 560,
-          "shells": 3
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 22
         },
         "base": {
-          "tris": 37476,
+          "tris": 27976,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
@@ -1275,34 +2741,34 @@
           "shells": 1
         },
         "greenery": {
-          "tris": 33722,
-          "degenerate": 1240,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 2919
-        },
-        "roads": {
-          "tris": 53546,
-          "degenerate": 2030,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4721
-        },
-        "buildings": {
-          "tris": 91808,
+          "tris": 10448,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
           "sameDirDupEdges": 0,
           "unpairedDirEdges": 0,
-          "shells": 5673
+          "shells": 898
+        },
+        "roads": {
+          "tris": 24720,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 6,
+          "sameDirDupEdges": 12,
+          "unpairedDirEdges": 0,
+          "shells": 2062
+        },
+        "buildings": {
+          "tris": 18432,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 53,
+          "sameDirDupEdges": 106,
+          "unpairedDirEdges": 0,
+          "shells": 543
         },
         "highlighted": {
           "tris": 0,
@@ -1326,7 +2792,7 @@
       },
       "ray": {
         "water": {
-          "rays": 2619,
+          "rays": 7757,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -1338,22 +2804,22 @@
           "negative": 0
         },
         "greenery": {
-          "rays": 2976,
+          "rays": 1460,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
         },
         "roads": {
-          "rays": 4365,
+          "rays": 3220,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 4,
           "negative": 0
         },
         "buildings": {
-          "rays": 3723,
+          "rays": 6157,
           "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
+          "selfOverlap": 116,
+          "negative": 8
         },
         "highlighted": {
           "rays": 0,
@@ -1362,62 +2828,82 @@
           "negative": 0
         }
       },
-      "layerOverlap": {},
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 251,
+          "maxMm": 1.2,
+          "pctRays": 1,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 10,
+          "maxMm": 0.6,
+          "pctRays": 0,
+          "avgMm": 0.6
+        }
+      },
       "floating": {
-        "buildingsChecked": 381,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
+        "buildingsChecked": 352,
+        "floatingGt005mm": 34,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
       },
       "reported": {
-        "isWatertightManifold": true,
+        "isWatertightManifold": false,
         "floatingBuildingsCount": 0,
         "outOfTileTrisCount": 0,
-        "totalVolumeMl": 1492.1,
+        "totalVolumeMl": 808.8,
         "hollowSavingsPct": 0,
-        "maxZMm": 34.4
+        "maxZMm": 92.6
       }
     },
     {
       "extra": {
         "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
+          "rays": 195,
+          "pctRays": 0.8,
+          "maxMm": 5.2,
+          "avgMm": 1.58
         },
         "treeFloat": {
-          "bottomFaces": 5785,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 1662,
+          "floatingGt005mm": 18,
+          "worstMm": 0.6
         },
         "roadFloat": {
-          "bottomFaces": 9009,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 4097,
+          "floatingGt005mm": 6,
+          "worstMm": 0.6
         }
       },
-      "scene": "WARSZAWA",
+      "scene": "SINGAPORE",
       "cfg": {
         "tileCols": 1,
         "tileRows": 1,
         "hollowBase": true
       },
-      "buildMs": 607,
-      "totalTriangles": 219884,
+      "buildMs": 551,
+      "totalTriangles": 90852,
       "layers": {
         "water": {
-          "tris": 3332,
+          "tris": 9236,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
-          "sameDirDupEdges": 560,
-          "unpairedDirEdges": 560,
-          "shells": 3
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 22
         },
         "base": {
-          "tris": 37476,
+          "tris": 27992,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
@@ -1427,34 +2913,34 @@
           "shells": 1
         },
         "greenery": {
-          "tris": 33722,
-          "degenerate": 1240,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 2919
-        },
-        "roads": {
-          "tris": 53546,
-          "degenerate": 2030,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4721
-        },
-        "buildings": {
-          "tris": 91808,
+          "tris": 10448,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
           "sameDirDupEdges": 0,
           "unpairedDirEdges": 0,
-          "shells": 5673
+          "shells": 898
+        },
+        "roads": {
+          "tris": 24588,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 6,
+          "sameDirDupEdges": 12,
+          "unpairedDirEdges": 0,
+          "shells": 2048
+        },
+        "buildings": {
+          "tris": 18588,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 53,
+          "sameDirDupEdges": 106,
+          "unpairedDirEdges": 0,
+          "shells": 545
         },
         "highlighted": {
           "tris": 0,
@@ -1478,7 +2964,7 @@
       },
       "ray": {
         "water": {
-          "rays": 2619,
+          "rays": 7754,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -1490,22 +2976,22 @@
           "negative": 0
         },
         "greenery": {
-          "rays": 2976,
+          "rays": 1460,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
         },
         "roads": {
-          "rays": 4365,
+          "rays": 3222,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 4,
           "negative": 0
         },
         "buildings": {
-          "rays": 3723,
+          "rays": 6157,
           "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
+          "selfOverlap": 116,
+          "negative": 14
         },
         "highlighted": {
           "rays": 0,
@@ -1514,62 +3000,82 @@
           "negative": 0
         }
       },
-      "layerOverlap": {},
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 354,
+          "maxMm": 1.2,
+          "pctRays": 1.4,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 10,
+          "maxMm": 0.6,
+          "pctRays": 0,
+          "avgMm": 0.6
+        }
+      },
       "floating": {
-        "buildingsChecked": 381,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
+        "buildingsChecked": 352,
+        "floatingGt005mm": 39,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
       },
       "reported": {
-        "isWatertightManifold": true,
+        "isWatertightManifold": false,
         "floatingBuildingsCount": 0,
         "outOfTileTrisCount": 0,
-        "totalVolumeMl": 550,
-        "hollowSavingsPct": 63,
-        "maxZMm": 34.4
+        "totalVolumeMl": 704.1,
+        "hollowSavingsPct": 13,
+        "maxZMm": 92.6
       }
     },
     {
       "extra": {
         "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
+          "rays": 213,
+          "pctRays": 0.8,
+          "maxMm": 5.2,
+          "avgMm": 1.58
         },
         "treeFloat": {
-          "bottomFaces": 5779,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 1657,
+          "floatingGt005mm": 18,
+          "worstMm": 0.6
         },
         "roadFloat": {
-          "bottomFaces": 8975,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 4134,
+          "floatingGt005mm": 7,
+          "worstMm": 0.6
         }
       },
-      "scene": "WARSZAWA",
+      "scene": "SINGAPORE",
       "cfg": {
         "tileCols": 2,
         "tileRows": 3,
         "hollowBase": true
       },
-      "buildMs": 625,
-      "totalTriangles": 221706,
+      "buildMs": 602,
+      "totalTriangles": 96424,
       "layers": {
         "water": {
-          "tris": 3388,
+          "tris": 9644,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
-          "sameDirDupEdges": 562,
-          "unpairedDirEdges": 562,
-          "shells": 4
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 31
         },
         "base": {
-          "tris": 38540,
+          "tris": 32124,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
@@ -1579,8 +3085,691 @@
           "shells": 6
         },
         "greenery": {
-          "tris": 33746,
-          "degenerate": 1208,
+          "tris": 10408,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 893
+        },
+        "roads": {
+          "tris": 24848,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 6,
+          "sameDirDupEdges": 12,
+          "unpairedDirEdges": 0,
+          "shells": 2058
+        },
+        "buildings": {
+          "tris": 19400,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 53,
+          "sameDirDupEdges": 106,
+          "unpairedDirEdges": 0,
+          "shells": 566
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            2
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            6
+          ],
+          "buildings": [
+            0,
+            21
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            0
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        },
+        {
+          "water": [
+            0,
+            0
+          ],
+          "base": [
+            0,
+            0
+          ],
+          "greenery": [
+            0,
+            0
+          ],
+          "roads": [
+            0,
+            0
+          ],
+          "buildings": [
+            0,
+            30
+          ],
+          "highlighted": [
+            0,
+            0
+          ]
+        }
+      ],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 7753,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 1462,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 3217,
+          "unbalanced": 0,
+          "selfOverlap": 4,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 6157,
+          "unbalanced": 0,
+          "selfOverlap": 116,
+          "negative": 14
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 354,
+          "maxMm": 1.2,
+          "pctRays": 1.4,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 12,
+          "maxMm": 0.6,
+          "pctRays": 0,
+          "avgMm": 0.6
+        }
+      },
+      "floating": {
+        "buildingsChecked": 353,
+        "floatingGt005mm": 39,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": false,
+        "floatingBuildingsCount": 0,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 719,
+        "hollowSavingsPct": 11,
+        "maxZMm": 92.6
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 34,
+          "pctRays": 0.1,
+          "maxMm": 1.8,
+          "avgMm": 1.36
+        },
+        "treeFloat": {
+          "bottomFaces": 1501,
+          "floatingGt005mm": 8,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 5625,
+          "floatingGt005mm": 0,
+          "worstMm": 0
+        }
+      },
+      "scene": "DUBAI_1.2KM",
+      "cfg": {
+        "tileCols": 1,
+        "tileRows": 1,
+        "hollowBase": false
+      },
+      "buildMs": 680,
+      "totalTriangles": 93158,
+      "layers": {
+        "water": {
+          "tris": 3700,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 10
+        },
+        "base": {
+          "tris": 28028,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1
+        },
+        "greenery": {
+          "tris": 9528,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 855
+        },
+        "roads": {
+          "tris": 34216,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 2929
+        },
+        "buildings": {
+          "tris": 17686,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 21,
+          "sameDirDupEdges": 42,
+          "unpairedDirEdges": 0,
+          "shells": 302
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 1738,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 969,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 5568,
+          "unbalanced": 0,
+          "selfOverlap": 1,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 6065,
+          "unbalanced": 0,
+          "selfOverlap": 1,
+          "negative": 0
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 115,
+          "maxMm": 1.2,
+          "pctRays": 0.4,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 11,
+          "maxMm": 0.6,
+          "pctRays": 0,
+          "avgMm": 0.6
+        }
+      },
+      "floating": {
+        "buildingsChecked": 241,
+        "floatingGt005mm": 25,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": true,
+        "floatingBuildingsCount": 0,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 725.4,
+        "hollowSavingsPct": 0,
+        "maxZMm": 108.8
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 26,
+          "pctRays": 0.1,
+          "maxMm": 1.8,
+          "avgMm": 1.36
+        },
+        "treeFloat": {
+          "bottomFaces": 1501,
+          "floatingGt005mm": 8,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 5625,
+          "floatingGt005mm": 0,
+          "worstMm": 0
+        }
+      },
+      "scene": "DUBAI_1.2KM",
+      "cfg": {
+        "tileCols": 1,
+        "tileRows": 1,
+        "hollowBase": true
+      },
+      "buildMs": 539,
+      "totalTriangles": 93158,
+      "layers": {
+        "water": {
+          "tris": 3700,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 10
+        },
+        "base": {
+          "tris": 28028,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1
+        },
+        "greenery": {
+          "tris": 9528,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 855
+        },
+        "roads": {
+          "tris": 34216,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 2929
+        },
+        "buildings": {
+          "tris": 17686,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 21,
+          "sameDirDupEdges": 42,
+          "unpairedDirEdges": 0,
+          "shells": 302
+        },
+        "highlighted": {
+          "tris": 0,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 0
+        }
+      },
+      "perTile": [],
+      "outside": {
+        "water": 0,
+        "base": 0,
+        "greenery": 0,
+        "roads": 0,
+        "buildings": 0,
+        "highlighted": 0
+      },
+      "ray": {
+        "water": {
+          "rays": 1738,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "base": {
+          "rays": 25600,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "greenery": {
+          "rays": 969,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        },
+        "roads": {
+          "rays": 5568,
+          "unbalanced": 0,
+          "selfOverlap": 1,
+          "negative": 0
+        },
+        "buildings": {
+          "rays": 6065,
+          "unbalanced": 0,
+          "selfOverlap": 1,
+          "negative": 0
+        },
+        "highlighted": {
+          "rays": 0,
+          "unbalanced": 0,
+          "selfOverlap": 0,
+          "negative": 0
+        }
+      },
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 115,
+          "maxMm": 1.2,
+          "pctRays": 0.4,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 11,
+          "maxMm": 0.6,
+          "pctRays": 0,
+          "avgMm": 0.6
+        }
+      },
+      "floating": {
+        "buildingsChecked": 241,
+        "floatingGt005mm": 25,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
+      },
+      "reported": {
+        "isWatertightManifold": true,
+        "floatingBuildingsCount": 0,
+        "outOfTileTrisCount": 0,
+        "totalVolumeMl": 518.2,
+        "hollowSavingsPct": 29,
+        "maxZMm": 108.8
+      }
+    },
+    {
+      "extra": {
+        "cavity": {
+          "rays": 23,
+          "pctRays": 0.1,
+          "maxMm": 1.8,
+          "avgMm": 1.43
+        },
+        "treeFloat": {
+          "bottomFaces": 1495,
+          "floatingGt005mm": 8,
+          "worstMm": 0.6
+        },
+        "roadFloat": {
+          "bottomFaces": 5622,
+          "floatingGt005mm": 0,
+          "worstMm": 0
+        }
+      },
+      "scene": "DUBAI_1.2KM",
+      "cfg": {
+        "tileCols": 2,
+        "tileRows": 3,
+        "hollowBase": true
+      },
+      "buildMs": 630,
+      "totalTriangles": 99030,
+      "layers": {
+        "water": {
+          "tris": 3784,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 16
+        },
+        "base": {
+          "tris": 32196,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 6
+        },
+        "greenery": {
+          "tris": 9500,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 854
+        },
+        "roads": {
+          "tris": 34184,
+          "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
@@ -1588,25 +3777,15 @@
           "unpairedDirEdges": 0,
           "shells": 2924
         },
-        "roads": {
-          "tris": 53518,
-          "degenerate": 1942,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 4726
-        },
         "buildings": {
-          "tris": 92514,
+          "tris": 19366,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
+          "nonManifoldEdges": 24,
+          "sameDirDupEdges": 48,
           "unpairedDirEdges": 0,
-          "shells": 5832
+          "shells": 331
         },
         "highlighted": {
           "tris": 0,
@@ -1665,7 +3844,7 @@
           ],
           "buildings": [
             0,
-            0
+            17
           ],
           "highlighted": [
             0,
@@ -1717,7 +3896,7 @@
           ],
           "buildings": [
             0,
-            0
+            7
           ],
           "highlighted": [
             0,
@@ -1787,7 +3966,7 @@
       },
       "ray": {
         "water": {
-          "rays": 2619,
+          "rays": 1736,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -1799,21 +3978,21 @@
           "negative": 0
         },
         "greenery": {
-          "rays": 2977,
+          "rays": 972,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
         },
         "roads": {
-          "rays": 4369,
+          "rays": 5550,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 1,
           "negative": 0
         },
         "buildings": {
-          "rays": 3714,
+          "rays": 6065,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 1,
           "negative": 0
         },
         "highlighted": {
@@ -1823,62 +4002,82 @@
           "negative": 0
         }
       },
-      "layerOverlap": {},
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 115,
+          "maxMm": 1.2,
+          "pctRays": 0.4,
+          "avgMm": 1.2
+        },
+        "greenery∩roads": {
+          "rays": 12,
+          "maxMm": 0.6,
+          "pctRays": 0,
+          "avgMm": 0.6
+        }
+      },
       "floating": {
-        "buildingsChecked": 381,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
+        "buildingsChecked": 244,
+        "floatingGt005mm": 28,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
       },
       "reported": {
         "isWatertightManifold": true,
         "floatingBuildingsCount": 0,
         "outOfTileTrisCount": 0,
-        "totalVolumeMl": 839.4,
-        "hollowSavingsPct": 44,
-        "maxZMm": 34.4
+        "totalVolumeMl": 556.9,
+        "hollowSavingsPct": 23,
+        "maxZMm": 108.8
       }
     },
     {
       "extra": {
         "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
+          "rays": 40,
+          "pctRays": 0.2,
+          "maxMm": 1.8,
+          "avgMm": 1.53
         },
         "treeFloat": {
-          "bottomFaces": 4451,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 1407,
+          "floatingGt005mm": 26,
+          "worstMm": 0.6
         },
         "roadFloat": {
-          "bottomFaces": 5600,
+          "bottomFaces": 2542,
           "floatingGt005mm": 0,
           "worstMm": 0
         }
       },
-      "scene": "SOPOT",
+      "scene": "INNSBRUCK",
       "cfg": {
         "tileCols": 1,
         "tileRows": 1,
         "hollowBase": false
       },
-      "buildMs": 760,
-      "totalTriangles": 262608,
+      "buildMs": 791,
+      "totalTriangles": 107960,
       "layers": {
         "water": {
-          "tris": 6492,
+          "tris": 2248,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
-          "sameDirDupEdges": 442,
-          "unpairedDirEdges": 442,
-          "shells": 1
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 7
         },
         "base": {
-          "tris": 39932,
+          "tris": 29812,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
@@ -1888,34 +4087,34 @@
           "shells": 1
         },
         "greenery": {
-          "tris": 25804,
-          "degenerate": 1064,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 2261
-        },
-        "roads": {
-          "tris": 34066,
-          "degenerate": 1386,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 2993
-        },
-        "buildings": {
-          "tris": 156314,
+          "tris": 8936,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
           "sameDirDupEdges": 0,
           "unpairedDirEdges": 0,
-          "shells": 9473
+          "shells": 803
+        },
+        "roads": {
+          "tris": 16128,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1486
+        },
+        "buildings": {
+          "tris": 50836,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 1,
+          "sameDirDupEdges": 2,
+          "unpairedDirEdges": 0,
+          "shells": 1666
         },
         "highlighted": {
           "tris": 0,
@@ -1939,7 +4138,7 @@
       },
       "ray": {
         "water": {
-          "rays": 6582,
+          "rays": 1291,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -1951,19 +4150,19 @@
           "negative": 0
         },
         "greenery": {
-          "rays": 1497,
+          "rays": 914,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 1,
           "negative": 0
         },
         "roads": {
-          "rays": 2396,
+          "rays": 1886,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 4,
           "negative": 0
         },
         "buildings": {
-          "rays": 2686,
+          "rays": 8145,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -1975,62 +4174,82 @@
           "negative": 0
         }
       },
-      "layerOverlap": {},
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 491,
+          "maxMm": 2.8,
+          "pctRays": 1.9,
+          "avgMm": 1.431
+        },
+        "greenery∩roads": {
+          "rays": 9,
+          "maxMm": 0.6,
+          "pctRays": 0,
+          "avgMm": 0.6
+        }
+      },
       "floating": {
-        "buildingsChecked": 916,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
+        "buildingsChecked": 1665,
+        "floatingGt005mm": 147,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
       },
       "reported": {
         "isWatertightManifold": true,
         "floatingBuildingsCount": 0,
         "outOfTileTrisCount": 0,
-        "totalVolumeMl": 936.9,
+        "totalVolumeMl": 824.9,
         "hollowSavingsPct": 0,
-        "maxZMm": 27.8
+        "maxZMm": 28.4
       }
     },
     {
       "extra": {
         "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
+          "rays": 25,
+          "pctRays": 0.1,
+          "maxMm": 1.8,
+          "avgMm": 1.75
         },
         "treeFloat": {
-          "bottomFaces": 4451,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 1407,
+          "floatingGt005mm": 26,
+          "worstMm": 0.6
         },
         "roadFloat": {
-          "bottomFaces": 5600,
+          "bottomFaces": 2542,
           "floatingGt005mm": 0,
           "worstMm": 0
         }
       },
-      "scene": "SOPOT",
+      "scene": "INNSBRUCK",
       "cfg": {
         "tileCols": 1,
         "tileRows": 1,
         "hollowBase": true
       },
-      "buildMs": 709,
-      "totalTriangles": 262608,
+      "buildMs": 776,
+      "totalTriangles": 107960,
       "layers": {
         "water": {
-          "tris": 6492,
+          "tris": 2248,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
-          "sameDirDupEdges": 442,
-          "unpairedDirEdges": 442,
-          "shells": 1
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 7
         },
         "base": {
-          "tris": 39932,
+          "tris": 29812,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
@@ -2040,34 +4259,34 @@
           "shells": 1
         },
         "greenery": {
-          "tris": 25804,
-          "degenerate": 1064,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 2261
-        },
-        "roads": {
-          "tris": 34066,
-          "degenerate": 1386,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 2993
-        },
-        "buildings": {
-          "tris": 156314,
+          "tris": 8936,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
           "sameDirDupEdges": 0,
           "unpairedDirEdges": 0,
-          "shells": 9473
+          "shells": 803
+        },
+        "roads": {
+          "tris": 16128,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1486
+        },
+        "buildings": {
+          "tris": 50836,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 1,
+          "sameDirDupEdges": 2,
+          "unpairedDirEdges": 0,
+          "shells": 1666
         },
         "highlighted": {
           "tris": 0,
@@ -2091,7 +4310,7 @@
       },
       "ray": {
         "water": {
-          "rays": 6582,
+          "rays": 1291,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -2103,19 +4322,19 @@
           "negative": 0
         },
         "greenery": {
-          "rays": 1497,
+          "rays": 914,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 1,
           "negative": 0
         },
         "roads": {
-          "rays": 2396,
+          "rays": 1886,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 4,
           "negative": 0
         },
         "buildings": {
-          "rays": 2686,
+          "rays": 8145,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -2127,62 +4346,82 @@
           "negative": 0
         }
       },
-      "layerOverlap": {},
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 491,
+          "maxMm": 2.8,
+          "pctRays": 1.9,
+          "avgMm": 1.431
+        },
+        "greenery∩roads": {
+          "rays": 9,
+          "maxMm": 0.6,
+          "pctRays": 0,
+          "avgMm": 0.6
+        }
+      },
       "floating": {
-        "buildingsChecked": 916,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
+        "buildingsChecked": 1665,
+        "floatingGt005mm": 147,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
       },
       "reported": {
         "isWatertightManifold": true,
         "floatingBuildingsCount": 0,
         "outOfTileTrisCount": 0,
-        "totalVolumeMl": 440.9,
-        "hollowSavingsPct": 53,
-        "maxZMm": 27.8
+        "totalVolumeMl": 592.5,
+        "hollowSavingsPct": 28,
+        "maxZMm": 28.4
       }
     },
     {
       "extra": {
         "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
+          "rays": 25,
+          "pctRays": 0.1,
+          "maxMm": 1.8,
+          "avgMm": 1.75
         },
         "treeFloat": {
-          "bottomFaces": 4441,
-          "floatingGt005mm": 0,
-          "worstMm": 0
+          "bottomFaces": 1408,
+          "floatingGt005mm": 26,
+          "worstMm": 0.6
         },
         "roadFloat": {
-          "bottomFaces": 5594,
+          "bottomFaces": 2540,
           "floatingGt005mm": 0,
           "worstMm": 0
         }
       },
-      "scene": "SOPOT",
+      "scene": "INNSBRUCK",
       "cfg": {
         "tileCols": 2,
         "tileRows": 3,
         "hollowBase": true
       },
-      "buildMs": 1057,
-      "totalTriangles": 264264,
+      "buildMs": 821,
+      "totalTriangles": 116864,
       "layers": {
         "water": {
-          "tris": 6660,
+          "tris": 2336,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
-          "sameDirDupEdges": 448,
-          "unpairedDirEdges": 448,
-          "shells": 4
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 12
         },
         "base": {
-          "tris": 41040,
+          "tris": 33976,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
@@ -2192,34 +4431,34 @@
           "shells": 6
         },
         "greenery": {
-          "tris": 25792,
-          "degenerate": 1040,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 2262
-        },
-        "roads": {
-          "tris": 34070,
-          "degenerate": 1358,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 2997
-        },
-        "buildings": {
-          "tris": 156702,
+          "tris": 8928,
           "degenerate": 0,
           "sliverLt1e6mm2": 0,
           "openEdges": 0,
           "nonManifoldEdges": 0,
           "sameDirDupEdges": 0,
           "unpairedDirEdges": 0,
-          "shells": 9603
+          "shells": 800
+        },
+        "roads": {
+          "tris": 16108,
+          "degenerate": 0,
+          "sliverLt1e6mm2": 0,
+          "openEdges": 0,
+          "nonManifoldEdges": 0,
+          "sameDirDupEdges": 0,
+          "unpairedDirEdges": 0,
+          "shells": 1483
+        },
+        "buildings": {
+          "tris": 55516,
+          "degenerate": 18,
+          "sliverLt1e6mm2": 12,
+          "openEdges": 0,
+          "nonManifoldEdges": 1,
+          "sameDirDupEdges": 2,
+          "unpairedDirEdges": 0,
+          "shells": 1775
         },
         "highlighted": {
           "tris": 0,
@@ -2252,7 +4491,7 @@
           ],
           "buildings": [
             0,
-            0
+            1
           ],
           "highlighted": [
             0,
@@ -2400,7 +4639,7 @@
       },
       "ray": {
         "water": {
-          "rays": 6582,
+          "rays": 1289,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -2412,19 +4651,19 @@
           "negative": 0
         },
         "greenery": {
-          "rays": 1496,
+          "rays": 909,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 1,
           "negative": 0
         },
         "roads": {
-          "rays": 2397,
+          "rays": 1884,
           "unbalanced": 0,
-          "selfOverlap": 0,
+          "selfOverlap": 4,
           "negative": 0
         },
         "buildings": {
-          "rays": 2681,
+          "rays": 8145,
           "unbalanced": 0,
           "selfOverlap": 0,
           "negative": 0
@@ -2436,1283 +4675,77 @@
           "negative": 0
         }
       },
-      "layerOverlap": {},
+      "layerOverlap": {
+        "base∩buildings": {
+          "rays": 491,
+          "maxMm": 2.8,
+          "pctRays": 1.9,
+          "avgMm": 1.431
+        },
+        "greenery∩roads": {
+          "rays": 9,
+          "maxMm": 0.6,
+          "pctRays": 0,
+          "avgMm": 0.6
+        }
+      },
       "floating": {
-        "buildingsChecked": 916,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
+        "buildingsChecked": 1665,
+        "floatingGt005mm": 147,
+        "worstMm": 999,
+        "top": [
+          999,
+          999,
+          999,
+          999,
+          999,
+          999
+        ]
       },
       "reported": {
         "isWatertightManifold": true,
         "floatingBuildingsCount": 0,
         "outOfTileTrisCount": 0,
-        "totalVolumeMl": 575.7,
-        "hollowSavingsPct": 39,
-        "maxZMm": 27.8
-      }
-    },
-    {
-      "extra": {
-        "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
-        },
-        "treeFloat": {
-          "bottomFaces": 3753,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        },
-        "roadFloat": {
-          "bottomFaces": 6573,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        }
-      },
-      "scene": "SINGAPORE",
-      "cfg": {
-        "tileCols": 1,
-        "tileRows": 1,
-        "hollowBase": false
-      },
-      "buildMs": 702,
-      "totalTriangles": 237538,
-      "layers": {
-        "water": {
-          "tris": 7456,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 1168,
-          "unpairedDirEdges": 1168,
-          "shells": 1
-        },
-        "base": {
-          "tris": 46140,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1
-        },
-        "greenery": {
-          "tris": 22040,
-          "degenerate": 754,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1910
-        },
-        "roads": {
-          "tris": 40042,
-          "degenerate": 1682,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 3518
-        },
-        "buildings": {
-          "tris": 121860,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 8176
-        },
-        "highlighted": {
-          "tris": 0,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 0
-        }
-      },
-      "perTile": [],
-      "outside": {
-        "water": 0,
-        "base": 0,
-        "greenery": 0,
-        "roads": 0,
-        "buildings": 0,
-        "highlighted": 0
-      },
-      "ray": {
-        "water": {
-          "rays": 6071,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "base": {
-          "rays": 25600,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "greenery": {
-          "rays": 1824,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "roads": {
-          "rays": 2769,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "buildings": {
-          "rays": 5652,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "highlighted": {
-          "rays": 0,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        }
-      },
-      "layerOverlap": {},
-      "floating": {
-        "buildingsChecked": 241,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
-      },
-      "reported": {
-        "isWatertightManifold": false,
-        "floatingBuildingsCount": 12,
-        "outOfTileTrisCount": 0,
-        "totalVolumeMl": 1440.5,
-        "hollowSavingsPct": 0,
-        "maxZMm": 112
-      }
-    },
-    {
-      "extra": {
-        "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
-        },
-        "treeFloat": {
-          "bottomFaces": 3753,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        },
-        "roadFloat": {
-          "bottomFaces": 6573,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        }
-      },
-      "scene": "SINGAPORE",
-      "cfg": {
-        "tileCols": 1,
-        "tileRows": 1,
-        "hollowBase": true
-      },
-      "buildMs": 617,
-      "totalTriangles": 237538,
-      "layers": {
-        "water": {
-          "tris": 7456,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 1168,
-          "unpairedDirEdges": 1168,
-          "shells": 1
-        },
-        "base": {
-          "tris": 46140,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1
-        },
-        "greenery": {
-          "tris": 22040,
-          "degenerate": 754,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1910
-        },
-        "roads": {
-          "tris": 40042,
-          "degenerate": 1682,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 3518
-        },
-        "buildings": {
-          "tris": 121860,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 8176
-        },
-        "highlighted": {
-          "tris": 0,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 0
-        }
-      },
-      "perTile": [],
-      "outside": {
-        "water": 0,
-        "base": 0,
-        "greenery": 0,
-        "roads": 0,
-        "buildings": 0,
-        "highlighted": 0
-      },
-      "ray": {
-        "water": {
-          "rays": 6071,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "base": {
-          "rays": 25600,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "greenery": {
-          "rays": 1824,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "roads": {
-          "rays": 2769,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "buildings": {
-          "rays": 5652,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "highlighted": {
-          "rays": 0,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        }
-      },
-      "layerOverlap": {},
-      "floating": {
-        "buildingsChecked": 241,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
-      },
-      "reported": {
-        "isWatertightManifold": false,
-        "floatingBuildingsCount": 12,
-        "outOfTileTrisCount": 0,
-        "totalVolumeMl": 996.9,
-        "hollowSavingsPct": 31,
-        "maxZMm": 112
-      }
-    },
-    {
-      "extra": {
-        "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
-        },
-        "treeFloat": {
-          "bottomFaces": 3753,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        },
-        "roadFloat": {
-          "bottomFaces": 6530,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        }
-      },
-      "scene": "SINGAPORE",
-      "cfg": {
-        "tileCols": 2,
-        "tileRows": 3,
-        "hollowBase": true
-      },
-      "buildMs": 806,
-      "totalTriangles": 239308,
-      "layers": {
-        "water": {
-          "tris": 7800,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 1192,
-          "unpairedDirEdges": 1192,
-          "shells": 9
-        },
-        "base": {
-          "tris": 47284,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 6
-        },
-        "greenery": {
-          "tris": 22060,
-          "degenerate": 746,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1913
-        },
-        "roads": {
-          "tris": 39928,
-          "degenerate": 1612,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 3513
-        },
-        "buildings": {
-          "tris": 122236,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 8316
-        },
-        "highlighted": {
-          "tris": 0,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 0
-        }
-      },
-      "perTile": [
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        },
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        },
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        },
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        },
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        },
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        }
-      ],
-      "outside": {
-        "water": 0,
-        "base": 0,
-        "greenery": 0,
-        "roads": 0,
-        "buildings": 0,
-        "highlighted": 0
-      },
-      "ray": {
-        "water": {
-          "rays": 6071,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "base": {
-          "rays": 25600,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "greenery": {
-          "rays": 1827,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "roads": {
-          "rays": 2766,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "buildings": {
-          "rays": 5643,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "highlighted": {
-          "rays": 0,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        }
-      },
-      "layerOverlap": {},
-      "floating": {
-        "buildingsChecked": 241,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
-      },
-      "reported": {
-        "isWatertightManifold": false,
-        "floatingBuildingsCount": 12,
-        "outOfTileTrisCount": 0,
-        "totalVolumeMl": 1094.2,
+        "totalVolumeMl": 629.2,
         "hollowSavingsPct": 24,
-        "maxZMm": 112
-      }
-    },
-    {
-      "extra": {
-        "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
-        },
-        "treeFloat": {
-          "bottomFaces": 2391,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        },
-        "roadFloat": {
-          "bottomFaces": 2023,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        }
-      },
-      "scene": "DUBROVNIK",
-      "cfg": {
-        "tileCols": 1,
-        "tileRows": 1,
-        "hollowBase": false
-      },
-      "buildMs": 382,
-      "totalTriangles": 123086,
-      "layers": {
-        "water": {
-          "tris": 11100,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 694,
-          "unpairedDirEdges": 694,
-          "shells": 1
-        },
-        "base": {
-          "tris": 30472,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1
-        },
-        "greenery": {
-          "tris": 14456,
-          "degenerate": 380,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1298
-        },
-        "roads": {
-          "tris": 11780,
-          "degenerate": 460,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1029
-        },
-        "buildings": {
-          "tris": 55278,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 3434
-        },
-        "highlighted": {
-          "tris": 0,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 0
-        }
-      },
-      "perTile": [],
-      "outside": {
-        "water": 0,
-        "base": 0,
-        "greenery": 0,
-        "roads": 0,
-        "buildings": 0,
-        "highlighted": 0
-      },
-      "ray": {
-        "water": {
-          "rays": 11559,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "base": {
-          "rays": 25600,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "greenery": {
-          "rays": 1529,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "roads": {
-          "rays": 1040,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "buildings": {
-          "rays": 2233,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "highlighted": {
-          "rays": 0,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        }
-      },
-      "layerOverlap": {},
-      "floating": {
-        "buildingsChecked": 874,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
-      },
-      "reported": {
-        "isWatertightManifold": true,
-        "floatingBuildingsCount": 0,
-        "outOfTileTrisCount": 0,
-        "totalVolumeMl": 788.3,
-        "hollowSavingsPct": 0,
-        "maxZMm": 28.4
-      }
-    },
-    {
-      "extra": {
-        "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
-        },
-        "treeFloat": {
-          "bottomFaces": 2391,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        },
-        "roadFloat": {
-          "bottomFaces": 2023,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        }
-      },
-      "scene": "DUBROVNIK",
-      "cfg": {
-        "tileCols": 1,
-        "tileRows": 1,
-        "hollowBase": true
-      },
-      "buildMs": 385,
-      "totalTriangles": 123086,
-      "layers": {
-        "water": {
-          "tris": 11100,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 694,
-          "unpairedDirEdges": 694,
-          "shells": 1
-        },
-        "base": {
-          "tris": 30472,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1
-        },
-        "greenery": {
-          "tris": 14456,
-          "degenerate": 380,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1298
-        },
-        "roads": {
-          "tris": 11780,
-          "degenerate": 460,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1029
-        },
-        "buildings": {
-          "tris": 55278,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 3434
-        },
-        "highlighted": {
-          "tris": 0,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 0
-        }
-      },
-      "perTile": [],
-      "outside": {
-        "water": 0,
-        "base": 0,
-        "greenery": 0,
-        "roads": 0,
-        "buildings": 0,
-        "highlighted": 0
-      },
-      "ray": {
-        "water": {
-          "rays": 11559,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "base": {
-          "rays": 25600,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "greenery": {
-          "rays": 1529,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "roads": {
-          "rays": 1040,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "buildings": {
-          "rays": 2233,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "highlighted": {
-          "rays": 0,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        }
-      },
-      "layerOverlap": {},
-      "floating": {
-        "buildingsChecked": 874,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
-      },
-      "reported": {
-        "isWatertightManifold": true,
-        "floatingBuildingsCount": 0,
-        "outOfTileTrisCount": 0,
-        "totalVolumeMl": 414.8,
-        "hollowSavingsPct": 47,
-        "maxZMm": 28.4
-      }
-    },
-    {
-      "extra": {
-        "cavity": {
-          "rays": 0,
-          "pctRays": 0,
-          "maxMm": 0,
-          "avgMm": 0
-        },
-        "treeFloat": {
-          "bottomFaces": 2395,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        },
-        "roadFloat": {
-          "bottomFaces": 2021,
-          "floatingGt005mm": 0,
-          "worstMm": 0
-        }
-      },
-      "scene": "DUBROVNIK",
-      "cfg": {
-        "tileCols": 2,
-        "tileRows": 3,
-        "hollowBase": true
-      },
-      "buildMs": 334,
-      "totalTriangles": 125022,
-      "layers": {
-        "water": {
-          "tris": 11432,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 704,
-          "unpairedDirEdges": 704,
-          "shells": 5
-        },
-        "base": {
-          "tris": 31412,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 6
-        },
-        "greenery": {
-          "tris": 14452,
-          "degenerate": 394,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1297
-        },
-        "roads": {
-          "tris": 11800,
-          "degenerate": 444,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 1032
-        },
-        "buildings": {
-          "tris": 55926,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 3525
-        },
-        "highlighted": {
-          "tris": 0,
-          "degenerate": 0,
-          "sliverLt1e6mm2": 0,
-          "openEdges": 0,
-          "nonManifoldEdges": 0,
-          "sameDirDupEdges": 0,
-          "unpairedDirEdges": 0,
-          "shells": 0
-        }
-      },
-      "perTile": [
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        },
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        },
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        },
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        },
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        },
-        {
-          "water": [
-            0,
-            0
-          ],
-          "base": [
-            0,
-            0
-          ],
-          "greenery": [
-            0,
-            0
-          ],
-          "roads": [
-            0,
-            0
-          ],
-          "buildings": [
-            0,
-            0
-          ],
-          "highlighted": [
-            0,
-            0
-          ]
-        }
-      ],
-      "outside": {
-        "water": 0,
-        "base": 0,
-        "greenery": 0,
-        "roads": 0,
-        "buildings": 0,
-        "highlighted": 0
-      },
-      "ray": {
-        "water": {
-          "rays": 11559,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "base": {
-          "rays": 25600,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "greenery": {
-          "rays": 1528,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "roads": {
-          "rays": 1042,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "buildings": {
-          "rays": 2231,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        },
-        "highlighted": {
-          "rays": 0,
-          "unbalanced": 0,
-          "selfOverlap": 0,
-          "negative": 0
-        }
-      },
-      "layerOverlap": {},
-      "floating": {
-        "buildingsChecked": 874,
-        "floatingGt005mm": 0,
-        "worstMm": 0,
-        "top": []
-      },
-      "reported": {
-        "isWatertightManifold": true,
-        "floatingBuildingsCount": 0,
-        "outOfTileTrisCount": 0,
-        "totalVolumeMl": 508.8,
-        "hollowSavingsPct": 35,
         "maxZMm": 28.4
       }
     }
   ],
   "roofs": [
     {
-      "scene": "MÜNCHEN",
+      "scene": "MUNCHEN",
       "buildingsWithHolesInData": 21,
       "counters": {
-        "calls": 7466,
-        "withHoles": 18,
+        "calls": 1568,
+        "withHoles": 13,
         "courtyardLost": 0,
         "nonSimpleOuter": 0,
-        "wantPitched": 7010,
+        "wantPitched": 612,
         "pitchedToFlat": 0
       }
     },
     {
-      "scene": "KRAKÓW",
+      "scene": "KRAKOW",
       "buildingsWithHolesInData": 35,
       "counters": {
-        "calls": 7930,
-        "withHoles": 27,
+        "calls": 1555,
+        "withHoles": 30,
         "courtyardLost": 0,
         "nonSimpleOuter": 0,
-        "wantPitched": 7902,
+        "wantPitched": 126,
         "pitchedToFlat": 0
       }
     },
     {
-      "scene": "WARSZAWA",
+      "scene": "WARSZAWA_OLD_TOWN",
       "buildingsWithHolesInData": 19,
       "counters": {
-        "calls": 5677,
-        "withHoles": 14,
+        "calls": 796,
+        "withHoles": 15,
         "courtyardLost": 0,
         "nonSimpleOuter": 0,
-        "wantPitched": 5471,
+        "wantPitched": 140,
         "pitchedToFlat": 0
       }
     },
@@ -3720,11 +4753,11 @@
       "scene": "SOPOT",
       "buildingsWithHolesInData": 0,
       "counters": {
-        "calls": 9477,
+        "calls": 1642,
         "withHoles": 0,
         "courtyardLost": 0,
         "nonSimpleOuter": 0,
-        "wantPitched": 9417,
+        "wantPitched": 22,
         "pitchedToFlat": 0
       }
     },
@@ -3732,63 +4765,71 @@
       "scene": "SINGAPORE",
       "buildingsWithHolesInData": 5,
       "counters": {
-        "calls": 8180,
+        "calls": 569,
         "withHoles": 3,
         "courtyardLost": 0,
         "nonSimpleOuter": 0,
-        "wantPitched": 7491,
+        "wantPitched": 69,
         "pitchedToFlat": 0
       }
     },
     {
-      "scene": "DUBROVNIK",
+      "scene": "DUBAI_1.2KM",
+      "buildingsWithHolesInData": 12,
+      "counters": {
+        "calls": 309,
+        "withHoles": 11,
+        "courtyardLost": 0,
+        "nonSimpleOuter": 0,
+        "wantPitched": 2,
+        "pitchedToFlat": 0
+      }
+    },
+    {
+      "scene": "INNSBRUCK",
       "buildingsWithHolesInData": 0,
       "counters": {
-        "calls": 3438,
+        "calls": 1671,
         "withHoles": 0,
         "courtyardLost": 0,
         "nonSimpleOuter": 0,
-        "wantPitched": 3428,
+        "wantPitched": 81,
         "pitchedToFlat": 0
       }
     }
   ],
   "combined_sla_stl": {
-    "stlTriangles": 41302,
-    "raysChecked": 14400,
-    "windingGt1": 0,
-    "windingLt0": 0,
-    "unbalanced": 0,
-    "printMetrics": {
-      "totalVolumeMl": 447.0674290022805,
-      "solidReferenceMl": 729.9307644370256,
-      "hollowSavingsPct": 39,
-      "resinGrams": 501,
-      "plaGrams": 188,
-      "tileVolumesMl": [
-        74.45794810720565,
-        83.98007313698147,
-        75.58673084621779,
-        75.2255663160511,
-        75.22589543396484,
-        62.59121516185962
-      ],
-      "maxTileVolumeMl": 83.98007313698147,
-      "tileWidthMm": 126,
-      "tileHeightMm": 84,
-      "maxZMm": 27.350000000000005,
-      "tileCols": 2,
-      "tileRows": 3,
-      "numTiles": 6,
-      "openEdgesCount": 0,
-      "nonManifoldEdgesCount": 0,
-      "negativeWindingCount": 0,
-      "floatingBuildingsCount": 0,
-      "outOfTileTrisCount": 0,
-      "hasDrainChannels": true,
-      "fitsPhotonMono4": true,
-      "isWatertightManifold": true,
-      "frameExcludedFromExport": true
+    "mono4Verification": {
+      "cols": 2,
+      "rows": 5,
+      "tileW": 150,
+      "tileH": 80,
+      "totalTiles": 10,
+      "fitsPhotonMono4": true
+    },
+    "munichTile0": {
+      "tileId": 0,
+      "stlTriangles": 23038,
+      "raysChecked": 6400,
+      "windingGt1": 9,
+      "windingLt0": 0,
+      "unbalanced": 0
+    },
+    "munichIsarTile2": {
+      "tileId": 2,
+      "stlTriangles": 28191,
+      "raysChecked": 6400,
+      "windingGt1": 225,
+      "windingLt0": 0,
+      "unbalanced": 0
+    },
+    "dubaiBurjTile1": {
+      "tileId": 1,
+      "stlTriangles": 16570,
+      "raysChecked": 6400,
+      "windingGt1": 5,
+      "windingLt0": 0,
+      "unbalanced": 0
     }
   },
   "security_and_cache": {

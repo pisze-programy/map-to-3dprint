@@ -21,21 +21,40 @@ function tileF2lat(y, z) {
 
 
 function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
-  function getSelectedBBoxLatLon() {
-    // Fix R10: Keep 2D blue frame and 3D model crop 100% 1:1 aligned (using _fetchedCropRatio and spanMeters)
+  function getSelectionBBox() {
     const sc = state.sceneData;
     const baseCrop = (sc && sc._fetchedCropRatio) || 0.88;
-    const effCrop = Math.min(1.0, Math.max(0.35, (state.cropRatio || 0.88) / baseCrop));
-    const spanMeters = ((sc && sc.spanMeters) || 1291.3) * effCrop;
-    const halfM = spanMeters * 0.5;
+    const effCrop = Math.min(1.0, Math.max(0.15, (state.cropRatio || 0.88) / baseCrop));
+    const baseSpan = (state.mapSpanMeters || (sc && sc.spanMeters) || 1291.3) * effCrop;
+
+    const totalWidthMm = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 320);
+    const totalHeightMm = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : totalWidthMm);
+    const maxDimMm = Math.max(totalWidthMm, totalHeightMm) || 320;
+
+    const spanX = baseSpan * (totalWidthMm / maxDimMm);
+    const spanY = baseSpan * (totalHeightMm / maxDimMm);
+
+    const halfMx = spanX * 0.5;
+    const halfMy = spanY * 0.5;
     const cosLat = Math.max(0.2, Math.cos(state.mapCenterLat * Math.PI / 180.0));
-    const dLat = halfM / 111320.0;
-    const dLon = halfM / (111320.0 * cosLat);
+    const dLat = halfMy / 111320.0;
+    const dLon = halfMx / (111320.0 * cosLat);
     const south = state.mapCenterLat - dLat;
     const north = state.mapCenterLat + dLat;
     const west = state.mapCenterLon - dLon;
     const east = state.mapCenterLon + dLon;
-    return [south, west, north, east];
+
+    return { south, west, north, east, spanX, spanY };
+  }
+
+  function getSelectedBBoxLatLon() {
+    const b = getSelectionBBox();
+    const arr = [b.south, b.west, b.north, b.east];
+    arr.south = b.south;
+    arr.west = b.west;
+    arr.north = b.north;
+    arr.east = b.east;
+    return arr;
   }
 
   function draw2DMap() {
@@ -194,10 +213,10 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
             ctx2d.fillRect(tx, ty, tw, th);
           }
           ctx2d.fillStyle = 'rgba(15, 23, 42, 0.72)';
-          ctx2d.fillRect(tx + 3, ty + 3, 28, 12);
+          ctx2d.fillRect(tx + 2, ty + 2, Math.min(34, tw - 4), 13);
           ctx2d.fillStyle = '#38bdf8';
           // Fix B34: R1 is always the northernmost (top) row on the 2D map and in exported .STL/.ZIP files
-          ctx2d.fillText(`R${r + 1}C${c + 1}`, tx + 5, ty + 12);
+          ctx2d.fillText(`R${r + 1}C${c + 1}`, tx + 4, ty + 12);
         }
       }
       ctx2d.restore();
@@ -213,12 +232,14 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
 
     const pill = document.getElementById('mapStatusPill');
     if (pill) {
-      pill.textContent = `N ${south.toFixed(4)}°..${north.toFixed(4)}° • E ${west.toFixed(4)}°..${east.toFixed(4)}°`;
+      const dimW = (state.bedSizeMm ? state.bedSizeMm / 10 : (state.targetWidthCm || 32)).toFixed(0);
+      const dimH = (state.totalHeightMm ? state.totalHeightMm / 10 : (state.targetHeightCm || 32)).toFixed(0);
+      pill.textContent = `N ${south.toFixed(4)}°..${north.toFixed(4)}° • E ${west.toFixed(4)}°..${east.toFixed(4)}° • ${dimW}×${dimH} cm`;
     }
 
     ctx2d.restore();
   }
 
 
-  return { getSelectedBBoxLatLon, draw2DMap };
+  return { getSelectedBBoxLatLon, getSelectionBBox, draw2DMap };
 }

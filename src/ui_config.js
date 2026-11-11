@@ -17,8 +17,8 @@ const PALETTES = [
     }
   },
   {
-    id: 'lichtbild_studio',
-    name: 'Lichtbild Studio (4-Kolory)',
+    id: 'studio',
+    name: 'Studio (4-Kolory)',
     colors: {
       water: '#82c2e6',
       base: '#e8be8c',
@@ -69,7 +69,8 @@ const PALETTES = [
 const LAYERS_META = [
   { key: 'water',       id: 0, name: '1. Woda i Batymetria (3 głębokości)', extruder: 'Kolor 1 (Błękit)',  zDesc: '0.0 – 2.3 mm' },
   { key: 'base',        id: 1, name: '2. Warstwice Terenu DEM (Nierówności)',extruder: 'Kolor 2 (Piasek)',  zDesc: '2.4 – 9.8 mm' },
-  { key: 'greenery',    id: 2, name: '3. Trawa, Parki, Lasy i Drzewa 3D',   extruder: 'Kolor 3 (Zieleń)',  zDesc: '+0.3 – 3.0 mm' },
+  { key: 'greenery',    id: 2, name: '3A. Trawa, Parki i Lasy (Murawa)',     extruder: 'Kolor 3 (Zieleń)',  zDesc: '+0.3 – 1.0 mm' },
+  { key: 'trees',       id: 2, name: '3B. Drzewa 3D (Korony i Pnie)',        extruder: 'Kolor 3 (Zieleń)',  zDesc: '+1.5 – 3.2 mm', isTree: true },
   { key: 'roads',       id: 3, name: '4A. Ulice, Aleje, Koleje i Mosty',    extruder: 'Kolor 4 (Kość sł.)',zDesc: '+0.4 – 2.2 mm' },
   { key: 'buildings',   id: 4, name: '4B. Budynki, Dziedzińce i Dachy LoD2',extruder: 'Kolor 4 (Biel)',    zDesc: '+1.5 – 28 mm' },
   { key: 'highlighted', id: 5, name: '5. Wyróżnione Budynki ★ (Opcja)',     extruder: 'Kolor 5 (Akcent)',  zDesc: 'Wyróżnienie' }
@@ -169,6 +170,16 @@ const PRINT_PROFILES = {
     cols: 2, rows: 4,
     isResin: true
   },
+  mono4_custom: {
+    id: 'mono4_custom',
+    name: 'Anycubic Photon Mono 4 • Dowolny Format cm (Auto-Siatka)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 200, totalHeightMm: 200,
+    cols: 2, rows: 3,
+    isResin: true,
+    isCustomMono4: true
+  },
   fdm_330_1x1: {
     id: 'fdm_330_1x1',
     name: 'Prusa XL 5-Toolhead • 320×320 mm (1 Kafel 1×1)',
@@ -218,3 +229,92 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Validates whether a tile of tileWidthMm × tileHeightMm fits within Anycubic Photon Mono 4
+ * build plate (153.4 × 87.0 × 165.0 mm), evaluating both 0° and 90° rotations.
+ */
+function checkTileFitsMono4(tileWidthMm, tileHeightMm, maxZMm = 22.0) {
+  const fits0 = (tileWidthMm <= 153.45 && tileHeightMm <= 87.05);
+  const fits90 = (tileHeightMm <= 153.45 && tileWidthMm <= 87.05);
+  return (fits0 || fits90) && maxZMm <= 165.0;
+}
+
+/**
+ * Computes optimal Anycubic Photon Mono 4 (153.4 × 87.0 mm) tile grid (Cols × Rows)
+ * for a finished print size of widthMm × heightMm, checking both 0° and 90° orientations
+ * with a safe printable margin (defaults safeMaxW = 150.0, safeMaxH = 85.0 mm).
+ *
+ * Minimizes total tiles (cols * rows) and tie-breaks by balanced aspect ratio / larger margin.
+ * Returns { cols, rows, tileW, tileH, rotated90, totalTiles }.
+ */
+function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH = 85.0) {
+  const w = Math.max(10.0, Number(widthMm) || 200.0);
+  const h = Math.max(10.0, Number(heightMm) || 200.0);
+
+  let best = null;
+  for (let cols = 1; cols <= 16; cols++) {
+    const tileW = w / cols;
+    for (let rows = 1; rows <= 16; rows++) {
+      const tileH = h / rows;
+      const fitsNormal = (tileW <= safeMaxW && tileH <= safeMaxH);
+      const fitsRotated = (tileH <= safeMaxW && tileW <= safeMaxH);
+      if (fitsNormal || fitsRotated) {
+        const totalTiles = cols * rows;
+        const rotated90 = !fitsNormal && fitsRotated;
+        const marginNormal = fitsNormal ? Math.min(safeMaxW - tileW, safeMaxH - tileH) : -Infinity;
+        const marginRotated = fitsRotated ? Math.min(safeMaxW - tileH, safeMaxH - tileW) : -Infinity;
+        const bestMargin = Math.max(marginNormal, marginRotated);
+        const aspect = tileW > tileH ? tileW / tileH : tileH / tileW;
+
+        const candidate = {
+          cols,
+          rows,
+          tileW: Math.round(tileW * 10) / 10,
+          tileH: Math.round(tileH * 10) / 10,
+          rotated90,
+          totalTiles,
+          margin: bestMargin,
+          aspect
+        };
+
+        if (!best) {
+          best = candidate;
+        } else if (candidate.totalTiles < best.totalTiles) {
+          best = candidate;
+        } else if (candidate.totalTiles === best.totalTiles) {
+          // Tie-break 1: Most balanced aspect ratio (closer to 1.0)
+          if (Math.abs(candidate.aspect - 1.0) < Math.abs(best.aspect - 1.0) - 0.05) {
+            best = candidate;
+          } else if (Math.abs(candidate.aspect - best.aspect) <= 0.05) {
+            // Tie-break 2: Larger margin
+            if (candidate.margin > best.margin) {
+              best = candidate;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (!best) {
+    const cols = Math.ceil(w / safeMaxW);
+    const rows = Math.ceil(h / safeMaxH);
+    return {
+      cols,
+      rows,
+      tileW: Math.round((w / cols) * 10) / 10,
+      tileH: Math.round((h / rows) * 10) / 10,
+      rotated90: false,
+      totalTiles: cols * rows
+    };
+  }
+
+  return {
+    cols: best.cols,
+    rows: best.rows,
+    tileW: best.tileW,
+    tileH: best.tileH,
+    rotated90: best.rotated90,
+    totalTiles: best.totalTiles
+  };
+}

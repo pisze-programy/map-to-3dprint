@@ -41,6 +41,8 @@ const WEBGL_SHADOW_FS = `
   varying vec3 vWorldPos;
   varying float vLayerId;
   uniform float uTileExplode;
+  uniform float uHalfW;
+  uniform float uHalfH;
   vec4 packDepth(const in float depth) {
     const vec4 bitShift = vec4(256.0*256.0*256.0, 256.0*256.0, 256.0, 1.0);
     const vec4 bitMask  = vec4(0.0, 1.0/256.0, 1.0/256.0, 1.0/256.0);
@@ -50,8 +52,9 @@ const WEBGL_SHADOW_FS = `
   }
   void main() {
     int lid = int(vLayerId + 0.5);
-    float clipLim = 84.85 + uTileExplode * 32.0;
-    if (lid < 6 && (abs(vWorldPos.x) > clipLim || abs(vWorldPos.y) > clipLim)) {
+    float clipLimX = uHalfW + 0.25 + uTileExplode * 32.0;
+    float clipLimY = uHalfH + 0.25 + uTileExplode * 32.0;
+    if (lid < 6 && (abs(vWorldPos.x) > clipLimX || abs(vWorldPos.y) > clipLimY)) {
       discard;
     }
     gl_FragColor = packDepth(clamp(vDepth, 0.0, 1.0));
@@ -161,6 +164,8 @@ const WEBGL_MAIN_FS = `
   uniform float uTileExplode;
   uniform float uActiveTileFilter;
   uniform float uStudioBg;
+  uniform float uHalfW;
+  uniform float uHalfH;
 
   float unpackDepth(const in vec4 rgbaDepth) {
     const vec4 bitShift = vec4(1.0/(256.0*256.0*256.0), 1.0/(256.0*256.0), 1.0/256.0, 1.0);
@@ -192,15 +197,16 @@ const WEBGL_MAIN_FS = `
     int lid = int(vLayerId + 0.5);
 
     // Hard GPU Clip (expands smoothly when tiles are exploded)
-    float clipLim = 84.85 + uTileExplode * 32.0;
-    if (lid < 6 && (abs(vWorldPos.x) > clipLim || abs(vWorldPos.y) > clipLim)) {
+    float clipLimX = uHalfW + 0.25 + uTileExplode * 32.0;
+    float clipLimY = uHalfH + 0.25 + uTileExplode * 32.0;
+    if (lid < 6 && (abs(vWorldPos.x) > clipLimX || abs(vWorldPos.y) > clipLimY)) {
       discard;
     }
 
     // Studio Floor Shadow Receiver Plane (lid == 7)
     if (lid == 7) {
       vec3 bgCol = (uStudioBg > 0.5) ? vec3(0.985, 0.986, 0.99) : vec3(0.075, 0.105, 0.165);
-      vec2 d = abs(vWorldPos.xy - vec2(-3.0, -4.0)) - vec2(93.8, 93.8);
+      vec2 d = abs(vWorldPos.xy - vec2(-3.0, -4.0)) - vec2(uHalfW + 9.2, uHalfH + 9.2);
       float boxDist = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
       float dropShadow = smoothstep(-4.0, 22.0, boxDist);
       float darkness = (uStudioBg > 0.5) ? (0.76 + 0.24 * dropShadow) : (0.55 + 0.45 * dropShadow);
@@ -284,10 +290,12 @@ const WEBGL_MAIN_FS = `
 
     // Precision multi-tile cut line visualization for Anycubic Photon Mono 4 & FDM multi-tile modes
     if ((uTileCols > 1.0 || uTileRows > 1.0) && lid != 6 && uTileExplode < 0.03) {
-      float uX = ((vRawPos.x + 84.6) / 169.2) * uTileCols;
-      float uY = ((vRawPos.y + 84.6) / 169.2) * uTileRows;
-      float distX = min(fract(uX), 1.0 - fract(uX)) * (169.2 / uTileCols);
-      float distY = min(fract(uY), 1.0 - fract(uY)) * (169.2 / uTileRows);
+      float spanX = uHalfW * 2.0;
+      float spanY = uHalfH * 2.0;
+      float uX = ((vRawPos.x + uHalfW) / spanX) * uTileCols;
+      float uY = ((vRawPos.y + uHalfH) / spanY) * uTileRows;
+      float distX = min(fract(uX), 1.0 - fract(uX)) * (spanX / uTileCols);
+      float distY = min(fract(uY), 1.0 - fract(uY)) * (spanY / uTileRows);
       bool onInnerSeamX = (uX > 0.05 && uX < uTileCols - 0.05 && distX < 0.36);
       bool onInnerSeamY = (uY > 0.05 && uY < uTileRows - 0.05 && distY < 0.36);
       if (onInnerSeamX || onInnerSeamY) {

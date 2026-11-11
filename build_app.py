@@ -49,7 +49,9 @@ def build():
         with open(os.path.join(ROOT, jf), "r", encoding="utf-8") as f:
             js_bundle.append(f.read())
 
-    scene_file = os.path.join(ROOT, "cache/scene_v4_48.1280_11.5769_48.1396_11.5941.json")
+    scene_file = os.path.join(ROOT, "cache/scene_v5_48.1280_11.5769_48.1396_11.5941.json")
+    if not os.path.exists(scene_file):
+        scene_file = os.path.join(ROOT, "cache/scene_v4_48.1280_11.5769_48.1396_11.5941.json")
     if not os.path.exists(scene_file):
         scene_file = os.path.join(ROOT, "cache/scene_v3_48.1280_11.5769_48.1396_11.5941.json")
     with open(scene_file, "r", encoding="utf-8") as f:

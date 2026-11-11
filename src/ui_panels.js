@@ -3,7 +3,50 @@
 // Palettes, Layers, Multi-Select Building Inspector, Landmark Chips & Print Stats UI
 // ============================================================================
 
-function createUIPanelsController(state, draw2DMap) {
+function toColorHex(col, defaultHex = '#ffffff') {
+  if (!col) return defaultHex;
+  if (typeof col === 'string') {
+    let s = col.trim();
+    if (s.startsWith('#')) {
+      if (s.length === 7) return s.toLowerCase();
+      if (s.length === 4) {
+        return ('#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3]).toLowerCase();
+      }
+    }
+    if (/^[0-9a-fA-F]{6}$/.test(s)) {
+      return ('#' + s).toLowerCase();
+    }
+    if (s.startsWith('rgb')) {
+      const m = s.match(/\d+(\.\d+)?/g);
+      if (m && m.length >= 3) {
+        const r = Math.min(255, Math.max(0, Math.round(parseFloat(m[0]))));
+        const g = Math.min(255, Math.max(0, Math.round(parseFloat(m[1]))));
+        const b = Math.min(255, Math.max(0, Math.round(parseFloat(m[2]))));
+        return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+      }
+    }
+    return defaultHex;
+  }
+  if (Array.isArray(col) && col.length >= 3) {
+    let [r, g, b] = col;
+    if (r <= 1.0 && g <= 1.0 && b <= 1.0 && (r > 0 || g > 0 || b > 0)) {
+      r = Math.round(r * 255);
+      g = Math.round(g * 255);
+      b = Math.round(b * 255);
+    } else {
+      r = Math.round(r);
+      g = Math.round(g);
+      b = Math.round(b);
+    }
+    r = Math.min(255, Math.max(0, r));
+    g = Math.min(255, Math.max(0, g));
+    b = Math.min(255, Math.max(0, b));
+    return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+  }
+  return defaultHex;
+}
+
+function createUIPanelsController(state, draw2DMap, onRebuildNeeded) {
   function renderPalettesUI() {
     const container = document.getElementById('paletteButtonsContainer');
     if (!container) return;
@@ -15,7 +58,7 @@ function createUIPanelsController(state, draw2DMap) {
         active ? 'border-blue-500 bg-blue-500/10' : 'border-[var(--border)] bg-[var(--background)] hover:opacity-85'
       }`;
       const swatches = Object.values(p.colors)
-        .map(c => `<span class="w-3.5 h-3.5 rounded-sm border border-black/25 inline-block" style="background:${c}"></span>`)
+        .map(c => `<span class="w-3.5 h-3.5 rounded-sm border border-black/25 inline-block" style="background:${toColorHex(c)}"></span>`)
         .join('');
       btn.innerHTML = `
         <div class="text-xs font-semibold text-[var(--foreground)] truncate">${p.name}</div>
@@ -23,9 +66,13 @@ function createUIPanelsController(state, draw2DMap) {
       `;
       btn.addEventListener('click', () => {
         state.activePalette = p.id;
-        state.colors = { ...p.colors };
+        state.colors = {};
+        for (const [k, v] of Object.entries(p.colors)) {
+          state.colors[k] = toColorHex(v);
+        }
         renderPalettesUI();
         renderLayersUI();
+        if (onRebuildNeeded) onRebuildNeeded();
       });
       container.appendChild(btn);
     });
@@ -38,11 +85,13 @@ function createUIPanelsController(state, draw2DMap) {
     LAYERS_META.forEach(m => {
       const row = document.createElement('div');
       row.className = 'bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5 flex items-center justify-between gap-2';
-      const isVis = state.layerVisible[m.key];
+      const isVis = state.layerVisible[m.key] !== false;
+      const rawVal = state.colors[m.key] || state.colors.greenery || '#488e52';
+      const colVal = toColorHex(rawVal, '#488e52');
       row.innerHTML = `
         <div class="flex items-center gap-2 min-w-0">
           <input type="checkbox" data-layer-vis="${m.key}" ${isVis ? 'checked' : ''} class="rounded cursor-pointer" />
-          <input type="color" data-layer-col="${m.key}" value="${state.colors[m.key]}" class="w-6 h-6 rounded cursor-pointer shrink-0" />
+          <input type="color" data-layer-col="${m.key}" value="${colVal}" class="w-6 h-6 rounded cursor-pointer shrink-0" />
           <div class="min-w-0">
             <div class="text-xs font-semibold text-[var(--foreground)] truncate">${m.name}</div>
             <div class="text-xs text-[var(--muted-foreground)] font-mono">${m.extruder} • ${m.zDesc}</div>
@@ -57,15 +106,20 @@ function createUIPanelsController(state, draw2DMap) {
         const k = e.target.getAttribute('data-layer-vis');
         state.layerVisible[k] = e.target.checked;
         updateStatsUI();
+        if (onRebuildNeeded) onRebuildNeeded();
       });
     });
 
     container.querySelectorAll('[data-layer-col]').forEach(inp => {
       inp.addEventListener('input', e => {
         const k = e.target.getAttribute('data-layer-col');
-        state.colors[k] = e.target.value;
+        state.colors[k] = toColorHex(e.target.value);
+        if (k === 'greenery' && !state.colors.trees) {
+          state.colors.trees = toColorHex(e.target.value);
+        }
         state.activePalette = 'custom';
         renderPalettesUI();
+        if (onRebuildNeeded) onRebuildNeeded();
       });
     });
   }
@@ -80,7 +134,8 @@ function createUIPanelsController(state, draw2DMap) {
     const result = [];
     const seen = new Set();
     targetGroupIds.forEach(gid => {
-      const members = state.groupIdMap.get(gid) || scene.buildings.filter(x => x.id === gid || x._groupId === gid);
+      const members = (state.groupIdMap && state.groupIdMap.get(gid)) ||
+        scene.buildings.filter(x => x.id === gid || x.groupId === gid || x.osmId === gid || x._groupId === gid);
       members.forEach(m => {
         if (!seen.has(m.id)) {
           seen.add(m.id);
@@ -114,8 +169,9 @@ function createUIPanelsController(state, draw2DMap) {
     contentEl.classList.remove('hidden');
 
     const groupCount = state.selectedBuildingIds.size;
+    const bldName = b.name || (activeBlds.find(x => x.name && !x.name.startsWith('Budynek OSM')) || b).name;
     document.getElementById('inspName').textContent =
-      groupCount > 1 ? `${b.name} (+${groupCount - 1} zaznaczonych)` : b.name;
+      groupCount > 1 ? `${bldName} (+${groupCount - 1} zaznaczonych)` : bldName;
 
     const badge = document.getElementById('inspTagBadge');
     if (b.highlighted) {
@@ -129,16 +185,27 @@ function createUIPanelsController(state, draw2DMap) {
       badge.className = 'text-xs px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-mono';
     }
 
+    const gid = b.groupId || b.osmId || b.id || b._groupId;
+    const maxLevels = Math.max(...activeBlds.map(x => x.levels || 1));
+    const partCount = activeBlds.length;
     document.getElementById('inspOsmId').textContent =
-      `OSM ID: ${b.osmId} • Kondygnacje: ${b.levels} • Części: ${activeBlds.length}`;
-    const effMeters = Math.round(b.h * (b.heightMult || 1));
-    // Fix B19: Compute printed height in mm directly from the actual extruded 3D mesh bounds
-    const gid = b._groupId || b.id;
-    const bb = (state.buildingBounds || []).find(x => x.groupId === gid || x.building.id === b.id);
-    const scaleMm = (state.bedSizeMm || 320) / 169.2;
-    const printMm = bb
-      ? Math.max(1.0, (bb.maxZ - bb.minZ) * scaleMm).toFixed(1)
-      : (b.h * (scene.metersToUnits || 0.13) * state.zScale * (b.heightMult || 1) * scaleMm).toFixed(1);
+      `OSM ID: ${gid} • Kondygnacje: ${maxLevels} • ${partCount > 1 ? partCount + ' części (S3DB)' : '1 bryła'}`;
+
+    const effMeters = Math.round(Math.max(...activeBlds.map(x => (x.h || 0) * (x.heightMult || 1))));
+    
+    // Compute printed height in mm directly from the actual extruded 3D mesh bounds across all parts in group
+    const groupBounds = (state.buildingBounds || []).filter(x => x.groupId === gid || x.building.id === b.id || x.building._groupId === gid);
+    let minZ = Infinity, maxZ = -Infinity;
+    groupBounds.forEach(gb => {
+      if (gb.minZ < minZ) minZ = gb.minZ;
+      if (gb.maxZ > maxZ) maxZ = gb.maxZ;
+    });
+    const maxDimMm = Math.max(state.bedSizeMm || 320, state.totalHeightMm || 320);
+    const scaleMm = maxDimMm / 169.2;
+    const printMm = (maxZ > minZ)
+      ? Math.max(1.0, (maxZ - minZ) * scaleMm).toFixed(1)
+      : (effMeters * (scene.metersToUnits || 0.13) * state.zScale * scaleMm).toFixed(1);
+
     document.getElementById('inspRealHeight').textContent = `${effMeters} m`;
     document.getElementById('inspPrintHeight').textContent = `${printMm} mm w druku`;
 
@@ -155,7 +222,7 @@ function createUIPanelsController(state, draw2DMap) {
 
   function handleSelectBuilding(b, isShiftKey) {
     if (!b) return;
-    const gid = b._groupId || b.id;
+    const gid = b.groupId || b.osmId || b.id || b._groupId;
     state.userClickedBuilding = true;
     if (isShiftKey) {
       if (state.selectedBuildingIds.size === 0 && state.selectedBuildingId && state.selectedBuildingId !== gid) {
@@ -176,24 +243,24 @@ function createUIPanelsController(state, draw2DMap) {
     updateLandmarkChips();
     draw2DMap();
   }
-
   function updateLandmarkChips() {
     const container = document.getElementById('landmarkChips');
     if (!container || !state.sceneData) return;
     container.innerHTML = '';
 
-    const seenNames = new Set();
+    const seenGids = new Set();
     const named = (state.sceneData.buildings || [])
       .filter(b => {
-        if (!b.landmark || b.name.startsWith('Budynek OSM')) return false;
-        if (seenNames.has(b.name)) return false;
-        seenNames.add(b.name);
+        if (!b.landmark || !b.name || b.name.startsWith('Budynek OSM')) return false;
+        const gid = b.groupId || b.osmId || b.id || b._groupId;
+        if (seenGids.has(gid)) return false;
+        seenGids.add(gid);
         return true;
       })
       .slice(0, 8);
 
     named.forEach(b => {
-      const gid = b._groupId || b.id;
+      const gid = b.groupId || b.osmId || b.id || b._groupId;
       const chip = document.createElement('button');
       const isSel = state.userClickedBuilding && (state.selectedBuildingIds.has(gid) || state.selectedBuildingId === gid);
       chip.className = `text-xs px-2 py-1 rounded-md border transition flex items-center gap-1 ${
@@ -260,8 +327,8 @@ function createUIPanelsController(state, draw2DMap) {
     const cols = state.tileCols || 1;
     const rows = state.tileRows || 1;
     const numTiles = cols * rows;
-    const dimW = state.bedSizeMm || 320;
-    const dimH = state.totalHeightMm || dimW;
+    const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 320);
+    const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
     const tileW = Math.round(dimW / cols);
     const tileH = Math.round(dimH / rows);
     const maxZ = Math.round(pm.maxZMm || 22);
@@ -269,13 +336,63 @@ function createUIPanelsController(state, draw2DMap) {
     document.getElementById('meshStatsBadge').textContent =
       `${state.totalTriangles.toLocaleString('pl-PL')} trójkątów • ${bCount} budynków • ${tCount} drzew 3D`;
 
+    // Keep Target Dimensions (cm) inputs in sync without overriding user input focus
+    const wCmInp = document.getElementById('targetWidthCmInput');
+    const hCmInp = document.getElementById('targetHeightCmInput');
+    if (wCmInp && document.activeElement !== wCmInp) {
+      wCmInp.value = Math.round(dimW / 10);
+    }
+    if (hCmInp && document.activeElement !== hCmInp) {
+      hCmInp.value = Math.round(dimH / 10);
+    }
+
+    // Update Anycubic Photon Mono 4 optimal grid solver badge
+    const optGrid = computeOptimalMono4Grid(dimW, dimH);
+    const monoBadge = document.getElementById('mono4GridBadge');
+    if (monoBadge) {
+      monoBadge.textContent = `Mono 4: ${optGrid.cols}×${optGrid.rows} (${optGrid.totalTiles} k. • ${optGrid.tileW}×${optGrid.tileH}mm${optGrid.rotated90 ? ' ↻' : ''})`;
+      monoBadge.title = `Optymalny podział dla wymiaru ${Math.round(dimW/10)}×${Math.round(dimH/10)} cm na stół Anycubic Photon Mono 4: ${optGrid.cols} kolumn × ${optGrid.rows} wierszy (${optGrid.totalTiles} kafli po ${optGrid.tileW}×${optGrid.tileH} mm${optGrid.rotated90 ? ' - obrót 90°' : ''})`;
+    }
+
     const tileGridSel = document.getElementById('tileGridSelect');
     if (tileGridSel) {
-      tileGridSel.value = `${cols}x${rows}`;
+      const curKey = `${cols}x${rows}`;
+      let hasOpt = false;
+      for (let i = 0; i < tileGridSel.options.length; i++) {
+        if (tileGridSel.options[i].value === curKey) { hasOpt = true; break; }
+      }
+      if (!hasOpt) {
+        const customOpt = document.createElement('option');
+        customOpt.value = curKey;
+        customOpt.textContent = curKey;
+        tileGridSel.appendChild(customOpt);
+      }
+      tileGridSel.value = curKey;
+    }
+
+    // Validate tile dimensions against Anycubic Photon Mono 4 build plate
+    const fitsMono4 = checkTileFitsMono4(tileW, tileH, maxZ);
+    const fitWarn = document.getElementById('mono4FitWarning');
+    const autoFitBtn = document.getElementById('btnAutoFitMono4');
+    if (fitWarn) {
+      fitWarn.classList.toggle('hidden', fitsMono4 || !profile.isResin);
+    }
+    if (autoFitBtn) {
+      autoFitBtn.classList.toggle('hidden', fitsMono4 || !profile.isResin);
+    }
+
+    // Sync Kerf and Frame Export toggles
+    const kerfInp = document.getElementById('kerfMmInput');
+    if (kerfInp && document.activeElement !== kerfInp) {
+      kerfInp.value = (state.kerfMm !== undefined) ? state.kerfMm : 0.08;
+    }
+    const frameChk = document.getElementById('chkExportFrame');
+    if (frameChk && document.activeElement !== frameChk) {
+      frameChk.checked = !!state.exportFrame;
     }
 
     const baseCrop = (sc && sc._fetchedCropRatio) || 0.88;
-    const effCrop = Math.min(1.0, Math.max(0.35, (state.cropRatio || 0.88) / baseCrop));
+    const effCrop = Math.min(1.0, Math.max(0.15, (state.cropRatio || 0.88) / baseCrop));
     const realSpanM = ((sc && sc.spanMeters) || 1291.3) * effCrop;
     const scaleDenom = Math.round((realSpanM * 1000) / Math.max(1, dimW));
     const cropLbl = document.getElementById('cropSizeLabel');

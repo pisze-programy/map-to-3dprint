@@ -115,11 +115,18 @@ function createWebGLStudio(canvas3d, state) {
       lastRenderSig = '';
     }
 
+    // Calculate isotropic scene half-extents for square & rectangular models
+    const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 320);
+    const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
+    const maxDim = Math.max(dimW, dimH) || 320;
+    const halfW = 84.6 * (dimW / maxDim);
+    const halfH = 84.6 * (dimH / maxDim);
+
     // Fix B21: On-demand dirty-state check so idle frames perform 0 GPU draw calls
     const selKey = state.selectedBuildingIds ? Array.from(state.selectedBuildingIds).join(',') : String(state.selectedBuildingId || '');
     const visKey = Object.values(state.layerVisible || {}).map(v => v ? '1' : '0').join('');
     const colKey = Object.values(state.colors || {}).join(',');
-    const sig = `${meshUploadVersion}|${w}x${h}|${camera.yaw.toFixed(4)},${camera.pitch.toFixed(4)},${camera.distance.toFixed(2)},${camera.target[0].toFixed(2)},${camera.target[1].toFixed(2)},${camera.target[2].toFixed(2)}|${state.sunAngleDeg}|${state.explodeFactor}|${state.tileCols}x${state.tileRows}|${state.tileExplode}|${state.exportTileFilter}|${state.showFrame}|${state.studioBg}|${state.showLayerLines}|${state.frameStyle}|${state.hoveredBuildingId}|${state.userClickedBuilding}|${selKey}|${visKey}|${colKey}`;
+    const sig = `${meshUploadVersion}|${w}x${h}|${camera.yaw.toFixed(4)},${camera.pitch.toFixed(4)},${camera.distance.toFixed(2)},${camera.target[0].toFixed(2)},${camera.target[1].toFixed(2)},${camera.target[2].toFixed(2)}|${state.sunAngleDeg}|${state.explodeFactor}|${state.tileCols}x${state.tileRows}|${state.tileExplode}|${state.exportTileFilter}|${state.showFrame}|${state.studioBg}|${state.showLayerLines}|${state.frameStyle}|${state.hoveredBuildingId}|${state.userClickedBuilding}|${selKey}|${visKey}|${colKey}|${halfW.toFixed(1)}x${halfH.toFixed(1)}`;
     if (!force && sig === lastRenderSig) return;
     lastRenderSig = sig;
 
@@ -153,6 +160,8 @@ function createWebGLStudio(canvas3d, state) {
     gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileCols'), tCols);
     gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileRows'), tRows);
     gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileExplode'), tExplode);
+    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uHalfW'), halfW);
+    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uHalfH'), halfH);
 
     const sLocPos = gl.getAttribLocation(shadowProg, 'aPos');
     const sLocLayer = gl.getAttribLocation(shadowProg, 'aLayerId');
@@ -199,6 +208,8 @@ function createWebGLStudio(canvas3d, state) {
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uTileRows'), tRows);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uTileExplode'), tExplode);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uActiveTileFilter'), activeTile);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uHalfW'), halfW);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uHalfH'), halfH);
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uEyePos'), eye);
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uSunDir'), sunDir);
 
@@ -221,14 +232,21 @@ function createWebGLStudio(canvas3d, state) {
 
     selectedIdsBuffer.fill(-999.0);
     if (state.userClickedBuilding) {
-      if (state.selectedBuildingIds && state.selectedBuildingIds.size > 0) {
-        let idx = 0;
-        for (const id of state.selectedBuildingIds) {
-          if (idx < 64) selectedIdsBuffer[idx++] = id;
-        }
-      } else if (state.selectedBuildingId) {
-        selectedIdsBuffer[0] = state.selectedBuildingId;
+      let idx = 0;
+      const targetGids = new Set(state.selectedBuildingIds);
+      if (targetGids.size === 0 && state.selectedBuildingId) {
+        targetGids.add(state.selectedBuildingId);
       }
+      targetGids.forEach(gid => {
+        const members = state.groupIdMap ? state.groupIdMap.get(gid) : null;
+        if (members && members.length > 0) {
+          members.forEach(m => {
+            if (idx < 64) selectedIdsBuffer[idx++] = m.id;
+          });
+        } else if (typeof gid === 'number' && idx < 64) {
+          selectedIdsBuffer[idx++] = gid;
+        }
+      });
     }
     gl.uniform1fv(gl.getUniformLocation(mainProg, 'uSelectedIds[0]'), selectedIdsBuffer);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uHoveredBuildingId'), state.hoveredBuildingId || -999);

@@ -15,6 +15,11 @@ function initMap3DApp(initialScene) {
     printerProfileId: 'fdm_330_1x1',
     bedSizeMm: 320,
     totalHeightMm: 320,
+    targetWidthCm: 32,
+    targetHeightCm: 32,
+    kerfMm: 0.08,
+    exportFrame: false,
+    mapSpanMeters: 1291.3,
     tileCols: 1,
     tileRows: 1,
     tileExplode: 0.0,
@@ -37,12 +42,13 @@ function initMap3DApp(initialScene) {
     studioBg: true,
     frameStyle: 'black',
     autoRotate: false,
-    activePalette: 'lichtbild_studio',
-    colors: { ...PALETTES[0].colors },
+    activePalette: 'studio',
+    colors: { ...(PALETTES.find(p => p.id === 'studio') || PALETTES[0]).colors },
     layerVisible: {
       water: true,
       base: true,
       greenery: true,
+      trees: true,
       roads: true,
       buildings: true,
       highlighted: true
@@ -74,7 +80,7 @@ function initMap3DApp(initialScene) {
   const osmTileCache = {};
   let lastRandomIndex = -1;
 
-  const { getSelectedBBoxLatLon, draw2DMap } = createMap2DController(canvas2d, ctx2d, osmTileCache, state);
+  const { getSelectedBBoxLatLon, getSelectionBBox, draw2DMap } = createMap2DController(canvas2d, ctx2d, osmTileCache, state);
   const {
     renderPalettesUI,
     renderLayersUI,
@@ -84,7 +90,7 @@ function initMap3DApp(initialScene) {
     updateLandmarkChips,
     updateTileSelectorOptions,
     updateStatsUI
-  } = createUIPanelsController(state, draw2DMap);
+  } = createUIPanelsController(state, draw2DMap, rebuildModel3D);
 
   // ==========================================================================
   // REBUILD 3D MODEL FROM CURRENT REAL GIS SCENE
@@ -98,11 +104,17 @@ function initMap3DApp(initialScene) {
 
     // Build groupId -> buildings lookup so multi-part buildings act as one cohesive unit
     state.groupIdMap.clear();
-    res.buildingBounds.forEach(bb => {
-      const gid = bb.groupId || bb.building.id;
-      bb.building._groupId = gid;
+    const sceneBlds = (state.sceneData && state.sceneData.buildings) || [];
+    sceneBlds.forEach(b => {
+      const gid = b.groupId || b.osmId || b.id;
+      b._groupId = gid;
       if (!state.groupIdMap.has(gid)) state.groupIdMap.set(gid, []);
-      state.groupIdMap.get(gid).push(bb.building);
+      state.groupIdMap.get(gid).push(b);
+    });
+    (res.buildingBounds || []).forEach(bb => {
+      const gid = bb.building.groupId || bb.building.osmId || bb.building.id || bb.groupId;
+      bb.groupId = gid;
+      bb.building._groupId = gid;
     });
 
     studio.uploadMeshes(state.layerMeshes);
@@ -474,13 +486,93 @@ function initMap3DApp(initialScene) {
     if (rawVal > baseCrop) {
       e.target.value = Math.round(baseCrop * 100);
     }
-    const effCrop = Math.min(1.0, Math.max(0.35, state.cropRatio / baseCrop));
+    const effCrop = Math.min(1.0, Math.max(0.15, state.cropRatio / baseCrop));
     const realSpanM = ((sc && sc.spanMeters) || 1291.3) * effCrop;
+    state.mapSpanMeters = realSpanM;
     const scaleDenom = Math.round((realSpanM * 1000) / Math.max(1, state.bedSizeMm || 320));
     document.getElementById('cropSizeLabel').textContent = `${(realSpanM / 1000).toFixed(2)} km (1:${scaleDenom})`;
     draw2DMap();
   });
   document.getElementById('cropSizeSlider').addEventListener('change', () => rebuildModel3D());
+
+  // Kadr (Map Span) Preset Buttons
+  document.querySelectorAll('[data-span-km]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const km = parseFloat(btn.getAttribute('data-span-km'));
+      if (!km) return;
+      state.mapSpanMeters = km * 1000;
+      const sc = state.sceneData;
+      const baseCrop = (sc && sc._fetchedCropRatio) || 0.88;
+      const baseSpan = (sc && sc.spanMeters) || 1291.3;
+      state.cropRatio = Math.min(baseCrop, Math.max(0.15, (state.mapSpanMeters / baseSpan) * baseCrop));
+      const slider = document.getElementById('cropSizeSlider');
+      if (slider) slider.value = Math.round(state.cropRatio * 100);
+      draw2DMap();
+      rebuildModel3D();
+    });
+  });
+
+  // Target Finished Wall-Art Dimensions (cm) and Standard Picture-Frame Chips
+  const targetWidthCmInput = document.getElementById('targetWidthCmInput');
+  const targetHeightCmInput = document.getElementById('targetHeightCmInput');
+  function handleTargetDimensionChange() {
+    const wVal = Math.max(8, Math.min(120, parseFloat(targetWidthCmInput ? targetWidthCmInput.value : 32) || 32));
+    const hVal = Math.max(8, Math.min(120, parseFloat(targetHeightCmInput ? targetHeightCmInput.value : 32) || 32));
+    state.targetWidthCm = wVal;
+    state.targetHeightCm = hVal;
+    state.bedSizeMm = Math.round(wVal * 10);
+    state.totalHeightMm = Math.round(hVal * 10);
+
+    const prof = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.fdm_330_1x1;
+    if (prof.isResin) {
+      const optGrid = computeOptimalMono4Grid(state.bedSizeMm, state.totalHeightMm);
+      state.tileCols = optGrid.cols;
+      state.tileRows = optGrid.rows;
+    }
+    draw2DMap();
+    rebuildModel3D();
+  }
+  if (targetWidthCmInput) targetWidthCmInput.addEventListener('change', handleTargetDimensionChange);
+  if (targetHeightCmInput) targetHeightCmInput.addEventListener('change', handleTargetDimensionChange);
+
+  document.querySelectorAll('[data-frame-size]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const parts = btn.getAttribute('data-frame-size').split('x');
+      const w = parseInt(parts[0], 10);
+      const h = parseInt(parts[1], 10);
+      if (targetWidthCmInput) targetWidthCmInput.value = w;
+      if (targetHeightCmInput) targetHeightCmInput.value = h;
+      handleTargetDimensionChange();
+    });
+  });
+
+  const btnAutoFitMono4 = document.getElementById('btnAutoFitMono4');
+  if (btnAutoFitMono4) {
+    btnAutoFitMono4.addEventListener('click', () => {
+      const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 320);
+      const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
+      const opt = computeOptimalMono4Grid(dimW, dimH);
+      state.tileCols = opt.cols;
+      state.tileRows = opt.rows;
+      draw2DMap();
+      rebuildModel3D();
+    });
+  }
+
+  const kerfMmInput = document.getElementById('kerfMmInput');
+  if (kerfMmInput) {
+    kerfMmInput.addEventListener('change', e => {
+      state.kerfMm = Math.max(0, Math.min(1.0, parseFloat(e.target.value) || 0.08));
+      rebuildModel3D();
+    });
+  }
+
+  const chkExportFrame = document.getElementById('chkExportFrame');
+  if (chkExportFrame) {
+    chkExportFrame.addEventListener('change', e => {
+      state.exportFrame = e.target.checked;
+    });
+  }
 
   // Exploded View slider & toggle
   const explodeSlider = document.getElementById('explodeSlider');
@@ -505,8 +597,8 @@ function initMap3DApp(initialScene) {
   if (tileGridSelect) {
     tileGridSelect.addEventListener('change', e => {
       const [cStr, rStr] = (e.target.value || '1x1').split('x');
-      state.tileCols = Math.max(1, Math.min(4, parseInt(cStr, 10) || 1));
-      state.tileRows = Math.max(1, Math.min(4, parseInt(rStr, 10) || 1));
+      state.tileCols = Math.max(1, Math.min(16, parseInt(cStr, 10) || 1));
+      state.tileRows = Math.max(1, Math.min(16, parseInt(rStr, 10) || 1));
       state.exportTileFilter = 'all';
       if (state.tileCols === 1 && state.tileRows === 1) {
         state.tileExplode = 0;
@@ -564,6 +656,8 @@ function initMap3DApp(initialScene) {
     state.printerProfileId = prof.id;
     state.bedSizeMm = prof.totalWidthMm;
     state.totalHeightMm = prof.totalHeightMm;
+    state.targetWidthCm = Math.round(prof.totalWidthMm / 10);
+    state.targetHeightCm = Math.round(prof.totalHeightMm / 10);
     state.tileCols = prof.cols;
     state.tileRows = prof.rows;
     state.exportTileFilter = 'all';
@@ -571,6 +665,11 @@ function initMap3DApp(initialScene) {
     state.isResin = !!prof.isResin;
     state.layerHeightMm = prof.isResin ? 0.05 : 0.20;
     state.hollowBase = !!prof.isResin;
+    if (prof.isCustomMono4) {
+      const opt = computeOptimalMono4Grid(state.bedSizeMm, state.totalHeightMm);
+      state.tileCols = opt.cols;
+      state.tileRows = opt.rows;
+    }
     const chkH = document.getElementById('chkHollowBase');
     if (chkH) chkH.checked = state.hollowBase;
     if (prof.cols === 1 && prof.rows === 1) {

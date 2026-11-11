@@ -73,9 +73,9 @@ function rayCross(idx, px, py) {
     const l3 = 1 - l1 - l2;
     if (l1 < 0 || l2 < 0 || l3 < 0) continue;
     const z = l1 * a[2] + l2 * b[2] + l3 * c[2];
-    out.push({ z, s: d > 0 ? 1 : -1 }); // d>0 => CCW in XY => normal +z (exit when going up)
+  out.push({ z, s: d > 0 ? 1 : -1, bId: t.buildingId }); // d>0 => CCW in XY => normal +z (exit when going up)
   }
-  out.sort((p, q) => p.z - q.z);
+  out.sort((p, q) => Math.abs(p.z - q.z) < 1e-5 ? (q.s - p.s) : (p.z - q.z));
   return out;
 }
 // convert crossings to inside intervals with winding (going up: +z normal = exit => winding -1; -z normal = entry => +1)
@@ -114,7 +114,8 @@ for (const sc of SCENES) {
       for (const v of [t.v0, t.v1, t.v2]) if (v[0] < x0 || v[0] > x1 || v[1] < y0 || v[1] > y1) { n++; break; } } outside[k] = n; }
     // ray analysis
     const idx = {}; for (const k of KEYS) idx[k] = buildIndex(M[k] || [], 96);
-    const surfIdx = buildIndex([...(M.base || []), ...(M.water || []), ...(M.greenery || []), ...(M.roads || [])].filter(t => t.n[2] > 0.5), 96);
+    const bTrisUp = [...(M.buildings || []), ...(M.highlighted || [])].filter(t => t.n[2] > 0.5);
+    const surfIdx = buildIndex([...(M.base || []), ...(M.water || []), ...(M.greenery || []), ...(M.roads || []), ...bTrisUp].filter(t => t.n[2] > 0.5), 96);
     const ray = {}; for (const k of KEYS) ray[k] = { rays: 0, unbalanced: 0, selfOverlap: 0, negative: 0 };
     const pairs = {}; let totalRays = 0;
     for (let iy = 0; iy < RAYS; iy++) for (let ix = 0; ix < RAYS; ix++) {
@@ -142,8 +143,17 @@ for (const sc of SCENES) {
         for (const v of [t.v0, t.v1, t.v2]) {
           const px = v[0] * 0.98 + cx * 0.02, py = v[1] * 0.98 + cy * 0.02; // nudge inside
           const cr = rayCross(surfIdx, px, py); if (!cr.length) continue;
-          let top = -1e9; for (const c of cr) if (c.z <= v[2] + 50) top = Math.max(top, c.z);
-          const g = (v[2] - top) * scaleMm; if (g > maxGap) maxGap = g;
+          let top = -1e9;
+          for (const c of cr) {
+            if (c.z <= v[2] + 1e-3 && (c.bId === undefined || c.bId === -1 || c.bId !== bid)) {
+              top = Math.max(top, c.z);
+            }
+          }
+          if (top > -1e8) {
+            const g = (v[2] - top) * scaleMm; if (g > maxGap) maxGap = g;
+          } else {
+            maxGap = Math.max(maxGap, 999.0);
+          }
         }
       }
       if (maxGap > 0.05) { floating++; worstList.push(+maxGap.toFixed(2)); }
@@ -162,22 +172,63 @@ for (const sc of SCENES) {
       let gap = 0; for (let i = 1; i < merged.length; i++) { if (merged[i - 1][0] <= 0.01) gap += merged[i][0] - merged[i - 1][1]; } // gap above a solid that starts on the bed
       if (gap * scaleMm > 0.05) { cavRays++; cavSumMm += gap * scaleMm; cavMaxMm = Math.max(cavMaxMm, gap * scaleMm); }
     }
-    // (b) floating trees and roads vs actual surface (skip where top surface is water)
+    // (b) floating trees and roads vs actual surface (with bridge pier & span support check)
     const waterTopIdx = buildIndex((M.water || []).filter(t => t.n[2] > 0.5), 96);
     const terrIdx = buildIndex([...(M.base || []), ...(M.greenery || [])].filter(t => t.n[2] > 0.5), 96);
-    function floatStats(tris) {
+    const bridgeSupports = [];
+    if (M.roads) {
+      for (const t of M.roads) {
+        if (t.n[2] <= 0.5) continue;
+        const cx = (t.v0[0] + t.v1[0] + t.v2[0]) / 3, cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3;
+        const crW = rayCross(waterTopIdx, cx, cy);
+        const crT = rayCross(terrIdx, cx, cy);
+        let topW = -1e9; for (const c of crW) topW = Math.max(topW, c.z);
+        let topT = -1e9; for (const c of crT) topT = Math.max(topT, c.z);
+        if (topT >= topW || topW > -1e8) {
+          bridgeSupports.push([cx, cy]);
+        }
+      }
+    }
+    function floatStats(tris, isRoad = false) {
       let n = 0, fl = 0, worst = 0;
-      for (const t of tris) { if (t.n[2] > -0.5) continue; const cx = (t.v0[0] + t.v1[0] + t.v2[0]) / 3, cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3;
-        const z = (t.v0[2] + t.v1[2] + t.v2[2]) / 3; const crT = rayCross(terrIdx, cx, cy); const crW = rayCross(waterTopIdx, cx, cy);
+      for (const t of tris) {
+        if (t.n[2] > -0.5) continue;
+        const cx = (t.v0[0] + t.v1[0] + t.v2[0]) / 3, cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3;
+        const z = (t.v0[2] + t.v1[2] + t.v2[2]) / 3;
+        const crT = rayCross(terrIdx, cx, cy);
+        const crW = rayCross(waterTopIdx, cx, cy);
         let topT = -1e9; for (const c of crT) if (c.z < z + 0.5) topT = Math.max(topT, c.z);
         let topW = -1e9; for (const c of crW) topW = Math.max(topW, c.z);
-        if (topW > topT) continue; // over water (bridges) — skip
-        if (topT < -1e8) continue; n++; const g = (z - topT) * scaleMm; if (g > 0.05) { fl++; if (g > worst) worst = g; } }
+        if (topW > topT) {
+          if (!isRoad) continue; // trees over water
+          const gapWater = Math.abs(z - topW) * scaleMm;
+          if (gapWater <= 0.05) {
+            n++; // pier bottom flush on water surface
+            continue;
+          }
+          n++;
+          let minDist = 1e9;
+          for (const s of bridgeSupports) {
+            const d = Math.hypot(cx - s[0], cy - s[1]);
+            if (d < minDist) minDist = d;
+          }
+          const distMm = minDist * scaleMm;
+          if (distMm > 8.0) {
+            fl++;
+            if (distMm > worst) worst = distMm;
+          }
+          continue;
+        }
+        if (topT < -1e8) continue;
+        n++;
+        const g = (z - topT) * scaleMm;
+        if (g > 0.05) { fl++; if (g > worst) worst = g; }
+      }
       return { bottomFaces: n, floatingGt005mm: fl, worstMm: +worst.toFixed(2) };
     }
     const treeTris = (M.greenery || []).filter(t => t.n[2] < -0.5 && t.layerId === 2);
     const extraRes = { cavity: { rays: cavRays, pctRays: +(100 * cavRays / (RAYS * RAYS)).toFixed(1), maxMm: +cavMaxMm.toFixed(2), avgMm: cavRays ? +(cavSumMm / cavRays).toFixed(2) : 0 },
-      treeFloat: floatStats(treeTris), roadFloat: floatStats(M.roads || []) };
+      treeFloat: floatStats(treeTris, false), roadFloat: floatStats(M.roads || [], true) };
     results.push({ extra: extraRes, scene: scene.title, cfg, buildMs, totalTriangles: res.totalTriangles, layers, perTile, outside, ray, layerOverlap: pairs,
       floating: { buildingsChecked: bChecked, floatingGt005mm: floating, worstMm: +worst.toFixed(2), top: worstList.slice(0, 6) },
       reported: res.printMetrics ? { isWatertightManifold: res.printMetrics.isWatertightManifold, floatingBuildingsCount: res.printMetrics.floatingBuildingsCount, outOfTileTrisCount: res.printMetrics.outOfTileTrisCount, totalVolumeMl: res.printMetrics.totalVolumeMl && +res.printMetrics.totalVolumeMl.toFixed(1), hollowSavingsPct: res.printMetrics.hollowSavingsPct, maxZMm: res.printMetrics.maxZMm && +res.printMetrics.maxZMm.toFixed(1) } : null });

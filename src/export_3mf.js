@@ -4,12 +4,22 @@
 // ============================================================================
 
 function exportMultiColor3MF(state) {
-  const totalWidthMm = state.bedSizeMm || 320.0;
-  const scaleMm = totalWidthMm / 169.2;
-  const offsetMm = totalWidthMm / 2.0;
-  const tileCols = Math.max(1, state.tileCols || 1);
-  const tileRows = Math.max(1, state.tileRows || 1);
-  const tileFilter = (state.exportTileFilter !== undefined && state.exportTileFilter !== 'all')
+  const totalWidthMm = (state && state.bedSizeMm) || 320.0;
+  const totalHeightMm = (state && state.totalHeightMm) || totalWidthMm;
+  const maxDimMm = Math.max(totalWidthMm, totalHeightMm);
+  const scaleMm = maxDimMm / 169.2;
+  const halfW = 84.6 * (totalWidthMm / maxDimMm);
+  const halfH = 84.6 * (totalHeightMm / maxDimMm);
+
+  const tileCols = Math.max(1, (state && state.tileCols) || 1);
+  const tileRows = Math.max(1, (state && state.tileRows) || 1);
+  const numTiles = tileCols * tileRows;
+  const tileWidthMm = totalWidthMm / tileCols;
+  const tileHeightMm = totalHeightMm / tileRows;
+  const tileSpanX = (2 * halfW) / tileCols;
+  const tileSpanY = (2 * halfH) / tileRows;
+
+  const tileFilter = (state && state.exportTileFilter !== undefined && state.exportTileFilter !== 'all')
     ? parseInt(state.exportTileFilter, 10)
     : -1;
 
@@ -24,7 +34,7 @@ function exportMultiColor3MF(state) {
   <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>`;
 
-  // Strictly 6 printable layers ONLY — meshes.frame is NEVER exported!
+  // Strictly 6 printable layers ONLY — meshes.frame is NEVER exported in map tiles
   const exportLayers = [
     { key: 'water',       objId: 1, matIdx: 0, name: '1_Woda_i_Batymetria' },
     { key: 'base',        objId: 2, matIdx: 1, name: '2_Teren_Warstwice_DEM' },
@@ -34,19 +44,19 @@ function exportMultiColor3MF(state) {
     { key: 'highlighted', objId: 6, matIdx: 5, name: '6_Wyroznione_Budynki' }
   ];
 
-  // If exporting a single tile, shift its minimum X/Y to (0, 0) on the printer plate
-  let shiftXScene = 84.6;
-  let shiftYScene = 84.6;
-  if (tileFilter >= 0 && (tileCols > 1 || tileRows > 1)) {
+  // If exporting a single tile, shift its local minimum XY to (0, 0) on the printer plate
+  let shiftXScene = halfW;
+  let shiftYScene = halfH;
+  if (tileFilter >= 0) {
     const tc = tileFilter % tileCols;
     const tr = Math.floor(tileFilter / tileCols);
-    shiftXScene = 84.6 - tc * (169.2 / tileCols);
-    shiftYScene = 84.6 - tr * (169.2 / tileRows);
+    shiftXScene = halfW - tc * tileSpanX;
+    shiftYScene = halfH - tr * tileSpanY;
   }
 
   let objectsXml = '';
   let buildItemsXml = '';
-  const numTiles = tileCols * tileRows;
+  const meshesObj = (state && (state.layerMeshes || state.meshes)) || {};
 
   function buildLayerMeshXml(tris, shiftX, shiftY, objId, objName, matIdx) {
     const vertexMap = new Map();
@@ -86,19 +96,23 @@ function exportMultiColor3MF(state) {
     </object>`;
   }
 
-  const safeTitle = sanitizeFilenameSlug(state.plaqueText || 'MAP3D');
-  const tileSuffix = tileFilter >= 0 ? `_Kafel_${tileFilter + 1}z${numTiles}` : (numTiles > 1 ? `_${tileCols}x${tileRows}_Kafli` : '');
+  const safeTitle = sanitizeFilenameSlug((state && state.plaqueText) || 'MAP3D');
+  const tileW = Math.round(tileWidthMm);
+  const tileH = Math.round(tileHeightMm);
+  const tileSuffix = tileFilter >= 0
+    ? `_Kafel_${tileFilter + 1}z${numTiles}_${tileW}x${tileH}mm`
+    : (numTiles > 1 ? `_${tileCols}x${tileRows}_Kafli_${Math.round(totalWidthMm)}x${Math.round(totalHeightMm)}mm` : `_${Math.round(totalWidthMm)}x${Math.round(totalHeightMm)}mm`);
 
   if (tileFilter < 0 && numTiles > 1) {
-    // Fix B16: Group multi-tile .3MF into per-tile assembly objects so slicers can plate each tile separately
+    // Multi-tile assembly: group into per-tile assembly objects so slicers can plate each tile separately
     for (let tid = 0; tid < numTiles; tid++) {
       let tileComponentsXml = '';
       const tc = tid % tileCols;
       const tr = Math.floor(tid / tileCols);
       const northRow = tileRows - tr;
       exportLayers.forEach(layer => {
-        if (!state.layerVisible[layer.key]) return;
-        const rawTris = state.layerMeshes[layer.key] || [];
+        if (state && state.layerVisible && !state.layerVisible[layer.key]) return;
+        const rawTris = meshesObj[layer.key] || [];
         const tris = rawTris.filter(t => t.tileId === tid);
         if (tris.length === 0) return;
         const subObjId = (tid + 1) * 10 + layer.objId;
@@ -120,8 +134,8 @@ function exportMultiColor3MF(state) {
   } else {
     let componentsXml = '';
     exportLayers.forEach(layer => {
-      if (!state.layerVisible[layer.key]) return;
-      const rawTris = state.layerMeshes[layer.key] || [];
+      if (state && state.layerVisible && !state.layerVisible[layer.key]) return;
+      const rawTris = meshesObj[layer.key] || [];
       const tris = tileFilter >= 0 ? rawTris.filter(t => t.tileId === tileFilter) : rawTris;
       if (tris.length === 0) return;
       const meshXml = buildLayerMeshXml(tris, shiftXScene, shiftYScene, layer.objId, layer.name, layer.matIdx);
@@ -131,11 +145,19 @@ function exportMultiColor3MF(state) {
       }
     });
     objectsXml += `
-    <object id="99" name="Map3D_${safeTitle}_${totalWidthMm}mm${tileSuffix}" type="model">
+    <object id="99" name="Map3D_${safeTitle}_${Math.round(totalWidthMm)}x${Math.round(totalHeightMm)}mm${tileSuffix}" type="model">
       <components>${componentsXml}</components>
     </object>`;
     buildItemsXml = `<item objectid="99"/>`;
   }
+
+  const colors = (state && state.colors) || {};
+  const cWater = ((colors.water || '#0284c7').replace('#', '')).toUpperCase();
+  const cBase = ((colors.base || '#f8fafc').replace('#', '')).toUpperCase();
+  const cGreenery = ((colors.greenery || '#15803d').replace('#', '')).toUpperCase();
+  const cRoads = ((colors.roads || '#94a3b8').replace('#', '')).toUpperCase();
+  const cBuildings = ((colors.buildings || '#cbd5e1').replace('#', '')).toUpperCase();
+  const cHighlighted = ((colors.highlighted || '#f59e0b').replace('#', '')).toUpperCase();
 
   const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="pl-PL" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
@@ -144,12 +166,12 @@ function exportMultiColor3MF(state) {
   <metadata name="Copyright">© OpenStreetMap contributors (ODbL 1.0) • AWS Terrain Tiles</metadata>
   <resources>
     <basematerials id="10">
-      <base name="Kolor_1_Woda" displaycolor="${state.colors.water.toUpperCase()}FF"/>
-      <base name="Kolor_2_Teren_Warstwice" displaycolor="${state.colors.base.toUpperCase()}FF"/>
-      <base name="Kolor_3_Zielen_i_Drzewa" displaycolor="${state.colors.greenery.toUpperCase()}FF"/>
-      <base name="Kolor_4_Ulice_i_Mosty" displaycolor="${state.colors.roads.toUpperCase()}FF"/>
-      <base name="Kolor_4_Budynki_LoD2" displaycolor="${state.colors.buildings.toUpperCase()}FF"/>
-      <base name="Kolor_5_Akcent_Highlight" displaycolor="${state.colors.highlighted.toUpperCase()}FF"/>
+      <base name="Kolor_1_Woda" displaycolor="${cWater}FF"/>
+      <base name="Kolor_2_Teren_Warstwice" displaycolor="${cBase}FF"/>
+      <base name="Kolor_3_Zielen_i_Drzewa" displaycolor="${cGreenery}FF"/>
+      <base name="Kolor_4_Ulice_i_Mosty" displaycolor="${cRoads}FF"/>
+      <base name="Kolor_4_Budynki_LoD2" displaycolor="${cBuildings}FF"/>
+      <base name="Kolor_5_Akcent_Highlight" displaycolor="${cHighlighted}FF"/>
     </basematerials>
     ${objectsXml}
   </resources>
@@ -164,6 +186,9 @@ function exportMultiColor3MF(state) {
     { name: '3D/3dmodel.model', content: modelXml }
   ]);
 
-  downloadBlob(zipBytes, `Map3D_${safeTitle}_${totalWidthMm}mm${tileSuffix}_Multicolor.3mf`, 'model/3mf');
+  downloadBlob(zipBytes, `Map3D_${safeTitle}${tileSuffix}_Multicolor.3mf`, 'model/3mf');
 }
 
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { exportMultiColor3MF };
+}

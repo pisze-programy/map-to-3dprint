@@ -71,6 +71,7 @@
         <span class="text-xs text-[var(--muted-foreground)] shrink-0">Format:</span>
         <select id="printerSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none cursor-pointer min-w-0 max-w-[220px] sm:max-w-none truncate">
           <optgroup label="Żywica SLA/MSLA — Anycubic Photon Mono 4 (153.4 × 87 × 165 mm, max 2.2 L)">
+            <option value="mono4_custom">Photon Mono 4 • Dowolny Format cm (Auto-Siatka)</option>
             <option value="mono4_84_1x1">Photon Mono 4 • Mały Kwadrat 84×84 mm (1 Kafel 1×1 na płasko)</option>
             <option value="mono4_150_1x2">Photon Mono 4 • Kwadrat 150×150 mm (2 Kafle 1×2 po 150×75 mm)</option>
             <option value="mono4_168_2x2">Photon Mono 4 • Kwadrat 168×168 mm (4 Kafle 2×2 po 84×84 mm)</option>
@@ -109,7 +110,42 @@
             <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
             1. Interaktywna Mapa (Wybór Kadru)
           </h2>
-          <span id="bboxScaleBadge" class="text-xs font-mono px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)]">33×33 cm</span>
+          <span id="bboxScaleBadge" class="text-xs font-mono px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)]">32×32 cm</span>
+        </div>
+
+        <!-- Target Finished Wall-Art Dimensions in cm & Photon Mono 4 Auto-Grid -->
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2 flex flex-col gap-1.5">
+          <div class="flex items-center justify-between gap-1">
+            <span class="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1">
+              <svg class="w-3.5 h-3.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+              Wymiar obrazu (cm):
+            </span>
+            <span id="mono4GridBadge" class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-bold truncate max-w-[170px]" title="Optymalna siatka kafli Anycubic Photon Mono 4">Mono 4: 2×4 (8 kafli)</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5">
+            <div class="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1">
+              <span class="text-xs text-[var(--muted-foreground)] shrink-0">Szer:</span>
+              <input id="targetWidthCmInput" type="number" min="8" max="120" step="1" value="32" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
+              <span class="text-xs text-[var(--muted-foreground)] shrink-0">cm</span>
+            </div>
+            <div class="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1">
+              <span class="text-xs text-[var(--muted-foreground)] shrink-0">Wys:</span>
+              <input id="targetHeightCmInput" type="number" min="8" max="120" step="1" value="32" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
+              <span class="text-xs text-[var(--muted-foreground)] shrink-0">cm</span>
+            </div>
+          </div>
+
+          <!-- Quick Standard Picture Frame Chips -->
+          <div class="flex flex-wrap gap-1 items-center">
+            <span class="text-[11px] text-[var(--muted-foreground)] shrink-0">Ramka:</span>
+            <button type="button" data-frame-size="20x20" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">20×20</button>
+            <button type="button" data-frame-size="30x30" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">30×30</button>
+            <button type="button" data-frame-size="30x40" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">30×40</button>
+            <button type="button" data-frame-size="40x50" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">40×50</button>
+            <button type="button" data-frame-size="50x50" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">50×50</button>
+            <button type="button" data-frame-size="50x70" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">50×70</button>
+          </div>
         </div>
 
         <!-- Search Any Place on Earth with Live Autocomplete (Photon OSM) -->
@@ -174,10 +210,21 @@
           <button id="btnRetryGis" class="px-2 py-0.5 rounded bg-red-600 hover:bg-red-500 text-white font-semibold shrink-0">Ponów</button>
         </div>
 
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Kadr:</span>
-          <input id="cropSizeSlider" type="range" min="55" max="98" value="88" class="flex-1" />
-          <span id="cropSizeLabel" class="text-xs font-mono whitespace-nowrap text-right">1.19 km (1:3720)</span>
+        <!-- Kadr (Map Span) Slider & Quick Presets -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Kadr (Zasięg terenu):</span>
+            <span id="cropSizeLabel" class="text-xs font-mono font-bold whitespace-nowrap text-right">1.19 km (1:3720)</span>
+          </div>
+          <input id="cropSizeSlider" type="range" min="30" max="100" value="88" class="w-full" />
+          <div class="flex flex-wrap gap-1 items-center">
+            <span class="text-[11px] text-[var(--muted-foreground)] shrink-0">Zasięg:</span>
+            <button type="button" data-span-km="0.6" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] transition">0.6 km (Detal)</button>
+            <button type="button" data-span-km="1.2" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] transition">1.2 km (Centrum)</button>
+            <button type="button" data-span-km="2.5" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] transition">2.5 km (Miasto)</button>
+            <button type="button" data-span-km="5.0" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] transition">5 km (Dolina)</button>
+            <button type="button" data-span-km="12.0" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] transition">12 km (Góry)</button>
+          </div>
         </div>
 
         <!-- Live GIS Fetch & Render Button -->
@@ -272,7 +319,7 @@
             </button>
           </div>
 
-          <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+          <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 flex-wrap">
             <span id="tileSplitLabel" class="text-xs font-bold text-cyan-400 whitespace-nowrap">Kafle:</span>
             <select id="tileGridSelect" title="Wybierz siatkę podziału na kafle" class="bg-[var(--background)] border border-cyan-500/40 rounded px-1 py-0.5 text-xs font-mono font-bold text-cyan-400 focus:outline-none cursor-pointer">
               <option value="1x1" selected>1×1</option>
@@ -280,12 +327,25 @@
               <option value="2x2">2×2</option>
               <option value="2x3">2×3</option>
               <option value="2x4">2×4</option>
+              <option value="2x5">2×5</option>
+              <option value="3x3">3×3</option>
+              <option value="3x4">3×4</option>
+              <option value="3x5">3×5</option>
+              <option value="3x6">3×6</option>
+              <option value="4x4">4×4</option>
+              <option value="4x6">4×6</option>
+              <option value="5x6">5×6</option>
+              <option value="6x5">6×5</option>
             </select>
             <input id="tileExplodeSlider" type="range" min="0" max="100" value="0" class="flex-1 min-w-[55px]" />
             <span id="tileExplodeValueLabel" class="text-xs font-mono font-bold text-cyan-400 w-8 text-right">0%</span>
             <button id="btnQuickTileExplode" class="px-2 py-0.5 rounded bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-500 transition whitespace-nowrap">
               Rozsuń
             </button>
+            <button id="btnAutoFitMono4" class="hidden px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs whitespace-nowrap transition" title="Oblicz optymalny podział na stół Anycubic Photon Mono 4">
+              Dopasuj do Mono 4
+            </button>
+            <span id="mono4FitWarning" class="hidden text-xs font-mono font-bold text-amber-400 whitespace-nowrap">⚠ >153×87mm</span>
           </div>
         </div>
 
@@ -396,10 +456,23 @@
         <label class="flex items-center justify-between gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 cursor-pointer">
           <div class="flex items-center gap-1.5 min-w-0">
             <input id="chkHollowBase" type="checkbox" class="rounded accent-emerald-500 shrink-0" />
-            <span class="text-xs font-semibold text-[var(--foreground)] truncate">Odchudź bazę SLA (Hollow 1.8mm + Drenaż)</span>
+            <span class="text-xs font-semibold text-[var(--foreground)] truncate">Odchudź bazę SLA (Hollow 1.8mm + 4 kanały drenażowe SLA)</span>
           </div>
           <span id="hollowSavingsBadge" class="text-xs font-mono font-bold text-amber-400 shrink-0">Pełna FDM</span>
         </label>
+
+        <!-- Kerf and Modular Frame Export Toggles -->
+        <div class="grid grid-cols-2 gap-1.5 items-center bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
+          <label class="flex items-center gap-1.5 cursor-pointer min-w-0" title="Dodaje modularne segmenty ramki 3D do paczki ZIP">
+            <input id="chkExportFrame" type="checkbox" class="rounded accent-blue-600 shrink-0" />
+            <span class="text-xs font-medium text-[var(--foreground)] truncate">Dołącz ramkę 3D do ZIP</span>
+          </label>
+          <div class="flex items-center justify-end gap-1 min-w-0" title="Kompensacja szczeliny utwardzania żywicy SLA">
+            <span class="text-[11px] text-[var(--muted-foreground)] whitespace-nowrap">Kerf:</span>
+            <input id="kerfMmInput" type="number" min="0" max="0.5" step="0.01" value="0.08" class="w-14 bg-[var(--card)] border border-[var(--border)] rounded px-1 py-0.5 text-xs font-mono font-bold text-[var(--foreground)] text-right focus:outline-none" />
+            <span class="text-[11px] text-[var(--muted-foreground)]">mm</span>
+          </div>
+        </div>
 
         <div class="grid grid-cols-3 gap-1.5 text-center">
           <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
