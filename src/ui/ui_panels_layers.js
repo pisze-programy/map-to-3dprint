@@ -216,7 +216,7 @@ function createUILayersStatsController(state, onRebuildNeeded) {
     const cropLbl = document.getElementById('cropSizeLabel');
     if (cropLbl) cropLbl.textContent = `${spanKm.toFixed(2)} km (1:${scaleDenom})`;
     const cropSl = document.getElementById('cropSizeSlider');
-    if (cropSl && document.activeElement !== cropSl) cropSl.value = Math.min(12.0, Math.max(0.4, spanKm)).toFixed(1);
+    if (cropSl && document.activeElement !== cropSl) cropSl.value = Math.min(50.0, Math.max(0.4, spanKm)).toFixed(1);
 
     document.querySelectorAll('[data-span-km]').forEach(btn => {
       const isActive = Math.abs(parseFloat(btn.getAttribute('data-span-km')) - spanKm) < 0.08;

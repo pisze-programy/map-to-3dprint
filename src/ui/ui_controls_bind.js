@@ -13,36 +13,65 @@ function bindStudioPanelControls(ctx) {
     updateStatsUI, updateLandmarkChips, updateInspectorUI
   } = ctx;
 
-  document.getElementById('btnRender3D').addEventListener('click', () => fetchRealGISAndRender(null, state.plaqueText));
+  const btnRender = document.getElementById('btnRender3D');
+  if (btnRender) {
+    btnRender.addEventListener('click', () => {
+      fetchRealGISAndRender(null, state.plaqueText).catch(() => {});
+    });
+  }
   const btnRetryGis = document.getElementById('btnRetryGis');
-  if (btnRetryGis) btnRetryGis.addEventListener('click', () => fetchRealGISAndRender(null, state.plaqueText));
+  if (btnRetryGis) {
+    btnRetryGis.addEventListener('click', () => {
+      fetchRealGISAndRender(null, state.plaqueText).catch(() => {});
+    });
+  }
 
   const cropSizeSlider = document.getElementById('cropSizeSlider');
   if (cropSizeSlider) {
-    cropSizeSlider.addEventListener('input', e => setMapSpanKm(parseFloat(e.target.value) || 1.2, false));
-    cropSizeSlider.addEventListener('change', e => setMapSpanKm(parseFloat(e.target.value) || 1.2, true));
+    cropSizeSlider.addEventListener('input', e => {
+      setMapSpanKm(parseFloat(e.target.value) || 1.2, false);
+      if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
+    });
+    cropSizeSlider.addEventListener('change', e => {
+      setMapSpanKm(parseFloat(e.target.value) || 1.2, false);
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+    });
   }
   document.querySelectorAll('[data-span-km]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const km = parseFloat(btn.getAttribute('data-span-km'));
-      if (km) setMapSpanKm(km, true);
+    btn.addEventListener('click', e => {
+      const b = (typeof safeClosest === 'function' ? safeClosest(e && e.target, '[data-span-km]') : null) || btn;
+      const km = parseFloat(b.getAttribute('data-span-km'));
+      if (km) {
+        setMapSpanKm(km, false);
+        if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+      }
     });
   });
 
   const mapRotationSlider = document.getElementById('mapRotationSlider');
   if (mapRotationSlider) {
-    mapRotationSlider.addEventListener('input', e => { setMapRotationDeg(parseFloat(e.target.value) || 0, false); scheduleRebuildModel3D(); });
-    mapRotationSlider.addEventListener('change', e => setMapRotationDeg(parseFloat(e.target.value) || 0, true));
+    mapRotationSlider.addEventListener('input', e => {
+      setMapRotationDeg(parseFloat(e.target.value) || 0, false);
+      if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
+    });
+    mapRotationSlider.addEventListener('change', e => {
+      setMapRotationDeg(parseFloat(e.target.value) || 0, false);
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+    });
   }
   document.querySelectorAll('[data-rot-deg]').forEach(btn => {
-    btn.addEventListener('click', () => setMapRotationDeg(parseFloat(btn.getAttribute('data-rot-deg')) || 0, true));
+    btn.addEventListener('click', e => {
+      const b = (typeof safeClosest === 'function' ? safeClosest(e && e.target, '[data-rot-deg]') : null) || btn;
+      setMapRotationDeg(parseFloat(b.getAttribute('data-rot-deg')) || 0, false);
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+    });
   });
 
   const targetWidthCmInput = document.getElementById('targetWidthCmInput');
   const targetHeightCmInput = document.getElementById('targetHeightCmInput');
   function handleTargetDimensionChange() {
-    const wVal = Math.max(8, Math.min(120, parseFloat(targetWidthCmInput ? targetWidthCmInput.value : 32) || 32));
-    const hVal = Math.max(8, Math.min(120, parseFloat(targetHeightCmInput ? targetHeightCmInput.value : 32) || 32));
+    const wVal = Math.max(8, Math.min(150, parseFloat(targetWidthCmInput ? targetWidthCmInput.value : 32) || 32));
+    const hVal = Math.max(8, Math.min(150, parseFloat(targetHeightCmInput ? targetHeightCmInput.value : 32) || 32));
     state.targetWidthCm = wVal;
     state.targetHeightCm = hVal;
     state.bedSizeMm = Math.round(wVal * 10);
@@ -54,13 +83,14 @@ function bindStudioPanelControls(ctx) {
       state.tileRows = optGrid.rows;
     }
     draw2DMap();
-    rebuildModel3D();
+    if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
   }
   if (targetWidthCmInput) targetWidthCmInput.addEventListener('change', handleTargetDimensionChange);
   if (targetHeightCmInput) targetHeightCmInput.addEventListener('change', handleTargetDimensionChange);
   document.querySelectorAll('[data-frame-size]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const [w, h] = btn.getAttribute('data-frame-size').split('x').map(v => parseInt(v, 10));
+    btn.addEventListener('click', e => {
+      const b = (typeof safeClosest === 'function' ? safeClosest(e && e.target, '[data-frame-size]') : null) || btn;
+      const [w, h] = b.getAttribute('data-frame-size').split('x').map(v => parseInt(v, 10));
       if (targetWidthCmInput) targetWidthCmInput.value = w;
       if (targetHeightCmInput) targetHeightCmInput.value = h;
       handleTargetDimensionChange();
@@ -74,7 +104,6 @@ function bindStudioPanelControls(ctx) {
       state.tileCols = opt.cols;
       state.tileRows = opt.rows;
       draw2DMap();
-      rebuildModel3D();
     });
   }
 
@@ -104,8 +133,8 @@ function bindStudioPanelControls(ctx) {
   if (tileGridSelect) {
     tileGridSelect.addEventListener('change', e => {
       const [cStr, rStr] = (e.target.value || '1x1').split('x');
-      state.tileCols = Math.max(1, Math.min(16, parseInt(cStr, 10) || 1));
-      state.tileRows = Math.max(1, Math.min(16, parseInt(rStr, 10) || 1));
+      state.tileCols = Math.max(1, Math.min(50, parseInt(cStr, 10) || 1));
+      state.tileRows = Math.max(1, Math.min(100, parseInt(rStr, 10) || 1));
       state.exportTileFilter = 'all';
       if (state.tileCols === 1 && state.tileRows === 1) {
         state.tileExplode = 0;
@@ -115,6 +144,7 @@ function bindStudioPanelControls(ctx) {
       }
       draw2DMap();
       rebuildModel3D();
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
     });
   }
 
@@ -178,43 +208,138 @@ function bindStudioPanelControls(ctx) {
     }
     draw2DMap();
     rebuildModel3D();
+    if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
   }
 
-  document.getElementById('btnToggleHighlight').addEventListener('click', () => {
-    const targets = getActiveTargetBuildings();
-    if (!targets.length) return;
-    const newState = !targets[0].highlighted;
-    targets.forEach(b => { b.highlighted = newState; });
-    draw2DMap();
-    if (typeof fastSwapHighlightedBuildings === 'function' && fastSwapHighlightedBuildings(state)) {
-      studio.uploadMeshes(state.layerMeshes);
-      updateStatsUI(); updateLandmarkChips(); updateInspectorUI();
-    } else {
-      rebuildModel3D();
+  // LoD Filter Controls Binding
+  const lodMinBuildingSlider = document.getElementById('lodMinBuildingSizeSlider');
+  const lodMinBuildingLabel = document.getElementById('lodMinBuildingSizeLabel');
+  if (lodMinBuildingSlider) {
+    if (state.lodSettings && typeof state.lodSettings.minBuildingFootprintM === 'number') {
+      lodMinBuildingSlider.value = state.lodSettings.minBuildingFootprintM;
+      if (lodMinBuildingLabel) {
+        lodMinBuildingLabel.textContent = state.lodSettings.minBuildingFootprintM === 0
+          ? '0 m (Wszystkie)'
+          : `${state.lodSettings.minBuildingFootprintM} m`;
+      }
     }
-  });
+    lodMinBuildingSlider.addEventListener('input', e => {
+      const val = parseInt(e.target.value, 10) || 0;
+      if (lodMinBuildingLabel) {
+        lodMinBuildingLabel.textContent = val === 0 ? '0 m (Wszystkie)' : `${val} m`;
+      }
+      if (!state.lodSettings) state.lodSettings = {};
+      state.lodSettings.minBuildingFootprintM = val;
+      if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
+    });
+  }
 
-  document.getElementById('btnToggleHideBuilding').addEventListener('click', () => {
-    const targets = getActiveTargetBuildings();
-    if (!targets.length) return;
-    const newState = !targets[0].hidden;
-    targets.forEach(b => { b.hidden = newState; });
-    draw2DMap();
-    rebuildModel3D();
-  });
+  const lodEnableTreesCheck = document.getElementById('lodEnableTreesCheck');
+  const lodTreesStateBadge = document.getElementById('lodTreesStateBadge');
+  const lodTreeThresholdSlider = document.getElementById('lodTreeThresholdSlider');
+  const lodTreeThresholdLabel = document.getElementById('lodTreeThresholdLabel');
 
-  document.getElementById('inspHeightMultiplier').addEventListener('input', e => {
-    const targets = getActiveTargetBuildings();
-    if (!targets.length) return;
-    const mult = parseInt(e.target.value, 10) / 100;
-    targets.forEach(b => { b.heightMult = mult; });
-    document.getElementById('inspHeightMultLabel').textContent = `${e.target.value}%`;
-    scheduleRebuildModel3D();
-  });
+  function updateLodTreeBadge() {
+    if (!lodTreesStateBadge || !state.lodSettings) return;
+    const spanKm = (state.mapSpanMeters || 1200) / 1000;
+    const enabled = state.lodSettings.enableTrees !== false;
+    const threshold = state.lodSettings.treeMaxSpanKm || 4.0;
+    if (!enabled) {
+      lodTreesStateBadge.textContent = 'Wyłączone';
+      lodTreesStateBadge.className = 'text-[11px] font-mono px-1.5 py-0.5 rounded bg-gray-500/15 text-gray-400 font-bold';
+    } else if (spanKm > threshold) {
+      lodTreesStateBadge.textContent = `Auto-wyłącz (>${threshold.toFixed(1)} km)`;
+      lodTreesStateBadge.className = 'text-[11px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-bold';
+    } else {
+      lodTreesStateBadge.textContent = 'Włączone';
+      lodTreesStateBadge.className = 'text-[11px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold';
+    }
+  }
+
+  if (lodEnableTreesCheck) {
+    if (state.lodSettings) lodEnableTreesCheck.checked = state.lodSettings.enableTrees !== false;
+    lodEnableTreesCheck.addEventListener('change', e => {
+      if (!state.lodSettings) state.lodSettings = {};
+      state.lodSettings.enableTrees = e.target.checked;
+      updateLodTreeBadge();
+      if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
+    });
+  }
+
+  if (lodTreeThresholdSlider) {
+    if (state.lodSettings && typeof state.lodSettings.treeMaxSpanKm === 'number') {
+      lodTreeThresholdSlider.value = state.lodSettings.treeMaxSpanKm;
+      if (lodTreeThresholdLabel) lodTreeThresholdLabel.textContent = `${state.lodSettings.treeMaxSpanKm.toFixed(1)} km`;
+    }
+    lodTreeThresholdSlider.addEventListener('input', e => {
+      const val = parseFloat(e.target.value) || 4.0;
+      if (lodTreeThresholdLabel) lodTreeThresholdLabel.textContent = `${val.toFixed(1)} km`;
+      if (!state.lodSettings) state.lodSettings = {};
+      state.lodSettings.treeMaxSpanKm = val;
+      updateLodTreeBadge();
+      if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
+    });
+  }
+
+  const lodRoadDetailSelect = document.getElementById('lodRoadDetailSelect');
+  if (lodRoadDetailSelect) {
+    if (state.lodSettings && state.lodSettings.roadDetail) {
+      lodRoadDetailSelect.value = state.lodSettings.roadDetail;
+    }
+    lodRoadDetailSelect.addEventListener('change', e => {
+      if (!state.lodSettings) state.lodSettings = {};
+      state.lodSettings.roadDetail = e.target.value;
+      if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
+    });
+  }
+  updateLodTreeBadge();
+
+  const btnHlToggle = document.getElementById('btnToggleHighlight');
+  if (btnHlToggle) {
+    btnHlToggle.addEventListener('click', () => {
+      const targets = getActiveTargetBuildings();
+      if (!targets.length) return;
+      const newState = !targets[0].highlighted;
+      targets.forEach(b => { b.highlighted = newState; });
+      draw2DMap();
+      if (typeof fastSwapHighlightedBuildings === 'function' && fastSwapHighlightedBuildings(state)) {
+        studio.uploadMeshes(state.layerMeshes);
+        updateStatsUI(); updateLandmarkChips(); updateInspectorUI();
+      } else {
+        rebuildModel3D();
+      }
+    });
+  }
+
+  const btnHideBld = document.getElementById('btnToggleHideBuilding');
+  if (btnHideBld) {
+    btnHideBld.addEventListener('click', () => {
+      const targets = getActiveTargetBuildings();
+      if (!targets.length) return;
+      const newState = !targets[0].hidden;
+      targets.forEach(b => { b.hidden = newState; });
+      draw2DMap();
+      rebuildModel3D();
+    });
+  }
+
+  const inspHMult = document.getElementById('inspHeightMultiplier');
+  if (inspHMult) {
+    inspHMult.addEventListener('input', e => {
+      const targets = getActiveTargetBuildings();
+      if (!targets.length) return;
+      const mult = parseInt(e.target.value, 10) / 100;
+      targets.forEach(b => { b.heightMult = mult; });
+      const lbl = document.getElementById('inspHeightMultLabel');
+      if (lbl) lbl.textContent = `${e.target.value}%`;
+      scheduleRebuildModel3D();
+    });
+  }
 
   document.querySelectorAll('.cam-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const mode = btn.getAttribute('data-cam');
+    btn.addEventListener('click', e => {
+      const b = (typeof safeClosest === 'function' ? safeClosest(e && e.target, '.cam-btn') : null) || btn;
+      const mode = b.getAttribute('data-cam');
       state.autoRotate = false;
       if (mode === 'studio') {
         studio.camera.yaw = -0.48; studio.camera.pitch = 0.50; studio.camera.distance = 274; studio.camera.target = [2, 5, 3.2];
@@ -241,6 +366,7 @@ function bindStudioPanelControls(ctx) {
       } else if (mode === 'bottom') {
         studio.camera.yaw = -0.42; studio.camera.pitch = -0.68; studio.camera.distance = 255; studio.camera.target = [0, 0, 1.0];
       }
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
     });
   });
 
@@ -249,21 +375,32 @@ function bindStudioPanelControls(ctx) {
     state.zScale = parseInt(e.target.value, 10) / 100;
     document.getElementById('zScaleLabel').textContent = `${state.zScale.toFixed(2)}×`;
     scheduleRebuildModel3D();
+    if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
   });
   document.getElementById('terrainScaleSlider').addEventListener('input', e => {
     state.terrainScale = parseInt(e.target.value, 10) / 100;
     document.getElementById('terrainScaleLabel').textContent = `${state.terrainScale.toFixed(2)}×`;
     scheduleRebuildModel3D();
+    if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
   });
   document.getElementById('sunAngleSlider').addEventListener('input', e => { state.sunAngleDeg = parseInt(e.target.value, 10); });
   document.getElementById('chkShowFrame').addEventListener('change', e => { state.showFrame = e.target.checked; });
   document.getElementById('chkStudioBg').addEventListener('change', e => { state.studioBg = e.target.checked; });
   document.getElementById('frameStyleSelect').addEventListener('change', e => { state.frameStyle = e.target.value; });
-  document.getElementById('plaqueTextInput').addEventListener('input', e => { state.plaqueText = e.target.value || 'MAP3D'; });
+  document.getElementById('plaqueTextInput').addEventListener('input', e => {
+    state.plaqueText = e.target.value || 'MAP3D';
+    if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 300);
+  });
   document.getElementById('printerSelect').addEventListener('change', e => applyPrinterProfile(e.target.value));
 
   const chkHollowBase = document.getElementById('chkHollowBase');
-  if (chkHollowBase) chkHollowBase.addEventListener('change', e => { state.hollowBase = e.target.checked; rebuildModel3D(); });
+  if (chkHollowBase) {
+    chkHollowBase.addEventListener('change', e => {
+      state.hollowBase = e.target.checked;
+      rebuildModel3D();
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+    });
+  }
   const exportTileSelect = document.getElementById('exportTileSelect');
   if (exportTileSelect) exportTileSelect.addEventListener('change', e => { state.exportTileFilter = e.target.value; draw2DMap(); });
 
