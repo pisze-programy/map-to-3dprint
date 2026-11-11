@@ -315,7 +315,16 @@ function createVideoControlsController(vState, engine, previewCanvas, deps) {
       engine.renderFrameAt(0.92, cfg, cfg.exportWidth, cfg.exportHeight);
       const a = document.createElement('a');
       const slug = (vState.title || 'map3d').toLowerCase().replace(/[^a-z0-9]+/g, '_');
-      a.href = previewCanvas.toDataURL('image/png');
+      let dataUrl = '';
+      try {
+        dataUrl = (typeof safeCanvasToDataURL === 'function')
+          ? safeCanvasToDataURL(previewCanvas, 'image/png')
+          : previewCanvas.toDataURL('image/png');
+      } catch (err) {
+        console.warn('[Canvas Security] btnVidDownloadPng fallback:', err);
+        dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      }
+      a.href = dataUrl;
       a.download = `packshot_ramka_${slug}_${cfg.exportWidth}x${cfg.exportHeight}.png`;
       a.click();
       deps.renderPreview();

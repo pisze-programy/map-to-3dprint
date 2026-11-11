@@ -138,7 +138,16 @@ function createVideoOrderDemoController(vState, engine, previewCanvas, hooks) {
     const cfg = hooks.getAnimConfig();
     engine.renderFrameAt(0.92, cfg, 960, 540);
     const thumbImg = document.getElementById('orderModalPackshotImg');
-    if (thumbImg) thumbImg.src = previewCanvas.toDataURL('image/png');
+    if (thumbImg) {
+      try {
+        thumbImg.src = (typeof safeCanvasToDataURL === 'function')
+          ? safeCanvasToDataURL(previewCanvas, 'image/png')
+          : previewCanvas.toDataURL('image/png');
+      } catch (err) {
+        console.warn('[Canvas Security] orderModalPackshotImg fallback:', err);
+        thumbImg.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      }
+    }
     hooks.renderPreview();
 
     const itemsBox = document.getElementById('orderModalItemsList');

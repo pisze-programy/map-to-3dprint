@@ -13,6 +13,7 @@ import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import fetch_gis
 import gis_pipeline
+import gis.scene_pipeline
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -25,7 +26,7 @@ class Map3DRequestHandler(SimpleHTTPRequestHandler):
         origin = self.headers.get("Origin", "")
         if origin in ("http://127.0.0.1:8765", "http://localhost:8765"):
             self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         super().end_headers()
@@ -53,6 +54,44 @@ class Map3DRequestHandler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
+    def do_POST(self):
+        if self._is_forbidden_path():
+            self.send_Error_403(head_only=False)
+            return
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path in ("/api/interpreter", "/api/overpass"):
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length).decode("utf-8") if length > 0 else ""
+            data_qs = urllib.parse.parse_qs(body)
+            query_str = data_qs.get("data", [""])[0]
+            import re
+            m = re.search(r"\[bbox:([-\d\.]+),([-\d\.]+),([-\d\.]+),([-\d\.]+)\]", query_str)
+            if m:
+                s, w, n, e = float(m.group(1)), float(m.group(2)), float(m.group(3)), float(m.group(4))
+                try:
+                    importlib.reload(fetch_gis)
+                    raw_osm = fetch_gis.fetch_osm_overpass(s, w, n, e)
+                    payload = json.dumps(raw_osm, separators=(",", ":")).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+                except Exception as ex:
+                    err = json.dumps({"error": str(ex)}).encode("utf-8")
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+            self.send_response(400)
+            self.end_headers()
+            return
+        self.send_response(404)
+        self.end_headers()
+
     def do_HEAD(self):
         if self._is_forbidden_path():
             self.send_Error_403(head_only=True)
@@ -67,6 +106,7 @@ class Map3DRequestHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/gis":
             qs = urllib.parse.parse_qs(parsed.query)
             try:
+                importlib.reload(gis.scene_pipeline)
                 importlib.reload(fetch_gis)
                 importlib.reload(gis_pipeline)
                 south = float(qs["south"][0])

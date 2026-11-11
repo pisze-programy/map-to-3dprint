@@ -15,10 +15,10 @@ CACHE_DIR = os.path.join(ROOT_DIR, "cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 OVERPASS_ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://lz4.overpass-api.de/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
 ]
 
 
@@ -90,8 +90,27 @@ def deg2tile_float(lat_deg, lon_deg, zoom):
     return xtile, ytile
 
 
-def fetch_terrarium_dem_grid(south, west, north, east, grid_size=64, zoom=14):
+def choose_adaptive_dem_zoom(span_meters):
+    """Selects Terrarium DEM tile zoom level (11-14) based on area span in meters."""
+    s = float(span_meters or 1200)
+    if s <= 2200:
+        return 14
+    if s <= 5500:
+        return 13
+    if s <= 11500:
+        return 12
+    return 11
+
+
+def fetch_terrarium_dem_grid(south, west, north, east, grid_size=64, zoom=None):
     """Fetches real AWS Terrarium DEM tiles covering [south, west, north, east]."""
+    if zoom is None:
+        cos_lat = max(0.2, math.cos(math.radians((south + north) * 0.5)))
+        span_ns_m = abs(north - south) * 111320.0
+        span_ew_m = abs(east - west) * 111320.0 * cos_lat
+        max_span_m = max(span_ns_m, span_ew_m)
+        zoom = choose_adaptive_dem_zoom(max_span_m)
+
     x_min_f, y_min_f = deg2tile_float(north, west, zoom)
     x_max_f, y_max_f = deg2tile_float(south, east, zoom)
 
@@ -147,6 +166,7 @@ def fetch_terrarium_dem_grid(south, west, north, east, grid_size=64, zoom=14):
         "minElev": round(min_elev, 2),
         "maxElev": round(max_elev, 2),
         "grid": grid,
+        "zoom": zoom,
     }
 
 

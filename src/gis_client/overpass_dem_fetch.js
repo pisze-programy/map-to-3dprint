@@ -159,7 +159,8 @@ function chooseAdaptiveDemZoom(spanMeters) {
   return 11;
 }
 
-async function fetchAdaptiveTerrariumDem(south, west, north, east, gridSize = 72, explicitZoom = null) {
+async function fetchAdaptiveTerrariumDem(south, west, north, east, gridSize = 72, explicitZoom = null, abortSignal = null) {
+  if (abortSignal && abortSignal.aborted) throw new Error('Aborted');
   const centerLat = (south + north) * 0.5;
   const cosLat = Math.max(0.2, Math.cos(centerLat * Math.PI / 180.0));
   const spanNsM = Math.abs(north - south) * 111320.0;
@@ -181,17 +182,22 @@ async function fetchAdaptiveTerrariumDem(south, west, north, east, gridSize = 72
   const promises = [];
   for (let tx = tx0; tx <= tx1; tx++) {
     for (let ty = ty0; ty <= ty1; ty++) {
+      if (abortSignal && abortSignal.aborted) break;
       const cacheKey = `${zoom}_${tx}_${ty}`;
       if (_demTilePixelCache.has(cacheKey)) {
         tilePixels[`${tx}_${ty}`] = _demTilePixelCache.get(cacheKey);
         continue;
       }
       promises.push(new Promise((resolve) => {
+        if (abortSignal && abortSignal.aborted) { resolve(); return; }
         const img = new Image();
         img.crossOrigin = 'anonymous';
         const timeoutId = setTimeout(() => resolve(), 8500);
+        const onAbort = () => { clearTimeout(timeoutId); resolve(); };
+        if (abortSignal) abortSignal.addEventListener('abort', onAbort, { once: true });
         img.onload = () => {
           clearTimeout(timeoutId);
+          if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
           try {
             offCtx.clearRect(0, 0, 256, 256);
             offCtx.drawImage(img, 0, 0, 256, 256);
@@ -204,12 +210,17 @@ async function fetchAdaptiveTerrariumDem(south, west, north, east, gridSize = 72
           } catch (_) {}
           resolve();
         };
-        img.onerror = () => { clearTimeout(timeoutId); resolve(); };
+        img.onerror = () => {
+          clearTimeout(timeoutId);
+          if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
+          resolve();
+        };
         img.src = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${zoom}/${tx}/${ty}.png`;
       }));
     }
   }
   if (promises.length > 0) await Promise.all(promises);
+  if (abortSignal && abortSignal.aborted) throw new Error('Aborted');
 
   const grid = [];
   let minElev = Infinity, maxElev = -Infinity;
@@ -238,7 +249,7 @@ async function fetchAdaptiveTerrariumDem(south, west, north, east, gridSize = 72
   return { gridSize, minElev, maxElev, grid, zoom };
 }
 
-let fetchTerrariumDemInBrowser = async function (south, west, north, east, gridSize = 72, zoom = 14) {
+let fetchTerrariumDemInBrowser = async function (south, west, north, east, gridSize = 72, zoom = null) {
   return fetchAdaptiveTerrariumDem(south, west, north, east, gridSize, zoom || null);
 };
 

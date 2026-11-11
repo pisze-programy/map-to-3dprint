@@ -36,7 +36,13 @@ function recordCanvasVideoBlob(compositeCanvas, renderFrameAt, animCfg, onProgre
 
     renderFrameAt(0.0, animCfg, exportW, exportH);
 
-    const stream = compositeCanvas.captureStream(fps);
+    let stream;
+    try {
+      stream = compositeCanvas.captureStream(fps);
+    } catch (err) {
+      reject(new Error('Nie można przechwycić strumienia wideo (błąd zabezpieczeń canvas): ' + (err.message || err)));
+      return;
+    }
     const chunks = [];
     let recorder;
     try {

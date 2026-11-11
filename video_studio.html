@@ -126,12 +126,12 @@
           <div class="grid grid-cols-2 gap-1.5">
             <div class="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1">
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">Szer:</span>
-              <input id="targetWidthCmInput" type="number" min="8" max="120" step="1" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
+              <input id="targetWidthCmInput" type="number" min="8" max="150" step="1" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">cm</span>
             </div>
             <div class="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1">
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">Wys:</span>
-              <input id="targetHeightCmInput" type="number" min="8" max="120" step="1" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
+              <input id="targetHeightCmInput" type="number" min="8" max="150" step="1" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">cm</span>
             </div>
           </div>
@@ -145,6 +145,7 @@
             <button type="button" data-frame-size="40x50" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">40×50</button>
             <button type="button" data-frame-size="50x50" class="px-1.5 py-0.5 rounded bg-blue-600 text-white border border-blue-500 text-[11px] font-mono transition">50×50</button>
             <button type="button" data-frame-size="50x70" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">50×70</button>
+            <button type="button" data-frame-size="50x100" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">50×100</button>
           </div>
         </div>
 
@@ -195,7 +196,7 @@
             <span class="text-xs font-semibold text-[var(--foreground)] whitespace-nowrap">Kadr (Zasięg terenu):</span>
             <span id="cropSizeLabel" class="text-xs font-mono font-bold text-blue-400 whitespace-nowrap text-right">1.20 km (1:2400)</span>
           </div>
-          <input id="cropSizeSlider" type="range" min="0.4" max="12.0" step="0.1" value="1.2" class="w-full" />
+          <input id="cropSizeSlider" type="range" min="0.4" max="50.0" step="0.1" value="1.2" class="w-full" />
           <div class="flex flex-wrap gap-1 items-center">
             <span class="text-[11px] text-[var(--muted-foreground)] shrink-0">Zasięg:</span>
             <button type="button" data-span-km="0.6" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">0.6 km</button>
@@ -203,6 +204,8 @@
             <button type="button" data-span-km="2.5" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">2.5 km</button>
             <button type="button" data-span-km="5.0" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">5.0 km</button>
             <button type="button" data-span-km="12.0" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">12.0 km</button>
+            <button type="button" data-span-km="25.0" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">25 km</button>
+            <button type="button" data-span-km="50.0" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">50 km</button>
           </div>
         </div>
 
@@ -226,60 +229,55 @@
 
         <!-- Live GIS Fetch & Render Button -->
         <button id="btnRender3D" class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-1.5 shadow-md transition">
-          Pobierz Prawdziwe Dane z Mapy i Renderuj 3D
+          Render
         </button>
       </div>
 
-      <!-- BUILDING INSPECTOR & HIGHLIGHTING -->
-      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2 shadow-sm flex-1">
+      <!-- 2. DETAIL FILTER & LoD PANEL -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2.5 shadow-sm">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-            Inspektor Budynku (OSM)
+            <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+            Filtr szczegółów (LoD)
           </h2>
-          <span id="highlightedCountBadge" class="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 font-semibold border border-amber-500/30">
-            Wyróżnione: 0
+          <span id="lodStatusBadge" class="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 font-semibold border border-blue-500/30">
+            Adaptacyjny
           </span>
         </div>
 
-        <div id="buildingInspectorEmpty" class="hidden text-xs text-[var(--muted-foreground)] py-3 text-center border border-dashed border-[var(--border)] rounded-lg">
-          Kliknij dowolny budynek w <strong>widoku 3D</strong>, aby go wyróżnić lub zmienić wysokość.
+        <!-- Min Building Size Slider -->
+        <div class="flex flex-col gap-1 bg-[var(--background)] border border-[var(--border)] rounded-lg p-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-semibold text-[var(--foreground)]">Min. obrys budynku:</span>
+            <span id="lodMinBuildingSizeLabel" class="text-xs font-mono font-bold text-blue-400">0 m (Wszystkie)</span>
+          </div>
+          <input id="lodMinBuildingSizeSlider" type="range" min="0" max="40" step="1" value="0" class="w-full" />
+          <span class="text-[11px] text-[var(--muted-foreground)]">Ukrywa małe budynki i szopy poniżej zadanego wymiaru</span>
         </div>
 
-        <div id="buildingInspectorContent" class="flex flex-col gap-2">
-          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2 flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <div class="flex items-center gap-1.5 flex-wrap">
-                <span id="inspName" class="font-bold text-xs text-[var(--foreground)] truncate">St. Lukas (Lukaskirche)</span>
-                <span id="inspTagBadge" class="text-xs px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-mono">DACH: GABLED</span>
-              </div>
-              <p id="inspOsmId" class="text-xs font-mono text-[var(--muted-foreground)] mt-0.5">OSM ID: 19330628 • Kondygnacje: 9</p>
-            </div>
-            <div class="text-right shrink-0">
-              <div id="inspRealHeight" class="text-xs font-bold text-[var(--foreground)]">32 m</div>
-              <div id="inspPrintHeight" class="text-xs font-mono text-blue-400">12.4 mm</div>
-            </div>
+        <!-- 3D Trees Toggle & Distance Threshold -->
+        <div class="flex flex-col gap-1.5 bg-[var(--background)] border border-[var(--border)] rounded-lg p-2">
+          <div class="flex items-center justify-between">
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input id="lodEnableTreesCheck" type="checkbox" checked class="rounded accent-blue-600" />
+              <span class="text-xs font-semibold text-[var(--foreground)]">Korony drzew 3D</span>
+            </label>
+            <span id="lodTreesStateBadge" class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">Włączone</span>
           </div>
-
-          <div class="grid grid-cols-2 gap-1.5">
-            <button id="btnToggleHighlight" class="py-1.5 px-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition">
-              ★ Wyróżnij budynek
-            </button>
-            <button id="btnToggleHideBuilding" class="py-1.5 px-2 rounded-lg bg-[var(--background)] hover:opacity-80 text-[var(--foreground)] border border-[var(--border)] font-semibold text-xs transition">
-              Ukryj / Przywróć
-            </button>
+          <div class="flex items-center justify-between gap-2 pt-1 border-t border-[var(--border)]">
+            <span class="text-[11px] text-[var(--muted-foreground)]">Auto-wyłącz dla kadru &gt;:</span>
+            <span id="lodTreeThresholdLabel" class="text-xs font-mono font-bold text-blue-400">4.0 km</span>
           </div>
-
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Skala wys.:</span>
-            <input id="inspHeightMultiplier" type="range" min="40" max="240" value="100" class="flex-1" />
-            <span id="inspHeightMultLabel" class="text-xs font-mono w-10 text-right">100%</span>
-          </div>
+          <input id="lodTreeThresholdSlider" type="range" min="1.0" max="10.0" step="0.5" value="4.0" class="w-full" />
         </div>
 
-        <div>
-          <span class="text-xs text-[var(--muted-foreground)] block mb-1">Obiekty z nazwą w kadrze OSM:</span>
-          <div id="landmarkChips" class="flex flex-wrap gap-1"></div>
+        <!-- Road Network Detail Level -->
+        <div class="flex flex-col gap-1 bg-[var(--background)] border border-[var(--border)] rounded-lg p-2">
+          <span class="text-xs font-semibold text-[var(--foreground)]">Sieć drogowa:</span>
+          <select id="lodRoadDetailSelect" class="bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1.5 text-xs text-[var(--foreground)] font-semibold focus:outline-none">
+            <option value="all" selected>Wszystkie ulice, mosty i ścieżki</option>
+            <option value="major">Tylko główne arterie (Główne i tranzytowe)</option>
+          </select>
         </div>
       </div>
     </section>
@@ -363,13 +361,9 @@
             </button>
           </div>
 
-          <!-- Hover Tooltip -->
-          <div id="hoverTooltip" class="hidden absolute pointer-events-none px-2.5 py-1.5 rounded-lg bg-black/85 text-white text-xs border border-white/15 shadow-lg backdrop-blur-sm z-20"></div>
-
           <!-- Exploded Layer Legend Overlay -->
           <div id="explodedLegendOverlay" class="hidden absolute top-3 left-3 bg-black/80 border border-white/15 rounded-lg p-2.5 text-white text-xs backdrop-blur-sm pointer-events-none space-y-1">
             <div class="font-bold text-blue-300 mb-1">Struktura warstw modelu 3D (oś Z):</div>
-            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block"></span><span>5. Wyróżnione budynki (Akcent)</span></div>
             <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-white inline-block"></span><span>4B. Budynki, dziedzińce i dachy spadziste LoD2</span></div>
             <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-gray-200 inline-block"></span><span>4A. Ulice, place, koleje i mosty z filarami</span></div>
             <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-600 inline-block"></span><span>3. Trawa, parki, nabrzeża i korony drzew 3D</span></div>
@@ -380,7 +374,7 @@
           <!-- Bottom Viewport Toggles -->
           <div class="absolute bottom-2.5 left-3 right-3 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
             <div class="px-2.5 py-1 rounded-md bg-black/70 text-gray-100 text-xs backdrop-blur-sm">
-              LPM: Obracaj 360° • Klik: Zaznacz • Shift+Klik: Zaznacz wiele • PPM: Przesuwaj
+              LPM: Obracaj 360° • PPM: Przesuwaj • Scroll: Zoom
             </div>
             <div class="flex items-center gap-2 pointer-events-auto">
               <label class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/70 text-gray-100 text-xs cursor-pointer backdrop-blur-sm">
@@ -503,7 +497,6 @@
         <div class="flex items-center gap-1.5 min-w-0">
           <select id="singleLayerStlSelect" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-xs flex-1 min-w-0 truncate text-[var(--foreground)] focus:outline-none">
             <option value="all">Wszystkie warstwy (.STL / .ZIP bez ramki)</option>
-            <option value="highlighted">Tylko Wyróżnione Budynki (Insert)</option>
             <option value="buildings">Tylko Budynki i Dachy LoD2</option>
             <option value="roads">Tylko Ulice, Mola i Mosty</option>
             <option value="greenery">Tylko Zieleń i Drzewa 3D</option>

@@ -3,7 +3,6 @@
 // Progressive Multi-Chunk GIS Streamer, Preloaded Scene Assembly & Fallback
 // ============================================================================
 
-const _gisSceneMemoryCache = new Map();
 let _injectedGisPayload = null;
 
 if (typeof fetchTerrariumDemInBrowser === 'function') {
@@ -14,8 +13,31 @@ if (typeof fetchTerrariumDemInBrowser === 'function') {
 }
 
 if (typeof window !== 'undefined' && window.fetch) {
+  const _savedFetch = (typeof _origWindowFetch === 'function') ? _origWindowFetch : window.fetch.bind(window);
   window.fetch = async function (input, init) {
-    const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+    const url = typeof input === 'string'
+      ? input
+      : (input && typeof input.url === 'string'
+          ? input.url
+          : (input && typeof input.href === 'string'
+              ? input.href
+              : ''));
+    const isHttp = !!(typeof window !== 'undefined' && window.location && /^https?:$/i.test(window.location.protocol));
+    if (!isHttp && (
+      url.startsWith('/') ||
+      url.startsWith('cache/') ||
+      url.startsWith('./') ||
+      url.startsWith('file:') ||
+      url.startsWith('file://')
+    )) {
+      return {
+        ok: false,
+        status: 404,
+        statusText: 'File URI scheme does not support relative server fetch',
+        json: async () => ({ error: 'File URI protocol' }),
+        text: async () => 'File URI protocol'
+      };
+    }
     if (_injectedGisPayload && _injectedGisPayload.osmElements && url.includes('overpass')) {
       const payload = { elements: _injectedGisPayload.osmElements };
       return {
@@ -25,7 +47,8 @@ if (typeof window !== 'undefined' && window.fetch) {
         text: async () => JSON.stringify(payload)
       };
     }
-    return _origWindowFetch(input, init);
+    const nativeFetch = typeof _origWindowFetch === 'function' ? _origWindowFetch : _savedFetch;
+    return nativeFetch(input, init);
   };
 }
 
@@ -47,38 +70,6 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   const spanNsM = Math.abs(north - south) * 111320.0;
   const spanEwM = Math.abs(east - west) * 111320.0 * cosLat;
   const maxSpanM = Math.max(spanEwM, spanNsM);
-
-  const sceneCacheKey = `v5_${south.toFixed(4)}_${west.toFixed(4)}_${north.toFixed(4)}_${east.toFixed(4)}`;
-  if (!options.forceRefresh && _gisSceneMemoryCache.has(sceneCacheKey)) {
-    const cached = JSON.parse(JSON.stringify(_gisSceneMemoryCache.get(sceneCacheKey)));
-    cached.title = title || cached.title;
-    if (typeof options.onProgress === 'function') {
-      options.onProgress({
-        loadedChunks: 1,
-        totalChunks: 1,
-        pct: 100,
-        statusText: `Załadowano z pamięci podręcznej (${cached.buildings.length} bud.)`
-      });
-    }
-    return cached;
-  }
-
-  if (!options.forceRefresh && typeof window !== 'undefined' && window.location && /^https?:$/.test(window.location.protocol)) {
-    try {
-      const apiUrl = `/api/gis?south=${south.toFixed(5)}&west=${west.toFixed(5)}&north=${north.toFixed(5)}&east=${east.toFixed(5)}&title=${encodeURIComponent(title || 'MAP3D')}`;
-      const rApi = await _origWindowFetch(apiUrl, { signal: options.signal || undefined });
-      if (rApi.ok) {
-        const apiScene = await rApi.json();
-        if (apiScene && Array.isArray(apiScene.buildings) && !apiScene.error) {
-          const filtered = filterPrintableBuildingsForScale(apiScene, maxSpanM > 4500 ? 1550 : 1950);
-          _gisSceneMemoryCache.set(sceneCacheKey, JSON.parse(JSON.stringify(filtered)));
-          return filtered;
-        }
-      }
-    } catch (_) {
-      // Static host without /api/gis -> proceed with browser chunk streamer
-    }
-  }
 
   const halfM = maxSpanM * 0.5;
   const sqDLat = halfM / 111320.0;
@@ -167,15 +158,33 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   }
 
   if (collectedChunkElements.length === 0) {
-    if (typeof options.onProgress === 'function') {
-      options.onProgress({ loadedChunks: 0, totalChunks, pct: 50, statusText: `Próba pobrania przez lokalny serwer /api/gis...` });
+    if (abortSignal && abortSignal.aborted) {
+      throw new Error('Przekroczono limit czasu oczekiwania na dane GIS po 20s');
     }
-    const apiUrl = `/api/gis?south=${south.toFixed(5)}&west=${west.toFixed(5)}&north=${north.toFixed(5)}&east=${east.toFixed(5)}&title=${encodeURIComponent(title || 'MAP3D')}`;
-    const r = await _origWindowFetch(apiUrl, { signal: abortSignal || undefined });
-    if (!r.ok) throw new Error(`Nie udało się pobrać danych GIS (${r.status}).`);
-    const scene = await r.json();
-    if (scene && scene.error) throw new Error(scene.error);
-    return filterPrintableBuildingsForScale(scene, 1850);
+    console.warn('[GIS Chunk Streamer] Overpass unavailable, building terrain-only DEM scene fallback.');
+    let dem = null;
+    try {
+      dem = await demPromise;
+    } catch (e) {
+      console.warn('DEM fetch error during fallback:', e);
+    }
+    if (dem) {
+      const fallbackScene = {
+        title: `${title || 'TEREN'} (DEM)`,
+        center: [centerLat, centerLon],
+        spanMeters: Math.round(maxSpanM),
+        buildings: [],
+        waterPolys: [],
+        greenPolys: [],
+        roads: [],
+        roadPolys: [],
+        bridgePolys: [],
+        dem,
+        _fallback: true
+      };
+      return fallbackScene;
+    }
+    throw new Error('Nie udało się pobrać danych GIS ani DEM.');
   }
 
   const dem = await demPromise;
@@ -194,12 +203,6 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   const finalScene = await buildSceneFromPreloadedGis(south, west, north, east, title, dem, mergedElements, maxBlds);
   finalScene._chunkStats = { rows, cols, loadedChunks, totalChunks, lodTier, demZoom: dem.zoom || 14 };
 
-  if (failedChunks === 0 && !(abortSignal && abortSignal.aborted)) {
-    try {
-      _gisSceneMemoryCache.set(sceneCacheKey, JSON.parse(JSON.stringify(finalScene)));
-      if (_gisSceneMemoryCache.size > 15) _gisSceneMemoryCache.delete(_gisSceneMemoryCache.keys().next().value);
-    } catch (_) {}
-  }
   return finalScene;
 }
 

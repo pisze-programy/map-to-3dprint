@@ -18,14 +18,22 @@ function createVideoMapGisController(vState, hooks) {
   }
 
   async function fetchSceneByBBox(south, west, north, east, title) {
-    const qs = `south=${south.toFixed(4)}&west=${west.toFixed(4)}&north=${north.toFixed(4)}&east=${east.toFixed(4)}&title=${encodeURIComponent(title)}`;
-    try {
-      const resp = await fetch(`/api/gis?${qs}`);
-      if (resp.ok) {
-        const d = await resp.json();
-        if (d && Array.isArray(d.buildings)) return d;
-      }
-    } catch (_) {}
+    const isHttp = typeof window !== 'undefined' && window.location && /^https?:$/.test(window.location.protocol);
+    if (isHttp) {
+      const qs = `south=${south.toFixed(4)}&west=${west.toFixed(4)}&north=${north.toFixed(4)}&east=${east.toFixed(4)}&title=${encodeURIComponent(title)}`;
+      try {
+        const resp = await fetch(`/api/gis?${qs}`);
+        if (resp.ok) {
+          const d = await resp.json();
+          if (d && Array.isArray(d.buildings)) return d;
+        }
+      } catch (_) {}
+    }
+    if (typeof fetchChunkedGISInBrowser === 'function') {
+      try {
+        return await fetchChunkedGISInBrowser(south, west, north, east, title);
+      } catch (_) {}
+    }
     return await fetchRealGISInBrowser(south, west, north, east, title);
   }
 
@@ -62,7 +70,8 @@ function createVideoMapGisController(vState, hooks) {
 
   async function getOrFetchCachedPresetScene(preset) {
     let scene = sceneJsonCache.get(preset.cacheUrl);
-    if (!scene && preset.cacheUrl) {
+    const isHttp = typeof window !== 'undefined' && window.location && /^https?:$/.test(window.location.protocol);
+    if (!scene && preset.cacheUrl && isHttp) {
       try {
         const resp = await fetch(preset.cacheUrl);
         if (resp.ok) {
@@ -70,6 +79,9 @@ function createVideoMapGisController(vState, hooks) {
           sceneJsonCache.set(preset.cacheUrl, scene);
         }
       } catch (_) {}
+    }
+    if (!scene && preset.id === 'munich' && typeof INITIAL_REAL_SCENE !== 'undefined') {
+      scene = INITIAL_REAL_SCENE;
     }
     if (!scene && preset.bbox) {
       const [s, w, n, e] = preset.bbox;
@@ -86,6 +98,8 @@ function createVideoMapGisController(vState, hooks) {
     try {
       const scene = await getOrFetchCachedPresetScene(preset);
       if (scene) applyLoadedScene(scene, preset.title, preset.subtitle || '');
+    } catch (err) {
+      console.warn('[Video Studio] Preset load error:', err);
     } finally {
       if (loadingEl) loadingEl.classList.add('hidden');
     }
@@ -107,7 +121,9 @@ function createVideoMapGisController(vState, hooks) {
       btn.type = 'button';
       btn.className = 'px-2 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-medium transition truncate text-left';
       btn.textContent = p.label;
-      btn.addEventListener('click', () => loadCachedOrLiveScene(p));
+      btn.addEventListener('click', () => {
+        loadCachedOrLiveScene(p).catch(() => {});
+      });
       box.appendChild(btn);
     });
   }

@@ -8,10 +8,11 @@ const _overpassChunkCache = new Map();
 const _origWindowFetch = (typeof window !== 'undefined' && window.fetch) ? window.fetch.bind(window) : fetch;
 
 const OVERPASS_MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  '/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter'
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass-api.de/api/interpreter'
 ];
 
 let _mirrorRoundRobinIdx = 0;
@@ -154,7 +155,9 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, onSubSpli
     return elements;
   } catch (err) {
     if (abortSignal && abortSignal.aborted) throw err;
-    if (chunk.depth < 1) {
+    const msg = String(err && err.message ? err.message : err);
+    const isFatalNetwork = msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('HTTP 500') || msg.includes('ECONNREFUSED');
+    if (chunk.depth < 1 && !isFatalNetwork) {
       if (typeof onSubSplit === 'function') onSubSplit(chunk);
       const midLat = (chunk.south + chunk.north) * 0.5;
       const midLon = (chunk.west + chunk.east) * 0.5;

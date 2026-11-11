@@ -4,9 +4,11 @@ gis/scene_pipeline.py
 End-to-end OSM + AWS Terrarium DEM scene builder with two-pass multipolygon/S3DB relation resolution,
 architectural man_made=bridge polygons (bridgePolys), pedestrian plazas (roadPolys), and coverage-aware S3DB.
 """
+import glob
 import json
 import math
 import os
+import re
 
 from .geometry import (
     stitch_way_rings,
@@ -16,7 +18,7 @@ from .geometry import (
     build_sea_polygons_from_coastlines,
     validate_processed_scene,
 )
-from .overpass_dem import CACHE_DIR, fetch_terrarium_dem_grid, fetch_osm_overpass
+from .overpass_dem import CACHE_DIR, fetch_terrarium_dem_grid, fetch_osm_overpass, choose_adaptive_dem_zoom
 from .s3db_models import (
     SKIP_BUILDING_VALS,
     is_underground_or_skipped_building,
@@ -30,20 +32,79 @@ from .terrain_features import (
 )
 
 
+def haversine_m(lat1, lon1, lat2, lon2):
+    """Calculates ground distance in meters between two lat/lon points."""
+    R = 6371000.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * (math.sin(dlambda / 2.0) ** 2)
+    return R * 2.0 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1.0 - a)))
+
+
+def find_proximity_cache_scene(south, west, north, east, max_dist_m=1500.0):
+    """Finds the nearest precomputed scene_v5 / scene_v4 within max_dist_m (1.5 km)."""
+    exact_key = f"{south:.4f}_{west:.4f}_{north:.4f}_{east:.4f}"
+    exact_v5 = os.path.join(CACHE_DIR, f"scene_v5_{exact_key}.json")
+    if os.path.exists(exact_v5):
+        return exact_v5, 0.0
+
+    exact_v4 = os.path.join(CACHE_DIR, f"scene_v4_{exact_key}.json")
+    if os.path.exists(exact_v4):
+        return exact_v4, 0.0
+
+    req_lat = (south + north) * 0.5
+    req_lon = (west + east) * 0.5
+
+    best_file = None
+    best_dist = float("inf")
+
+    # Check scene_v5 first, then scene_v4
+    for pattern in ("scene_v5_*.json", "scene_v4_*.json"):
+        for path in glob.glob(os.path.join(CACHE_DIR, pattern)):
+            basename = os.path.basename(path)
+            m = re.match(r"scene_v[45]_([-\d.]+)_([-\d.]+)_([-\d.]+)_([-\d.]+)\.json", basename)
+            if not m:
+                continue
+            try:
+                s, w, n, e = map(float, m.groups())
+            except ValueError:
+                continue
+            c_lat = (s + n) * 0.5
+            c_lon = (w + e) * 0.5
+            dist = haversine_m(req_lat, req_lon, c_lat, c_lon)
+            if dist < best_dist:
+                best_dist = dist
+                best_file = path
+        if best_dist <= max_dist_m:
+            break
+
+    if best_dist <= max_dist_m:
+        return best_file, best_dist
+    return None, best_dist
+
+
 def build_scene_from_bbox(south, west, north, east, title_hint="", force_rebuild=False):
     """Fetches and processes real DEM + real OSM data for [south, west, north, east]."""
     key_str = f"{south:.4f}_{west:.4f}_{north:.4f}_{east:.4f}"
     v5_cache = os.path.join(CACHE_DIR, f"scene_v5_{key_str}.json")
     v4_cache = os.path.join(CACHE_DIR, f"scene_v4_{key_str}.json")
 
-    if not force_rebuild and os.path.exists(v5_cache):
-        try:
-            with open(v5_cache, "r", encoding="utf-8") as f:
-                cached = json.load(f)
-            if "bridgePolys" in cached and "roadPolys" in cached and validate_processed_scene(cached):
-                return cached
-        except Exception:
-            pass
+    if not force_rebuild:
+        cache_path, dist = find_proximity_cache_scene(south, west, north, east, max_dist_m=1500.0)
+        if cache_path and os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    cached = json.load(f)
+                cached.setdefault("bridgePolys", [])
+                cached.setdefault("roadPolys", [])
+                if validate_processed_scene(cached):
+                    if title_hint:
+                        cached["title"] = title_hint
+                    return cached
+            except Exception:
+                pass
 
     center_lat = (south + north) * 0.5
     center_lon = (west + east) * 0.5
@@ -65,18 +126,25 @@ def build_scene_from_bbox(south, west, north, east, title_hint="", force_rebuild
         center_lat + sq_dlat,
         center_lon + sq_dlon,
         grid_size=72,
-        zoom=14,
+        zoom=None,
     )
 
     try:
         osm_raw = fetch_osm_overpass(south, west, north, east)
     except Exception:
-        for pc in (v5_cache, v4_cache):
-            if os.path.exists(pc):
-                with open(pc, "r", encoding="utf-8") as f:
+        fallback_path, _ = find_proximity_cache_scene(south, west, north, east, max_dist_m=25000.0)
+        if fallback_path and os.path.exists(fallback_path):
+            try:
+                with open(fallback_path, "r", encoding="utf-8") as f:
                     cached = json.load(f)
+                cached.setdefault("bridgePolys", [])
+                cached.setdefault("roadPolys", [])
                 if validate_processed_scene(cached):
+                    if title_hint:
+                        cached["title"] = title_hint
                     return cached
+            except Exception:
+                pass
         raise
     elements = osm_raw.get("elements", [])
 

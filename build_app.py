@@ -82,19 +82,11 @@ def build():
         with open(os.path.join(ROOT, jf), "r", encoding="utf-8") as f:
             js_bundle.append(f.read())
 
-    scene_file = os.path.join(ROOT, "cache/scene_v5_48.1280_11.5769_48.1396_11.5941.json")
-    if not os.path.exists(scene_file):
-        scene_file = os.path.join(ROOT, "cache/scene_v4_48.1280_11.5769_48.1396_11.5941.json")
-    if not os.path.exists(scene_file):
-        scene_file = os.path.join(ROOT, "cache/scene_v3_48.1280_11.5769_48.1396_11.5941.json")
-    with open(scene_file, "r", encoding="utf-8") as f:
-        scene_json = f.read()
-
     initial_scene_js = os.path.join(ROOT, "src/initial_scene.js")
     with open(initial_scene_js, "w", encoding="utf-8") as f:
         f.write(
-            "// Auto-generated initial real GIS scene (Munich Isar & Deutsches Museum)\n"
-            f"const INITIAL_REAL_SCENE = {scene_json};\n"
+            "// Initial scene: null by default (empty print bed until user renders or restores last session)\n"
+            "const INITIAL_REAL_SCENE = null;\n"
         )
 
     boot_code = (
@@ -140,7 +132,7 @@ def build():
         full_script = (
             "(function(){\n"
             + "\n".join(js_bundle)
-            + f"\nconst INITIAL_REAL_SCENE = {scene_json};\n"
+            + "\nconst INITIAL_REAL_SCENE = null;\n"
             + boot_code
             + "\n})();"
         )

@@ -4,16 +4,127 @@
 // roadPolys, Footpath Classification, Water/Parks/Trees & S3DB Buildings)
 // ============================================================================
 
-async function fetchRealGISInBrowser(south, west, north, east, title) {
+const OVERPASS_ENDPOINTS_BUILDER = [
+  'https://overpass-api.de/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://lz4.overpass-api.de/api/interpreter'
+];
+
+let _overpassMirrorRoundRobin = 0;
+
+function fetchHedgedOverpassJson(query, options = {}) {
+  const signal = options.signal || null;
+  const timeoutMs = options.timeoutMs || 18000;
+  const mirrors = OVERPASS_ENDPOINTS_BUILDER;
+  const startIdx = _overpassMirrorRoundRobin;
+  _overpassMirrorRoundRobin = (_overpassMirrorRoundRobin + 1) % mirrors.length;
+
+  const staggerDelays = [0, 2500, 5500, 8500, 11500];
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let completedCount = 0;
+    const errors = [];
+    const abortControllers = [];
+    const timers = [];
+    const launched = new Set();
+
+    function cleanup() {
+      for (const t of timers) clearTimeout(t);
+      for (const c of abortControllers) {
+        try { c.abort(); } catch (_) {}
+      }
+    }
+
+    if (signal) {
+      if (signal.aborted) {
+        return reject(new Error('Aborted'));
+      }
+      signal.addEventListener('abort', () => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          reject(new Error('Aborted'));
+        }
+      }, { once: true });
+    }
+
+    const overallTimer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        reject(new Error(`Overpass fetch timeout after ${timeoutMs}ms`));
+      }
+    }, timeoutMs);
+    timers.push(overallTimer);
+
+    function launchMirror(slotIdx) {
+      if (settled || slotIdx >= mirrors.length || launched.has(slotIdx)) return;
+      launched.add(slotIdx);
+      const ep = mirrors[(startIdx + slotIdx) % mirrors.length];
+      const ctrl = new AbortController();
+      abortControllers.push(ctrl);
+
+      (async () => {
+        const r = await fetch(ep, {
+          method: 'POST',
+          body: 'data=' + encodeURIComponent(query),
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+          signal: ctrl.signal
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const text = await r.text();
+        if (!text || text.trim().startsWith('<')) {
+          throw new Error('Invalid non-JSON response');
+        }
+        const j = JSON.parse(text);
+        if (!j || !Array.isArray(j.elements)) {
+          throw new Error('No elements array in Overpass JSON');
+        }
+        return j;
+      })().then(result => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          resolve(result);
+        }
+      }).catch(err => {
+        if (settled) return;
+        errors.push(`${ep}: ${err && err.message ? err.message : String(err)}`);
+        completedCount++;
+        if (slotIdx + 1 < mirrors.length) {
+          launchMirror(slotIdx + 1);
+        }
+        if (completedCount >= mirrors.length) {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            reject(new Error(`All Overpass mirrors failed: ${errors.join('; ')}`));
+          }
+        }
+      });
+    }
+
+    launchMirror(0);
+
+    for (let i = 1; i < mirrors.length; i++) {
+      const t = setTimeout(() => {
+        if (!settled) launchMirror(i);
+      }, staggerDelays[i]);
+      timers.push(t);
+    }
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.fetchHedgedOverpassJson = fetchHedgedOverpassJson;
+}
+
+async function fetchRealGISInBrowser(south, west, north, east, title, options = {}) {
   const bbox = `${south.toFixed(5)},${west.toFixed(5)},${north.toFixed(5)},${east.toFixed(5)}`;
   const query = `[out:json][timeout:32][bbox:${bbox}];(way["building"];relation["building"];relation["type"="building"];way["building:part"];relation["building:part"];way["natural"];relation["natural"];way["waterway"];relation["waterway"];way["water"];relation["water"];way["landuse"];relation["landuse"];way["leisure"];relation["leisure"];node["natural"="tree"];way["highway"];relation["highway"="pedestrian"];way["place"="square"];way["railway"];way["man_made"="bridge"];relation["man_made"="bridge"];way["man_made"="pier"];way["man_made"="breakwater"];way["man_made"="groyne"];);out body qt;>;out skel qt;`;
-
-  const endpoints = [
-    'https://overpass-api.de/api/interpreter',
-    'https://lz4.overpass-api.de/api/interpreter',
-    'https://overpass.private.coffee/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter'
-  ];
 
   const centerLat = (south + north) * 0.5;
   const centerLon = (west + east) * 0.5;
@@ -28,28 +139,55 @@ async function fetchRealGISInBrowser(south, west, north, east, title) {
   const halfM = maxSpanM * 0.5;
   const sqDLat = halfM / 111320.0;
   const sqDLon = halfM / (111320.0 * cosLat);
-  const demPromise = fetchTerrariumDemInBrowser(centerLat - sqDLat, centerLon - sqDLon, centerLat + sqDLat, centerLon + sqDLon, 72, 14);
+  const demPromise = fetchTerrariumDemInBrowser(centerLat - sqDLat, centerLon - sqDLon, centerLat + sqDLat, centerLon + sqDLon, 72, null);
 
-  const osmPromise = Promise.any(endpoints.map(async (ep) => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 36000);
-    try {
-      const r = await fetch(ep, {
-        method: 'POST',
-        body: 'data=' + encodeURIComponent(query),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-        signal: ctrl.signal
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
-      if (!j.elements) throw new Error('No elements');
-      return j;
-    } finally {
-      clearTimeout(timer);
+  let osmRaw = null;
+  let overpassError = null;
+
+  try {
+    osmRaw = await fetchHedgedOverpassJson(query, {
+      signal: options && options.signal,
+      timeoutMs: (options && options.timeoutMs) || 18000
+    });
+  } catch (err) {
+    overpassError = err;
+    if (options && options.throwOnError) {
+      throw err;
     }
-  }));
+  }
 
-  const [dem, osmRaw] = await Promise.all([demPromise, osmPromise]);
+  let dem = null;
+  try {
+    dem = await demPromise;
+  } catch (demErr) {
+    if (overpassError) {
+      throw new Error(`Both DEM and Overpass failed: DEM (${demErr && demErr.message}), OSM (${overpassError && overpassError.message})`);
+    }
+    dem = { gridSize: 72, minElev: 0, maxElev: 15, grid: Array.from({ length: 72 }, () => Array(72).fill(0)), zoom: 14 };
+  }
+
+  if (!osmRaw || !Array.isArray(osmRaw.elements)) {
+    return {
+      bbox: [south, west, north, east],
+      center: [Math.round(centerLat * 100000) / 100000, Math.round(centerLon * 100000) / 100000],
+      spanMeters: Math.round(maxSpanM),
+      metersToUnits,
+      halfW,
+      halfH,
+      title: title || 'MAP3D',
+      dem,
+      waterPolys: [],
+      waterLines: [],
+      greenPolys: [],
+      trees: [],
+      roads: [],
+      roadPolys: [],
+      bridgePolys: [],
+      buildings: [],
+      _fallback: true,
+      _error: overpassError ? overpassError.message : 'Overpass unreachable'
+    };
+  }
 
   const project = (lon, lat) => [
     Math.round((lon - centerLon) * 111320.0 * cosLat * metersToUnits * 1000) / 1000,
