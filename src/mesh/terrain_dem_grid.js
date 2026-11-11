@@ -159,7 +159,7 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
     };
 
     (scene.buildings || []).forEach(b => {
-      if (b.hidden || b.btype === 'pier' || b.isOutline) return;
+      if (b.hidden || b.btype === 'pier') return;
       const clipped = clipPolyToBox(b.outer.map(toBed), -halfW + 0.38, -halfH + 0.38, halfW - 0.38, halfH - 0.38);
       if (clipped.length < 3) return;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -173,7 +173,7 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
       const area = Math.abs(signedArea2D(clipped));
       if (isImportant ? (area < 0.004) : (minSpan < 0.32 || area < 0.10)) return;
 
-      const padR = (minSpan * scaleMm < 0.48) ? Math.max(0.18, 0.30 / scaleMm) : 0.15;
+      const padR = (minSpan * scaleMm < 0.48) ? Math.max(0.24, 0.32 / scaleMm) : 0.22;
       const gxMin = Math.max(0, Math.floor(((minX - padR + halfW) / (2 * halfW)) * TERRAIN_RES_X));
       const gxMax = Math.min(TERRAIN_RES_X - 1, Math.floor(((maxX + padR + halfW) / (2 * halfW)) * TERRAIN_RES_X));
       const gyMin = Math.max(0, Math.floor(((minY - padR + halfH) / (2 * halfH)) * TERRAIN_RES_Y));

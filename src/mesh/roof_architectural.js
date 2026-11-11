@@ -258,7 +258,8 @@ function extrudeBuildingLoD2(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
   }
 
   const roofH = Math.max(0, zRidge - zEaves);
-  const canPitch = hasPitchedRoof && roofH > 0.04 && outerClean.length >= 3;
+  const scaleMm = (opts && typeof opts.scaleMm === 'number') ? opts.scaleMm : 1.0;
+  const canPitch = hasPitchedRoof && (roofH * scaleMm >= 0.15) && outerClean.length >= 3;
 
   if (canPitch && holesClean.length === 0 && (roofShape === 'gabled' || roofShape === 'gambrel')) {
     if (tryEmitPlanarGabledBuilding(outerClean, zBase, zEaves, zRidge, roofShape, opts, layerId, bId, outTris, tileId)) {

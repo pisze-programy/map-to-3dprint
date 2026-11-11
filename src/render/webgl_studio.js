@@ -43,6 +43,136 @@ function createWebGLStudio(canvas3d, state) {
   const glBuffers = {};
   let meshUploadVersion = 0;
   let lastRenderSig = '';
+  let activeGenerationId = 0;
+
+  function setGenerationId(id) {
+    activeGenerationId = id;
+  }
+
+  function getActiveGenerationId() {
+    return activeGenerationId;
+  }
+
+  function clearMeshes() {
+    const keys = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted', 'frame'];
+    keys.forEach(key => {
+      const entry = glBuffers[key];
+      if (entry) {
+        if (entry.chunks && entry.chunks.length > 0) {
+          entry.chunks.forEach(c => {
+            if (c.buf) gl.deleteBuffer(c.buf);
+          });
+          entry.chunks = [];
+        }
+        if (entry.buf) {
+          entry.count = 0;
+        }
+      }
+    });
+    if (state && state.layerMeshes) {
+      keys.forEach(k => {
+        state.layerMeshes[k] = [];
+      });
+    }
+    meshUploadVersion++;
+    lastRenderSig = '';
+    render(true);
+  }
+
+  function uploadLayerMesh(layerName, meshData, options = {}) {
+    if (options.generationId !== undefined && options.generationId !== activeGenerationId) {
+      return;
+    }
+
+    let floatData = null;
+    let triCount = 0;
+    if (meshData instanceof Float32Array) {
+      floatData = meshData;
+      triCount = Math.floor(floatData.length / 27);
+    } else if (Array.isArray(meshData)) {
+      triCount = meshData.length;
+      floatData = new Float32Array(triCount * 3 * 9);
+      let ptr = 0;
+      for (let i = 0; i < triCount; i++) {
+        const t = meshData[i];
+        const pts = [t.v0, t.v1, t.v2];
+        const tid = (t.tileId !== undefined) ? t.tileId : 0;
+        for (let v = 0; v < 3; v++) {
+          floatData[ptr++] = pts[v][0];
+          floatData[ptr++] = pts[v][1];
+          floatData[ptr++] = pts[v][2];
+          floatData[ptr++] = t.n[0];
+          floatData[ptr++] = t.n[1];
+          floatData[ptr++] = t.n[2];
+          floatData[ptr++] = t.layerId;
+          floatData[ptr++] = t.buildingId;
+          floatData[ptr++] = tid;
+        }
+      }
+    } else {
+      return;
+    }
+
+    if (!glBuffers[layerName]) {
+      glBuffers[layerName] = { buf: gl.createBuffer(), count: 0, chunks: [] };
+    }
+    const entry = glBuffers[layerName];
+
+    if (options.append) {
+      if (!entry.chunks) entry.chunks = [];
+      if (entry.count > 0 && entry.buf && entry.chunks.length === 0) {
+        entry.chunks.push({ buf: entry.buf, count: entry.count });
+        entry.buf = null;
+        entry.count = 0;
+      }
+      const chunkBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, chunkBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, floatData, gl.STATIC_DRAW);
+      entry.chunks.push({ buf: chunkBuf, count: triCount * 3 });
+    } else {
+      if (entry.chunks && entry.chunks.length > 0) {
+        entry.chunks.forEach(c => {
+          if (c.buf) gl.deleteBuffer(c.buf);
+        });
+        entry.chunks = [];
+      }
+      if (!entry.buf) entry.buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.buf);
+      gl.bufferData(gl.ARRAY_BUFFER, floatData, gl.STATIC_DRAW);
+      entry.count = triCount * 3;
+    }
+
+    if (state && state.layerMeshes) {
+      if (!options.append) {
+        state.layerMeshes[layerName] = Array.isArray(meshData) ? meshData.slice() : [];
+      } else if (Array.isArray(meshData)) {
+        if (!state.layerMeshes[layerName]) state.layerMeshes[layerName] = [];
+        for (let i = 0; i < meshData.length; i++) {
+          state.layerMeshes[layerName].push(meshData[i]);
+        }
+      }
+    }
+
+    meshUploadVersion++;
+    lastRenderSig = '';
+    if (options.renderImmediately !== false) {
+      render(true);
+    }
+  }
+
+  function consolidateLayer(layerName) {
+    const entry = glBuffers[layerName];
+    if (!entry || !entry.chunks || entry.chunks.length === 0) return;
+    if (entry.chunks.length === 1) {
+      entry.buf = entry.chunks[0].buf;
+      entry.count = entry.chunks[0].count;
+      entry.chunks = [];
+      return;
+    }
+    if (state && state.layerMeshes && state.layerMeshes[layerName]) {
+      uploadLayerMesh(layerName, state.layerMeshes[layerName], { append: false, renderImmediately: false });
+    }
+  }
 
   const floorBuf = gl.createBuffer();
   (function initFloor() {
@@ -81,10 +211,18 @@ function createWebGLStudio(canvas3d, state) {
           data[ptr++] = tid;
         }
       }
-      if (!glBuffers[key]) glBuffers[key] = { buf: gl.createBuffer(), count: 0 };
-      gl.bindBuffer(gl.ARRAY_BUFFER, glBuffers[key].buf);
+      if (!glBuffers[key]) glBuffers[key] = { buf: gl.createBuffer(), count: 0, chunks: [] };
+      const entry = glBuffers[key];
+      if (entry.chunks && entry.chunks.length > 0) {
+        entry.chunks.forEach(c => {
+          if (c.buf) gl.deleteBuffer(c.buf);
+        });
+        entry.chunks = [];
+      }
+      if (!entry.buf) entry.buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.buf);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      glBuffers[key].count = tris.length * 3;
+      entry.count = tris.length * 3;
     });
     meshUploadVersion++;
     lastRenderSig = '';
@@ -200,12 +338,25 @@ function createWebGLStudio(canvas3d, state) {
         if (!state.showFrame || state.explodeFactor > 0.08 || tExplode > 0.03) return;
       } else if (!state.layerVisible[key]) return;
       const b = glBuffers[key];
-      if (!b || b.count === 0) return;
-      gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
-      gl.vertexAttribPointer(sLocPos, 3, gl.FLOAT, false, stride, 0);
-      gl.vertexAttribPointer(sLocLayer, 1, gl.FLOAT, false, stride, 24);
-      if (sLocTile >= 0) gl.vertexAttribPointer(sLocTile, 1, gl.FLOAT, false, stride, 32);
-      gl.drawArrays(gl.TRIANGLES, 0, b.count);
+      if (!b) return;
+
+      if (b.chunks && b.chunks.length > 0) {
+        for (let ci = 0; ci < b.chunks.length; ci++) {
+          const c = b.chunks[ci];
+          if (!c || c.count === 0) continue;
+          gl.bindBuffer(gl.ARRAY_BUFFER, c.buf);
+          gl.vertexAttribPointer(sLocPos, 3, gl.FLOAT, false, stride, 0);
+          gl.vertexAttribPointer(sLocLayer, 1, gl.FLOAT, false, stride, 24);
+          if (sLocTile >= 0) gl.vertexAttribPointer(sLocTile, 1, gl.FLOAT, false, stride, 32);
+          gl.drawArrays(gl.TRIANGLES, 0, c.count);
+        }
+      } else if (b.buf && b.count > 0) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
+        gl.vertexAttribPointer(sLocPos, 3, gl.FLOAT, false, stride, 0);
+        gl.vertexAttribPointer(sLocLayer, 1, gl.FLOAT, false, stride, 24);
+        if (sLocTile >= 0) gl.vertexAttribPointer(sLocTile, 1, gl.FLOAT, false, stride, 32);
+        gl.drawArrays(gl.TRIANGLES, 0, b.count);
+      }
     });
 
     // PASS 2: STUDIO CAMERA RENDER
@@ -287,14 +438,29 @@ function createWebGLStudio(canvas3d, state) {
         if (!state.showFrame || state.explodeFactor > 0.08 || tExplode > 0.03) return;
       } else if (!state.layerVisible[key]) return;
       const b = glBuffers[key];
-      if (!b || b.count === 0) return;
-      gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
-      gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, stride, 0);
-      gl.vertexAttribPointer(locNorm, 3, gl.FLOAT, false, stride, 12);
-      gl.vertexAttribPointer(locLayer, 1, gl.FLOAT, false, stride, 24);
-      gl.vertexAttribPointer(locBld, 1, gl.FLOAT, false, stride, 28);
-      if (locTile >= 0) gl.vertexAttribPointer(locTile, 1, gl.FLOAT, false, stride, 32);
-      gl.drawArrays(gl.TRIANGLES, 0, b.count);
+      if (!b) return;
+
+      if (b.chunks && b.chunks.length > 0) {
+        for (let ci = 0; ci < b.chunks.length; ci++) {
+          const c = b.chunks[ci];
+          if (!c || c.count === 0) continue;
+          gl.bindBuffer(gl.ARRAY_BUFFER, c.buf);
+          gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, stride, 0);
+          gl.vertexAttribPointer(locNorm, 3, gl.FLOAT, false, stride, 12);
+          gl.vertexAttribPointer(locLayer, 1, gl.FLOAT, false, stride, 24);
+          gl.vertexAttribPointer(locBld, 1, gl.FLOAT, false, stride, 28);
+          if (locTile >= 0) gl.vertexAttribPointer(locTile, 1, gl.FLOAT, false, stride, 32);
+          gl.drawArrays(gl.TRIANGLES, 0, c.count);
+        }
+      } else if (b.buf && b.count > 0) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
+        gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, stride, 0);
+        gl.vertexAttribPointer(locNorm, 3, gl.FLOAT, false, stride, 12);
+        gl.vertexAttribPointer(locLayer, 1, gl.FLOAT, false, stride, 24);
+        gl.vertexAttribPointer(locBld, 1, gl.FLOAT, false, stride, 28);
+        if (locTile >= 0) gl.vertexAttribPointer(locTile, 1, gl.FLOAT, false, stride, 32);
+        gl.drawArrays(gl.TRIANGLES, 0, b.count);
+      }
     });
 
     gl.disableVertexAttribArray(locNorm);
@@ -401,7 +567,17 @@ function createWebGLStudio(canvas3d, state) {
     return bestPickId > 0 ? (bldByPickId.get(bestPickId) || null) : null;
   }
 
-  return { camera, uploadMeshes, render, pickBuilding };
+  return {
+    camera,
+    uploadMeshes,
+    uploadLayerMesh,
+    clearMeshes,
+    consolidateLayer,
+    setGenerationId,
+    getActiveGenerationId,
+    render,
+    pickBuilding
+  };
 }
 
 if (typeof module !== 'undefined' && module.exports) {

@@ -120,104 +120,133 @@ function cleanPolygonRing(ptsInput, wantCCW = true) {
   return pts;
 }
 
-function triangulateSimplePoly(pts) {
-  if (!pts || pts.length < 3) return [];
-  const indices = pts.map((_, i) => i);
-  const tris = [];
-  let guard = 0;
-  const maxIter = indices.length * 6 + 50;
+function triangulateSimplePoly(loopPts) {
+  if (!loopPts || loopPts.length < 3) return [];
 
-  while (indices.length > 3 && guard++ < maxIter) {
-    const n = indices.length;
-    let bestEarIdx = -1;
-    let bestDiagSq = Infinity;
-
-    for (let i = 0; i < n; i++) {
-      const iPrev = indices[(i + n - 1) % n];
-      const iCurr = indices[i];
-      const iNext = indices[(i + 1) % n];
-      const a = pts[iPrev], b = pts[iCurr], c = pts[iNext];
-      const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-      if (cross <= 1e-7) continue;
-
-      const mid = [(a[0] + c[0]) * 0.5, (a[1] + c[1]) * 0.5];
-      const polyRem = indices.map(idx => pts[idx]);
-      if (!pointInPoly2D(mid[0], mid[1], polyRem)) continue;
-
-      let hasInside = false;
-      const tMinX = Math.min(a[0], b[0], c[0]) - 1e-5;
-      const tMaxX = Math.max(a[0], b[0], c[0]) + 1e-5;
-      const tMinY = Math.min(a[1], b[1], c[1]) - 1e-5;
-      const tMaxY = Math.max(a[1], b[1], c[1]) + 1e-5;
-
-      for (let j = 0; j < n; j++) {
-        const idx = indices[j];
-        if (idx === iPrev || idx === iCurr || idx === iNext) continue;
-        const p = pts[idx];
-        if (p[0] < tMinX || p[0] > tMaxX || p[1] < tMinY || p[1] > tMaxY) continue;
-        if (dxSq(p, a) < 1e-9 || dxSq(p, b) < 1e-9 || dxSq(p, c) < 1e-9) continue;
-        if (pointInTri2D(p[0], p[1], a[0], a[1], b[0], b[1], c[0], c[1])) {
-          hasInside = true;
-          break;
-        }
-      }
-      if (hasInside) continue;
-
-      let intersects = false;
-      for (let j = 0; j < n; j++) {
-        const e1 = indices[j], e2 = indices[(j + 1) % n];
-        if (e1 === iPrev || e1 === iNext || e2 === iPrev || e2 === iNext) continue;
-        if (segmentsIntersectProper(a, c, pts[e1], pts[e2])) {
-          intersects = true;
-          break;
-        }
-      }
-      if (intersects) continue;
-
-      const dSq = dxSq(a, c);
-      if (dSq < bestDiagSq) {
-        bestDiagSq = dSq;
-        bestEarIdx = i;
-        if (dSq <= (dxSq(a, b) + dxSq(b, c)) * 1.65) break;
-      }
-    }
-
-    if (bestEarIdx >= 0) {
-      const iPrev = indices[(bestEarIdx + n - 1) % n];
-      const iCurr = indices[bestEarIdx];
-      const iNext = indices[(bestEarIdx + 1) % n];
-      tris.push([pts[iPrev], pts[iCurr], pts[iNext]]);
-      indices.splice(bestEarIdx, 1);
-      continue;
-    }
-
-    let fallbackIdx = -1;
-    let bestCross = 1e-9;
-    for (let i = 0; i < n; i++) {
-      const iPrev = indices[(i + n - 1) % n];
-      const iCurr = indices[i];
-      const iNext = indices[(i + 1) % n];
-      const a = pts[iPrev], b = pts[iCurr], c = pts[iNext];
-      const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-      if (cross > bestCross) {
-        bestCross = cross;
-        fallbackIdx = i;
-      }
-    }
-    if (fallbackIdx >= 0) {
-      const iPrev = indices[(fallbackIdx + n - 1) % n];
-      const iCurr = indices[fallbackIdx];
-      const iNext = indices[(fallbackIdx + 1) % n];
-      tris.push([pts[iPrev], pts[iCurr], pts[iNext]]);
-      indices.splice(fallbackIdx, 1);
-    } else {
-      break;
+  const pts = [];
+  for (let i = 0; i < loopPts.length; i++) {
+    const p = loopPts[i];
+    if (pts.length === 0 || Math.hypot(p[0] - pts[pts.length - 1][0], p[1] - pts[pts.length - 1][1]) > 1e-8) {
+      pts.push([p[0], p[1]]);
     }
   }
-  if (indices.length === 3) {
-    const a = pts[indices[0]], b = pts[indices[1]], c = pts[indices[2]];
+  if (pts.length >= 2 && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) <= 1e-8) {
+    pts.pop();
+  }
+  if (pts.length < 3) return [];
+
+  let a2d = 0;
+  for (let i = 0, n = pts.length; i < n; i++) {
+    const p1 = pts[i], p2 = pts[(i + 1) % n];
+    a2d += (p1[0] * p2[1] - p2[0] * p1[1]);
+  }
+  if (a2d < 0) pts.reverse();
+
+  const n = pts.length;
+  const nodes = new Array(n);
+  for (let i = 0; i < n; i++) nodes[i] = { i, pt: pts[i], prev: null, next: null };
+  for (let i = 0; i < n; i++) {
+    nodes[i].prev = nodes[(i + n - 1) % n];
+    nodes[i].next = nodes[(i + 1) % n];
+  }
+
+  function isInsideTri(p, a, b, c) {
+    const v0x = c[0] - a[0], v0y = c[1] - a[1];
+    const v1x = b[0] - a[0], v1y = b[1] - a[1];
+    const v2x = p[0] - a[0], v2y = p[1] - a[1];
+    const dot00 = v0x * v0x + v0y * v0y;
+    const dot01 = v0x * v1x + v0y * v1y;
+    const dot02 = v0x * v2x + v0y * v2y;
+    const dot11 = v1x * v1x + v1y * v1y;
+    const dot12 = v1x * v2x + v1y * v2y;
+    const denom = dot00 * dot11 - dot01 * dot01;
+    if (Math.abs(denom) < 1e-11) return false;
+    const inv = 1 / denom;
+    const u = (dot11 * dot02 - dot01 * dot12) * inv;
+    const v = (dot00 * dot12 - dot01 * dot02) * inv;
+    return (u > 1e-6) && (v > 1e-6) && (u + v < 1 - 1e-6);
+  }
+
+  function isEar(ear) {
+    const a = ear.prev.pt, b = ear.pt, c = ear.next.pt;
     const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    if (cross > 1e-9) tris.push([a, b, c]);
+    if (cross <= 1e-8) return false;
+    let p = ear.next.next;
+    const minX = Math.min(a[0], b[0], c[0]) - 1e-5;
+    const maxX = Math.max(a[0], b[0], c[0]) + 1e-5;
+    const minY = Math.min(a[1], b[1], c[1]) - 1e-5;
+    const maxY = Math.max(a[1], b[1], c[1]) + 1e-5;
+    while (p !== ear.prev) {
+      const pt = p.pt;
+      if (pt[0] >= minX && pt[0] <= maxX && pt[1] >= minY && pt[1] <= maxY) {
+        if (isInsideTri(pt, a, b, c)) return false;
+      }
+      p = p.next;
+    }
+    return true;
+  }
+
+  const tris = [];
+  let curr = nodes[0];
+  let rem = n;
+  let stop = curr;
+  let guard = 0;
+
+  while (rem > 3 && guard <= rem * 2) {
+    const prev = curr.prev;
+    const next = curr.next;
+    if (isEar(curr)) {
+      tris.push([prev.pt, curr.pt, next.pt]);
+      prev.next = next;
+      next.prev = prev;
+      curr = next;
+      stop = next;
+      rem--;
+      guard = 0;
+      continue;
+    }
+    guard++;
+    curr = next;
+    if (curr === stop) {
+      let bestCross = 1e-8, bestNode = null;
+      let check = curr;
+      do {
+        const a = check.prev.pt, b = check.pt, c = check.next.pt;
+        const cr = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+        if (cr > bestCross) { bestCross = cr; bestNode = check; }
+        check = check.next;
+      } while (check !== curr);
+      if (bestNode) {
+        tris.push([bestNode.prev.pt, bestNode.pt, bestNode.next.pt]);
+        bestNode.prev.next = bestNode.next;
+        bestNode.next.prev = bestNode.prev;
+        curr = bestNode.next;
+        stop = curr;
+        rem--;
+        guard = 0;
+      } else {
+        break;
+      }
+    }
+  }
+  if (rem === 3) {
+    const a = curr.prev.pt, b = curr.pt, c = curr.next.pt;
+    const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    if (Math.abs(cross) > 1e-9) {
+      tris.push([a, b, c]);
+    }
+  } else if (rem > 3) {
+    const remPts = [];
+    let p = curr;
+    for (let i = 0; i < rem; i++) {
+      remPts.push(p.pt);
+      p = p.next;
+    }
+    for (let k = 1; k < remPts.length - 1; k++) {
+      const a = remPts[0], b = remPts[k], c = remPts[k + 1];
+      const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+      if (cross > 1e-9) tris.push([a, b, c]);
+    }
   }
   return tris;
 }
@@ -226,7 +255,7 @@ function earcutPolygon2D(ring) {
   return triangulateSimplePoly(ring);
 }
 
-function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
+function mergeHolesIntoOuterKeyhole(outerInput, holesInput, mergedOut = null) {
   if (!outerInput || outerInput.length < 3) return [];
   let outer = outerInput.map(p => [p[0], p[1]]);
   if (signedArea2D(outer) < 0) outer.reverse();
@@ -244,11 +273,15 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
           maxIdx = i;
         }
       }
-      return { ring: copy, maxX, maxIdx };
+      return { orig: h, ring: copy, maxX, maxIdx };
     })
     .sort((a, b) => b.maxX - a.maxX);
 
-  for (const hObj of validHoles) {
+  const usedBridgeKeys = new Set();
+  const ptKey = p => p[0].toFixed(5) + '_' + p[1].toFixed(5);
+
+  for (let hIdx = 0; hIdx < validHoles.length; hIdx++) {
+    const hObj = validHoles[hIdx];
     const hRing = hObj.ring;
     const hi = hObj.maxIdx;
     const H = hRing[hi];
@@ -256,7 +289,8 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
     const candidates = [];
     for (let oi = 0; oi < outer.length; oi++) {
       const ox = outer[oi][0], oy = outer[oi][1];
-      const d = Math.hypot(ox - H[0], oy - H[1]) + (ox >= H[0] ? 0 : 50.0);
+      const reusePenalty = usedBridgeKeys.has(ptKey(outer[oi])) ? 200.0 : 0.0;
+      const d = Math.hypot(ox - H[0], oy - H[1]) + (ox >= H[0] ? 0 : 50.0) + reusePenalty;
       candidates.push({ oi, d });
     }
     candidates.sort((a, b) => a.d - b.d);
@@ -265,15 +299,16 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
     for (let ci = 0; ci < candidates.length; ci++) {
       const oi = candidates[ci].oi;
       const V = outer[oi];
+      if (dxSq(H, V) < 1e-8) continue;
       const mid = [(H[0] + V[0]) * 0.5, (H[1] + V[1]) * 0.5];
 
       let intersects = false;
       const nOut = outer.length;
       for (let i = 0; i < nOut; i++) {
-        if (i === oi || (i + 1) % nOut === oi) continue;
-        if (segmentsIntersectProper(H, V, outer[i], outer[(i + 1) % nOut])) {
-          intersects = true;
-          break;
+        const p1 = outer[i], p2 = outer[(i + 1) % nOut];
+        if (dxSq(p1, V) < 1e-10 || dxSq(p2, V) < 1e-10) continue;
+        if (segmentsIntersectProper(H, V, p1, p2) || pointToSegmentDistSq2D(p1, H, V) < 1e-7) {
+          intersects = true; break;
         }
       }
       if (intersects) continue;
@@ -281,13 +316,22 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
       const nHole = hRing.length;
       for (let i = 0; i < nHole; i++) {
         if (i === hi || (i + 1) % nHole === hi) continue;
-        if (segmentsIntersectProper(H, V, hRing[i], hRing[(i + 1) % nHole])) {
-          intersects = true;
-          break;
+        if (segmentsIntersectProper(H, V, hRing[i], hRing[(i + 1) % nHole]) || pointToSegmentDistSq2D(hRing[i], H, V) < 1e-7) {
+          intersects = true; break;
         }
       }
       if (intersects) continue;
-      if (!pointInPoly2D(mid[0], mid[1], outer)) continue;
+
+      for (let oIdx = hIdx + 1; oIdx < validHoles.length && !intersects; oIdx++) {
+        const oRing = validHoles[oIdx].ring;
+        if (pointInPoly2D(mid[0], mid[1], oRing)) { intersects = true; break; }
+        for (let i = 0, m = oRing.length; i < m; i++) {
+          if (segmentsIntersectProper(H, V, oRing[i], oRing[(i + 1) % m]) || pointToSegmentDistSq2D(oRing[i], H, V) < 1e-7) {
+            intersects = true; break;
+          }
+        }
+      }
+      if (intersects || !pointInPoly2D(mid[0], mid[1], outer) || pointInPoly2D(mid[0], mid[1], hRing)) continue;
 
       bestOi = oi;
       break;
@@ -295,6 +339,8 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
 
     if (bestOi >= 0) {
       const V = outer[bestOi];
+      usedBridgeKeys.add(ptKey(V));
+      usedBridgeKeys.add(ptKey(H));
       const spliced = [];
       for (let i = 0; i <= bestOi; i++) spliced.push(outer[i]);
       for (let i = 0; i < hRing.length; i++) spliced.push(hRing[(hi + i) % hRing.length]);
@@ -302,6 +348,7 @@ function mergeHolesIntoOuterKeyhole(outerInput, holesInput) {
       spliced.push([V[0], V[1]]);
       for (let i = bestOi + 1; i < outer.length; i++) spliced.push(outer[i]);
       outer = spliced;
+      if (mergedOut) mergedOut.push(hObj.orig);
     }
   }
   return outer;
@@ -421,19 +468,8 @@ function dilatePolygonMinSpan2D(ring, minSpanUnits) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    signedArea2D,
-    pointInPoly2D,
-    pointInTri2D,
-    dxSq,
-    pointToSegmentDistSq2D,
-    segmentsIntersectProper,
-    cleanPolygonRing,
-    triangulateSimplePoly,
-    earcutPolygon2D,
-    mergeHolesIntoOuterKeyhole,
-    clipPolyToBox,
-    clipPolyByConvex,
-    insetPolygonCentroid,
-    dilatePolygonMinSpan2D
+    signedArea2D, pointInPoly2D, pointInTri2D, dxSq, pointToSegmentDistSq2D, segmentsIntersectProper,
+    cleanPolygonRing, triangulateSimplePoly, earcutPolygon2D, mergeHolesIntoOuterKeyhole,
+    clipPolyToBox, clipPolyByConvex, insetPolygonCentroid, dilatePolygonMinSpan2D
   };
 }

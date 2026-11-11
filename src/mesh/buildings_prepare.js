@@ -139,7 +139,16 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
   for (let i = 0; i < rawBuildings.length; i++) {
     const b = rawBuildings[i];
     if (b.hidden || b.btype === 'pier' || suppressedIdx.has(i)) continue;
-    let clippedOuter = cleanPolygonRing(clipPolyToBox(b.outer.map(toBed), -halfW + 0.38, -halfH + 0.38, halfW - 0.38, halfH - 0.38), true);
+    const rawBedPts = b.outer.map(toBed);
+    let uMinX = Infinity, uMaxX = -Infinity, uMinY = Infinity, uMaxY = -Infinity;
+    for (let k = 0; k < rawBedPts.length; k++) {
+      const p = rawBedPts[k];
+      if (p[0] < uMinX) uMinX = p[0]; if (p[0] > uMaxX) uMaxX = p[0];
+      if (p[1] < uMinY) uMinY = p[1]; if (p[1] > uMaxY) uMaxY = p[1];
+    }
+    const unclippedMinSpan = Math.min(uMaxX - uMinX, uMaxY - uMinY);
+
+    let clippedOuter = cleanPolygonRing(clipPolyToBox(rawBedPts, -halfW + 0.38, -halfH + 0.38, halfW - 0.38, halfH - 0.38), true);
     if (clippedOuter.length < 3 || hasSelfTouchingEdge2D(clippedOuter, 1e-4)) continue;
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -151,15 +160,43 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     let minSpan = Math.min(maxX - minX, maxY - minY);
     let area = Math.abs(signedArea2D(clippedOuter));
 
-    const isImportant = b.part || b.tower || b.church || b.landmark || (b.h || 0) >= 20;
-    if (isImportant) {
-      if (area < 0.004) continue;
-    } else if (minSpan < 0.32 || area < 0.10) {
-      continue;
+    const isImportant = Boolean(b.part || b.tower || b.church || b.landmark || (b.h || 0) >= 20 || b.isLandmark);
+    const metersPerMm = 1.0 / (mToU * scaleMm);
+
+    // Print-Space Error (PSE) thresholds:
+    // Printable wall limit = 0.35 mm on print (~17.5 m in reality at 50 km)
+    const minPrintMm = 0.35;
+    const minPrintUnits = minPrintMm / scaleMm;
+
+    // Scale-adaptive or user-configured minimum building footprint in meters
+    const userMinBuildingMeters = (state.lodSettings && typeof state.lodSettings.minBuildingMeters === 'number')
+      ? state.lodSettings.minBuildingMeters
+      : 0;
+    const effectiveMinMeters = Math.max(userMinBuildingMeters, minPrintMm * metersPerMm);
+
+    const footprintSpanMeters = minSpan / mToU;
+    const footprintAreaMeters2 = area / (mToU * mToU);
+
+    // 1. Cull unprintable non-landmark micro-footprints
+    if (!isImportant) {
+      if (minSpan < minPrintUnits ||
+          footprintSpanMeters < effectiveMinMeters ||
+          footprintAreaMeters2 < (effectiveMinMeters * effectiveMinMeters * 0.65)) {
+        continue; // Cull micro-footprint
+      }
+    } else {
+      // Retain landmarks, spires, towers
+      if (area < 0.002) continue;
     }
 
-    if (minSpan * scaleMm < 0.48) {
-      clippedOuter = dilatePolygonMinSpan2D(clippedOuter, 0.48 / scaleMm);
+    // 2. Minimum-span dilation: ONLY applied to landmarks/towers/churches!
+    // Non-landmarks are NEVER dilated to prevent inflating suburbs into solid blocks at 1:50,000 scale!
+    if (isImportant && (minSpan * scaleMm < 0.48)) {
+      clippedOuter = cleanPolygonRing(
+        clipPolyToBox(dilatePolygonMinSpan2D(clippedOuter, 0.48 / scaleMm), -halfW + 0.38, -halfH + 0.38, halfW - 0.38, halfH - 0.38),
+        true
+      );
+      if (clippedOuter.length < 3 || hasSelfTouchingEdge2D(clippedOuter, 1e-4)) continue;
       minX = Infinity; maxX = -Infinity; minY = Infinity; maxY = -Infinity;
       for (let k = 0; k < clippedOuter.length; k++) {
         const p = clippedOuter[k];
@@ -168,6 +205,18 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       }
       minSpan = Math.min(maxX - minX, maxY - minY);
       area = Math.abs(signedArea2D(clippedOuter));
+      if (minSpan < 0.18 || area < 0.004) continue;
+    }
+
+    // Douglas-Peucker tolerance: ~0.10 mm on print (~5 m at 50 km)
+    const dpTolMm = 0.10;
+    const dpTolUnits = dpTolMm / scaleMm;
+
+    if (clippedOuter.length > 5 && dpTolUnits > 0.005 && typeof simplifyClosedRingDP2D === 'function') {
+      const simplified = simplifyClosedRingDP2D(clippedOuter, dpTolUnits);
+      if (simplified && simplified.length >= 3 && (typeof isSimplePolygon !== 'function' || isSimplePolygon(simplified))) {
+        clippedOuter = cleanPolygonRing(simplified, true);
+      }
     }
 
     const clippedHoles = (b.holes || [])
@@ -333,7 +382,14 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     } else {
       roofHMm = Math.min(roofHMm, item.minSpan * 0.44, totalHMm * 0.40);
     }
-    const hasPitched = (roofShape !== 'flat' && roofHMm > 0.12);
+    const roofPrintMm = roofHMm * scaleMm;
+    const minSpanPrintMm = item.minSpan * scaleMm;
+    // If physical roof pitch < 0.15 mm on print, or building print span < 0.8 mm, fall back to flat LoD1
+    const hasPitched = (roofShape !== 'flat' && roofPrintMm >= 0.15 && minSpanPrintMm >= 0.80);
+    if (!hasPitched) {
+      roofShape = 'flat';
+      roofHMm = 0;
+    }
 
     const tZ = minPadZ;
     const zTop = quantizeZUnits(tZ + totalHMm);

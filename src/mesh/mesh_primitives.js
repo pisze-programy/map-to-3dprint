@@ -101,8 +101,9 @@ function emitPolygonWithHolesSlab3D(outerInput, holesInput, zBot, zTop, layerId,
     }
   }
 
-  let ring = validHoles.length > 0 ? mergeHolesIntoOuterKeyhole(outerClean, validHoles) : outerClean;
-  let actualHoles = validHoles;
+  const mergedHoles = [];
+  let ring = validHoles.length > 0 ? mergeHolesIntoOuterKeyhole(outerClean, validHoles, mergedHoles) : outerClean;
+  let actualHoles = mergedHoles;
   if (!isSimplePolygon(ring)) {
     ring = outerClean;
     actualHoles = [];
@@ -295,6 +296,15 @@ function clipCellPolyByScalar(poly, threshold, keepGreater) {
   return { poly: out, cuts: cutSegments };
 }
 
+function getTileIdForCentroid(cx, cy, halfW, halfH, tileCols, tileRows) {
+  if (tileCols <= 1 && tileRows <= 1) return 0;
+  const tileStepX = (2 * halfW) / tileCols;
+  const tileStepY = (2 * halfH) / tileRows;
+  const tc = Math.max(0, Math.min(tileCols - 1, Math.floor((cx + halfW) / tileStepX)));
+  const tr = Math.max(0, Math.min(tileRows - 1, Math.floor((cy + halfH) / tileStepY)));
+  return tr * tileCols + tc;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     BITMAP_FONT_5X3,
@@ -307,6 +317,7 @@ if (typeof module !== 'undefined' && module.exports) {
     emitUndersideIdPatch,
     addTreeCrown3D,
     interpCellEdgeCanonical,
-    clipCellPolyByScalar
+    clipCellPolyByScalar,
+    getTileIdForCentroid
   };
 }

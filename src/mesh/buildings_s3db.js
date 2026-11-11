@@ -238,25 +238,21 @@ function buildS3DBBuildingsMesh(scene, ctx, baseInfo, state, meshes) {
       tagElevatedBottom(bShell[ti]);
     }
 
-    if (tileCols === 1 && tileRows === 1) {
-      for (let ti = 0; ti < bShell.length; ti++) targetList.push(bShell[ti]);
-    } else {
-      for (let tr = 0; tr < tileRows; tr++) {
-        for (let tc = 0; tc < tileCols; tc++) {
-          const tileId = tr * tileCols + tc;
-          const tb = tileBounds[tileId];
-          if (item.maxX <= tb.x0 || item.minX >= tb.x1 || item.maxY <= tb.y0 || item.minY >= tb.y1) continue;
-          const clipped = clipMeshToBox3D(bShell, tb.x0, tb.x1, tb.y0, tb.y1, tileId);
-          for (let ti = 0; ti < clipped.length; ti++) {
-            tagElevatedBottom(clipped[ti]);
-            targetList.push(clipped[ti]);
-          }
-        }
-      }
+    const cx = (item.minX + item.maxX) * 0.5;
+    const cy = (item.minY + item.maxY) * 0.5;
+    const tileId = (tileCols <= 1 && tileRows <= 1)
+      ? 0
+      : (typeof getTileIdForCentroid === 'function' ? getTileIdForCentroid(cx, cy, halfW, halfH, tileCols, tileRows) : 0);
+
+    for (let ti = 0; ti < bShell.length; ti++) {
+      bShell[ti].tileId = tileId;
+      tagElevatedBottom(bShell[ti]);
+      targetList.push(bShell[ti]);
     }
 
     buildingBounds.push({
       building: b,
+      shellId,
       pickId: item.pickId,
       groupId: item.groupId,
       interiorPt: item.interiorPt,

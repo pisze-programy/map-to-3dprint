@@ -11,6 +11,17 @@ if (typeof computeEuclideanDistGrid === 'undefined' && typeof require !== 'undef
   Object.assign(global, require('./terrain_dem_grid.js'));
 }
 
+function safeGetImageData(ctx, x, y, w, h) {
+  if (typeof safeCanvasGetImageData === 'function') {
+    return safeCanvasGetImageData(ctx, x, y, w, h);
+  }
+  try {
+    return ctx.getImageData(x, y, w, h);
+  } catch (_) {
+    return { data: new Uint8ClampedArray(w * h * 4) };
+  }
+}
+
 function buildTerrainAndMasks(scene, state) {
   const totalWidthMm = state.bedSizeMm || state.targetWidthMm || 320;
   const totalHeightMm = state.totalHeightMm || state.targetHeightMm || totalWidthMm;
@@ -20,13 +31,15 @@ function buildTerrainAndMasks(scene, state) {
   const halfW = 84.6 * (totalWidthMm / maxDimMm);
   const halfH = 84.6 * (totalHeightMm / maxDimMm);
 
-  const tileCols = Math.max(1, Math.min(8, state.tileCols || 1));
-  const tileRows = Math.max(1, Math.min(8, state.tileRows || 1));
+  const tileCols = Math.max(1, Math.min(50, state.tileCols || 1));
+  const tileRows = Math.max(1, Math.min(100, state.tileRows || 1));
   const numTiles = tileCols * tileRows;
 
-  const cellsPerCol = Math.max(14, Math.round((156 * (totalWidthMm / maxDimMm)) / tileCols));
+  // Budget total terrain resolution to avoid memory explosion (max ~240x240 cells total)
+  const maxAxisRes = 240;
+  const cellsPerCol = Math.max(1, Math.min(14, Math.floor(maxAxisRes / tileCols)));
   const TERRAIN_RES_X = cellsPerCol * tileCols;
-  const cellsPerRow = Math.max(10, Math.round((156 * (totalHeightMm / maxDimMm)) / tileRows));
+  const cellsPerRow = Math.max(1, Math.min(10, Math.floor(maxAxisRes / tileRows)));
   const TERRAIN_RES_Y = cellsPerRow * tileRows;
 
   const cellStepX = (2 * halfW) / TERRAIN_RES_X;
@@ -114,7 +127,7 @@ function buildTerrainAndMasks(scene, state) {
     mctx.stroke();
   });
 
-  const waterImg = mctx.getImageData(0, 0, MASK_RES_X, MASK_RES_Y).data;
+  const waterImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
   const waterMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   for (let i = 0; i < waterMask.length; i++) waterMask[i] = waterImg[i * 4 + 3] > 96 ? 1 : 0;
 
@@ -180,14 +193,14 @@ function buildTerrainAndMasks(scene, state) {
     mctx.fill('evenodd');
     mctx.stroke();
   });
-  const bldImg = mctx.getImageData(0, 0, MASK_RES_X, MASK_RES_Y).data;
+  const bldImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
   const bldMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   for (let i = 0; i < bldMask.length; i++) bldMask[i] = bldImg[i * 4 + 3] > 96 ? 1 : 0;
 
   // 3. Raw Greenery Mask (authentic OSM parks, lawns, forests & gardens ONLY)
   mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
   fillPolysOnCtx(scene.greenPolys || scene.greeneryPolys);
-  const rawGreenImg = mctx.getImageData(0, 0, MASK_RES_X, MASK_RES_Y).data;
+  const rawGreenImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
   const rawGreenMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   for (let i = 0; i < rawGreenMask.length; i++) rawGreenMask[i] = rawGreenImg[i * 4 + 3] > 96 ? 1 : 0;
 
@@ -199,10 +212,20 @@ function buildTerrainAndMasks(scene, state) {
            rtype === 'cycleway' || rtype === 'bridleway' || rtype === 'track' || rtype === 'corridor';
   };
 
+  const lod = (state && state.lodSettings) || {};
+  const spanKm = Number(state.spanKm) || (Number(state.mapSpanMeters) / 1000) || ((scene.spanMeters || 1200) / 1000);
+  const roadDetail = lod.roadDetail || (spanKm > 20.0 ? 'major' : 'all');
+
   mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
   fillPolysOnCtx(scene.roadPolys);
   (scene.roads || []).forEach(rd => {
     if (!rd.pts || rd.pts.length < 2 || isFootpathRoad(rd)) return;
+    const rtype = rd.hwy || rd.type || rd.rtype || '';
+    if (roadDetail === 'major') {
+      if (['service', 'living_street', 'track', 'path', 'footway', 'cycleway', 'steps', 'pedestrian'].includes(rtype)) {
+        return;
+      }
+    }
     const minWUnits = Math.max((rd.width || 1.0) * 0.90 * scaleToBed, 0.44 / scaleMm);
     mctx.lineWidth = Math.max(3.8, minWUnits * pxPerUnit + 0.55);
     mctx.beginPath();
@@ -213,22 +236,24 @@ function buildTerrainAndMasks(scene, state) {
     });
     mctx.stroke();
   });
-  const majorRoadImg = mctx.getImageData(0, 0, MASK_RES_X, MASK_RES_Y).data;
+  const majorRoadImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
 
   mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
-  (scene.roads || []).forEach(rd => {
-    if (!rd.pts || rd.pts.length < 2 || !isFootpathRoad(rd)) return;
-    const pathWUnits = Math.max(Math.min(0.62, rd.width || 0.36) * scaleToBed, 0.38 / scaleMm);
-    mctx.lineWidth = Math.max(3.3, pathWUnits * pxPerUnit + 0.45);
-    mctx.beginPath();
-    rd.pts.forEach((p, i) => {
-      const b = toBed(p);
-      const [px, py] = bedToMask(b[0], b[1]);
-      if (i === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
+  if (roadDetail !== 'major') {
+    (scene.roads || []).forEach(rd => {
+      if (!rd.pts || rd.pts.length < 2 || !isFootpathRoad(rd)) return;
+      const pathWUnits = Math.max(Math.min(0.62, rd.width || 0.36) * scaleToBed, 0.38 / scaleMm);
+      mctx.lineWidth = Math.max(3.3, pathWUnits * pxPerUnit + 0.45);
+      mctx.beginPath();
+      rd.pts.forEach((p, i) => {
+        const b = toBed(p);
+        const [px, py] = bedToMask(b[0], b[1]);
+        if (i === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
+      });
+      mctx.stroke();
     });
-    mctx.stroke();
-  });
-  const footpathImg = mctx.getImageData(0, 0, MASK_RES_X, MASK_RES_Y).data;
+  }
+  const footpathImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
 
   const majorRoadMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   const greenMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);

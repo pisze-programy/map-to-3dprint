@@ -45,16 +45,18 @@ function triangulateCutLoopExact(loopPts) {
   }
   if (a2d < 0) pts.reverse();
 
-  const indices = pts.map((_, i) => i);
-  const tris = [];
-  let guard = 0;
-  const maxIter = indices.length * 6 + 50;
+  const n = pts.length;
+  const nodes = new Array(n);
+  for (let i = 0; i < n; i++) nodes[i] = { i, pt: pts[i], prev: null, next: null };
+  for (let i = 0; i < n; i++) {
+    nodes[i].prev = nodes[(i + n - 1) % n];
+    nodes[i].next = nodes[(i + 1) % n];
+  }
 
-  function ptDistSq(p1, p2) { return (p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2; }
-  function isInsideTri(px, py, ax, ay, bx, by, cx, cy) {
-    const v0x = cx - ax, v0y = cy - ay;
-    const v1x = bx - ax, v1y = by - ay;
-    const v2x = px - ax, v2y = py - ay;
+  function isInsideTri(p, a, b, c) {
+    const v0x = c[0] - a[0], v0y = c[1] - a[1];
+    const v1x = b[0] - a[0], v1y = b[1] - a[1];
+    const v2x = p[0] - a[0], v2y = p[1] - a[1];
     const dot00 = v0x * v0x + v0y * v0y;
     const dot01 = v0x * v1x + v0y * v1y;
     const dot02 = v0x * v2x + v0y * v2y;
@@ -68,96 +70,86 @@ function triangulateCutLoopExact(loopPts) {
     return (u > 1e-6) && (v > 1e-6) && (u + v < 1 - 1e-6);
   }
 
-  while (indices.length > 3 && guard++ < maxIter) {
-    const n = indices.length;
-    let bestEarIdx = -1;
-    let bestDiagSq = Infinity;
-
-    for (let i = 0; i < n; i++) {
-      const iPrev = indices[(i + n - 1) % n];
-      const iCurr = indices[i];
-      const iNext = indices[(i + 1) % n];
-      const a = pts[iPrev], b = pts[iCurr], c = pts[iNext];
-      const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-      if (cross <= 1e-7) continue;
-
-      let hasInside = false;
-      const tMinX = Math.min(a[0], b[0], c[0]) - 1e-5;
-      const tMaxX = Math.max(a[0], b[0], c[0]) + 1e-5;
-      const tMinY = Math.min(a[1], b[1], c[1]) - 1e-5;
-      const tMaxY = Math.max(a[1], b[1], c[1]) + 1e-5;
-      const dax = c[0] - a[0], day = c[1] - a[1];
-      const lenSq = dax * dax + day * day;
-
-      for (let j = 0; j < n; j++) {
-        const idx = indices[j];
-        if (idx === iPrev || idx === iCurr || idx === iNext) continue;
-        const p = pts[idx];
-        if (p[0] < tMinX || p[0] > tMaxX || p[1] < tMinY || p[1] > tMaxY) continue;
-        if (ptDistSq(p, a) < 1e-9 || ptDistSq(p, b) < 1e-9 || ptDistSq(p, c) < 1e-9) continue;
-        if (isInsideTri(p[0], p[1], a[0], a[1], b[0], b[1], c[0], c[1])) {
-          hasInside = true;
-          break;
-        }
-        if (lenSq > 1e-12) {
-          const pax = p[0] - a[0], pay = p[1] - a[1];
-          const crossP = dax * pay - day * pax;
-          if (Math.abs(crossP) < 1e-10) {
-            const dotP = pax * dax + pay * day;
-            if (dotP > 1e-8 && dotP < lenSq - 1e-8) {
-              hasInside = true;
-              break;
-            }
-          }
-        }
+  function isEar(ear) {
+    const a = ear.prev.pt, b = ear.pt, c = ear.next.pt;
+    const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    if (cross <= 1e-8) return false;
+    let p = ear.next.next;
+    const minX = Math.min(a[0], b[0], c[0]) - 1e-5;
+    const maxX = Math.max(a[0], b[0], c[0]) + 1e-5;
+    const minY = Math.min(a[1], b[1], c[1]) - 1e-5;
+    const maxY = Math.max(a[1], b[1], c[1]) + 1e-5;
+    while (p !== ear.prev) {
+      const pt = p.pt;
+      if (pt[0] >= minX && pt[0] <= maxX && pt[1] >= minY && pt[1] <= maxY) {
+        if (isInsideTri(pt, a, b, c)) return false;
       }
-      if (!hasInside) {
-        const dSq = ptDistSq(a, c);
-        if (dSq < bestDiagSq) {
-          bestDiagSq = dSq;
-          bestEarIdx = i;
-        }
-      }
+      p = p.next;
     }
-
-    if (bestEarIdx >= 0) {
-      const iPrev = indices[(bestEarIdx + n - 1) % n];
-      const iCurr = indices[bestEarIdx];
-      const iNext = indices[(bestEarIdx + 1) % n];
-      tris.push([pts[iPrev], pts[iCurr], pts[iNext]]);
-      indices.splice(bestEarIdx, 1);
-      continue;
-    }
-
-    let fallbackIdx = -1;
-    let bestCross = 1e-9;
-    for (let i = 0; i < n; i++) {
-      const iPrev = indices[(i + n - 1) % n];
-      const iCurr = indices[i];
-      const iNext = indices[(i + 1) % n];
-      const a = pts[iPrev], b = pts[iCurr], c = pts[iNext];
-      const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-      if (cross > bestCross) {
-        bestCross = cross;
-        fallbackIdx = i;
-      }
-    }
-    if (fallbackIdx >= 0) {
-      const iPrev = indices[(fallbackIdx + n - 1) % n];
-      const iCurr = indices[fallbackIdx];
-      const iNext = indices[(fallbackIdx + 1) % n];
-      tris.push([pts[iPrev], pts[iCurr], pts[iNext]]);
-      indices.splice(fallbackIdx, 1);
-      continue;
-    }
-    break;
+    return true;
   }
-  if (indices.length >= 3) {
-    for (let k = 1; k < indices.length - 1; k++) {
-      const a = pts[indices[0]], b = pts[indices[k]], c = pts[indices[k + 1]];
+
+  const tris = [];
+  let curr = nodes[0];
+  let rem = n;
+  let stop = curr;
+  let guard = 0;
+
+  while (rem > 3 && guard <= rem * 2) {
+    const prev = curr.prev;
+    const next = curr.next;
+    if (isEar(curr)) {
+      tris.push([prev.pt, curr.pt, next.pt]);
+      prev.next = next;
+      next.prev = prev;
+      curr = next;
+      stop = next;
+      rem--;
+      guard = 0;
+      continue;
+    }
+    guard++;
+    curr = next;
+    if (curr === stop) {
+      // Degenerate/collinear fallback: cut ear with largest positive convex angle
+      let bestCross = 1e-8, bestNode = null;
+      let check = curr;
+      do {
+        const a = check.prev.pt, b = check.pt, c = check.next.pt;
+        const cr = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+        if (cr > bestCross) { bestCross = cr; bestNode = check; }
+        check = check.next;
+      } while (check !== curr);
+      if (bestNode) {
+        tris.push([bestNode.prev.pt, bestNode.pt, bestNode.next.pt]);
+        bestNode.prev.next = bestNode.next;
+        bestNode.next.prev = bestNode.prev;
+        curr = bestNode.next;
+        stop = curr;
+        rem--;
+        guard = 0;
+      } else {
+        break;
+      }
+    }
+  }
+  if (rem === 3) {
+    const a = curr.prev.pt, b = curr.pt, c = curr.next.pt;
+    const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    if (Math.abs(cross) > 1e-9) {
+      tris.push([a, b, c]);
+    }
+  } else if (rem > 3) {
+    const remPts = [];
+    let p = curr;
+    for (let i = 0; i < rem; i++) {
+      remPts.push(p.pt);
+      p = p.next;
+    }
+    for (let k = 1; k < remPts.length - 1; k++) {
+      const a = remPts[0], b = remPts[k], c = remPts[k + 1];
       const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
       if (cross > 1e-9) tris.push([a, b, c]);
-      else if (cross < -1e-9) tris.push([a, c, b]);
     }
   }
   return tris;
