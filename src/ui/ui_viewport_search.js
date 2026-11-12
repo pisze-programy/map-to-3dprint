@@ -11,6 +11,140 @@ const _placeQueryCache = new Map();
 const _inflightPlaceQueries = new Map();
 let _photonBrowserCooldownUntil = 0;
 
+const _ISO_COUNTRY_RAW =
+  'ABW:AW:Aruba|AFG:AF:Afghanistan|AGO:AO:Angola|AIA:AI:Anguilla|ALA:AX:Åland Islands|' +
+  'ALB:AL:Albania|AND:AD:Andorra|ARE:AE:United Arab Emirates|ARG:AR:Argentina|' +
+  'ARM:AM:Armenia|ASM:AS:American Samoa|ATA:AQ:Antarctica|' +
+  'ATF:TF:French Southern Territories|ATG:AG:Antigua & Barbuda|AUS:AU:Australia|' +
+  'AUT:AT:Austria|AZE:AZ:Azerbaijan|BDI:BI:Burundi|BEL:BE:Belgium|BEN:BJ:Benin|' +
+  'BES:BQ:Caribbean Netherlands|BFA:BF:Burkina Faso|BGD:BD:Bangladesh|BGR:BG:Bulgaria|' +
+  'BHR:BH:Bahrain|BHS:BS:Bahamas|BIH:BA:Bosnia and Herzegovina|BLM:BL:St. Barthélemy|' +
+  'BLR:BY:Belarus|BLZ:BZ:Belize|BMU:BM:Bermuda|BOL:BO:Bolivia|BRA:BR:Brazil|' +
+  'BRB:BB:Barbados|BRN:BN:Brunei|BTN:BT:Bhutan|BVT:BV:Bouvet Island|BWA:BW:Botswana|' +
+  'CAF:CF:Central African Republic|CAN:CA:Canada|CCK:CC:Cocos (Keeling) Islands|' +
+  "CHE:CH:Switzerland|CHL:CL:Chile|CHN:CN:China|CIV:CI:Côte d'Ivoire|CMR:CM:Cameroon|" +
+  'COD:CD:Congo - Kinshasa|COG:CG:Congo - Brazzaville|COK:CK:Cook Islands|' +
+  'COL:CO:Colombia|COM:KM:Comoros|CPV:CV:Cape Verde|CRI:CR:Costa Rica|CUB:CU:Cuba|' +
+  'CUW:CW:Curaçao|CXR:CX:Christmas Island|CYM:KY:Cayman Islands|CYP:CY:Cyprus|' +
+  'CZE:CZ:Czechia|DEU:DE:Germany|DJI:DJ:Djibouti|DMA:DM:Dominica|DNK:DK:Denmark|' +
+  'DOM:DO:Dominican Republic|DZA:DZ:Algeria|ECU:EC:Ecuador|EGY:EG:Egypt|ERI:ER:Eritrea|' +
+  'ESH:EH:Western Sahara|ESP:ES:Spain|EST:EE:Estonia|ETH:ET:Ethiopia|FIN:FI:Finland|' +
+  'FJI:FJ:Fiji|FLK:FK:Falkland Islands|FRA:FR:France|FRO:FO:Faroe Islands|' +
+  'FSM:FM:Micronesia|GAB:GA:Gabon|GBR:GB:United Kingdom|GEO:GE:Georgia|GGY:GG:Guernsey|' +
+  'GHA:GH:Ghana|GIB:GI:Gibraltar|GIN:GN:Guinea|GLP:GP:Guadeloupe|GMB:GM:Gambia|' +
+  'GNB:GW:Guinea-Bissau|GNQ:GQ:Equatorial Guinea|GRC:GR:Greece|GRD:GD:Grenada|' +
+  'GRL:GL:Greenland|GTM:GT:Guatemala|GUF:GF:French Guiana|GUM:GU:Guam|GUY:GY:Guyana|' +
+  'HKG:HK:Hong Kong|HMD:HM:Heard & McDonald Islands|HND:HN:Honduras|HRV:HR:Croatia|' +
+  'HTI:HT:Haiti|HUN:HU:Hungary|IDN:ID:Indonesia|IMN:IM:Isle of Man|IND:IN:India|' +
+  'IOT:IO:British Indian Ocean Territory|IRL:IE:Ireland|IRN:IR:Iran|IRQ:IQ:Iraq|' +
+  'ISL:IS:Iceland|ISR:IL:Israel|ITA:IT:Italy|JAM:JM:Jamaica|JEY:JE:Jersey|JOR:JO:Jordan|' +
+  'JPN:JP:Japan|KAZ:KZ:Kazakhstan|KEN:KE:Kenya|KGZ:KG:Kyrgyzstan|KHM:KH:Cambodia|' +
+  'KIR:KI:Kiribati|KNA:KN:St. Kitts & Nevis|KOR:KR:South Korea|KWT:KW:Kuwait|' +
+  'LAO:LA:Laos|LBN:LB:Lebanon|LBR:LR:Liberia|LBY:LY:Libya|LCA:LC:St. Lucia|' +
+  'LIE:LI:Liechtenstein|LKA:LK:Sri Lanka|LSO:LS:Lesotho|LTU:LT:Lithuania|' +
+  'LUX:LU:Luxembourg|LVA:LV:Latvia|MAC:MO:Macao|MAF:MF:St. Martin|MAR:MA:Morocco|' +
+  'MCO:MC:Monaco|MDA:MD:Moldova|MDG:MG:Madagascar|MDV:MV:Maldives|MEX:MX:Mexico|' +
+  'MHL:MH:Marshall Islands|MKD:MK:North Macedonia|MLI:ML:Mali|MLT:MT:Malta|' +
+  'MMR:MM:Myanmar|MNE:ME:Montenegro|MNG:MN:Mongolia|MNP:MP:Northern Mariana Islands|' +
+  'MOZ:MZ:Mozambique|MRT:MR:Mauritania|MSR:MS:Montserrat|MTQ:MQ:Martinique|' +
+  'MUS:MU:Mauritius|MWI:MW:Malawi|MYS:MY:Malaysia|MYT:YT:Mayotte|NAM:NA:Namibia|' +
+  'NCL:NC:New Caledonia|NER:NE:Niger|NFK:NF:Norfolk Island|NGA:NG:Nigeria|' +
+  'NIC:NI:Nicaragua|NIU:NU:Niue|NLD:NL:Netherlands|NOR:NO:Norway|NPL:NP:Nepal|' +
+  'NRU:NR:Nauru|NZL:NZ:New Zealand|OMN:OM:Oman|PAK:PK:Pakistan|PAN:PA:Panama|' +
+  'PCN:PN:Pitcairn Islands|PER:PE:Peru|PHL:PH:Philippines|PLW:PW:Palau|' +
+  'PNG:PG:Papua New Guinea|POL:PL:Poland|PRI:PR:Puerto Rico|PRK:KP:North Korea|' +
+  'PRT:PT:Portugal|PRY:PY:Paraguay|PSE:PS:Palestine|PYF:PF:French Polynesia|' +
+  'QAT:QA:Qatar|REU:RE:Réunion|ROU:RO:Romania|RUS:RU:Russia|RWA:RW:Rwanda|' +
+  'SAU:SA:Saudi Arabia|SDN:SD:Sudan|SEN:SN:Senegal|SGP:SG:Singapore|' +
+  'SGS:GS:South Georgia & South Sandwich Islands|SHN:SH:St. Helena|' +
+  'SJM:SJ:Svalbard & Jan Mayen|SLB:SB:Solomon Islands|SLE:SL:Sierra Leone|' +
+  'SLV:SV:El Salvador|SMR:SM:San Marino|SOM:SO:Somalia|SPM:PM:St. Pierre & Miquelon|' +
+  'SRB:RS:Serbia|SSD:SS:South Sudan|STP:ST:São Tomé & Príncipe|SUR:SR:Suriname|' +
+  'SVK:SK:Slovakia|SVN:SI:Slovenia|SWE:SE:Sweden|SWZ:SZ:Eswatini|SXM:SX:Sint Maarten|' +
+  'SYC:SC:Seychelles|SYR:SY:Syria|TCA:TC:Turks & Caicos Islands|TCD:TD:Chad|TGO:TG:Togo|' +
+  'THA:TH:Thailand|TJK:TJ:Tajikistan|TKL:TK:Tokelau|TKM:TM:Turkmenistan|' +
+  'TLS:TL:Timor-Leste|TON:TO:Tonga|TTO:TT:Trinidad & Tobago|TUN:TN:Tunisia|' +
+  'TUR:TR:Turkey|TUV:TV:Tuvalu|TWN:TW:Taiwan|TZA:TZ:Tanzania|UGA:UG:Uganda|' +
+  'UKR:UA:Ukraine|UMI:UM:U.S. Outlying Islands|URY:UY:Uruguay|USA:US:United States|' +
+  'UZB:UZ:Uzbekistan|VAT:VA:Vatican City|VCT:VC:St. Vincent & Grenadines|' +
+  'VEN:VE:Venezuela|VGB:VG:British Virgin Islands|VIR:VI:U.S. Virgin Islands|' +
+  'VNM:VN:Vietnam|VUT:VU:Vanuatu|WLF:WF:Wallis & Futuna|WSM:WS:Samoa|XKX:XK:Kosovo|' +
+  'YEM:YE:Yemen|ZAF:ZA:South Africa|ZMB:ZM:Zambia|ZWE:ZW:Zimbabwe|' +
+  'ASC:AC:Ascension Island|TAA:TA:Tristan da Cunha|DGA:DG:Diego Garcia|' +
+  'UAE:AE:United Arab Emirates|ROM:RO:Romania|ZAR:CD:Congo - Kinshasa|BUR:MM:Myanmar|' +
+  'TMP:TL:Timor-Leste|SCG:RS:Serbia|YUG:RS:Serbia|SUN:RU:Russia|ANT:CW:Curaçao';
+
+const _ISO3_TO_ISO2 = new Map();
+const _ISO2_FALLBACK_EN = new Map([
+  ['UK', 'United Kingdom'],
+  ['EL', 'Greece'],
+  ['IC', 'Canary Islands'],
+  ['EA', 'Ceuta & Melilla']
+]);
+for (const row of _ISO_COUNTRY_RAW.split('|')) {
+  const idx1 = row.indexOf(':');
+  const idx2 = row.indexOf(':', idx1 + 1);
+  if (idx1 > 0 && idx2 > idx1) {
+    const a3 = row.slice(0, idx1);
+    const a2 = row.slice(idx1 + 1, idx2);
+    const fullName = row.slice(idx2 + 1);
+    _ISO3_TO_ISO2.set(a3, a2);
+    if (!_ISO2_FALLBACK_EN.has(a2)) _ISO2_FALLBACK_EN.set(a2, fullName);
+  }
+}
+
+let _enRegionDisplayNames = null;
+try {
+  if (typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function') {
+    _enRegionDisplayNames = new Intl.DisplayNames(['en'], { type: 'region' });
+  }
+} catch (_) {}
+
+function _resolveIsoCountryCode(rawCode) {
+  const upper = String(rawCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2,3}$/.test(upper)) return '';
+  let alpha2 = '';
+  if (upper.length === 3) {
+    alpha2 = _ISO3_TO_ISO2.get(upper) || '';
+  } else {
+    const normalized2 = upper === 'UK' ? 'GB' : (upper === 'EL' ? 'GR' : upper);
+    if (_ISO2_FALLBACK_EN.has(normalized2)) alpha2 = normalized2;
+  }
+  if (!alpha2) return '';
+  if (_enRegionDisplayNames) {
+    try {
+      const intlName = _enRegionDisplayNames.of(alpha2);
+      if (
+        intlName &&
+        intlName.toUpperCase() !== alpha2 &&
+        intlName.toUpperCase() !== upper &&
+        !/unknown region/i.test(intlName)
+      ) {
+        return intlName;
+      }
+    } catch (_) {}
+  }
+  return _ISO2_FALLBACK_EN.get(alpha2) || '';
+}
+
+function _resolveFullCountryName(rawCountry, rawCountryCode) {
+  const c = String(rawCountry || '').trim();
+  const cc = String(rawCountryCode || '').trim();
+  if (c) {
+    if (/^[A-Za-z]{2,3}$/.test(c)) {
+      return _resolveIsoCountryCode(c) || _resolveIsoCountryCode(cc);
+    }
+    return c;
+  }
+  if (cc) {
+    if (/^[A-Za-z]{2,3}$/.test(cc)) {
+      return _resolveIsoCountryCode(cc);
+    }
+    return cc;
+  }
+  return '';
+}
+
 function _parseDirectPlaceCoordinates(q) {
   const m = String(q || '').match(/^\s*([NSns])?\s*(-?\d{1,2}(?:\.\d+)?)\s*°?\s*[,;\s]+\s*([EWew])?\s*(-?\d{1,3}(?:\.\d+)?)\s*°?\s*$/);
   if (!m) return null;
@@ -29,6 +163,13 @@ function _parseDirectPlaceCoordinates(q) {
   }];
 }
 
+function _normPlaceToken(val) {
+  return String(val || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
 function _mapGeoJsonPlaceFeatures(data, fallbackQuery) {
   const features = (data && Array.isArray(data.features)) ? data.features : [];
   const out = [];
@@ -39,21 +180,52 @@ function _mapGeoJsonPlaceFeatures(data, fallbackQuery) {
     const lon = Number(coords[0]);
     const lat = Number(coords[1]);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    const streetLine = [props.street, props.housenumber].filter(Boolean).join(' ').trim();
+
+    const rawStreet = String(props.street || '').trim();
+    const rawHouse = String(props.housenumber || '').trim();
+    const streetLine = (rawStreet && rawHouse && !rawStreet.includes(rawHouse))
+      ? `${rawStreet} ${rawHouse}`.trim()
+      : (rawStreet || rawHouse);
+
+    const countryName = _resolveFullCountryName(
+      props.CntryName || props.country,
+      props.countrycode || props.country_code || props.Country
+    );
     const name = String(props.name || streetLine || props.city || props.locality || fallbackQuery || '').trim();
     if (!name) continue;
-    const seenSub = new Set([name.toLowerCase()]);
+
+    const seenSub = new Set([_normPlaceToken(name)]);
     const subParts = [];
-    for (const rawPart of [streetLine, props.city, props.locality, props.state, props.country]) {
+    const rawHierarchy = [
+      streetLine,
+      props.postcode,
+      props.district,
+      props.suburb,
+      props.locality,
+      props.city,
+      props.county,
+      props.subregion,
+      props.state,
+      countryName
+    ];
+    for (const rawPart of rawHierarchy) {
       if (!rawPart) continue;
       for (const seg of String(rawPart).split(',')) {
-        const clean = seg.trim();
-        const key = clean.toLowerCase();
-        if (clean && !seenSub.has(key)) {
+        let clean = seg.trim();
+        if (!clean) continue;
+        if (/^[A-Z]{3}$/.test(clean) && _ISO3_TO_ISO2.has(clean)) {
+          clean = _resolveIsoCountryCode(clean);
+          if (!clean) continue;
+        }
+        const key = _normPlaceToken(clean);
+        if (key && !seenSub.has(key)) {
           seenSub.add(key);
           subParts.push(clean);
         }
       }
+    }
+    if (subParts.length === 0 && countryName) {
+      subParts.push(countryName);
     }
     out.push({
       name,
@@ -118,7 +290,8 @@ async function queryMap3DPlaces(rawQuery, limit = 6) {
 
     // 2. Direct browser CORS fallback #1: ArcGIS World Geocoder (cities, street addresses, POIs)
     try {
-      const arcUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&maxLocations=${Math.max(limit * 2, 10)}&outFields=PlaceName,Place_addr,Type,Country,Region,City,ShortLabel&SingleLine=${encodeURIComponent(q)}`;
+      const arcOutFields = 'PlaceName,Place_addr,Type,Country,CntryName,Subregion,Region,City,District,Nbrhd,Postal,StAddr,ShortLabel,LongLabel';
+      const arcUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&maxLocations=${Math.max(limit * 2, 10)}&outFields=${arcOutFields}&langCode=ENG&SingleLine=${encodeURIComponent(q)}`;
       const arcData = await _fetchJsonWithTimeout(arcUrl, 3200);
       const candidates = (arcData && Array.isArray(arcData.candidates)) ? arcData.candidates : [];
       if (candidates.length > 0) {
@@ -126,23 +299,40 @@ async function queryMap3DPlaces(rawQuery, limit = 6) {
           const loc = (c && c.location) || {};
           const attrs = (c && c.attributes) || {};
           const placeAddr = String(attrs.Place_addr || c.address || '').trim();
-          const name = String(attrs.PlaceName || attrs.ShortLabel || (placeAddr.split(',')[0] || q)).trim();
+          const stAddr = String(attrs.StAddr || '').trim();
+          const name = String(attrs.PlaceName || attrs.ShortLabel || stAddr || (placeAddr.split(',')[0] || q)).trim();
+          const districtParts = [attrs.Nbrhd, attrs.District].map(v => String(v || '').trim()).filter(Boolean);
           return {
             type: 'Feature',
             properties: {
               name,
-              street: placeAddr,
+              street: stAddr || placeAddr,
+              postcode: attrs.Postal || '',
+              district: districtParts.join(', '),
               city: attrs.City || '',
+              county: attrs.Subregion || '',
               state: attrs.Region || '',
-              country: attrs.Country || '',
+              country: attrs.CntryName || '',
+              countrycode: attrs.Country || '',
               osm_value: String(attrs.Type || 'miejsce').toLowerCase()
             },
             geometry: { type: 'Point', coordinates: [loc.x, loc.y] }
           };
         });
+        const adminKinds = new Set(['state or province', 'county', 'country', 'administrative']);
         const deduped = [];
         for (const it of _mapGeoJsonPlaceFeatures({ features }, q)) {
-          if (!deduped.some(p => p.name.toLowerCase() === it.name.toLowerCase() && Math.abs(p.lat - it.lat) < 0.0025 && Math.abs(p.lon - it.lon) < 0.0025)) {
+          const isDup = deduped.some(p => {
+            if (_normPlaceToken(p.name) !== _normPlaceToken(it.name)) return false;
+            if (Math.abs(p.lat - it.lat) < 0.0025 && Math.abs(p.lon - it.lon) < 0.0025) return true;
+            return (
+              adminKinds.has(String(it.kind || '').toLowerCase()) &&
+              _normPlaceToken(p.sub) === _normPlaceToken(it.sub) &&
+              Math.abs(p.lat - it.lat) < 0.55 &&
+              Math.abs(p.lon - it.lon) < 0.55
+            );
+          });
+          if (!isDup) {
             deduped.push(it);
             if (deduped.length >= limit) break;
           }
@@ -156,7 +346,7 @@ async function queryMap3DPlaces(rawQuery, limit = 6) {
 
     // 3. Direct browser CORS fallback #2: Open-Meteo Worldwide Geocoding
     try {
-      const omUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=${limit}&language=pl&format=json`;
+      const omUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=${limit}&language=en&format=json`;
       const omData = await _fetchJsonWithTimeout(omUrl, 2800);
       const results = (omData && Array.isArray(omData.results)) ? omData.results : [];
       if (results.length > 0) {
@@ -164,9 +354,11 @@ async function queryMap3DPlaces(rawQuery, limit = 6) {
           type: 'Feature',
           properties: {
             name: r.name || q,
+            district: r.admin3 || '',
             city: r.admin2 || '',
             state: r.admin1 || '',
-            country: r.country || r.country_code || '',
+            country: r.country || '',
+            country_code: r.country_code || '',
             osm_value: String(r.feature_code || 'city').toLowerCase()
           },
           geometry: { type: 'Point', coordinates: [r.longitude, r.latitude] }
