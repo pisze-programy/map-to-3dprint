@@ -349,7 +349,7 @@ function extrudeBuildingLoD2(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
     if (isGround && (bMinSpan * effScaleMm >= 6.5) && (bArea * effScaleMm * effScaleMm >= 35.0) && (bHeight * effScaleMm >= 5.5)) {
       const insetD = 2.0 / effScaleMm;
       if (typeof computeReliefChimneyPolygon === 'function') {
-        const chimCW = computeReliefChimneyPolygon(outerClean, holesClean, insetD);
+        const chimCW = computeReliefChimneyPolygon(outerClean, actualHoles, insetD);
         if (chimCW && chimCW.length >= 3) {
           const zVaultApex = effZEaves - 2.0 / effScaleMm;
           const chimOBB = typeof computeMinAreaOBB2D === 'function' ? computeMinAreaOBB2D(chimCW) : null;
@@ -365,30 +365,133 @@ function extrudeBuildingLoD2(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
     }
   }
 
-  if (activeChimney) {
-    if (!activeChimney.chimneyPoly || !Array.isArray(activeChimney.chimneyPoly) || activeChimney.chimneyPoly.length < 3) {
-      activeChimney = null;
-    } else {
-      let chimCW = activeChimney.chimneyPoly.map(p => [p[0], p[1]]);
-      if (typeof signedArea2D === 'function' && signedArea2D(chimCW) > 0) chimCW.reverse();
-      activeChimney.chimneyPoly = chimCW;
-      if (typeof activeChimney.zVaultBase !== 'number' || typeof activeChimney.zVaultApex !== 'number' || activeChimney.zVaultApex <= activeChimney.zVaultBase || activeChimney.zVaultBase < zBase) {
-        activeChimney = null;
+  let validChimney = null;
+  if (activeChimney && activeChimney.chimneyPoly && Array.isArray(activeChimney.chimneyPoly) && activeChimney.chimneyPoly.length >= 3) {
+    let chimCW = cleanPolygonRing(activeChimney.chimneyPoly, false);
+    const zVBase = activeChimney.zVaultBase;
+    const zVApex = activeChimney.zVaultApex;
+    if (chimCW.length >= 3 &&
+        typeof zVBase === 'number' && typeof zVApex === 'number' &&
+        zVBase > zBase + 1e-3 && zVApex > zVBase + 1e-3 && zVApex < zEaves - 1e-3 &&
+        Math.abs(signedArea2D(chimCW)) >= 1e-3 &&
+        isSimplePolygon(chimCW)) {
+      const minClearance = 0.02;
+      let clearanceOk = true;
+      for (let i = 0; i < chimCW.length && clearanceOk; i++) {
+        const p1 = chimCW[i], p2 = chimCW[(i + 1) % chimCW.length];
+        const mx = 0.5 * (p1[0] + p2[0]), my = 0.5 * (p1[1] + p2[1]);
+        if (!pointInPoly2D(p1[0], p1[1], outerClean) || !pointInPoly2D(mx, my, outerClean) ||
+            distToPolygonBoundary2D(p1[0], p1[1], outerClean, actualHoles) < minClearance ||
+            distToPolygonBoundary2D(mx, my, outerClean, actualHoles) < minClearance) {
+          clearanceOk = false;
+          break;
+        }
+        for (let h = 0; h < actualHoles.length; h++) {
+          if (pointInPolyOrNear2D(p1[0], p1[1], actualHoles[h], minClearance) ||
+              pointInPolyOrNear2D(mx, my, actualHoles[h], minClearance)) {
+            clearanceOk = false;
+            break;
+          }
+        }
+      }
+      if (clearanceOk) {
+        const checkRingClearOfChimney = (ringPts) => {
+          for (let i = 0; i < ringPts.length; i++) {
+            const v = ringPts[i];
+            if (pointInPolyOrNear2D(v[0], v[1], chimCW, minClearance) ||
+                distToPolygonBoundary2D(v[0], v[1], chimCW, []) < minClearance) {
+              return false;
+            }
+          }
+          for (let i = 0; i < ringPts.length; i++) {
+            const a = ringPts[i], b = ringPts[(i + 1) % ringPts.length];
+            for (let j = 0; j < chimCW.length; j++) {
+              if (segmentsIntersectProper(a, b, chimCW[j], chimCW[(j + 1) % chimCW.length])) return false;
+            }
+          }
+          return true;
+        };
+        if (!checkRingClearOfChimney(outerClean)) clearanceOk = false;
+        for (let h = 0; h < actualHoles.length && clearanceOk; h++) {
+          if (!checkRingClearOfChimney(actualHoles[h])) clearanceOk = false;
+        }
+      }
+      let ccx = 0, ccy = 0;
+      if (clearanceOk) {
+        for (let i = 0; i < chimCW.length; i++) { ccx += chimCW[i][0]; ccy += chimCW[i][1]; }
+        ccx /= chimCW.length; ccy /= chimCW.length;
+        for (let i = 0; i < chimCW.length; i++) {
+          const p1 = chimCW[i], p2 = chimCW[(i + 1) % chimCW.length];
+          if ((p2[0] - p1[0]) * (ccy - p1[1]) - (p2[1] - p1[1]) * (ccx - p1[0]) >= -1e-5) {
+            clearanceOk = false;
+            break;
+          }
+        }
+      }
+      if (clearanceOk) {
+        const botHoles = [...actualHoles, chimCW];
+        const mergedBotHoles = [];
+        const botRing = mergeHolesIntoOuterKeyhole(outerClean, botHoles, mergedBotHoles);
+        if (mergedBotHoles.length === botHoles.length && botRing.length >= 3 && isSimplePolygon(botRing)) {
+          const botTris = (typeof triangulateCutLoopExact === 'function')
+            ? triangulateCutLoopExact(botRing)
+            : triangulateSimplePoly(botRing);
+          if (botTris && botTris.length >= 3) {
+            // Verify exact 5000-grid & mm-weld 2-manifold edge pairing at zBase before committing chimney
+            const q5k = (pt) => (Math.round(pt[0] * 5000) + 2097152) * 4194304 + (Math.round(pt[1] * 5000) + 2097152);
+            const q5Apex = q5k([ccx, ccy]);
+            const chimQ5Set = new Set();
+            let topoOk = true;
+            for (let i = 0; i < chimCW.length; i++) {
+              const qv = q5k(chimCW[i]);
+              if (chimQ5Set.has(qv) || qv === q5Apex) { topoOk = false; break; }
+              chimQ5Set.add(qv);
+            }
+            const heMap = new Map();
+            const addHe = (u, v) => {
+              if (u === v) return false;
+              const k = u + '_' + v;
+              if (heMap.has(k)) return false;
+              heMap.set(k, [u, v]);
+              return true;
+            };
+            const addLoopWallHe = (loopPts) => {
+              for (let i = 0, n = loopPts.length; i < n; i++) {
+                const p1 = loopPts[i], p2 = loopPts[(i + 1) % n];
+                if (Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) < 1e-6) continue;
+                if (!addHe(q5k(p1), q5k(p2))) return false;
+              }
+              return true;
+            };
+            if (topoOk && (!addLoopWallHe(outerClean) || !addLoopWallHe(chimCW))) topoOk = false;
+            for (let h = 0; h < actualHoles.length && topoOk; h++) {
+              if (!addLoopWallHe(actualHoles[h])) topoOk = false;
+            }
+            for (let i = 0; i < botTris.length && topoOk; i++) {
+              const [a, b, c] = botTris[i];
+              const qa = q5k(a), qb = q5k(b), qc = q5k(c);
+              if (qa === qb || qb === qc || qa === qc ||
+                  !addHe(qa, qc) || !addHe(qc, qb) || !addHe(qb, qa)) {
+                topoOk = false;
+                break;
+              }
+            }
+            if (topoOk) {
+              for (const [, [u, v]] of heMap) {
+                if (!heMap.has(v + '_' + u)) { topoOk = false; break; }
+              }
+            }
+            if (topoOk) {
+              validChimney = { chimCW, zVBase, zVApex, ccx, ccy, botTris };
+            }
+          }
+        }
       }
     }
   }
 
-  if (activeChimney && activeChimney.chimneyPoly) {
-    const chimCW = activeChimney.chimneyPoly;
-    const zVBase = activeChimney.zVaultBase;
-    const zVApex = activeChimney.zVaultApex;
-
-    const botHoles = [...holesClean, chimCW];
-    const botRing = mergeHolesIntoOuterKeyhole(outerClean, botHoles);
-    const botTris = (typeof triangulateCutLoopExact === 'function' && botHoles.length > 0)
-      ? triangulateCutLoopExact(botRing)
-      : triangulateSimplePoly(botRing);
-
+  if (validChimney) {
+    const { chimCW, zVBase, zVApex, ccx, ccy, botTris } = validChimney;
     for (let i = 0; i < botTris.length; i++) {
       const [a, b, c] = botTris[i];
       pushTri(outTris, [a[0], a[1], zBase], [c[0], c[1], zBase], [b[0], b[1], zBase], [0, 0, -1], layerId, bId, tileId);
@@ -400,9 +503,6 @@ function extrudeBuildingLoD2(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
       pushQuad(outTris, [p1[0], p1[1], zBase], [p2[0], p2[1], zBase], [p2[0], p2[1], zVBase], [p1[0], p1[1], zVBase], [dy / len, -dx / len, 0], layerId, bId, tileId);
     }
 
-    let ccx = 0, ccy = 0;
-    for (let i = 0; i < chimCW.length; i++) { ccx += chimCW[i][0]; ccy += chimCW[i][1]; }
-    ccx /= chimCW.length; ccy /= chimCW.length;
     const apex = [ccx, ccy, zVApex];
     for (let i = 0; i < chimCW.length; i++) {
       const p1 = chimCW[i], p2 = chimCW[(i + 1) % chimCW.length];

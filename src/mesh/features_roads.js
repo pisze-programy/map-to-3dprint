@@ -1322,27 +1322,35 @@ function triangulatePrecleanedRoadPoly2D(outerClean, holesInput) {
 function isTriDataWeldBijective(triData, zBot, zTop, scaleMm) {
   const zBotK = Math.max(0, zBot * scaleMm).toFixed(3);
   const zTopK = Math.max(0, zTop * scaleMm).toFixed(3);
-  if (zBotK === zTopK) return false;
+  if (zBotK === zTopK || Math.round(zBot * 5000) === Math.round(zTop * 5000)) return false;
   const seen = new Set();
+  const seenQ5k = new Set();
   const wk = (p) => ((p[0] + 84.6) * scaleMm).toFixed(3) + '_' + ((p[1] + 84.6) * scaleMm).toFixed(3);
+  const q5k = (p) => (Math.round(p[0] * 5000) + 2097152) * 4194304 + (Math.round(p[1] * 5000) + 2097152);
   const { outerClean, actualHoles, capTris } = triData;
   for (let i = 0; i < outerClean.length; i++) {
-    const k = wk(outerClean[i]);
-    if (seen.has(k)) return false;
+    const p = outerClean[i];
+    const k = wk(p), q = q5k(p);
+    if (seen.has(k) || seenQ5k.has(q)) return false;
     seen.add(k);
+    seenQ5k.add(q);
   }
   for (let h = 0; h < actualHoles.length; h++) {
     const hole = actualHoles[h];
     for (let i = 0; i < hole.length; i++) {
-      const k = wk(hole[i]);
-      if (seen.has(k)) return false;
+      const p = hole[i];
+      const k = wk(p), q = q5k(p);
+      if (seen.has(k) || seenQ5k.has(q)) return false;
       seen.add(k);
+      seenQ5k.add(q);
     }
   }
   for (let i = 0; i < capTris.length; i++) {
     const [a, b, c] = capTris[i];
     const ka = wk(a), kb = wk(b), kc = wk(c);
     if (ka === kb || kb === kc || ka === kc) return false;
+    const qa = q5k(a), qb = q5k(b), qc = q5k(c);
+    if (qa === qb || qb === qc || qa === qc) return false;
   }
   return true;
 }
@@ -1388,13 +1396,15 @@ function emitMergedSlabPiecesManifold(slabRecords, ctx, targetArr, allocShellId,
   const numTiles = (tileCols || 1) * (tileRows || 1);
   const assignCentroidTile = numTiles > 400 && !ctx.isExport && typeof getTileIdForCentroid === 'function';
 
-  // Exact unperturbed coordinates keyed at 1e-4 units, plus weld-key bijection check
+  // Exact unperturbed coordinates keyed at 1e-4 units, plus dual (.toFixed(3) mm & 5000-grid) weld-key bijection check
   const vMap = new Map();
   const vCoords = [];
   const vWeldKeys = [];
+  const vQ5kKeys = [];
   const weldKey2D = assignCentroidTile
     ? (pt) => Math.round(((pt[0] + 84.6) * scaleMm) * 1000) * 1048576 + Math.round(((pt[1] + 84.6) * scaleMm) * 1000)
     : (pt) => ((pt[0] + 84.6) * scaleMm).toFixed(3) + '_' + ((pt[1] + 84.6) * scaleMm).toFixed(3);
+  const q5kKey2D = (pt) => (Math.round(pt[0] * 5000) + 2097152) * 4194304 + (Math.round(pt[1] * 5000) + 2097152);
   const getVid = (pt) => {
     const ix = Math.round(pt[0] * 10000);
     const iy = Math.round(pt[1] * 10000);
@@ -1405,6 +1415,7 @@ function emitMergedSlabPiecesManifold(slabRecords, ctx, targetArr, allocShellId,
       vMap.set(k, id);
       vCoords.push(pt);
       vWeldKeys.push(weldKey2D(pt));
+      vQ5kKeys.push(q5kKey2D(pt));
     }
     return id;
   };
@@ -1417,9 +1428,10 @@ function emitMergedSlabPiecesManifold(slabRecords, ctx, targetArr, allocShellId,
     const lKey = rec.tileId * 4294967296 + ((rec.zBotI & 65535) * 65536 + (rec.zTopI & 65535));
     let lvl = levelMap.get(lKey);
     if (lvl === undefined) {
-      const validZ = assignCentroidTile
+      const validMmZ = assignCentroidTile
         ? (Math.round(Math.max(0, rec.zTop * scaleMm) * 1000) !== Math.round(Math.max(0, rec.zBot * scaleMm) * 1000))
         : (Math.max(0, rec.zTop * scaleMm).toFixed(3) !== Math.max(0, rec.zBot * scaleMm).toFixed(3));
+      const validZ = validMmZ && (Math.round(rec.zTop * 5000) !== Math.round(rec.zBot * 5000));
       lvl = { validZ, tileId: rec.tileId, zBot: rec.zBot, zTop: rec.zTop, tris: [] };
       levelMap.set(lKey, lvl);
       levels.push(lvl);
@@ -1430,6 +1442,8 @@ function emitMergedSlabPiecesManifold(slabRecords, ctx, targetArr, allocShellId,
     if (va === vb || vb === vc || va === vc) continue;
     const wka = vWeldKeys[va], wkb = vWeldKeys[vb], wkc = vWeldKeys[vc];
     if (wka === wkb || wkb === wkc || wka === wkc) continue;
+    const q5a = vQ5kKeys[va], q5b = vQ5kKeys[vb], q5c = vQ5kKeys[vc];
+    if (q5a === q5b || q5b === q5c || q5a === q5c) continue;
     const pa = vCoords[va], pb = vCoords[vb], pc = vCoords[vc];
     const cross2 = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
     if (0.5 * Math.abs(cross2) < minAreaUnits2) continue;
@@ -1538,6 +1552,7 @@ function emitMergedSlabPiecesManifold(slabRecords, ctx, targetArr, allocShellId,
     const inDeg = new Map();
     const badVerts = new Set();
     const weldOwner = new Map();
+    const q5kOwner = new Map();
 
     for (const [ek, cnt] of dirCnt) {
       const u = Math.floor(ek / 67108864);
@@ -1551,6 +1566,16 @@ function emitMergedSlabPiecesManifold(slabRecords, ctx, targetArr, allocShellId,
       const prevV = weldOwner.get(wkv);
       if (prevV === undefined) weldOwner.set(wkv, v);
       else if (prevV !== v) { badVerts.add(v); badVerts.add(prevV); }
+
+      const q5u = vQ5kKeys[u];
+      const prevQU = q5kOwner.get(q5u);
+      if (prevQU === undefined) q5kOwner.set(q5u, u);
+      else if (prevQU !== u) { badVerts.add(u); badVerts.add(prevQU); }
+
+      const q5v = vQ5kKeys[v];
+      const prevQV = q5kOwner.get(q5v);
+      if (prevQV === undefined) q5kOwner.set(q5v, v);
+      else if (prevQV !== v) { badVerts.add(v); badVerts.add(prevQV); }
 
       if (cnt > 1) { badVerts.add(u); badVerts.add(v); continue; }
       const revCnt = dirCnt.get(v * 67108864 + u) || 0;
@@ -1670,11 +1695,13 @@ function emitMergedSlabPiecesManifold(slabRecords, ctx, targetArr, allocShellId,
             const chain = [u];
             for (let mi = 0; mi < mids.length; mi++) chain.push(mids[mi].w);
             chain.push(v);
-            const pc = vCoords[third], wkc = vWeldKeys[third];
+            const pc = vCoords[third], wkc = vWeldKeys[third], q5c = vQ5kKeys[third];
             for (let ci = 0; ci < chain.length - 1; ci++) {
               const aId = chain[ci], bId = chain[ci + 1];
               const wka = vWeldKeys[aId], wkb = vWeldKeys[bId];
               if (wka === wkb || wkb === wkc || wka === wkc) continue;
+              const q5a = vQ5kKeys[aId], q5b = vQ5kKeys[bId];
+              if (q5a === q5b || q5b === q5c || q5a === q5c) continue;
               const pa = vCoords[aId], pb = vCoords[bId];
               const cr2 = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
               if (0.5 * Math.abs(cr2) >= minAreaUnits2) {
@@ -1880,7 +1907,13 @@ function drapeAndEmitRoadPolygon2D(polyObj, fields, gSpatialIdx, ctx, baseInfo, 
       ? Math.max(gZ + pathHeight, zSurf + (isStreet ? rHeight : 0))
       : (zSurf + (isStreet ? rHeight : pathHeight));
     const outTid = getTileIdForCentroid(pcx, pcy, halfW, halfH, tileCols, tileRows);
-    emitRoadSlabFromTriData3D(triData, zBot, zTop, 3, meshes.roads, outTid, allocShellId());
+    if (isTriDataWeldBijective(triData, zBot, zTop, scaleMm)) {
+      emitRoadSlabFromTriData3D(triData, zBot, zTop, 3, meshes.roads, outTid, allocShellId());
+    } else {
+      const zBotI = Math.round(zBot * 10000), zTopI = Math.round(zTop * 10000);
+      const fastRecs = triData.capTris.map(tri => ({ tri, tileId: outTid, zBot, zTop, zBotI, zTopI }));
+      emitMergedSlabPiecesManifold(fastRecs, ctx, meshes.roads, allocShellId, false);
+    }
     return;
   }
 
