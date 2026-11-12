@@ -6,6 +6,10 @@
 // - Exact Möller–Trumbore 3D Ray-Triangle Picking (Supporting Multi-Tile Explode)
 // ============================================================================
 
+if (typeof mat4Perspective === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./webgl_math.js'));
+}
+
 function createWebGLStudio(canvas3d, state) {
   const gl =
     canvas3d.getContext('webgl', { antialias: true, alpha: false, depth: true, preserveDrawingBuffer: true }) ||
@@ -299,13 +303,17 @@ function createWebGLStudio(canvas3d, state) {
     const tExplode = state.tileExplode || 0.0;
     const explodeSpan = Math.max(tCols - 1, tRows - 1) * 0.5 * tExplode * 15.0;
 
-    const sunRad = state.sunAngleDeg * Math.PI / 180;
-    const sunDir = [Math.cos(sunRad) * 0.68, Math.sin(sunRad) * 0.68, 0.73];
-    const lightEye = [sunDir[0] * 180, sunDir[1] * 180, sunDir[2] * 180];
-    const lightView = mat4LookAt(lightEye, [0, 0, 6], [0, 0, 1]);
-    const orthoR = 115 + explodeSpan;
-    const lightProj = mat4Ortho(-orthoR, orthoR, -orthoR, orthoR, 20, 380 + explodeSpan);
-    const lightMatrix = mat4Multiply(lightProj, lightView);
+    const sunShadow = computeShadowFrustum(
+      camera,
+      state.sunAngleDeg,
+      halfW,
+      halfH,
+      state.explodeFactor,
+      explodeSpan,
+      SHADOW_RES
+    );
+    const sunDir = sunShadow.sunDir;
+    const lightMatrix = sunShadow.lightMatrix;
 
     const drawOrder = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted', 'frame'];
     const stride = 9 * 4;
@@ -314,7 +322,7 @@ function createWebGLStudio(canvas3d, state) {
       : -1.0;
 
     // PASS 1: SHADOW MAP (cached across pure color-picker & camera orbit frames)
-    const shadowSig = `${meshUploadVersion}|${state.sunAngleDeg}|${state.explodeFactor}|${tCols}x${tRows}|${tExplode}|${state.showFrame}|${visKey}|${halfW.toFixed(1)}x${halfH.toFixed(1)}`;
+    const shadowSig = `${meshUploadVersion}|${state.sunAngleDeg}|${state.explodeFactor}|${tCols}x${tRows}|${tExplode}|${state.showFrame}|${visKey}|${halfW.toFixed(1)}x${halfH.toFixed(1)}|${sunShadow.frustumKey}`;
     if (shadowSig !== lastShadowSig) {
       lastShadowSig = shadowSig;
       gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);
@@ -377,7 +385,9 @@ function createWebGLStudio(canvas3d, state) {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     gl.useProgram(mainProg);
-    const proj = mat4Perspective(34 * Math.PI / 180, (w / h) || 1, 20.0, 720.0 + explodeSpan * 2.5);
+    const camDist = Math.max(2.5, Number(camera.distance) || 274);
+    const { zNear, zFar } = computeCameraClipPlanes(camDist, explodeSpan);
+    const proj = mat4Perspective(34 * Math.PI / 180, (w / h) || 1, zNear, zFar);
     const eye = getCameraEye();
     const view = mat4LookAt(eye, camera.target, [0, 0, 1]);
 

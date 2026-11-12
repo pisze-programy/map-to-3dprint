@@ -378,12 +378,14 @@ function bindStudioPanelControls(ctx) {
       } else if (mode === 'top') {
         studio.camera.yaw = 0; studio.camera.pitch = 1.51; studio.camera.distance = 250; studio.camera.target = [0, 0, 2.0];
       } else if (mode === 'side') {
-        studio.camera.yaw = -0.45; studio.camera.pitch = 0.26; studio.camera.distance = 265;
+        studio.camera.yaw = -0.45; studio.camera.pitch = 0.26; studio.camera.distance = 265; studio.camera.target = [0, 0, 3.0];
         if (state.explodeFactor < 0.3) {
           explodeSlider.value = 65; state.explodeFactor = 0.65;
           document.getElementById('explodeValueLabel').textContent = '65%';
           document.getElementById('explodedLegendOverlay').classList.remove('hidden');
         }
+      } else if (mode === 'detail' || mode === 'street' || mode === 'closeup') {
+        studio.camera.yaw = -0.42; studio.camera.pitch = 0.38; studio.camera.distance = 18; studio.camera.target = [0, 0, 3.2];
       } else if (mode === 'tiles') {
         if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1) {
           applyPrinterProfile('mono4_252_2x3');
