@@ -1,13 +1,16 @@
 // ============================================================================
 // src/mesh/terrain_base_water.js
-// Per-Tile Watertight Stepped DEM Base, Sub-Cell Smooth Water Basin,
-// SLA Hollow Vault Ribs + Drain Channels + Underside R1C1 Patch & Studio Frame
+// Per-Tile Watertight Stepped DEM Base, SLA Hollow Vault Ribs + Drain Channels,
+// Underside R1C1 Patch & Studio Frame (Water Basin delegated to features_water.js)
 // ============================================================================
 
 if (typeof emitUndersideIdPatch === 'undefined' && typeof require !== 'undefined') {
   Object.assign(global, require('../geometry/polygon_2d.js'));
   Object.assign(global, require('./mesh_primitives.js'));
   Object.assign(global, require('./roof_architectural.js'));
+}
+if (typeof getWaterBasinLevels === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./features_water.js'));
 }
 
 function buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options = {}) {
@@ -16,12 +19,12 @@ function buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options = {}) {
     scaleMm, mmPerUnit, halfW, halfH, tileCols, tileRows, numTiles,
     TERRAIN_RES_X, TERRAIN_RES_Y, cellStepX, cellStepY, hollowBase,
     waterMask, sampleMaskIdx, numContourSteps, thresholds,
-    baseBottomZ, deepWaterZ, zSubWater, zDrainVault,
+    baseBottomZ, zSubWater, zDrainVault,
     strideTX, zGrid, tileBounds, quantizeZUnits, getStepIdxForVal, sampleRawTerrainGridZ
   } = ctx;
 
-  const zWaterBot = zSubWater;
-  const waterSurfZ = (state.layerVisible && state.layerVisible.water === false) ? zSubWater : deepWaterZ;
+  const waterLevels = getWaterBasinLevels(ctx, state);
+  const { waterSurfZ } = waterLevels;
   const hollowWallUnits = Math.max(0.55, Math.min(1.15, (state.hollowWallMm || 1.8) / Math.max(1.05, mmPerUnit)));
   let vaultSavedSceneVol = 0;
 
@@ -78,20 +81,6 @@ function buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options = {}) {
       }
     }
     pushTri(meshes.base, AFloor, BFloor, lastTop, norm, 1, -1, tileId);
-  }
-
-  function emitWaterBoundaryWall(ax, ay, vA, bx, by, vB, norm, tileId) {
-    if (vA >= baseBottomZ && vB >= baseBottomZ) return;
-    const pA = { x: ax, y: ay, v: vA }, pB = { x: bx, y: by, v: vB };
-    if (vA < baseBottomZ && vB < baseBottomZ) {
-      pushQuad(meshes.water, [ax, ay, zWaterBot], [bx, by, zWaterBot], [bx, by, deepWaterZ], [ax, ay, deepWaterZ], norm, 0, -1, tileId);
-    } else if (vA < baseBottomZ) {
-      const cut = interpCellEdgeCanonical(pA, pB, baseBottomZ);
-      pushQuad(meshes.water, [ax, ay, zWaterBot], [cut.x, cut.y, zWaterBot], [cut.x, cut.y, deepWaterZ], [ax, ay, deepWaterZ], norm, 0, -1, tileId);
-    } else {
-      const cut = interpCellEdgeCanonical(pA, pB, baseBottomZ);
-      pushQuad(meshes.water, [cut.x, cut.y, zWaterBot], [bx, by, zWaterBot], [bx, by, deepWaterZ], [cut.x, cut.y, deepWaterZ], norm, 0, -1, tileId);
-    }
   }
 
   const cellTerracePolys = Array.from({ length: TERRAIN_RES_X * TERRAIN_RES_Y }, () => []);
@@ -196,37 +185,37 @@ function buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options = {}) {
           if (isExport || (tileCols * tileRows <= 400)) {
             if (gy === gy0) {
               emitBoundaryStaircaseWall(x0, y0, v00, f00, x1, y0, v10, f10, [0, -1, 0], tileId);
-              emitWaterBoundaryWall(x0, y0, v00, x1, y0, v10, [0, -1, 0], tileId);
+              emitWaterBoundaryWall(ctx, meshes, waterLevels, x0, y0, v00, x1, y0, v10, [0, -1, 0], tileId);
             }
             if (gy === gy1 - 1) {
               emitBoundaryStaircaseWall(x1, y1, v11, f11, x0, y1, v01, f01, [0, 1, 0], tileId);
-              emitWaterBoundaryWall(x1, y1, v11, x0, y1, v01, [0, 1, 0], tileId);
+              emitWaterBoundaryWall(ctx, meshes, waterLevels, x1, y1, v11, x0, y1, v01, [0, 1, 0], tileId);
             }
             if (gx === gx0) {
               emitBoundaryStaircaseWall(x0, y1, v01, f01, x0, y0, v00, f00, [-1, 0, 0], tileId);
-              emitWaterBoundaryWall(x0, y1, v01, x0, y0, v00, [-1, 0, 0], tileId);
+              emitWaterBoundaryWall(ctx, meshes, waterLevels, x0, y1, v01, x0, y0, v00, [-1, 0, 0], tileId);
             }
             if (gx === gx1 - 1) {
               emitBoundaryStaircaseWall(x1, y0, v10, f10, x1, y1, v11, f11, [1, 0, 0], tileId);
-              emitWaterBoundaryWall(x1, y0, v10, x1, y1, v11, [1, 0, 0], tileId);
+              emitWaterBoundaryWall(ctx, meshes, waterLevels, x1, y0, v10, x1, y1, v11, [1, 0, 0], tileId);
             }
           } else {
             // Extreme synthetic grids (>400 tiles, e.g. 50x100): skip internal kerf walls in live preview
             if (tr === 0 && gy === gy0) {
               emitBoundaryStaircaseWall(x0, y0, v00, f00, x1, y0, v10, f10, [0, -1, 0], tileId);
-              emitWaterBoundaryWall(x0, y0, v00, x1, y0, v10, [0, -1, 0], tileId);
+              emitWaterBoundaryWall(ctx, meshes, waterLevels, x0, y0, v00, x1, y0, v10, [0, -1, 0], tileId);
             }
             if (tr === tileRows - 1 && gy === gy1 - 1) {
               emitBoundaryStaircaseWall(x1, y1, v11, f11, x0, y1, v01, f01, [0, 1, 0], tileId);
-              emitWaterBoundaryWall(x1, y1, v11, x0, y1, v01, [0, 1, 0], tileId);
+              emitWaterBoundaryWall(ctx, meshes, waterLevels, x1, y1, v11, x0, y1, v01, [0, 1, 0], tileId);
             }
             if (tc === 0 && gx === gx0) {
               emitBoundaryStaircaseWall(x0, y1, v01, f01, x0, y0, v00, f00, [-1, 0, 0], tileId);
-              emitWaterBoundaryWall(x0, y1, v01, x0, y0, v00, [-1, 0, 0], tileId);
+              emitWaterBoundaryWall(ctx, meshes, waterLevels, x0, y1, v01, x0, y0, v00, [-1, 0, 0], tileId);
             }
             if (tc === tileCols - 1 && gx === gx1 - 1) {
               emitBoundaryStaircaseWall(x1, y0, v10, f10, x1, y1, v11, f11, [1, 0, 0], tileId);
-              emitWaterBoundaryWall(x1, y0, v10, x1, y1, v11, [1, 0, 0], tileId);
+              emitWaterBoundaryWall(ctx, meshes, waterLevels, x1, y0, v10, x1, y1, v11, [1, 0, 0], tileId);
             }
           }
 
@@ -235,8 +224,7 @@ function buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options = {}) {
 
           if (vMax < baseBottomZ) {
             pushQuad(meshes.base, [x0, y0, zSubWater], [x1, y0, zSubWater], [x1, y1, zSubWater], [x0, y1, zSubWater], [0, 0, 1], 1, -1, tileId);
-            pushQuad(meshes.water, [x0, y0, deepWaterZ], [x1, y0, deepWaterZ], [x1, y1, deepWaterZ], [x0, y1, deepWaterZ], [0, 0, 1], 0, -1, tileId);
-            pushQuad(meshes.water, [x0, y0, zWaterBot], [x0, y1, zWaterBot], [x1, y1, zWaterBot], [x1, y0, zWaterBot], [0, 0, -1], 0, -1, tileId);
+            emitFullWaterBasinCell(meshes, waterLevels, x0, y0, x1, y1, tileId);
             cellTerracePolys[gy * TERRAIN_RES_X + gx].push({ poly: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], zSurf: waterSurfZ, tileId });
             continue;
           }
@@ -267,21 +255,7 @@ function buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options = {}) {
             const tvMax = Math.max(cellTri[0].v, cellTri[1].v, cellTri[2].v);
 
             if (tvMin < baseBottomZ) {
-              const subWater = clipCellPolyByScalar(cellTri, baseBottomZ, false);
-              const swp = subWater.poly;
-              if (swp.length >= 3) {
-                const p0 = swp[0];
-                for (let ti = 1; ti < swp.length - 1; ti++) {
-                  const p1 = swp[ti], p2 = swp[ti + 1];
-                  pushTri(meshes.base, [p0.x, p0.y, zSubWater], [p1.x, p1.y, zSubWater], [p2.x, p2.y, zSubWater], [0, 0, 1], 1, -1, tileId);
-                  pushTri(meshes.water, [p0.x, p0.y, deepWaterZ], [p1.x, p1.y, deepWaterZ], [p2.x, p2.y, deepWaterZ], [0, 0, 1], 0, -1, tileId);
-                  pushTri(meshes.water, [p0.x, p0.y, zWaterBot], [p2.x, p2.y, zWaterBot], [p1.x, p1.y, zWaterBot], [0, 0, -1], 0, -1, tileId);
-                }
-                cellTerracePolys[gy * TERRAIN_RES_X + gx].push({ poly: swp.map(pt => [pt.x, pt.y]), zSurf: waterSurfZ, tileId });
-                for (const [cA, cB] of subWater.cuts) {
-                  pushQuad(meshes.water, [cA.x, cA.y, zWaterBot], [cB.x, cB.y, zWaterBot], [cB.x, cB.y, deepWaterZ], [cA.x, cA.y, deepWaterZ], riserNorm, 0, -1, tileId);
-                }
-              }
+              emitSubWaterBasinCell(ctx, meshes, waterLevels, cellTri, riserNorm, tileId, cellTerracePolys[gy * TERRAIN_RES_X + gx]);
             }
 
             if (tvMax < baseBottomZ) continue;

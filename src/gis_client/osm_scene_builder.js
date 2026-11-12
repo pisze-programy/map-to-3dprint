@@ -1,8 +1,31 @@
 // ============================================================================
 // src/gis_client/osm_scene_builder.js
-// Live In-Browser OSM + DEM -> 3D Scene Builder (Emitting bridgePolys,
-// roadPolys, Footpath Classification, Water/Parks/Trees & S3DB Buildings)
+// Live In-Browser OSM + DEM -> 3D Scene Builder Orchestrator
+// (Delegates per-layer extraction cleanly to osm_*_extract.js modules)
 // ============================================================================
+
+if (typeof createS3DBClientCollector === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./overpass_dem_fetch.js'));
+  Object.assign(global, require('./s3db_client_matcher.js'));
+}
+if (typeof processOsmWaterWayJS === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./osm_water_extract.js'));
+}
+if (typeof processOsmBridgeOrPierWayJS === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./osm_bridges_piers_extract.js'));
+}
+if (typeof processOsmGreeneryWayJS === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./osm_greenery_extract.js'));
+}
+if (typeof processOsmRoadOrPlazaWayJS === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./osm_roads_extract.js'));
+}
+if (typeof finalizeOsmTreesLayerJS === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./osm_trees_extract.js'));
+}
+if (typeof finalizeOsmBuildingsLayerJS === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./osm_buildings_extract.js'));
+}
 
 const OVERPASS_ENDPOINTS_BUILDER = [
   '/api/interpreter',
@@ -257,10 +280,7 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     if (el.type === 'node') {
       const pt = project(el.lon, el.lat);
       nodes.set(el.id, pt);
-      if (wantTrees && el.tags && el.tags.natural === 'tree' && Math.abs(pt[0]) <= fetchHalfW + 0.5 && Math.abs(pt[1]) <= fetchHalfH + 0.5) {
-        const hM = parseFloatTagJS(el.tags.height, 9.5);
-        treeNodes.push([Math.round(pt[0] * 100) / 100, Math.round(pt[1] * 100) / 100, Math.round(Math.min(18.0, Math.max(5.0, hM)) * 10) / 10]);
-      }
+      collectOsmTreeNodeJS(el, pt, wantTrees, fetchHalfW, fetchHalfH, treeNodes);
     } else if (el.type === 'way') {
       ways.set(el.id, el);
     } else if (el.type === 'relation') {
@@ -269,7 +289,7 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   }
 
   const nodesToPts = (nids, tol = 0.015) => simplifyRingJS((nids || []).map(id => nodes.get(id)).filter(Boolean), tol);
-  const waterPolys = [], waterLines = [], greenPolys = [], roads = [], roadPolys = [], bridgePolys = [];
+  const waterPolys = [], waterLines = [], greenPolys = [], roads = [], roadPolys = [], bridgePolys = [], coastWays = [];
   const usedWays = new Set();
   const consumedRels = new Set();
 
@@ -279,15 +299,9 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   const stitchedRelPolys = new Map();
 
   // Sample dry-land building interiors, ground streets, and named river/canal centerlines
-  // to classify minimal planar faces when multipolygons clip against the bbox.
   const allWaterCandidates = [];
   const allBldCandidates = [];
   const allRoadCandidates = [];
-  const MOTOR_ROAD_VALS = new Set([
-    'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified',
-    'residential', 'living_street', 'service',
-    'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link'
-  ]);
   for (const w of ways.values()) {
     const wt = w.tags || {};
     const wn = w.nodes || [];
@@ -295,49 +309,9 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     const isBrWay = Boolean(wt.bridge && !['no', 'false', '0', 'none'].includes(String(wt.bridge).toLowerCase()));
     const isTunWay = Boolean(wt.tunnel && !['no', 'false', '0', 'none'].includes(String(wt.tunnel).toLowerCase()));
 
-    if ((wt.waterway === 'river' || wt.waterway === 'canal') && !isTunWay) {
-      const weight = wt.waterway === 'river' ? 3 : 2;
-      const wName = String(wt.name || wt['name:en'] || '').trim().toLowerCase();
-      const stride = Math.max(1, Math.floor(wn.length / 6));
-      for (let i = 0; i < wn.length; i += stride) {
-        const pt = nodes.get(wn[i]);
-        if (pt && Math.abs(pt[0]) <= fetchHalfW && Math.abs(pt[1]) <= fetchHalfH) {
-          allWaterCandidates.push([pt[0], pt[1], weight, wName]);
-        }
-      }
-    } else if (wt.building && wn.length >= 4 && wn[0] === wn[wn.length - 1] && !isBrWay && !isTunWay) {
-      const bVal = String(wt.building).toLowerCase();
-      const mmVal = String(wt.man_made || '').toLowerCase();
-      const locVal = String(wt.location || '').toLowerCase();
-      const histVal = String(wt.historic || '').toLowerCase();
-      if (
-        !['pier', 'bridge', 'boathouse', 'houseboat', 'floating_home', 'roof', 'digester', 'ship', 'boat', 'vessel', 'barge'].includes(bVal) &&
-        !['pier', 'bridge', 'breakwater', 'groyne', 'quay', 'jetty', 'wharf', 'dolphin'].includes(mmVal) &&
-        !['underground', 'underwater', 'overwater'].includes(locVal) &&
-        !['ship', 'wreck', 'aircraft'].includes(histVal) &&
-        !wt['seamark:type'] &&
-        wt.floating !== 'yes'
-      ) {
-        const p0 = nodes.get(wn[0]);
-        const pMid = nodes.get(wn[wn.length >> 1]) || p0;
-        if (p0 && pMid) {
-          const mx = (p0[0] + pMid[0]) * 0.5;
-          const my = (p0[1] + pMid[1]) * 0.5;
-          if (Math.abs(mx) <= fetchHalfW && Math.abs(my) <= fetchHalfH) {
-            allBldCandidates.push([mx, my]);
-          }
-        }
-      }
-    } else if (wt.highway && !isBrWay && !isTunWay && !wt.ford && wt.route !== 'ferry') {
-      const hwVal = String(wt.highway).toLowerCase();
-      const mmVal = String(wt.man_made || '').toLowerCase();
-      if (!['pier', 'bridge', 'breakwater', 'groyne', 'quay', 'jetty', 'wharf', 'dolphin', 'boardwalk'].includes(mmVal) && hwVal !== 'proposed' && hwVal !== 'construction') {
-        const pMid = nodes.get(wn[wn.length >> 1]);
-        if (pMid && Math.abs(pMid[0]) <= fetchHalfW && Math.abs(pMid[1]) <= fetchHalfH) {
-          allRoadCandidates.push([pMid[0], pMid[1], MOTOR_ROAD_VALS.has(hwVal) ? 2 : 1]);
-        }
-      }
-    }
+    if (collectOsmWaterSampleCandidateJS(w, wt, wn, isBrWay, isTunWay, nodes, fetchHalfW, fetchHalfH, allWaterCandidates)) continue;
+    if (collectOsmBuildingSampleCandidateJS(w, wt, wn, isBrWay, isTunWay, nodes, fetchHalfW, fetchHalfH, allBldCandidates)) continue;
+    collectOsmRoadSampleCandidateJS(w, wt, wn, isBrWay, isTunWay, nodes, fetchHalfW, fetchHalfH, allRoadCandidates);
   }
   const downsampleUniform = (arr, maxLen) => {
     if (arr.length <= maxLen) return arr;
@@ -374,84 +348,19 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     }
   }
 
-  // Pass 1B: Explicit S3DB type=building relations
-  for (const rel of relations) {
-    const tags = rel.tags || {};
-    const members = rel.members || [];
-    const hasPartOrOutline = members.some(m => m.role === 'part' || m.role === 'outline');
-    if (tags.type === 'building' || hasPartOrOutline) {
-      if (isUndergroundOrSkippedBuildingJS(tags)) {
-        consumedRels.add(rel.id);
-        for (const m of members) {
-          if (m.type === 'way') usedWays.add(m.ref);
-          else if (m.type === 'relation') consumedRels.add(m.ref);
-        }
-        continue;
-      }
-      const partWays = [], partRels = [], outlineWays = [], outlineRels = [];
-      for (const m of members) {
-        const role = m.role || '';
-        if (role === 'part') {
-          if (m.type === 'way' && ways.has(m.ref)) partWays.push(m.ref);
-          else if (m.type === 'relation' && relById.has(m.ref)) partRels.push(m.ref);
-        } else if (role === 'outline' || role === 'outer' || role === '') {
-          if (m.type === 'way' && ways.has(m.ref)) outlineWays.push(m.ref);
-          else if (m.type === 'relation' && relById.has(m.ref)) outlineRels.push(m.ref);
-        }
-      }
+  const osmExtractCtx = {
+    osmRaw, nodes, ways, relations, relById, rawRelWays, stitchedRelPolys,
+    usedWays, consumedRels, s3db,
+    nodesToPts, project,
+    fetchHalfW, fetchHalfH, halfW, halfH, metersToUnits, effectiveSpanM,
+    wantTrees, minBldFootprintM, roadDetail, lodSettings,
+    waterSamplePts, buildingSamplePts, roadSamplePts,
+    coastWays, treeNodes,
+    waterPolys, waterLines, greenPolys, roads, roadPolys, bridgePolys
+  };
 
-      if (partWays.length > 0 || partRels.length > 0) {
-        consumedRels.add(rel.id);
-        let parentName = tags.name || tags['name:en'] || tags['name:pl'] || '';
-        for (const oWid of outlineWays) {
-          usedWays.add(oWid);
-          const wObj = ways.get(oWid);
-          const wTags = { ...tags, ...(wObj.tags || {}) };
-          const wNids = wObj.nodes || [];
-          if (wNids.length >= 4 && wNids[0] === wNids[wNids.length - 1]) {
-            const pts = nodesToPts(wNids, 0.015);
-            if (pts.length >= 3) {
-              if (!parentName) parentName = wTags.name || wTags['name:en'] || '';
-              s3db.registerCandidate(oWid, wTags, pts, [], false, rel.id, true);
-            }
-          }
-        }
-        for (const oRid of outlineRels) {
-          consumedRels.add(oRid);
-          const oRel = relById.get(oRid);
-          const oTags = { ...tags, ...(oRel.tags || {}) };
-          if (!parentName) parentName = oTags.name || oTags['name:en'] || '';
-          const st = stitchedRelPolys.get(oRid);
-          if (st) {
-            for (const wid of st.memberWayIds) usedWays.add(wid);
-            for (const op of st.outerPolys) s3db.registerCandidate(oRid, oTags, op, st.innerPolys, false, rel.id, true);
-          }
-        }
-        for (const pWid of partWays) {
-          usedWays.add(pWid);
-          const wObj = ways.get(pWid);
-          const wTags = { ...(wObj.tags || {}) };
-          if (!wTags.name && parentName) wTags.name = parentName;
-          const wNids = wObj.nodes || [];
-          if (wNids.length >= 4 && wNids[0] === wNids[wNids.length - 1]) {
-            const pts = nodesToPts(wNids, 0.015);
-            if (pts.length >= 3) s3db.registerCandidate(pWid, wTags, pts, [], true, rel.id, true);
-          }
-        }
-        for (const pRid of partRels) {
-          consumedRels.add(pRid);
-          const pRel = relById.get(pRid);
-          const pTags = { ...(pRel.tags || {}) };
-          if (!pTags.name && parentName) pTags.name = parentName;
-          const st = stitchedRelPolys.get(pRid);
-          if (st) {
-            for (const wid of st.memberWayIds) usedWays.add(wid);
-            for (const op of st.outerPolys) s3db.registerCandidate(pRid, pTags, op, st.innerPolys, true, rel.id, true);
-          }
-        }
-      }
-    }
-  }
+  // Pass 1B: Explicit S3DB type=building relations
+  processOsmS3DBRelationsPass1BJS(osmExtractCtx);
 
   // Pass 1C: Remaining Multipolygon Relations
   for (const rel of relations) {
@@ -460,285 +369,40 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     const raw = rawRelWays.get(rel.id);
     if (!raw) continue;
 
-    const hasBld = tags.building && !SKIP_BUILDING_VALS_JS.has(String(tags.building).toLowerCase());
-    const hasPart = tags['building:part'] && !SKIP_BUILDING_VALS_JS.has(String(tags['building:part']).toLowerCase());
-    if (hasBld || hasPart) {
-      const st = stitchedRelPolys.get(rel.id);
-      if (!st) continue;
-      for (const wid of st.memberWayIds) usedWays.add(wid);
-      const isPart = Boolean(hasPart && !hasBld);
-      for (const op of st.outerPolys) s3db.registerCandidate(rel.id, tags, op, st.innerPolys, isPart, null, false);
-      continue;
-    }
+    if (processOsmBuildingMultipolygonJS(rel, tags, raw, osmExtractCtx)) continue;
+    if (processOsmBridgeMultipolygonJS(rel, tags, raw, osmExtractCtx)) continue;
 
-    const isWater = tags.natural === 'water' || ['riverbank', 'dock', 'canal'].includes(tags.waterway) || Boolean(tags.water) || ['reservoir', 'basin'].includes(tags.landuse) || tags.leisure === 'marina';
-    const isGreen = ['park', 'garden', 'nature_reserve', 'pitch', 'playground', 'common', 'golf_course', 'recreation_ground', 'dog_park'].includes(tags.leisure) ||
-                    ['forest', 'grass', 'meadow', 'village_green', 'recreation_ground', 'cemetery', 'allotments', 'farmland', 'orchard', 'vineyard'].includes(tags.landuse) ||
-                    ['wood', 'scrub', 'grassland', 'heath'].includes(tags.natural);
-    const isBr = tags.man_made === 'bridge' || (tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge));
-    const isPlaza = (['pedestrian', 'footway', 'living_street'].includes(tags.highway) && tags.area !== 'no') || tags.place === 'square';
-
-    if (isBr) {
-      const st = stitchedRelPolys.get(rel.id);
-      if (!st) continue;
-      for (const wid of st.memberWayIds) usedWays.add(wid);
-      const layerVal = Math.max(1, Math.trunc(parseFloatTagJS(tags.layer, 1) || 1));
-      for (const op of st.outerPolys) bridgePolys.push({ outer: op, holes: st.innerPolys, name: tags.name || 'Most', layer: layerVal });
-      continue;
-    }
-
-    if (isWater || isGreen || isPlaza) {
-      const relName = String(tags.name || tags['name:en'] || '').trim().toLowerCase();
-      const clipped = (typeof stitchClippedMultipolygonRingsJS === 'function')
-        ? stitchClippedMultipolygonRingsJS(raw.outerWays, raw.innerWays, nodesToPts, fetchHalfW, fetchHalfH, {
-            isWater,
-            isGreen,
-            isPlaza,
-            relName,
-            waterSamplePts,
-            buildingSamplePts,
-            roadSamplePts,
-            tol: 0.018
-          })
-        : null;
-      const entries = clipped
-        ? clipped.outerEntries
-        : ((stitchedRelPolys.get(rel.id) || { outerPolys: [], innerPolys: [] }).outerPolys.map(op => ({
-            outer: op,
-            holes: (stitchedRelPolys.get(rel.id) || { innerPolys: [] }).innerPolys
-          })));
-      if (entries.length === 0) continue;
-      for (const wid of raw.memberWayIds) usedWays.add(wid);
-      if (isWater) {
-        for (const e of entries) waterPolys.push({ outer: e.outer, holes: e.holes, name: tags.name || 'Woda' });
-      } else if (isGreen) {
-        for (const e of entries) greenPolys.push({ outer: e.outer, holes: e.holes, type: tags.leisure || tags.landuse || tags.natural || 'park' });
-      } else if (isPlaza) {
-        for (const e of entries) roadPolys.push({ outer: e.outer, holes: e.holes, name: tags.name || '' });
-      }
-    }
+    const extraFlags = {
+      isGreen: isOsmGreeneryMultipolygonJS(tags),
+      isPlaza: isOsmPlazaMultipolygonJS(tags)
+    };
+    if (processOsmWaterMultipolygonJS(rel, tags, raw, osmExtractCtx, extraFlags)) continue;
+    if (processOsmGreeneryMultipolygonJS(rel, tags, raw, osmExtractCtx, extraFlags)) continue;
+    processOsmPlazaMultipolygonJS(rel, tags, raw, osmExtractCtx);
   }
 
   // Pass 2: Standalone Ways
-  const coastWays = [];
   for (const [wid, w] of ways.entries()) {
     const tags = w.tags || {};
     const nids = w.nodes || [];
     if (nids.length < 2) continue;
     const isClosed = nids[0] === nids[nids.length - 1] && nids.length >= 4;
 
-    const hasBld = tags.building && !SKIP_BUILDING_VALS_JS.has(String(tags.building).toLowerCase());
-    const hasPart = tags['building:part'] && !SKIP_BUILDING_VALS_JS.has(String(tags['building:part']).toLowerCase());
-    if ((hasBld || hasPart) && isClosed) {
-      if (usedWays.has(wid)) continue;
-      const pts = nodesToPts(nids, 0.015);
-      if (pts.length >= 3) s3db.registerCandidate(wid, tags, pts, [], Boolean(hasPart && !hasBld), null, false);
-      continue;
-    }
-
-    if (tags.natural === 'coastline') {
-      const pts = nids.map(id => nodes.get(id)).filter(Boolean);
-      if (pts.length >= 2) coastWays.push(pts);
-      continue;
-    }
-
-    if (tags.man_made === 'bridge' && isClosed && !usedWays.has(wid)) {
-      const pts = nodesToPts(nids, 0.02);
-      if (pts.length >= 3) {
-        const layerVal = Math.max(1, Math.trunc(parseFloatTagJS(tags.layer, 1) || 1));
-        bridgePolys.push({ outer: pts, holes: [], name: tags.name || 'Most', layer: layerVal });
-      }
-      continue;
-    }
-
-    if (['pier', 'breakwater', 'groyne'].includes(tags.man_made) && isClosed) {
-      const pts = nodesToPts(nids, 0.025);
-      if (pts.length >= 3) {
-        s3db.addBuildingRecord(wid, { ...tags, building: 'pier', height: '3.5', 'roof:shape': 'flat', name: tags.name || `Molo #${wid}` }, pts, [], wid, false);
-      }
-      continue;
-    }
-
-    if ((tags.natural === 'water' || ['riverbank', 'dock'].includes(tags.waterway) || Boolean(tags.water) || ['reservoir', 'basin'].includes(tags.landuse) || tags.leisure === 'marina') && isClosed) {
-      if (!usedWays.has(wid)) {
-        const pts = nodesToPts(nids, 0.03);
-        if (pts.length >= 3) waterPolys.push({ outer: pts, holes: [], name: tags.name || 'Woda' });
-      }
-      continue;
-    }
-
-    if (tags.waterway && ['river', 'canal', 'stream', 'dock'].includes(tags.waterway) && !['yes', 'culvert'].includes(tags.tunnel)) {
-      const pts = nodesToPts(nids, 0.04);
-      if (pts.length >= 2) {
-        const wm = parseFloatTagJS(tags.width, null) || (tags.waterway === 'river' ? 16 : tags.waterway === 'canal' ? 8 : 3);
-        waterLines.push({ pts, width: Math.round(Math.max(0.35, wm * metersToUnits) * 100) / 100, name: tags.name || tags.waterway });
-      }
-      continue;
-    }
-
-    if ((
-      ['park', 'garden', 'nature_reserve', 'pitch', 'playground', 'common', 'golf_course', 'recreation_ground', 'dog_park'].includes(tags.leisure) ||
-      ['forest', 'grass', 'meadow', 'village_green', 'recreation_ground', 'cemetery', 'allotments', 'farmland', 'orchard', 'vineyard'].includes(tags.landuse) ||
-      ['wood', 'scrub', 'grassland', 'heath'].includes(tags.natural)
-    ) && isClosed) {
-      if (!usedWays.has(wid)) {
-        const pts = nodesToPts(nids, 0.035);
-        if (pts.length >= 3) greenPolys.push({ outer: pts, holes: [], type: tags.leisure || tags.landuse || tags.natural || 'park' });
-      }
-      continue;
-    }
-
-    if (tags.natural === 'tree_row') {
-      if (wantTrees) {
-        const pts = nids.map(id => nodes.get(id)).filter(Boolean);
-        const rowStepU = Math.max(0.45, 7.5 * metersToUnits);
-        for (let i = 0; i < pts.length - 1; i++) {
-          const p0 = pts[i], p1 = pts[i + 1];
-          const steps = Math.max(1, Math.floor(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) / rowStepU));
-          for (let s = 0; s <= steps; s++) {
-            const t = s / steps;
-            const tx = p0[0] + (p1[0] - p0[0]) * t, ty = p0[1] + (p1[1] - p0[1]) * t;
-            if (Math.abs(tx) <= fetchHalfW + 0.5 && Math.abs(ty) <= fetchHalfH + 0.5) {
-              treeNodes.push([Math.round(tx * 100) / 100, Math.round(ty * 100) / 100, 9.0]);
-            }
-          }
-        }
-      }
-      continue;
-    }
-
-    if (isClosed && !usedWays.has(wid) && (tags.place === 'square' || (['pedestrian', 'footway', 'living_street', 'service'].includes(tags.highway) && tags.area === 'yes'))) {
-      const layerVal = parseFloatTagJS(tags.layer, 0) || 0;
-      if (!['yes', 'building_passage'].includes(tags.tunnel) && layerVal >= 0) {
-        const pts = nodesToPts(nids, 0.03);
-        if (pts.length >= 3) roadPolys.push({ outer: pts, holes: [], name: tags.name || '' });
-        continue;
-      }
-    }
-
-    if (tags.highway || tags.railway || ['bridge', 'pier', 'breakwater', 'groyne'].includes(tags.man_made)) {
-      if (['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.covered === 'yes' || tags.indoor === 'yes') continue;
-      const layerVal = Math.trunc(parseFloatTagJS(tags.layer, 0) || 0);
-      if (layerVal < 0 || (tags.man_made === 'bridge' && isClosed)) continue;
-
-      const hwy = tags.highway || tags.railway || tags.man_made || 'bridge';
-      if (['proposed', 'construction', 'platform', 'bus_stop', 'elevator', 'rest_area'].includes(hwy)) continue;
-
-      const bridgeTag = tags.bridge;
-      const isBridge = (bridgeTag && !['no', 'false', '0', 'none'].includes(bridgeTag)) || ['bridge', 'pier', 'breakwater', 'groyne'].includes(tags.man_made);
-      const isPath = ['footway', 'path', 'cycleway', 'steps', 'bridleway', 'track', 'corridor', 'pedestrian'].includes(hwy);
-
-      let rwm = 6.2;
-      if (isPath) {
-        if (!isBridge && ['sidewalk', 'crossing', 'access_aisle', 'island'].includes(tags.footway)) continue;
-        if (!isBridge && ['sidewalk', 'crossing'].includes(tags.cycleway)) continue;
-        rwm = hwy === 'pedestrian' ? 3.2 : 2.2;
-      } else if (['motorway', 'trunk'].includes(hwy)) rwm = 12.5;
-      else if (hwy === 'primary') rwm = 10.5;
-      else if (['secondary', 'motorway_link', 'trunk_link'].includes(hwy)) rwm = 8.5;
-      else if (['tertiary', 'primary_link', 'secondary_link'].includes(hwy)) rwm = 7.2;
-      else if (['rail', 'light_rail', 'tram', 'narrow_gauge'].includes(hwy)) {
-        if (['subway', 'monorail'].includes(hwy) && !isBridge) continue;
-        rwm = 4.2;
-      } else if (hwy === 'service') {
-        rwm = (!isBridge && ['parking_aisle', 'driveway', 'alley'].includes(tags.service)) ? 3.6 : 4.8;
-      }
-
-      const explicitW = parseFloatTagJS(tags.width, null);
-      if (explicitW !== null && explicitW >= 1.2 && explicitW <= 28.0) rwm = explicitW;
-
-      const pts = nodesToPts(nids, 0.035);
-      if (pts.length >= 2) {
-        roads.push({
-          pts,
-          width: Math.round(Math.max(0.24, rwm * metersToUnits) * 1000) / 1000,
-          hwy,
-          isPath: Boolean(isPath && hwy !== 'pedestrian'),
-          bridge: Boolean(isBridge),
-          layer: layerVal,
-          name: tags.name || ''
-        });
-      }
-    }
+    if (processOsmBuildingWayJS(wid, w, tags, nids, isClosed, osmExtractCtx)) continue;
+    if (processOsmCoastlineWayJS(wid, w, tags, nids, isClosed, osmExtractCtx)) continue;
+    if (processOsmBridgeOrPierWayJS(wid, w, tags, nids, isClosed, osmExtractCtx)) continue;
+    if (processOsmWaterWayJS(wid, w, tags, nids, isClosed, osmExtractCtx)) continue;
+    if (processOsmGreeneryWayJS(wid, w, tags, nids, isClosed, osmExtractCtx)) continue;
+    if (processOsmTreeRowWayJS(wid, w, tags, nids, isClosed, osmExtractCtx)) continue;
+    processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, osmExtractCtx);
   }
 
-  let buildings = s3db.resolveAndEmitS3DBBuildings();
-  if (minBldFootprintM > 0 && buildings.length > 0) {
-    const minFootU = minBldFootprintM * metersToUnits;
-    buildings = buildings.filter(b => {
-      if (b.landmark || b.church || b.tower || b.part) return true;
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const p of (b.outer || [])) {
-        if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
-        if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
-      }
-      return Math.max(maxX - minX, maxY - minY) >= minFootU;
-    });
-    for (let i = 0; i < buildings.length; i++) buildings[i].id = i + 1;
-  }
-
-  stitchCoastlineSeaPolysJS(coastWays, fetchHalfW, fetchHalfH, waterPolys);
-
-  // Deduplicate tree nodes & add natural grove/park trees (when enabled in LoD)
-  const trees = [];
-  if (wantTrees) {
-    const treeBuckets = new Map();
-    const canPlaceTree = (tx, ty, minDistSq, cellSz) => {
-      const bx = Math.floor(tx / cellSz), by = Math.floor(ty / cellSz);
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          const list = treeBuckets.get(`${bx + dx}_${by + dy}`);
-          if (!list) continue;
-          for (const [ox, oy] of list) {
-            if ((tx - ox) * (tx - ox) + (ty - oy) * (ty - oy) < minDistSq) return false;
-          }
-        }
-      }
-      const key = `${bx}_${by}`;
-      if (!treeBuckets.has(key)) treeBuckets.set(key, []);
-      treeBuckets.get(key).push([tx, ty]);
-      return true;
-    };
-
-    const nodeMinDistU = Math.max(0.24, 4.2 * metersToUnits);
-    const nodeMinDistSq = nodeMinDistU * nodeMinDistU;
-    const nodeCellSz = Math.max(0.45, nodeMinDistU * 1.4);
-    for (const [tx, ty, th] of treeNodes) {
-      if (trees.length >= 2600) break;
-      if (canPlaceTree(tx, ty, nodeMinDistSq, nodeCellSz)) trees.push([tx, ty, th]);
-    }
-
-    const parkMinDistU = Math.max(0.42, 7.5 * metersToUnits);
-    const parkMinDistSq = parkMinDistU * parkMinDistU;
-    const parkCellSz = Math.max(0.65, parkMinDistU * 1.3);
-    const minParkAreaU = Math.max(0.6, 800.0 * metersToUnits * metersToUnits);
-    for (const gp of greenPolys) {
-      if (['grass', 'meadow', 'pitch', 'playground', 'farmland', 'allotments', 'golf_course', 'village_green'].includes(gp.type)) continue;
-      const area = Math.abs(polyAreaSignedJS(gp.outer));
-      if (area < minParkAreaU) continue;
-      const areaM2 = area / Math.max(1e-6, metersToUnits * metersToUnits);
-      const isWood = ['forest', 'wood', 'scrub', 'nature_reserve'].includes(gp.type);
-      const targetCount = Math.min(isWood ? 85 : 32, Math.max(2, Math.floor(areaM2 / (isWood ? 360.0 : 950.0))));
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const p of gp.outer) {
-        if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
-        if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
-      }
-      minX = Math.max(-fetchHalfW + 0.5, minX); maxX = Math.min(fetchHalfW - 0.5, maxX);
-      minY = Math.max(-fetchHalfH + 0.5, minY); maxY = Math.min(fetchHalfH - 0.5, maxY);
-      if (minX >= maxX || minY >= maxY) continue;
-      let added = 0;
-      for (let k = 1; k <= targetCount * 5 && added < targetCount && trees.length < 2600; k++) {
-        const px = minX + ((k * 0.6180339887) % 1) * (maxX - minX);
-        const py = minY + ((k * 0.3819660113) % 1) * (maxY - minY);
-        if (!pointInPolyLocal(px, py, gp.outer)) continue;
-        if ((gp.holes || []).some(h => pointInPolyLocal(px, py, h))) continue;
-        if (!canPlaceTree(px, py, parkMinDistSq, parkCellSz)) continue;
-        trees.push([Math.round(px * 100) / 100, Math.round(py * 100) / 100, Math.round((7.5 + (k % 5) * 1.1) * 10) / 10]);
-        added++;
-      }
-    }
-  }
+  const buildings = finalizeOsmBuildingsLayerJS(osmExtractCtx);
+  finalizeOsmWaterLayerJS(osmExtractCtx);
+  finalizeOsmBridgesLayerJS(osmExtractCtx);
+  finalizeOsmGreeneryLayerJS(osmExtractCtx);
+  finalizeOsmRoadsLayerJS(osmExtractCtx);
+  const trees = finalizeOsmTreesLayerJS(osmExtractCtx);
 
   const outScene = {
     bbox: [south, west, north, east],
@@ -774,4 +438,11 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   }
 
   return outScene;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    fetchHedgedOverpassJson,
+    fetchRealGISInBrowser
+  };
 }

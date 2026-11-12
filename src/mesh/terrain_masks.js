@@ -1,7 +1,7 @@
 // ============================================================================
 // src/mesh/terrain_masks.js
-// Scene Coordinate Transform & High-Res 720px Euclidean Raster Masks
-// (Water SDF, Crisp Building Clearance, Streets/Plazas, Parks & Footpaths)
+// Scene Coordinate Transform & Per-Layer Mask Orchestrator
+// (Delegates Water SDF, Greenery Masks, and Road/Footpath Masks to single-layer modules)
 // ============================================================================
 
 if (typeof computeEuclideanDistGrid === 'undefined' && typeof require !== 'undefined') {
@@ -10,16 +10,17 @@ if (typeof computeEuclideanDistGrid === 'undefined' && typeof require !== 'undef
   Object.assign(global, require('../geometry/marching_squares_2d.js'));
   Object.assign(global, require('./terrain_dem_grid.js'));
 }
-
-function safeGetImageData(ctx, x, y, w, h) {
-  if (typeof safeCanvasGetImageData === 'function') {
-    return safeCanvasGetImageData(ctx, x, y, w, h);
-  }
-  try {
-    return ctx.getImageData(x, y, w, h);
-  } catch (_) {
-    return { data: new Uint8ClampedArray(w * h * 4) };
-  }
+if (typeof safeGetImageData === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./mesh_tile_append.js'));
+}
+if (typeof buildWaterMasksAndSDF === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./water_masks.js'));
+}
+if (typeof buildRawGreeneryMask === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./features_greenery.js'));
+}
+if (typeof rasterizeRoadAndFootpathImages === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./features_roads.js'));
 }
 
 function buildTerrainAndMasks(scene, state) {
@@ -88,87 +89,6 @@ function buildTerrainAndMasks(scene, state) {
     const my = Math.min(MASK_RES_Y - 1, Math.max(0, Math.floor(((padH - by) / spanH) * MASK_RES_Y)));
     return my * MASK_RES_X + mx;
   }
-
-  const fillPolysOnCtx = (polys) => {
-    (polys || []).forEach(poly => {
-      if (!poly || !poly.outer || poly.outer.length < 3) return;
-      mctx.beginPath();
-      poly.outer.forEach((p, i) => {
-        const b = toBed(p);
-        const [px, py] = bedToMask(b[0], b[1]);
-        if (i === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
-      });
-      mctx.closePath();
-      (poly.holes || []).forEach(h => {
-        if (!h || h.length < 3) return;
-        h.forEach((p, i) => {
-          const b = toBed(p);
-          const [px, py] = bedToMask(b[0], b[1]);
-          if (i === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
-        });
-        mctx.closePath();
-      });
-      mctx.fill('evenodd');
-    });
-  };
-
-  // 1. Water Mask & Smooth Euclidean Signed Distance Field (waterSDF > 0 on land, < 0 in water)
-  mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
-  mctx.fillStyle = '#ffffff';
-  mctx.strokeStyle = '#ffffff';
-  mctx.lineCap = 'round';
-  mctx.lineJoin = 'round';
-  fillPolysOnCtx(scene.waterPolys);
-
-  (scene.waterLines || []).forEach(wl => {
-    if (!wl || !wl.pts || wl.pts.length < 2) return;
-    const effW = Math.min(5.2, Math.max(1.0, wl.width || 2.0));
-    mctx.lineWidth = Math.max(2.2, effW * scaleToBed * pxPerUnit);
-    mctx.beginPath();
-    wl.pts.forEach((p, i) => {
-      const b = toBed(p);
-      const [px, py] = bedToMask(b[0], b[1]);
-      if (i === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
-    });
-    mctx.stroke();
-  });
-
-  const waterImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
-  const waterMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
-  for (let i = 0; i < waterMask.length; i++) waterMask[i] = waterImg[i * 4 + 3] > 96 ? 1 : 0;
-
-  const waterDepth = computeEuclideanDistGrid(waterMask, MASK_RES_X, MASK_RES_Y, true);
-  const shoreDist = computeEuclideanDistGrid(waterMask, MASK_RES_X, MASK_RES_Y, false);
-
-  let waterSDF = new Float32Array(MASK_RES_X * MASK_RES_Y);
-  for (let i = 0; i < waterSDF.length; i++) {
-    waterSDF[i] = (shoreDist[i] - waterDepth[i]) / pxPerUnit;
-  }
-  for (let pass = 0; pass < 2; pass++) {
-    const next = new Float32Array(waterSDF.length);
-    for (let y = 0; y < MASK_RES_Y; y++) {
-      for (let x = 0; x < MASK_RES_X; x++) {
-        let sum = 0, wSum = 0;
-        for (let dy = -1; dy <= 1; dy++) {
-          const ny = Math.min(MASK_RES_Y - 1, Math.max(0, y + dy));
-          for (let dx = -1; dx <= 1; dx++) {
-            const nx = Math.min(MASK_RES_X - 1, Math.max(0, x + dx));
-            const w = (dx === 0 && dy === 0) ? 4 : (dx === 0 || dy === 0) ? 2 : 1;
-            sum += waterSDF[ny * MASK_RES_X + nx] * w;
-            wSum += w;
-          }
-        }
-        const idx = y * MASK_RES_X + x;
-        let val = sum / wSum;
-        // Preserve sign of true land/water mask so narrow peninsulas, bays & islands never erode across zero
-        if (!waterMask[idx] && val < 0.015) val = 0.015;
-        else if (waterMask[idx] && val > -0.015) val = -0.015;
-        next[idx] = val;
-      }
-    }
-    waterSDF = next;
-  }
-
   function sampleBilinearMask(buf, bx, by) {
     const [mx, my] = bedToMask(bx, by);
     const fx = Math.min(MASK_RES_X - 1.001, Math.max(0, mx));
@@ -180,7 +100,14 @@ function buildTerrainAndMasks(scene, state) {
            (buf[y1 * MASK_RES_X + x0] * (1 - wx) + buf[y1 * MASK_RES_X + x1] * wx) * wy;
   }
 
-  // 2. Crisp Building Footprint Clearance Mask (preserving narrow European Altstadt lanes & boulevard strips!)
+  const maskEnv = {
+    MASK_RES_X, MASK_RES_Y, scaleMm, scaleToBed, pxPerUnit, toBed, bedToMask
+  };
+
+  // 1. Water Mask & Smooth Euclidean SDF (delegated to water_masks.js)
+  const { waterMask, shoreDist, waterSDF } = buildWaterMasksAndSDF(scene, mctx, maskEnv);
+
+  // 2. Crisp Building Footprint Clearance Mask
   mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
   mctx.lineWidth = Math.max(0.85, Math.min(0.08, 0.14 / scaleMm) * pxPerUnit);
   (scene.buildings || []).forEach(b => {
@@ -208,103 +135,19 @@ function buildTerrainAndMasks(scene, state) {
   const bldMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   for (let i = 0; i < bldMask.length; i++) bldMask[i] = bldImg[i * 4 + 3] > 96 ? 1 : 0;
 
-  // 3. Raw Greenery Mask (authentic OSM parks, lawns, forests, boulevard medians & gardens ONLY)
-  mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
-  fillPolysOnCtx(scene.greenPolys || scene.greeneryPolys);
-  mctx.lineWidth = Math.max(1.15, Math.min(0.22, 0.28 / scaleMm) * pxPerUnit);
-  (scene.greenPolys || scene.greeneryPolys || []).forEach(poly => {
-    if (!poly || !poly.outer || poly.outer.length < 3 || (poly.holes && poly.holes.length > 0)) return;
-    mctx.beginPath();
-    poly.outer.forEach((p, i) => {
-      const b = toBed(p);
-      const [px, py] = bedToMask(b[0], b[1]);
-      if (i === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
-    });
-    mctx.closePath();
-    mctx.stroke();
-  });
-  const rawGreenImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
-  const rawGreenMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
-  for (let i = 0; i < rawGreenMask.length; i++) rawGreenMask[i] = rawGreenImg[i * 4 + 3] > 64 ? 1 : 0;
+  // 3. Raw Greenery Mask (delegated to features_greenery.js)
+  const rawGreenMask = buildRawGreeneryMask(scene, mctx, maskEnv);
 
-  // 4. Separate Major Streets/Plazas vs Delicate Park Footpaths (CityFrames Central Park Layering!)
-  const isFootpathRoad = (rd) => {
-    if (rd.isPath) return true;
-    const rtype = rd.hwy || rd.type || rd.rtype || '';
-    return rtype === 'footway' || rtype === 'path' || rtype === 'steps' ||
-           rtype === 'cycleway' || rtype === 'bridleway' || rtype === 'track' || rtype === 'corridor';
-  };
+  // 4. Streets/Plazas & Park Footpaths Rasterization (delegated to features_roads.js)
+  const { majorRoadImg, footpathImg } = rasterizeRoadAndFootpathImages(scene, state, mctx, maskEnv);
 
-  const lod = (state && state.lodSettings) || {};
-  const spanKm = Number(state.spanKm) || (Number(state.mapSpanMeters) / 1000) || ((scene.spanMeters || 1200) / 1000);
-  const roadDetail = lod.roadDetail || (spanKm > 20.0 ? 'major' : 'all');
-
-  mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
-  fillPolysOnCtx(scene.roadPolys);
-  (scene.roads || []).forEach(rd => {
-    if (!rd.pts || rd.pts.length < 2 || isFootpathRoad(rd)) return;
-    const rtype = rd.hwy || rd.type || rd.rtype || '';
-    if (roadDetail === 'major') {
-      if (['service', 'living_street', 'track', 'path', 'footway', 'cycleway', 'steps', 'pedestrian'].includes(rtype)) {
-        return;
-      }
-    }
-    const minWUnits = Math.max((rd.width || 1.0) * 0.90 * scaleToBed, 0.40 / scaleMm);
-    const minRoadPx = (rtype === 'service' || rtype === 'living_street') ? 2.1 : 2.6;
-    mctx.lineWidth = Math.max(minRoadPx, minWUnits * pxPerUnit + 0.25);
-    mctx.beginPath();
-    rd.pts.forEach((p, i) => {
-      const b = toBed(p);
-      const [px, py] = bedToMask(b[0], b[1]);
-      if (i === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
-    });
-    mctx.stroke();
-  });
-  const majorRoadImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
-
-  mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
-  if (roadDetail !== 'major') {
-    (scene.roads || []).forEach(rd => {
-      if (!rd.pts || rd.pts.length < 2 || !isFootpathRoad(rd)) return;
-      const pathWUnits = Math.max(Math.min(0.62, rd.width || 0.36) * scaleToBed, 0.36 / scaleMm);
-      mctx.lineWidth = Math.max(2.6, pathWUnits * pxPerUnit + 0.35);
-      mctx.beginPath();
-      rd.pts.forEach((p, i) => {
-        const b = toBed(p);
-        const [px, py] = bedToMask(b[0], b[1]);
-        if (i === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
-      });
-      mctx.stroke();
-    });
-  }
-  const footpathImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
-
-  const majorRoadMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
-  const greenMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
-  for (let i = 0; i < majorRoadMask.length; i++) {
-    const clearOfWater = !waterMask[i] && shoreDist[i] >= 1.25;
-    majorRoadMask[i] = (majorRoadImg[i * 4 + 3] > 96 && clearOfWater && !bldMask[i]) ? 1 : 0;
-    const clearRoadHalo = majorRoadImg[i * 4 + 3] <= 96;
-    greenMask[i] = (rawGreenMask[i] && clearOfWater && !bldMask[i] && clearRoadHalo) ? 1 : 0;
-  }
-
-  const greenInnerDist = computeEuclideanDistGrid(greenMask, MASK_RES_X, MASK_RES_Y, true);
-  const majorRoadDist = computeEuclideanDistGrid(majorRoadMask, MASK_RES_X, MASK_RES_Y, false);
-  const greenOuterDist = computeEuclideanDistGrid(greenMask, MASK_RES_X, MASK_RES_Y, false);
-
-  const parkPathOnGreenMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
-  const parkPathOnGroundMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
-  const roadAndBldMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
-
-  for (let i = 0; i < parkPathOnGreenMask.length; i++) {
-    const hasFoot = footpathImg[i * 4 + 3] > 96 && !waterMask[i] && shoreDist[i] >= 1.35 && !bldMask[i];
-    if (hasFoot && greenInnerDist[i] >= 2.2 && majorRoadDist[i] >= 1.4) {
-      parkPathOnGreenMask[i] = 1;
-    } else if (hasFoot && !greenMask[i] && greenOuterDist[i] >= 1.8 && majorRoadDist[i] >= 1.4) {
-      parkPathOnGroundMask[i] = 1;
-    }
-    roadAndBldMask[i] = (bldMask[i] || majorRoadMask[i] || parkPathOnGreenMask[i] || parkPathOnGroundMask[i]) ? 1 : 0;
-  }
+  // 5. Finalize Greenery & Road/Footpath Masks
+  const { greenMask, greenInnerDist, greenOuterDist } = finalizeGreeneryMask(
+    rawGreenMask, waterMask, shoreDist, bldMask, majorRoadImg, MASK_RES_X, MASK_RES_Y
+  );
+  const { majorRoadMask, parkPathOnGreenMask, parkPathOnGroundMask, roadAndBldMask } = finalizeRoadAndFootpathMasks(
+    majorRoadImg, footpathImg, waterMask, shoreDist, bldMask, greenMask, greenInnerDist, greenOuterDist, MASK_RES_X, MASK_RES_Y
+  );
 
   const maskCtx = {
     totalWidthMm, totalHeightMm, maxDimMm, scaleMm, mmPerUnit, halfW, halfH,

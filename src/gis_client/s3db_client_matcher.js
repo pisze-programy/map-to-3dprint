@@ -304,3 +304,13 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
 
   return { registerCandidate, addBuildingRecord, resolveAndEmitS3DBBuildings, buildings };
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    SKIP_BUILDING_VALS_JS,
+    parseFloatTagJS,
+    parseRoofDirectionJS,
+    isUndergroundOrSkippedBuildingJS,
+    createS3DBClientCollector
+  };
+}

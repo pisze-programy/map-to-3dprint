@@ -1123,10 +1123,13 @@ if (typeof window !== 'undefined') {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    simplifyRingJS,
+    stitchWayRingsJS,
+    polyAreaSignedJS,
+    pointInPolyLocal,
     chooseAdaptiveDemZoom,
     fetchAdaptiveTerrariumDem,
     fetchTerrariumDemInBrowser,
-    stitchWayRingsJS,
     stitchClippedMultipolygonRingsJS,
     stitchCoastlineSeaPolysJS
   };
