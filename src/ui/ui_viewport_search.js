@@ -4,6 +4,210 @@
 // 2D Slippy Map Drag/Rotation & Photon Komoot Place Autocomplete
 // ============================================================================
 
+const _placeQueryCache = new Map();
+const _inflightPlaceQueries = new Map();
+let _photonBrowserCooldownUntil = 0;
+
+function _parseDirectPlaceCoordinates(q) {
+  const m = String(q || '').match(/^\s*([NSns])?\s*(-?\d{1,2}(?:\.\d+)?)\s*°?\s*[,;\s]+\s*([EWew])?\s*(-?\d{1,3}(?:\.\d+)?)\s*°?\s*$/);
+  if (!m) return null;
+  let lat = parseFloat(m[2]);
+  let lon = parseFloat(m[4]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (m[1] && m[1].toUpperCase() === 'S') lat = -Math.abs(lat);
+  if (m[3] && m[3].toUpperCase() === 'W') lon = -Math.abs(lon);
+  if (lat < -85 || lat > 85 || lon < -180 || lon > 180) return null;
+  return [{
+    name: `${lat.toFixed(4)}°, ${lon.toFixed(4)}°`,
+    sub: 'Współrzędne geograficzne, WGS84',
+    kind: 'coordinates',
+    lat,
+    lon
+  }];
+}
+
+function _mapGeoJsonPlaceFeatures(data, fallbackQuery) {
+  const features = (data && Array.isArray(data.features)) ? data.features : [];
+  const out = [];
+  for (const f of features) {
+    const props = (f && f.properties) || {};
+    const coords = f && f.geometry && Array.isArray(f.geometry.coordinates) ? f.geometry.coordinates : null;
+    if (!coords || coords.length < 2) continue;
+    const lon = Number(coords[0]);
+    const lat = Number(coords[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const streetLine = [props.street, props.housenumber].filter(Boolean).join(' ').trim();
+    const name = String(props.name || streetLine || props.city || props.locality || fallbackQuery || '').trim();
+    if (!name) continue;
+    const seenSub = new Set([name.toLowerCase()]);
+    const subParts = [];
+    for (const rawPart of [streetLine, props.city, props.locality, props.state, props.country]) {
+      if (!rawPart) continue;
+      for (const seg of String(rawPart).split(',')) {
+        const clean = seg.trim();
+        const key = clean.toLowerCase();
+        if (clean && !seenSub.has(key)) {
+          seenSub.add(key);
+          subParts.push(clean);
+        }
+      }
+    }
+    out.push({
+      name,
+      sub: subParts.join(', '),
+      kind: props.osm_value || props.type || 'miejsce',
+      lat,
+      lon
+    });
+  }
+  return out;
+}
+
+async function _fetchJsonWithTimeout(url, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, timeoutMs);
+  try {
+    const resp = await fetch(url, { signal: ctrl.signal });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function queryMap3DPlaces(rawQuery, limit = 6) {
+  const q = String(rawQuery || '').trim();
+  if (!q || q.length < 2) return [];
+
+  const directCoords = _parseDirectPlaceCoordinates(q);
+  if (directCoords) return directCoords;
+
+  const cacheKey = `${q.toLowerCase()}|${limit}`;
+  const now = Date.now();
+  const cached = _placeQueryCache.get(cacheKey);
+  if (cached && cached.expires > now) {
+    return cached.items.slice();
+  }
+
+  if (_inflightPlaceQueries.has(cacheKey)) {
+    return _inflightPlaceQueries.get(cacheKey);
+  }
+
+  const runPromise = (async () => {
+    const isHttp = typeof window !== 'undefined' && window.location && /^https?:$/i.test(window.location.protocol);
+
+    // 1. Primary on HTTP(S): same-origin multi-provider /api/geocode proxy (zero cross-origin hangs)
+    if (isHttp) {
+      try {
+        const apiData = await _fetchJsonWithTimeout(
+          `/api/geocode?q=${encodeURIComponent(q)}&limit=${limit}`,
+          4500
+        );
+        const items = _mapGeoJsonPlaceFeatures(apiData, q);
+        if (items.length > 0 || (apiData && Array.isArray(apiData.features))) {
+          _placeQueryCache.set(cacheKey, { items, expires: Date.now() + 300000 });
+          return items.slice(0, limit);
+        }
+      } catch (_) {
+        // Static hosting or local server unreachable -> proceed to CORS-enabled browser geocoders
+      }
+    }
+
+    // 2. Direct browser CORS fallback #1: ArcGIS World Geocoder (cities, street addresses, POIs)
+    try {
+      const arcUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&maxLocations=${Math.max(limit * 2, 10)}&outFields=PlaceName,Place_addr,Type,Country,Region,City,ShortLabel&SingleLine=${encodeURIComponent(q)}`;
+      const arcData = await _fetchJsonWithTimeout(arcUrl, 3200);
+      const candidates = (arcData && Array.isArray(arcData.candidates)) ? arcData.candidates : [];
+      if (candidates.length > 0) {
+        const features = candidates.map(c => {
+          const loc = (c && c.location) || {};
+          const attrs = (c && c.attributes) || {};
+          const placeAddr = String(attrs.Place_addr || c.address || '').trim();
+          const name = String(attrs.PlaceName || attrs.ShortLabel || (placeAddr.split(',')[0] || q)).trim();
+          return {
+            type: 'Feature',
+            properties: {
+              name,
+              street: placeAddr,
+              city: attrs.City || '',
+              state: attrs.Region || '',
+              country: attrs.Country || '',
+              osm_value: String(attrs.Type || 'miejsce').toLowerCase()
+            },
+            geometry: { type: 'Point', coordinates: [loc.x, loc.y] }
+          };
+        });
+        const deduped = [];
+        for (const it of _mapGeoJsonPlaceFeatures({ features }, q)) {
+          if (!deduped.some(p => p.name.toLowerCase() === it.name.toLowerCase() && Math.abs(p.lat - it.lat) < 0.0025 && Math.abs(p.lon - it.lon) < 0.0025)) {
+            deduped.push(it);
+            if (deduped.length >= limit) break;
+          }
+        }
+        if (deduped.length > 0) {
+          _placeQueryCache.set(cacheKey, { items: deduped, expires: Date.now() + 300000 });
+          return deduped;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Direct browser CORS fallback #2: Open-Meteo Worldwide Geocoding
+    try {
+      const omUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=${limit}&language=pl&format=json`;
+      const omData = await _fetchJsonWithTimeout(omUrl, 2800);
+      const results = (omData && Array.isArray(omData.results)) ? omData.results : [];
+      if (results.length > 0) {
+        const features = results.map(r => ({
+          type: 'Feature',
+          properties: {
+            name: r.name || q,
+            city: r.admin2 || '',
+            state: r.admin1 || '',
+            country: r.country || r.country_code || '',
+            osm_value: String(r.feature_code || 'city').toLowerCase()
+          },
+          geometry: { type: 'Point', coordinates: [r.longitude, r.latitude] }
+        }));
+        const items = _mapGeoJsonPlaceFeatures({ features }, q).slice(0, limit);
+        if (items.length > 0) {
+          _placeQueryCache.set(cacheKey, { items, expires: Date.now() + 300000 });
+          return items;
+        }
+      }
+    } catch (_) {}
+
+    // 4. Direct browser CORS fallback #3: Photon Komoot (with 60s cooldown when hanging)
+    if (Date.now() >= _photonBrowserCooldownUntil) {
+      try {
+        const phData = await _fetchJsonWithTimeout(
+          `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=${limit}`,
+          2200
+        );
+        const items = _mapGeoJsonPlaceFeatures(phData, q).slice(0, limit);
+        if (items.length > 0) {
+          _placeQueryCache.set(cacheKey, { items, expires: Date.now() + 300000 });
+        }
+        return items;
+      } catch (_) {
+        _photonBrowserCooldownUntil = Date.now() + 60000;
+      }
+    }
+
+    return [];
+  })();
+
+  _inflightPlaceQueries.set(cacheKey, runPromise);
+  try {
+    return await runPromise;
+  } finally {
+    _inflightPlaceQueries.delete(cacheKey);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.queryMap3DPlaces = queryMap3DPlaces;
+}
+
 function choose2DZoomForSpan(spanMeters) {
   const s = Number(spanMeters) || 1200;
   if (s <= 850) return 15;
@@ -139,52 +343,18 @@ function bindViewportAndSearchControls(ctx) {
     if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 250);
   });
 
-  // 3. Photon Komoot Place Search & Autocomplete
+  // 3. Multi-Provider Place & Address Search + Autocomplete
   const placeInput = document.getElementById('placeSearchInput');
   const suggestionsBox = document.getElementById('searchSuggestionsDropdown');
   let searchDebounceTimer = null;
+  let latestSearchSeq = 0;
 
   async function queryPlaceSuggestions(q) {
-    if (!q || q.length < 2) {
+    if (!q || q.trim().length < 2) {
       suggestionsBox.classList.add('hidden');
       return [];
     }
-    const mapPhotonFeatures = (data) => (data && Array.isArray(data.features) ? data.features : []).map(f => {
-      const props = f.properties || {};
-      const coords = (f.geometry && f.geometry.coordinates) || [11.5855, 48.1338];
-      return {
-        name: props.name || props.city || props.locality || q,
-        sub: [props.state, props.country].filter(Boolean).join(', '),
-        kind: props.osm_value || props.type || 'miejsce',
-        lat: coords[1],
-        lon: coords[0]
-      };
-    });
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, 6000);
-      try {
-        const resp = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6`, { signal: ctrl.signal });
-        if (!resp.ok) throw new Error('Photon status ' + resp.status);
-        const data = await resp.json();
-        return mapPhotonFeatures(data);
-      } finally {
-        clearTimeout(t);
-      }
-    } catch (e) {
-      const isHttp = typeof window !== 'undefined' && window.location && /^https?:$/i.test(window.location.protocol);
-      if (isHttp) {
-        try {
-          const fb = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
-          if (fb.ok) {
-            const fbData = await fb.json();
-            return mapPhotonFeatures(fbData);
-          }
-        } catch (_) {}
-      }
-      console.warn('Autocomplete fallback:', e);
-      return [];
-    }
+    return queryMap3DPlaces(q, 6);
   }
 
   function jumpToLatLon(lat, lon, shortTitle, regionDesc) {
@@ -222,6 +392,8 @@ function bindViewportAndSearchControls(ctx) {
         <span class="text-xs font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 shrink-0">${item.lat.toFixed(2)}°, ${item.lon.toFixed(2)}°</span>
       `;
       row.addEventListener('click', () => {
+        clearTimeout(searchDebounceTimer);
+        latestSearchSeq++;
         suggestionsBox.classList.add('hidden');
         placeInput.value = `${item.name}${item.sub ? ', ' + item.sub : ''}`;
         jumpToLatLon(item.lat, item.lon, item.name.toUpperCase().slice(0, 20), `${item.sub || 'Świat'} • ${item.name}`);
@@ -233,11 +405,18 @@ function bindViewportAndSearchControls(ctx) {
 
   placeInput.addEventListener('input', () => {
     clearTimeout(searchDebounceTimer);
+    const seq = ++latestSearchSeq;
     const q = placeInput.value.trim();
-    if (q.length < 2) { suggestionsBox.classList.add('hidden'); return; }
+    if (q.length < 2) {
+      suggestionsBox.classList.add('hidden');
+      suggestionsBox.innerHTML = '';
+      return;
+    }
     searchDebounceTimer = setTimeout(async () => {
-      renderSuggestionsDropdown(await queryPlaceSuggestions(q));
-    }, 200);
+      const items = await queryPlaceSuggestions(q);
+      if (seq !== latestSearchSeq) return;
+      renderSuggestionsDropdown(items);
+    }, 180);
   });
 
   document.addEventListener('click', e => {
@@ -250,6 +429,8 @@ function bindViewportAndSearchControls(ctx) {
   });
 
   async function searchPlaceAndFetch() {
+    clearTimeout(searchDebounceTimer);
+    latestSearchSeq++;
     const q = (placeInput ? placeInput.value : '').trim();
     if (!q) return;
     suggestionsBox.classList.add('hidden');

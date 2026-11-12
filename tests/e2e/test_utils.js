@@ -367,30 +367,33 @@ async function waitForGisError(page, timeout = 30000) {
  * @param {Array<{ name: string, city?: string, state?: string, country?: string, lat: number, lon: number, type?: string, osm_value?: string }>} featureList
  */
 async function mockPhotonPlaceSearch(page, query, featureList) {
-  await page.route('**/photon.komoot.io/**', async route => {
+  const payload = JSON.stringify({
+    type: 'FeatureCollection',
+    features: featureList.map(item => ({
+      type: 'Feature',
+      properties: {
+        name: item.name,
+        city: item.city || item.name,
+        state: item.state || '',
+        country: item.country || '',
+        type: item.type || 'city',
+        osm_value: item.osm_value || 'city',
+      },
+      geometry: {
+        type: 'Point',
+        coordinates: [item.lon, item.lat],
+      },
+    })),
+  });
+  const fulfillMock = async route => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        type: 'FeatureCollection',
-        features: featureList.map(item => ({
-          type: 'Feature',
-          properties: {
-            name: item.name,
-            city: item.city || item.name,
-            state: item.state || '',
-            country: item.country || '',
-            type: item.type || 'city',
-            osm_value: item.osm_value || 'city',
-          },
-          geometry: {
-            type: 'Point',
-            coordinates: [item.lon, item.lat],
-          },
-        })),
-      }),
+      body: payload,
     });
-  });
+  };
+  await page.route('**/api/geocode**', fulfillMock);
+  await page.route('**/photon.komoot.io/**', fulfillMock);
 }
 
 /**

@@ -8,7 +8,6 @@ const {
   setupConsoleHygiene,
   waitForAppReady,
   waitForRenderComplete,
-  setupLivePhotonWithFallback,
   captureAndInspectScreenshot,
   assertWebGLCanvasNotBlank,
   assertWebGL3DShadingDiversity,
@@ -188,9 +187,20 @@ test.describe('Live Real-User Journey: Uncached Multi-City 2.5 km -> 5.0 km UI F
     assertCityUncachedOnDisk(city1.lat, city1.lon, city1.name);
     assertCityUncachedOnDisk(city2.lat, city2.lon, city2.name);
 
-    // Attach console/page error hygiene with liveNetwork: true (ZERO Overpass route proxy!)
+    // Attach console/page error hygiene with liveNetwork: true (ZERO Overpass or Geocode route proxy!)
     const hygiene = setupConsoleHygiene(page, { liveNetwork: true });
-    const photonEvents = await setupLivePhotonWithFallback(page, [city1, city2]);
+    /** @type {Array<{ url: string, status?: number, error?: string }>} */
+    const geocodeNetworkLog = [];
+    page.on('response', (res) => {
+      if (/\/api\/geocode|geocode\.arcgis\.com|open-meteo\.com|photon\.komoot\.io|nominatim/i.test(res.url())) {
+        geocodeNetworkLog.push({ url: res.url(), status: res.status() });
+      }
+    });
+    page.on('requestfailed', (req) => {
+      if (/\/api\/geocode|geocode\.arcgis\.com|open-meteo\.com|photon\.komoot\.io|nominatim/i.test(req.url())) {
+        geocodeNetworkLog.push({ url: req.url(), error: req.failure()?.errorText || 'FAILED' });
+      }
+    });
 
     // Track unhandled promise rejections inside page context as well
     await page.addInitScript(() => {
@@ -444,10 +454,92 @@ test.describe('Live Real-User Journey: Uncached Multi-City 2.5 km -> 5.0 km UI F
     // STEP 5: Strict Console, PageError & Unhandled Rejection Hygiene (=== 0)
     // ------------------------------------------------------------------------
     const unhandledRejections = await page.evaluate(() => /** @type {any} */ (window).__unhandledRejections || []);
-    console.log(`[Live User Journey] Photon resolution log: ${JSON.stringify(photonEvents)}`);
+    console.log(`[Live User Journey] Live Geocode network log (ZERO mocks): ${JSON.stringify(geocodeNetworkLog)}`);
+    const failedGeocodes = geocodeNetworkLog.filter(e => e.error);
+    expect(failedGeocodes, 'Live geocode requests must have ZERO aborted/failed requests').toEqual([]);
+    expect(geocodeNetworkLog.some(e => e.status === 200), 'Live geocode must return real HTTP 200 responses').toBe(true);
     expect(unhandledRejections, 'Must have 0 unhandled promise rejections').toEqual([]);
     expect(hygiene.pageErrors, 'Must have 0 page errors').toEqual([]);
     expect(hygiene.consoleErrors, 'Must have 0 console errors').toEqual([]);
+    hygiene.assertClean();
+    hygiene.detach();
+  });
+
+  test('Live Unmocked Search & Street Address Autocomplete (#searchSuggestionsDropdown): Dubai, Street Address & Coordinates with ZERO aborted requests', async ({ page }) => {
+    test.setTimeout(60000);
+    const hygiene = setupConsoleHygiene(page, { liveNetwork: true });
+    /** @type {Array<{ url: string, error: string }>} */
+    const abortedOrFailed = [];
+    page.on('requestfailed', (req) => {
+      const url = req.url();
+      if (/\/api\/geocode|photon\.komoot\.io|geocode\.arcgis\.com|open-meteo\.com|nominatim/i.test(url)) {
+        abortedOrFailed.push({ url, error: req.failure()?.errorText || 'FAILED' });
+      }
+    });
+
+    await page.goto('http://127.0.0.1:8765/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForAppReady(page);
+
+    const searchInput = page.locator('#placeSearchInput');
+    const dropdown = page.locator('#searchSuggestionsDropdown');
+
+    // 1. Type "dubai" -> verify #searchSuggestionsDropdown opens fast (<4s) with Dubai coordinates
+    await searchInput.click();
+    await searchInput.fill('');
+    await searchInput.pressSequentially('dubai', { delay: 30 });
+    await expect(dropdown).toBeVisible({ timeout: 4000 });
+    const dubaiButtons = dropdown.locator('button');
+    await expect(dubaiButtons.first()).toBeVisible({ timeout: 4000 });
+    const dubaiCount = await dubaiButtons.count();
+    expect(dubaiCount).toBeGreaterThan(0);
+    await captureAndInspectScreenshot(page, null, 'live_search_dubai_dropdown.png', { minBytes: 20000 });
+
+    await dubaiButtons.first().click();
+    await expect(dropdown).toBeHidden();
+    const dubaiState = await page.evaluate(() => ({
+      lat: window.__map3d?.state?.mapCenterLat,
+      lon: window.__map3d?.state?.mapCenterLon,
+      hasScene: window.__map3d?.state?.sceneData !== null,
+    }));
+    expect(dubaiState.lat).toBeGreaterThan(24.5);
+    expect(dubaiState.lat).toBeLessThan(25.6);
+    expect(dubaiState.lon).toBeGreaterThan(54.8);
+    expect(dubaiState.lon).toBeLessThan(55.8);
+    expect(dubaiState.hasScene, 'Selecting Dubai from dropdown must NOT auto-render 3D').toBe(false);
+
+    // 2. Type exact street address ("Marszałkowska 100, Warszawa") -> verify dropdown & click
+    await searchInput.click();
+    await searchInput.fill('');
+    await searchInput.pressSequentially('Marszałkowska 100, Warszawa', { delay: 20 });
+    await expect(dropdown).toBeVisible({ timeout: 4000 });
+    await expect(dropdown.locator('button').first()).toBeVisible({ timeout: 4000 });
+    await dropdown.locator('button').first().click();
+    await expect(dropdown).toBeHidden();
+
+    const warsawAddrState = await page.evaluate(() => ({
+      lat: window.__map3d?.state?.mapCenterLat,
+      lon: window.__map3d?.state?.mapCenterLon,
+      hasScene: window.__map3d?.state?.sceneData !== null,
+    }));
+    expect(Math.abs(warsawAddrState.lat - 52.2304)).toBeLessThan(0.05);
+    expect(Math.abs(warsawAddrState.lon - 21.0118)).toBeLessThan(0.05);
+    expect(warsawAddrState.hasScene).toBe(false);
+
+    // 3. Type direct coordinates ("25.1867, 55.2679") + press Enter -> instant jump
+    await searchInput.click();
+    await searchInput.fill('25.1867, 55.2679');
+    await searchInput.press('Enter');
+    await expect(dropdown).toBeHidden();
+    const coordState = await page.evaluate(() => ({
+      lat: window.__map3d?.state?.mapCenterLat,
+      lon: window.__map3d?.state?.mapCenterLon,
+    }));
+    expect(coordState.lat).toBeCloseTo(25.1867, 3);
+    expect(coordState.lon).toBeCloseTo(55.2679, 3);
+
+    expect(abortedOrFailed, 'Must have ZERO NS_BINDING_ABORTED / ERR_ABORTED geocode requests').toEqual([]);
     hygiene.assertClean();
     hygiene.detach();
   });

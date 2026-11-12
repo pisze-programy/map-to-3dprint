@@ -68,8 +68,8 @@ async function runEmpiricalSuite() {
     const pageErrors = [];
     page.on('pageerror', err => pageErrors.push(err.message || String(err)));
 
-    // Mock Photon autocomplete
-    await page.route('**/photon.komoot.io/**', async route => {
+    // Mock place autocomplete across both /api/geocode and photon
+    const mockGeocodeHandler = async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -89,7 +89,9 @@ async function runEmpiricalSuite() {
           ]
         })
       });
-    });
+    };
+    await page.route('**/api/geocode**', mockGeocodeHandler);
+    await page.route('**/photon.komoot.io/**', mockGeocodeHandler);
 
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.__map3d && window.__map3d.state && window.fetchChunkedGISInBrowser);

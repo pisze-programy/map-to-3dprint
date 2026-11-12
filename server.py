@@ -6,13 +6,17 @@ Serves the interactive frontend and provides live endpoints:
 - GET  /api/gis?south=...&west=...&north=...&east=...&title=...
 - GET  /api/geocode?q=...
 """
+from collections import OrderedDict
 from datetime import datetime
 import gzip
 import hashlib
+import http.client
 import importlib
 import json
 import os
+import re
 import socket
+import ssl
 import sys
 import threading
 import time
@@ -63,6 +67,30 @@ _MIRROR_STATE = {
 
 _INFLIGHT_LOCK = threading.Lock()
 _INFLIGHT_QUERIES = {}
+
+GEOCODE_CACHE_TTL_SEC = 900.0
+GEOCODE_CACHE_MAX = 256
+GEOCODE_PROVIDERS = ("arcgis", "nominatim", "open_meteo", "photon")
+
+_GEOCODE_LOCK = threading.Lock()
+_GEOCODE_CACHE = OrderedDict()
+_GEOCODE_INFLIGHT = {}
+_GEOCODE_PROVIDER_STATE = {
+    name: {
+        "ewma_ms": 280.0 + idx * 140.0,
+        "cooldown_until": 0.0,
+        "ok": 0,
+        "fail": 0,
+        "consec_fail": 0,
+    }
+    for idx, name in enumerate(GEOCODE_PROVIDERS)
+}
+_NOMINATIM_LOCK = threading.Lock()
+_NOMINATIM_LAST_REQ_TS = 0.0
+_SSL_DEFAULT_CTX = ssl.create_default_context()
+_COORD_QUERY_RE = re.compile(
+    r"^\s*([NSns])?\s*(-?\d{1,2}(?:\.\d+)?)\s*°?\s*[,;\s]+\s*([EWew])?\s*(-?\d{1,3}(?:\.\d+)?)\s*°?\s*$"
+)
 
 
 class OverpassQueryTimeoutError(RuntimeError):
@@ -396,7 +424,7 @@ def forward_overpass_query(query_str):
             f"Overpass attempts exhausted for query_hash={q_hash} "
             f"ql_bytes={len(query_str)} timeout_or_remark={saw_query_timeout}: {combined}",
         )
-        if saw_query_timeout and _has_healthy_proven_mirror():
+        if saw_query_timeout:
             err = OverpassQueryTimeoutError(combined)
         else:
             err = RuntimeError(f"All Overpass mirrors failed: {combined}")
@@ -408,6 +436,470 @@ def forward_overpass_query(query_str):
         if leader:
             with _INFLIGHT_LOCK:
                 _INFLIGHT_QUERIES.pop(q_hash, None)
+                entry["event"].set()
+
+
+class _IPv4PreferredHTTPSConnection(http.client.HTTPSConnection):
+    """Connects over IPv4 first to avoid broken IPv6 AAAA hangs on Nominatim/Open-Meteo."""
+
+    def connect(self):
+        last_exc = None
+        for family in (socket.AF_INET, socket.AF_UNSPEC):
+            try:
+                infos = socket.getaddrinfo(
+                    self.host, self.port, family, socket.SOCK_STREAM
+                )
+            except OSError as exc:
+                last_exc = exc
+                continue
+            for af, socktype, proto, _, sa in infos:
+                sock = None
+                try:
+                    sock = socket.socket(af, socktype, proto)
+                    if self.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                        sock.settimeout(self.timeout)
+                    sock.connect(sa)
+                    self.sock = _SSL_DEFAULT_CTX.wrap_socket(
+                        sock, server_hostname=self.host
+                    )
+                    return
+                except OSError as exc:
+                    last_exc = exc
+                    if sock is not None:
+                        try:
+                            sock.close()
+                        except OSError:
+                            pass
+        if last_exc is not None:
+            raise last_exc
+        raise OSError(f"Unable to resolve {self.host}:{self.port}")
+
+
+def _fetch_json_ipv4_preferred(url, headers=None, timeout_sec=3.0):
+    parsed = urllib.parse.urlsplit(url)
+    host = parsed.hostname
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    path_and_query = parsed.path or "/"
+    if parsed.query:
+        path_and_query = f"{path_and_query}?{parsed.query}"
+
+    req_headers = {
+        "User-Agent": OVERPASS_USER_AGENT,
+        "Accept": "application/json",
+        "Accept-Encoding": "gzip",
+        "Accept-Language": "pl,en;q=0.9",
+        "Connection": "close",
+    }
+    if headers:
+        req_headers.update(headers)
+
+    conn_cls = (
+        _IPv4PreferredHTTPSConnection
+        if parsed.scheme == "https"
+        else http.client.HTTPConnection
+    )
+    conn = conn_cls(host, port=port, timeout=timeout_sec)
+    try:
+        conn.request("GET", path_and_query, headers=req_headers)
+        resp = conn.getresponse()
+        status = resp.status
+        raw = resp.read()
+        encoding = (resp.getheader("Content-Encoding") or "").lower()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    if status != 200:
+        raise RuntimeError(f"HTTP {status} from {host}")
+    if encoding == "gzip" or raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    return json.loads(raw.decode("utf-8"))
+
+
+def _make_photon_feature(
+    lat,
+    lon,
+    name,
+    city="",
+    state="",
+    country="",
+    street="",
+    housenumber="",
+    osm_value="miejsce",
+):
+    props = {"name": name, "osm_value": osm_value, "type": osm_value}
+    if city:
+        props["city"] = city
+    if state:
+        props["state"] = state
+    if country:
+        props["country"] = country
+    if street:
+        props["street"] = street
+    if housenumber:
+        props["housenumber"] = housenumber
+    return {
+        "type": "Feature",
+        "properties": props,
+        "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
+    }
+
+
+def _parse_direct_coordinate_query(q):
+    m = _COORD_QUERY_RE.match(q or "")
+    if not m:
+        return None
+    ns, lat_s, ew, lon_s = m.groups()
+    try:
+        lat = float(lat_s)
+        lon = float(lon_s)
+    except ValueError:
+        return None
+    if ns and ns.upper() == "S":
+        lat = -abs(lat)
+    if ew and ew.upper() == "W":
+        lon = -abs(lon)
+    if not (-85.0 <= lat <= 85.0 and -180.0 <= lon <= 180.0):
+        return None
+    label = f"{lat:.4f}°, {lon:.4f}°"
+    return [
+        _make_photon_feature(
+            lat=lat,
+            lon=lon,
+            name=label,
+            state="Współrzędne geograficzne",
+            country="WGS84",
+            osm_value="coordinates",
+        )
+    ]
+
+
+def _dedupe_features(features, limit):
+    kept = []
+    for f in features:
+        coords = (f.get("geometry") or {}).get("coordinates") or []
+        if len(coords) < 2:
+            continue
+        lon, lat = float(coords[0]), float(coords[1])
+        name_norm = ((f.get("properties") or {}).get("name") or "").strip().lower()
+        is_dup = False
+        for prev in kept:
+            pcoords = prev["geometry"]["coordinates"]
+            pname = (prev["properties"].get("name") or "").strip().lower()
+            if (
+                pname == name_norm
+                and abs(pcoords[1] - lat) < 0.0025
+                and abs(pcoords[0] - lon) < 0.0025
+            ):
+                is_dup = True
+                break
+        if not is_dup:
+            kept.append(f)
+            if len(kept) >= limit:
+                break
+    return kept
+
+
+def _geocode_via_arcgis(q, limit):
+    qs = urllib.parse.urlencode(
+        {
+            "f": "json",
+            "maxLocations": max(limit * 2, 10),
+            "outFields": "PlaceName,Place_addr,Type,Country,Region,City,ShortLabel",
+            "SingleLine": q,
+        }
+    )
+    url = f"https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?{qs}"
+    data = _fetch_json_ipv4_preferred(url, timeout_sec=3.2)
+    candidates = data.get("candidates") if isinstance(data, dict) else []
+    if not isinstance(candidates, list):
+        return []
+    out = []
+    for c in candidates:
+        loc = c.get("location") or {}
+        lon = loc.get("x")
+        lat = loc.get("y")
+        if lon is None or lat is None:
+            continue
+        attrs = c.get("attributes") or {}
+        place_name = (attrs.get("PlaceName") or "").strip()
+        short_lbl = (attrs.get("ShortLabel") or "").strip()
+        place_addr = (attrs.get("Place_addr") or c.get("address") or "").strip()
+        name = (
+            place_name
+            or short_lbl
+            or (place_addr.split(",")[0].strip() if place_addr else q)
+        )
+        city = (attrs.get("City") or "").strip()
+        state = (attrs.get("Region") or "").strip()
+        country = (attrs.get("Country") or "").strip()
+        street = ""
+        if place_addr:
+            addr_parts = [p.strip() for p in place_addr.split(",") if p.strip()]
+            extra_parts = [
+                p
+                for p in addr_parts
+                if p.lower()
+                not in {
+                    name.lower(),
+                    city.lower(),
+                    state.lower(),
+                    country.lower(),
+                }
+            ]
+            if extra_parts:
+                street = ", ".join(extra_parts[:2])
+        kind = (attrs.get("Type") or "miejsce").strip().lower()
+        out.append(
+            _make_photon_feature(
+                lat=lat,
+                lon=lon,
+                name=name,
+                city=city if city.lower() != name.lower() else "",
+                state=state,
+                country=country,
+                street=street,
+                osm_value=kind or "miejsce",
+            )
+        )
+    return _dedupe_features(out, limit)
+
+
+def _geocode_via_nominatim(q, limit):
+    global _NOMINATIM_LAST_REQ_TS
+    with _NOMINATIM_LOCK:
+        now = time.monotonic()
+        wait_s = 1.05 - (now - _NOMINATIM_LAST_REQ_TS)
+        if wait_s > 0.45:
+            # Respect Nominatim 1 req/s policy without blocking rapid autocomplete
+            return None
+        if wait_s > 0:
+            time.sleep(wait_s)
+        _NOMINATIM_LAST_REQ_TS = time.monotonic()
+
+    qs = urllib.parse.urlencode(
+        {"format": "jsonv2", "addressdetails": 1, "limit": limit, "q": q}
+    )
+    url = f"https://nominatim.openstreetmap.org/search?{qs}"
+    data = _fetch_json_ipv4_preferred(url, timeout_sec=3.2)
+    if not isinstance(data, list):
+        return []
+    out = []
+    for item in data:
+        try:
+            lat = float(item["lat"])
+            lon = float(item["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        addr = item.get("address") or {}
+        road = (addr.get("road") or addr.get("pedestrian") or "").strip()
+        house = (addr.get("house_number") or "").strip()
+        city = (
+            addr.get("city")
+            or addr.get("town")
+            or addr.get("village")
+            or addr.get("municipality")
+            or ""
+        ).strip()
+        state = (addr.get("state") or addr.get("county") or "").strip()
+        country = (addr.get("country") or "").strip()
+        disp_head = (item.get("display_name") or "").split(",")[0].strip()
+        road_with_num = " ".join([p for p in (road, house) if p]).strip()
+        name = (item.get("name") or "").strip() or road_with_num or disp_head or q
+        out.append(
+            _make_photon_feature(
+                lat=lat,
+                lon=lon,
+                name=name,
+                city=city if city.lower() != name.lower() else "",
+                state=state,
+                country=country,
+                street=road if road.lower() != name.lower() else "",
+                housenumber=house if house not in name else "",
+                osm_value=(item.get("type") or item.get("category") or "miejsce"),
+            )
+        )
+    return _dedupe_features(out, limit)
+
+
+def _geocode_via_open_meteo(q, limit):
+    qs = urllib.parse.urlencode(
+        {"name": q, "count": limit, "language": "pl", "format": "json"}
+    )
+    url = f"https://geocoding-api.open-meteo.com/v1/search?{qs}"
+    data = _fetch_json_ipv4_preferred(url, timeout_sec=2.8)
+    results = data.get("results") if isinstance(data, dict) else []
+    if not isinstance(results, list):
+        return []
+    out = []
+    for r in results:
+        lat = r.get("latitude")
+        lon = r.get("longitude")
+        if lat is None or lon is None:
+            continue
+        out.append(
+            _make_photon_feature(
+                lat=lat,
+                lon=lon,
+                name=(r.get("name") or q).strip(),
+                city=(r.get("admin2") or "").strip(),
+                state=(r.get("admin1") or "").strip(),
+                country=(r.get("country") or r.get("country_code") or "").strip(),
+                osm_value=(r.get("feature_code") or "city").lower(),
+            )
+        )
+    return _dedupe_features(out, limit)
+
+
+def _geocode_via_photon(q, limit):
+    qs = urllib.parse.urlencode({"q": q, "limit": limit})
+    url = f"https://photon.komoot.io/api/?{qs}"
+    data = _fetch_json_ipv4_preferred(url, timeout_sec=2.2)
+    features = data.get("features") if isinstance(data, dict) else None
+    if not isinstance(features, list):
+        raise ValueError("Invalid Photon FeatureCollection")
+    return features[:limit]
+
+
+_GEOCODE_FETCHERS = {
+    "arcgis": _geocode_via_arcgis,
+    "nominatim": _geocode_via_nominatim,
+    "open_meteo": _geocode_via_open_meteo,
+    "photon": _geocode_via_photon,
+}
+
+
+def _ordered_geocode_providers():
+    now = time.monotonic()
+    with _GEOCODE_LOCK:
+        ranked = []
+        for idx, name in enumerate(GEOCODE_PROVIDERS):
+            st = _GEOCODE_PROVIDER_STATE[name]
+            cooling = st["cooldown_until"] > now
+            tier = 0 if (st["ok"] > 0 and not cooling) else (1 if not cooling else 2)
+            ranked.append((tier, st["consec_fail"], st["ewma_ms"], idx, name))
+        ranked.sort(key=lambda x: (x[0], x[1], x[2], x[3]))
+        return [item[4] for item in ranked]
+
+
+def resolve_geocode_query(q, limit=6):
+    """
+    Multi-provider live geocoder returning Photon-compatible GeoJSON bytes:
+    (payload_bytes, feature_count, provider_name).
+    """
+    clean_q = (q or "").strip()
+    limit = max(1, min(12, int(limit or 6)))
+    if not clean_q:
+        return b'{"type":"FeatureCollection","features":[]}', 0, "empty"
+
+    coord_features = _parse_direct_coordinate_query(clean_q)
+    if coord_features is not None:
+        payload = json.dumps(
+            {"type": "FeatureCollection", "features": coord_features},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return payload, len(coord_features), "coords"
+
+    cache_key = f"{clean_q.lower()}|{limit}"
+    now = time.monotonic()
+    leader = False
+    with _GEOCODE_LOCK:
+        cached = _GEOCODE_CACHE.get(cache_key)
+        if cached and cached["expires"] > now:
+            _GEOCODE_CACHE.move_to_end(cache_key)
+            return cached["payload"], cached["count"], f"{cached['provider']}(cache)"
+        entry = _GEOCODE_INFLIGHT.get(cache_key)
+        if entry is None:
+            entry = {"event": threading.Event(), "result": None, "error": None}
+            _GEOCODE_INFLIGHT[cache_key] = entry
+            leader = True
+
+    if not leader:
+        entry["event"].wait(timeout=6.5)
+        if entry["result"] is not None:
+            payload, cnt, prov = entry["result"]
+            return payload, cnt, f"{prov}(coalesced)"
+        if entry["error"] is not None:
+            raise RuntimeError(str(entry["error"]))
+
+    try:
+        providers = _ordered_geocode_providers()
+        errors = []
+        any_provider_succeeded_empty = False
+        chosen_empty_provider = "none"
+
+        for name in providers:
+            fn = _GEOCODE_FETCHERS[name]
+            t0 = time.perf_counter()
+            try:
+                features = fn(clean_q, limit)
+                if features is None:
+                    continue
+                dt_ms = (time.perf_counter() - t0) * 1000.0
+                with _GEOCODE_LOCK:
+                    st = _GEOCODE_PROVIDER_STATE[name]
+                    st["cooldown_until"] = 0.0
+                    st["consec_fail"] = 0
+                    st["ewma_ms"] = 0.7 * st["ewma_ms"] + 0.3 * dt_ms
+                    st["ok"] += 1
+
+                if features:
+                    payload = json.dumps(
+                        {"type": "FeatureCollection", "features": features},
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                    with _GEOCODE_LOCK:
+                        _GEOCODE_CACHE[cache_key] = {
+                            "payload": payload,
+                            "count": len(features),
+                            "provider": name,
+                            "expires": time.monotonic() + GEOCODE_CACHE_TTL_SEC,
+                        }
+                        while len(_GEOCODE_CACHE) > GEOCODE_CACHE_MAX:
+                            _GEOCODE_CACHE.popitem(last=False)
+                        entry["result"] = (payload, len(features), name)
+                        entry["event"].set()
+                    return payload, len(features), name
+
+                any_provider_succeeded_empty = True
+                chosen_empty_provider = name
+            except Exception as exc:
+                dt_ms = (time.perf_counter() - t0) * 1000.0
+                with _GEOCODE_LOCK:
+                    st = _GEOCODE_PROVIDER_STATE[name]
+                    st["fail"] += 1
+                    st["consec_fail"] += 1
+                    st["cooldown_until"] = max(
+                        st["cooldown_until"], time.monotonic() + 60.0
+                    )
+                    st["ewma_ms"] = min(6000.0, st["ewma_ms"] * 1.4 + 400.0)
+                err_txt = f"{name}({dt_ms:.0f}ms): {type(exc).__name__}: {exc}"
+                errors.append(err_txt)
+                log_server_event(
+                    "GEOCODE_WARN", f"Provider {err_txt} for q={clean_q!r}"
+                )
+
+        if any_provider_succeeded_empty:
+            empty_payload = b'{"type":"FeatureCollection","features":[]}'
+            with _GEOCODE_LOCK:
+                entry["result"] = (empty_payload, 0, chosen_empty_provider)
+                entry["event"].set()
+            return empty_payload, 0, chosen_empty_provider
+
+        combined = "; ".join(errors) if errors else "No geocode providers available"
+        err = RuntimeError(f"All geocode providers failed: {combined}")
+        with _GEOCODE_LOCK:
+            entry["error"] = err
+            entry["event"].set()
+        raise err
+    finally:
+        if leader:
+            with _GEOCODE_LOCK:
+                _GEOCODE_INFLIGHT.pop(cache_key, None)
                 entry["event"].set()
 
 
@@ -599,37 +1091,43 @@ class Map3DRequestHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/geocode":
             qs = urllib.parse.parse_qs(parsed.query)
             q = qs.get("q", [""])[0].strip()
+            try:
+                limit = int(qs.get("limit", ["6"])[0] or 6)
+            except ValueError:
+                limit = 6
             if not q:
                 self._send_json_bytes(200, b'{"type":"FeatureCollection","features":[]}')
                 return
             t0 = time.perf_counter()
             try:
-                url = f"https://photon.komoot.io/api/?q={urllib.parse.quote(q)}&limit=6"
-                req = urllib.request.Request(
-                    url,
-                    headers={
-                        "User-Agent": OVERPASS_USER_AGENT,
-                        "Accept": "application/json",
-                        "Accept-Encoding": "gzip",
-                    },
-                )
-                with urllib.request.urlopen(req, timeout=8) as resp:
-                    raw = resp.read()
-                    if (resp.headers.get("Content-Encoding") or "").lower() == "gzip":
-                        raw = gzip.decompress(raw)
-                parsed_geo = json.loads(raw.decode("utf-8"))
-                feat_count = len(parsed_geo.get("features", [])) if isinstance(parsed_geo, dict) else 0
-                self._log_details.append(f"photon_features={feat_count}")
+                raw, feat_count, provider = resolve_geocode_query(q, limit=limit)
+                self._log_details.append(f"geocode_provider={provider}")
+                self._log_details.append(f"geocode_features={feat_count}")
                 self._send_json_bytes(200, raw)
             except Exception as exc:
                 dt_ms = (time.perf_counter() - t0) * 1000.0
                 log_server_event(
                     "UPSTREAM_ERR",
-                    f"Photon geocode failed q={q!r} elapsed_ms={dt_ms:.1f}: {type(exc).__name__}: {exc}",
+                    f"Geocode failed q={q!r} elapsed_ms={dt_ms:.1f}: {type(exc).__name__}: {exc}",
                 )
-                self._log_details.append("photon_error=true")
+                self._log_details.append("geocode_error=true")
                 err = json.dumps({"error": str(exc)}).encode("utf-8")
                 self._send_json_bytes(502, err)
+            return
+
+        if parsed.path == "/favicon.ico":
+            svg = (
+                b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+                b'<rect width="32" height="32" rx="6" fill="#2563eb"/>'
+                b'<text x="16" y="21" font-family="sans-serif" font-size="13" '
+                b'font-weight="bold" fill="#fff" text-anchor="middle">3D</text></svg>'
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Content-Length", str(len(svg)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(svg)
             return
 
         return super().do_GET()

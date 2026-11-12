@@ -129,9 +129,12 @@ function createVideoMapGisController(vState, hooks) {
   }
 
   async function doPlaceQuery(q) {
-    if (!q || q.length < 2) return [];
+    if (!q || q.trim().length < 2) return [];
+    if (typeof queryMap3DPlaces === 'function') {
+      return queryMap3DPlaces(q, 5);
+    }
     try {
-      const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5`);
+      const r = await fetch(`/api/geocode?q=${encodeURIComponent(q)}&limit=5`);
       if (!r.ok) return [];
       const d = await r.json();
       return (d.features || []).map(f => {
