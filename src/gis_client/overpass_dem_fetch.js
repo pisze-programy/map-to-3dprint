@@ -153,7 +153,8 @@ function stitchCoastlineSeaPolysJS(coastWays, halfW, halfH, waterPolys) {
 
 function chooseAdaptiveDemZoom(spanMeters) {
   const s = Number(spanMeters) || 1200;
-  if (s <= 2200) return 14;
+  if (s <= 1300) return 15;
+  if (s <= 2500) return 14;
   if (s <= 5500) return 13;
   if (s <= 11500) return 12;
   return 11;
@@ -222,6 +223,10 @@ async function fetchAdaptiveTerrariumDem(south, west, north, east, gridSize = 72
   if (promises.length > 0) await Promise.all(promises);
   if (abortSignal && abortSignal.aborted) throw new Error('Aborted');
 
+  if (zoom === 15 && Object.keys(tilePixels).length === 0 && !explicitZoom) {
+    return fetchAdaptiveTerrariumDem(south, west, north, east, gridSize, 14, abortSignal);
+  }
+
   const grid = [];
   let minElev = Infinity, maxElev = -Infinity;
   for (let gy = 0; gy < gridSize; gy++) {
@@ -246,7 +251,16 @@ async function fetchAdaptiveTerrariumDem(south, west, north, east, gridSize = 72
     grid.push(row);
   }
   if (!isFinite(minElev)) { minElev = 0; maxElev = 15; }
-  return { gridSize, minElev, maxElev, grid, zoom };
+  const resolutionMeters = Math.round((40075016 * cosLat / (256 * Math.pow(2, zoom))) * 10) / 10;
+  return {
+    gridSize,
+    minElev,
+    maxElev,
+    grid,
+    zoom,
+    source: 'AWS Terrarium (USGS 3DEP 10m / LiDAR ~3-5m)',
+    resolutionMeters
+  };
 }
 
 let fetchTerrariumDemInBrowser = async function (south, west, north, east, gridSize = 72, zoom = null) {
@@ -256,4 +270,13 @@ let fetchTerrariumDemInBrowser = async function (south, west, north, east, gridS
 if (typeof window !== 'undefined') {
   window.chooseAdaptiveDemZoom = chooseAdaptiveDemZoom;
   window.fetchAdaptiveTerrariumDem = fetchAdaptiveTerrariumDem;
+  window.fetchTerrariumDemInBrowser = fetchTerrariumDemInBrowser;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    chooseAdaptiveDemZoom,
+    fetchAdaptiveTerrariumDem,
+    fetchTerrariumDemInBrowser
+  };
 }

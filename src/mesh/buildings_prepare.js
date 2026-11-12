@@ -410,29 +410,52 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     item.zTop = zRidge;
   }
 
-  // Scene-wide skyscraper envelope scaling so Anycubic Photon Mono 4 Z limit (<= 165 mm) is respected
-  const maxAllowedZMm = Math.min(state.isResin ? 140.0 : 160.0, Math.max(48.0, maxDimMm * 0.34));
-  const maxAllowedTopUnits = maxAllowedZMm / scaleMm;
-  let maxRawTopUnits = 0, maxBuildingBaseTZ = baseBottomZ;
+  // M6.2: Printer Z-Axis Height Cap Protection with C1-continuous soft compression
+  const bedZ = (state && state.bedZ) || (ctx && ctx.bedZ) || (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES[state && state.printerProfileId] && PRINT_PROFILES[state.printerProfileId].bedZ) || 165.0;
+  const maxSafeZMm = Math.max(20.0, bedZ - 2.0); // e.g. 163.0 mm on Mono 4
+
+  let maxRawTopUnits = 0;
   for (let i = 0; i < prepared.length; i++) {
     if (prepared[i].zTop > maxRawTopUnits) {
       maxRawTopUnits = prepared[i].zTop;
-      maxBuildingBaseTZ = prepared[i].tZ;
     }
   }
-  if (maxRawTopUnits > maxAllowedTopUnits && maxRawTopUnits > maxBuildingBaseTZ + 0.5) {
-    const skylineScale = (maxAllowedTopUnits - maxBuildingBaseTZ) / (maxRawTopUnits - maxBuildingBaseTZ);
+  const maxRawZMm = maxRawTopUnits * scaleMm;
+
+  if (maxRawZMm > maxSafeZMm) {
+    if (state) { state.zCapApplied = true; state.maxPrintZMm = maxSafeZMm; state.zCapLimitMm = maxSafeZMm; }
+    if (ctx) { ctx.zCapApplied = true; ctx.maxPrintZMm = maxSafeZMm; ctx.zCapLimitMm = maxSafeZMm; }
+
+    const zKneeMm = Math.min(maxSafeZMm * 0.65, maxSafeZMm - 35.0);
+    const H = maxSafeZMm - zKneeMm;
+    const Xmax = maxRawZMm - zKneeMm;
+    const c = (Xmax - H) / (H * Xmax);
+
     for (let i = 0; i < prepared.length; i++) {
       const item = prepared[i];
-      item.totalHMm *= skylineScale;
-      item.roofHMm *= skylineScale;
-      item.scaledMinH *= skylineScale;
-      const zTop = quantizeZUnits(item.tZ + Math.max(0.85, item.totalHMm));
-      const zEaves = item.hasPitched ? quantizeZUnits(Math.max(item.tZ + 0.50, zTop - item.roofHMm)) : zTop;
+      const zRawMm = item.zTop * scaleMm;
+      if (zRawMm <= zKneeMm) continue;
+
+      const x = zRawMm - zKneeMm;
+      const zCompMm = zKneeMm + (x / (1.0 + c * x));
+      const zCompUnits = quantizeZUnits(zCompMm / scaleMm);
+
+      const hOld = Math.max(1e-4, item.zTop - item.tZ);
+      const hNew = Math.max(0.60 / scaleMm, zCompUnits - item.tZ);
+      const r = hNew / hOld;
+
+      item.totalHMm *= r;
+      item.roofHMm *= r;
+      item.scaledMinH *= r;
+      const zTop = quantizeZUnits(item.tZ + Math.max(0.85 / scaleMm, item.totalHMm));
+      const zEaves = item.hasPitched ? quantizeZUnits(Math.max(item.tZ + 0.50 / scaleMm, zTop - item.roofHMm)) : zTop;
       item.zEaves = zEaves;
-      item.zRidge = item.hasPitched ? Math.max(zEaves + 0.12, zTop) : zEaves;
+      item.zRidge = item.hasPitched ? Math.max(zEaves + 0.12 / scaleMm, zTop) : zEaves;
       item.zTop = item.zRidge;
     }
+  } else {
+    if (state) { state.zCapApplied = false; state.maxPrintZMm = maxRawZMm; state.zCapLimitMm = maxSafeZMm; }
+    if (ctx) { ctx.zCapApplied = false; ctx.maxPrintZMm = maxRawZMm; ctx.zCapLimitMm = maxSafeZMm; }
   }
 
   return { prepared, clusters, pickIdMap };

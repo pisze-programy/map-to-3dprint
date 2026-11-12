@@ -20,6 +20,7 @@ npm-debug.log*
 .DS_Store
 .idea/
 .vscode/
+.agents/
 
 # Python bytecode & cache
 __pycache__/

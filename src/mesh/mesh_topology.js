@@ -26,6 +26,7 @@ function computeFastVolumeAndExtents(meshes, buildingBounds, state, ctx) {
   let totalTriangles = 0;
   let maxSceneZ = 0;
   const tileVolumesMm3 = new Float64Array(numTiles);
+  const tileMaxZScene = new Float32Array(numTiles);
   const layerVolumesMm3 = {};
 
   const printLayerKeys = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted'];
@@ -49,6 +50,9 @@ function computeFastVolumeAndExtents(meshes, buildingBounds, state, ctx) {
       if (b[2] > maxSceneZ) maxSceneZ = b[2];
       if (c[2] > maxSceneZ) maxSceneZ = c[2];
 
+      const maxTriZ = Math.max(a[2], b[2], c[2]);
+      if (maxTriZ > tileMaxZScene[tid]) tileMaxZScene[tid] = maxTriZ;
+
       const v6 =
         a[0] * (b[1] * c[2] - b[2] * c[1]) -
         a[1] * (b[0] * c[2] - b[2] * c[0]) +
@@ -61,10 +65,12 @@ function computeFastVolumeAndExtents(meshes, buildingBounds, state, ctx) {
 
   let totalVolumeMm3 = 0;
   const tileVolumesMl = [];
+  const tileMaxZMm = [];
   for (let tid = 0; tid < numTiles; tid++) {
     const vMm3 = Math.max(0, (tileVolumesMm3[tid] / 6.0) * scaleMm3);
     totalVolumeMm3 += vMm3;
     tileVolumesMl.push(vMm3 / 1000.0);
+    tileMaxZMm.push(Math.max(6.0, Math.round(tileMaxZScene[tid] * scaleMm * 10) / 10));
   }
 
   const totalVolumeMl = totalVolumeMm3 / 1000.0;
@@ -92,10 +98,14 @@ function computeFastVolumeAndExtents(meshes, buildingBounds, state, ctx) {
     resinGrams: Math.round(totalVolumeMl * 1.12),
     plaGrams: Math.round(totalVolumeMl * 0.42),
     tileVolumesMl,
+    tileMaxZMm,
     maxTileVolumeMl,
     tileWidthMm,
     tileHeightMm,
     maxZMm,
+    bedZ: (state && state.bedZ) || (ctx && ctx.bedZ) || 165.0,
+    zCapApplied: Boolean((state && state.zCapApplied) || (ctx && ctx.zCapApplied)),
+    zCapLimitMm: (ctx && ctx.zCapLimitMm) || ((state && state.bedZ) ? state.bedZ - 2.0 : 163.0),
     tileCols,
     tileRows,
     numTiles,

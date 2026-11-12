@@ -119,13 +119,31 @@ const WORLD_LOCATIONS = [
 ];
 
 const PRINT_PROFILES = {
-  mono4_84_1x1: {
-    id: 'mono4_84_1x1',
-    name: 'Anycubic Photon Mono 4 • 84×84 mm (1 Kafel 1×1)',
+  mono4_75x84_1x1: {
+    id: 'mono4_75x84_1x1',
+    name: 'Anycubic Photon Mono 4 • 75×84 mm (1 Kafel 1×1)',
     printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
     bedX: 153.4, bedY: 87.0, bedZ: 165.0,
-    totalWidthMm: 84, totalHeightMm: 84,
+    totalWidthMm: 75, totalHeightMm: 84,
     cols: 1, rows: 1,
+    isResin: true
+  },
+  mono4_150x168_2x2: {
+    id: 'mono4_150x168_2x2',
+    name: 'Anycubic Photon Mono 4 • 150×168 mm (4 Kafle 2×2 po 75×84 mm)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 150, totalHeightMm: 168,
+    cols: 2, rows: 2,
+    isResin: true
+  },
+  mono4_225x252_3x3: {
+    id: 'mono4_225x252_3x3',
+    name: 'Anycubic Photon Mono 4 • 225×252 mm (9 Kafli 3×3 po 75×84 mm)',
+    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
+    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    totalWidthMm: 225, totalHeightMm: 252,
+    cols: 3, rows: 3,
     isResin: true
   },
   mono4_150_1x2: {
@@ -135,24 +153,6 @@ const PRINT_PROFILES = {
     bedX: 153.4, bedY: 87.0, bedZ: 165.0,
     totalWidthMm: 150, totalHeightMm: 150,
     cols: 1, rows: 2,
-    isResin: true
-  },
-  mono4_168_2x2: {
-    id: 'mono4_168_2x2',
-    name: 'Anycubic Photon Mono 4 • 168×168 mm (4 Kafle 2×2 po 84×84 mm)',
-    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
-    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
-    totalWidthMm: 168, totalHeightMm: 168,
-    cols: 2, rows: 2,
-    isResin: true
-  },
-  mono4_252_2x3: {
-    id: 'mono4_252_2x3',
-    name: 'Anycubic Photon Mono 4 • 252×252 mm (6 Kafli 2×3 po 126×84 mm)',
-    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
-    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
-    totalWidthMm: 252, totalHeightMm: 252,
-    cols: 2, rows: 3,
     isResin: true
   },
   mono4_296_2x4: {
@@ -214,6 +214,11 @@ const PRINT_PROFILES = {
   }
 };
 
+// Backwards-compatible aliases for legacy 84mm Mono 4 profile IDs
+PRINT_PROFILES.mono4_84_1x1 = PRINT_PROFILES.mono4_75x84_1x1;
+PRINT_PROFILES.mono4_168_2x2 = PRINT_PROFILES.mono4_150x168_2x2;
+PRINT_PROFILES.mono4_252_2x3 = PRINT_PROFILES.mono4_225x252_3x3;
+
 function escapeHtml(str) {
   return String(str ?? '')
     .replace(/&/g, '&amp;')
@@ -224,12 +229,23 @@ function escapeHtml(str) {
 }
 
 function checkTileFitsMono4(tileWidthMm, tileHeightMm, maxZMm = 22.0) {
-  const fits0 = (tileWidthMm <= 153.45 && tileHeightMm <= 87.05);
-  const fits90 = (tileHeightMm <= 153.45 && tileWidthMm <= 87.05);
-  return (fits0 || fits90) && maxZMm <= 165.0;
+  const w = Number(tileWidthMm), h = Number(tileHeightMm), z = Number(maxZMm);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || !Number.isFinite(z) || w <= 0 || h <= 0 || z <= 0) return false;
+  const fits0 = (w <= 153.45 && h <= 87.05);
+  const fits90 = (h <= 153.45 && w <= 87.05);
+  return (fits0 || fits90) && z <= 165.0;
 }
 
-function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH = 85.0) {
+function checkTileDualPackableMono4(tileWidthMm, tileHeightMm) {
+  const w = Number(tileWidthMm);
+  const h = Number(tileHeightMm);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return false;
+  return (w <= 75.45 && h <= 87.05) || (h <= 75.45 && w <= 87.05);
+}
+
+function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH = 85.0, dualPack = false) {
+  const effectiveMaxW = dualPack ? 75.0 : safeMaxW;
+  const effectiveMaxH = dualPack ? 84.0 : safeMaxH;
   const w = Math.max(10.0, Number(widthMm) || 200.0);
   const h = Math.max(10.0, Number(heightMm) || 200.0);
 
@@ -238,13 +254,13 @@ function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH =
     const tileW = w / cols;
     for (let rows = 1; rows <= 16; rows++) {
       const tileH = h / rows;
-      const fitsNormal = (tileW <= safeMaxW && tileH <= safeMaxH);
-      const fitsRotated = (tileH <= safeMaxW && tileW <= safeMaxH);
+      const fitsNormal = (tileW <= effectiveMaxW && tileH <= effectiveMaxH);
+      const fitsRotated = (tileH <= effectiveMaxW && tileW <= effectiveMaxH);
       if (fitsNormal || fitsRotated) {
         const totalTiles = cols * rows;
         const rotated90 = !fitsNormal && fitsRotated;
-        const marginNormal = fitsNormal ? Math.min(safeMaxW - tileW, safeMaxH - tileH) : -Infinity;
-        const marginRotated = fitsRotated ? Math.min(safeMaxW - tileH, safeMaxH - tileW) : -Infinity;
+        const marginNormal = fitsNormal ? Math.min(effectiveMaxW - tileW, effectiveMaxH - tileH) : -Infinity;
+        const marginRotated = fitsRotated ? Math.min(effectiveMaxW - tileH, effectiveMaxH - tileW) : -Infinity;
         const bestMargin = Math.max(marginNormal, marginRotated);
         const aspect = tileW > tileH ? tileW / tileH : tileH / tileW;
 
@@ -270,8 +286,8 @@ function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH =
   }
 
   if (!best) {
-    const cols = Math.ceil(w / safeMaxW);
-    const rows = Math.ceil(h / safeMaxH);
+    const cols = Math.ceil(w / effectiveMaxW);
+    const rows = Math.ceil(h / effectiveMaxH);
     return {
       cols, rows,
       tileW: Math.round((w / cols) * 10) / 10,
@@ -291,6 +307,77 @@ function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH =
   };
 }
 
+function computeZHeightPairingSchedule(tiles, tileW = 75, tileH = 84) {
+  if (!tiles || tiles.length === 0) {
+    return {
+      runs: [],
+      numTiles: 0,
+      totalRuns: 0,
+      singleRuns: 0,
+      isDualPackable: false,
+      sequentialSumZMm: 0,
+      pairedSumZMm: 0,
+      savedZMm: 0,
+      savingsPct: 0
+    };
+  }
+
+  const isDual = checkTileDualPackableMono4(tileW, tileH);
+  const tileList = tiles.map((t, idx) => ({
+    ...t,
+    index: idx + 1,
+    maxZ: Number(t.maxZ) || 20.0,
+    volMl: Number(t.volMl) || 0
+  }));
+
+  const sorted = [...tileList].sort((a, b) => b.maxZ - a.maxZ);
+  const runs = [];
+
+  if (isDual) {
+    for (let i = 0; i < sorted.length; i += 2) {
+      const t1 = sorted[i];
+      const t2 = sorted[i + 1] || null;
+      const runZ = t2 ? Math.max(t1.maxZ, t2.maxZ) : t1.maxZ;
+      const runVol = (t1.volMl || 0) + (t2 ? (t2.volMl || 0) : 0);
+      runs.push({
+        runIndex: runs.length + 1,
+        tiles: t2 ? [t1, t2] : [t1],
+        runMaxZ: runZ,
+        totalVolMl: runVol,
+        paired: !!t2
+      });
+    }
+  } else {
+    for (let i = 0; i < sorted.length; i++) {
+      const t = sorted[i];
+      runs.push({
+        runIndex: runs.length + 1,
+        tiles: [t],
+        runMaxZ: t.maxZ,
+        totalVolMl: t.volMl || 0,
+        paired: false
+      });
+    }
+  }
+
+  const sequentialSumZMm = sorted.reduce((sum, t) => sum + t.maxZ, 0);
+  const pairedSumZMm = runs.reduce((sum, r) => sum + r.runMaxZ, 0);
+  const savedZMm = Math.max(0, sequentialSumZMm - pairedSumZMm);
+  const savingsPct = sequentialSumZMm > 0 ? Math.round((savedZMm / sequentialSumZMm) * 100) : 0;
+
+  return {
+    runs,
+    numTiles: tileList.length,
+    totalRuns: runs.length,
+    singleRuns: tileList.length,
+    isDualPackable: isDual,
+    sequentialSumZMm: Math.round(sequentialSumZMm * 10) / 10,
+    pairedSumZMm: Math.round(pairedSumZMm * 10) / 10,
+    savedZMm: Math.round(savedZMm * 10) / 10,
+    savingsPct
+  };
+}
+
 // ============================================================================
 // Safe Event Delegation & Extension Event Guards
 // ============================================================================
@@ -307,6 +394,10 @@ function safeClosest(target, selector) {
 }
 
 if (typeof window !== 'undefined') {
+  window.checkTileFitsMono4 = checkTileFitsMono4;
+  window.checkTileDualPackableMono4 = checkTileDualPackableMono4;
+  window.computeOptimalMono4Grid = computeOptimalMono4Grid;
+  window.computeZHeightPairingSchedule = computeZHeightPairingSchedule;
   window.safeClosest = safeClosest;
   if (typeof Window !== 'undefined' && Window.prototype && !Window.prototype.closest) {
     Window.prototype.closest = function() { return null; };
@@ -326,5 +417,8 @@ if (typeof window !== 'undefined') {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { PALETTES, LAYERS_META, WORLD_LOCATIONS, PRINT_PROFILES, escapeHtml, checkTileFitsMono4, computeOptimalMono4Grid, safeClosest };
+  module.exports = {
+    PALETTES, LAYERS_META, WORLD_LOCATIONS, PRINT_PROFILES, escapeHtml,
+    checkTileFitsMono4, checkTileDualPackableMono4, computeOptimalMono4Grid, computeZHeightPairingSchedule, safeClosest
+  };
 }

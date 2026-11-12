@@ -237,6 +237,11 @@ function extrudeBuildingLoD2(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
     roofShape = arg10 ?? 'hipped'; opts = arg11 || null;
   }
 
+  const effZEaves = Math.max(zBase + 0.20, zEaves);
+  const effZRidge = Math.max(effZEaves, zRidge);
+  zEaves = effZEaves;
+  zRidge = effZRidge;
+
   let outerClean = cleanPolygonRing(outerInput, true);
   if (outerClean.length < 3) return;
 
@@ -309,9 +314,106 @@ function extrudeBuildingLoD2(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
   emitWalls(outerClean);
   for (let h = 0; h < actualHoles.length; h++) emitWalls(actualHoles[h]);
 
-  for (let i = 0; i < roofTris.length; i++) {
-    const [a, b, c] = roofTris[i];
-    pushTri(outTris, [a[0], a[1], zBase], [c[0], c[1], zBase], [b[0], b[1], zBase], [0, 0, -1], layerId, bId, tileId);
+  // 2. Bottom Cap: Annular with Relief Chimney (Feature 20 / M6.3) or Flat Solid
+  let activeChimney = null;
+  const effScaleMm = (opts && typeof opts.scaleMm === 'number')
+    ? opts.scaleMm
+    : ((typeof state !== 'undefined' && state && state.bedSizeMm) ? (Math.max(state.bedSizeMm, state.totalHeightMm || state.bedSizeMm) / 169.2) : 1.0);
+
+  if (opts && opts.reliefChimney) {
+    const chim = opts.reliefChimney;
+    if (chim && chim.chimneyPoly && Array.isArray(chim.chimneyPoly) && chim.chimneyPoly.length >= 3) {
+      let chimCW = chim.chimneyPoly.map(p => [p[0], p[1]]);
+      if (typeof signedArea2D === 'function' && signedArea2D(chimCW) > 0) chimCW.reverse();
+      const zVaultApex = (typeof chim.zVaultApex === 'number') ? chim.zVaultApex : (effZEaves - 2.0 / effScaleMm);
+      const zVaultBase = (typeof chim.zVaultBase === 'number') ? chim.zVaultBase : Math.max(zBase + 0.1, zVaultApex - 2.0);
+      if (zVaultApex > zVaultBase && zVaultBase >= zBase) {
+        activeChimney = { chimneyPoly: chimCW, zVaultBase, zVaultApex };
+      }
+    }
+  } else {
+    const isGround = (opts && opts.isGroundSeated !== undefined)
+      ? opts.isGroundSeated
+      : (opts && opts.supportRef ? false : true);
+
+    let bMinX = Infinity, bMaxX = -Infinity, bMinY = Infinity, bMaxY = -Infinity;
+    for (let i = 0; i < outerClean.length; i++) {
+      const p = outerClean[i];
+      if (p[0] < bMinX) bMinX = p[0]; if (p[0] > bMaxX) bMaxX = p[0];
+      if (p[1] < bMinY) bMinY = p[1]; if (p[1] > bMaxY) bMaxY = p[1];
+    }
+    const bMinSpan = Math.min(bMaxX - bMinX, bMaxY - bMinY);
+    const bArea = Math.abs(signedArea2D(outerClean));
+    const bHeight = Math.max(0, effZEaves - zBase);
+
+    if (isGround && (bMinSpan * effScaleMm >= 6.5) && (bArea * effScaleMm * effScaleMm >= 35.0) && (bHeight * effScaleMm >= 5.5)) {
+      const insetD = 2.0 / effScaleMm;
+      if (typeof computeReliefChimneyPolygon === 'function') {
+        const chimCW = computeReliefChimneyPolygon(outerClean, holesClean, insetD);
+        if (chimCW && chimCW.length >= 3) {
+          const zVaultApex = effZEaves - 2.0 / effScaleMm;
+          const chimOBB = typeof computeMinAreaOBB2D === 'function' ? computeMinAreaOBB2D(chimCW) : null;
+          const inRadius = chimOBB ? chimOBB.halfW : (bMinSpan * 0.25);
+          let hVault = Math.max(0.4 / effScaleMm, inRadius);
+          if (hVault > (zVaultApex - zBase) * 0.65) hVault = (zVaultApex - zBase) * 0.5;
+          const zVaultBase = zVaultApex - hVault;
+          if (zVaultBase >= zBase + 0.5 / effScaleMm) {
+            activeChimney = { chimneyPoly: chimCW, zVaultBase, zVaultApex };
+          }
+        }
+      }
+    }
+  }
+
+  if (activeChimney) {
+    if (!activeChimney.chimneyPoly || !Array.isArray(activeChimney.chimneyPoly) || activeChimney.chimneyPoly.length < 3) {
+      activeChimney = null;
+    } else {
+      let chimCW = activeChimney.chimneyPoly.map(p => [p[0], p[1]]);
+      if (typeof signedArea2D === 'function' && signedArea2D(chimCW) > 0) chimCW.reverse();
+      activeChimney.chimneyPoly = chimCW;
+      if (typeof activeChimney.zVaultBase !== 'number' || typeof activeChimney.zVaultApex !== 'number' || activeChimney.zVaultApex <= activeChimney.zVaultBase || activeChimney.zVaultBase < zBase) {
+        activeChimney = null;
+      }
+    }
+  }
+
+  if (activeChimney && activeChimney.chimneyPoly) {
+    const chimCW = activeChimney.chimneyPoly;
+    const zVBase = activeChimney.zVaultBase;
+    const zVApex = activeChimney.zVaultApex;
+
+    const botHoles = [...holesClean, chimCW];
+    const botRing = mergeHolesIntoOuterKeyhole(outerClean, botHoles);
+    const botTris = (typeof triangulateCutLoopExact === 'function' && botHoles.length > 0)
+      ? triangulateCutLoopExact(botRing)
+      : triangulateSimplePoly(botRing);
+
+    for (let i = 0; i < botTris.length; i++) {
+      const [a, b, c] = botTris[i];
+      pushTri(outTris, [a[0], a[1], zBase], [c[0], c[1], zBase], [b[0], b[1], zBase], [0, 0, -1], layerId, bId, tileId);
+    }
+
+    for (let i = 0; i < chimCW.length; i++) {
+      const p1 = chimCW[i], p2 = chimCW[(i + 1) % chimCW.length];
+      const dx = p2[0] - p1[0], dy = p2[1] - p1[1], len = Math.hypot(dx, dy) || 1e-6;
+      pushQuad(outTris, [p1[0], p1[1], zBase], [p2[0], p2[1], zBase], [p2[0], p2[1], zVBase], [p1[0], p1[1], zVBase], [dy / len, -dx / len, 0], layerId, bId, tileId);
+    }
+
+    let ccx = 0, ccy = 0;
+    for (let i = 0; i < chimCW.length; i++) { ccx += chimCW[i][0]; ccy += chimCW[i][1]; }
+    ccx /= chimCW.length; ccy /= chimCW.length;
+    const apex = [ccx, ccy, zVApex];
+    for (let i = 0; i < chimCW.length; i++) {
+      const p1 = chimCW[i], p2 = chimCW[(i + 1) % chimCW.length];
+      const A = [p1[0], p1[1], zVBase], B = [p2[0], p2[1], zVBase];
+      pushTri(outTris, A, B, apex, computeFaceNormal(A, B, apex), layerId, bId, tileId);
+    }
+  } else {
+    for (let i = 0; i < roofTris.length; i++) {
+      const [a, b, c] = roofTris[i];
+      pushTri(outTris, [a[0], a[1], zBase], [c[0], c[1], zBase], [b[0], b[1], zBase], [0, 0, -1], layerId, bId, tileId);
+    }
   }
 
   // 3. Watertight Top Roof Cap at zEaves / zRidge

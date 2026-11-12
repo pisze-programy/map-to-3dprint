@@ -84,10 +84,10 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
     return qMm / mmPerUnit;
   };
 
-  const baseBottomZ = quantizeZUnits(2.45);
-  const deepWaterZ = quantizeZUnits(1.76);
-  const zSubWater = quantizeZUnits(1.36);
-  const zDrainVault = quantizeZUnits(0.72);
+  const baseBottomZ = quantizeZUnits(2.35 / scaleMm);
+  const deepWaterZ = quantizeZUnits(1.68 / scaleMm);
+  const zSubWater = quantizeZUnits(1.30 / scaleMm);
+  const zDrainVault = quantizeZUnits(0.70 / scaleMm);
   const gHeight = Math.max(layerHeightMm / mmPerUnit, quantizeZUnits(0.24));
   const rHeight = Math.max(layerHeightMm / mmPerUnit, quantizeZUnits(0.30));
   const pathHeight = Math.max(layerHeightMm / mmPerUnit, quantizeZUnits(0.16));
@@ -116,7 +116,7 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
       const bx = -halfW + (gx / TERRAIN_RES_X) * (2 * halfW);
       const sdf = sampleBilinearMask(waterSDF, bx, by);
       if (sdf < 0.0) {
-        zGrid[gy * strideTX + gx] = baseBottomZ + Math.max(-0.95, sdf * 0.35);
+        zGrid[gy * strideTX + gx] = baseBottomZ + Math.max(-0.95 / scaleMm, (sdf * 0.35) / scaleMm);
       } else if (!isTopographicRelief) {
         zGrid[gy * strideTX + gx] = baseBottomZ + Math.min(0.22, 0.015 + sdf * 0.35);
       } else {
@@ -200,7 +200,7 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
     for (let v = 0; v < nGridV; v++) {
       if (!ufActive[v]) continue;
       const r = ufFind(v);
-      compSum[r] += Math.max(baseBottomZ + 0.08, zGrid[v]);
+      compSum[r] += Math.max(baseBottomZ + 0.08 / scaleMm, zGrid[v]);
       compCnt[r]++;
     }
     for (let v = 0; v < nGridV; v++) {

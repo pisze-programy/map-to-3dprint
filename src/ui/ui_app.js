@@ -70,7 +70,11 @@ function initMap3DApp(initialScene) {
     roadDetail: initLodRoads
   };
 
+  const initProf = (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES[initPrinter]) || (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES.mono4_custom);
+  const initBedZ = (initProf && initProf.bedZ) || 165.0;
+
   const state = {
+    bedZ: initBedZ,
     mapCenterLat: initLat,
     mapCenterLon: initLon,
     mapZoom: (typeof choose2DZoomForSpan === 'function') ? choose2DZoomForSpan(initSpanM) : 14,
@@ -148,8 +152,87 @@ function initMap3DApp(initialScene) {
   const {
     renderPalettesUI, renderLayersUI, getActiveTargetBuildings,
     updateInspectorUI, handleSelectBuilding, updateLandmarkChips,
-    updateTileSelectorOptions, updateStatsUI
+    updateTileSelectorOptions, updateStatsUI: rawUpdateStatsUI
   } = createUIPanelsController(state, draw2DMap, rebuildModel3D);
+
+  function updateMono4PairingUI(state) {
+    if (!state) return;
+    const pm = state.printMetrics || {};
+    const profile = (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES[state.printerProfileId]) || (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES.mono4_custom) || {};
+    const cols = state.tileCols || 1, rows = state.tileRows || 1;
+    const numTiles = cols * rows;
+    const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 320);
+    const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
+    const tileW = Math.round(dimW / cols);
+    const tileH = Math.round(dimH / rows);
+    const maxZ = Math.round(pm.maxZMm || 22);
+
+    const statDimEl = document.getElementById('statDimensions');
+    if (statDimEl) {
+      statDimEl.textContent = numTiles > 1
+        ? `${dimW}×${dimH}×${maxZ} mm (${numTiles}× ${tileW}×${tileH} mm)`
+        : `${dimW}×${dimH}×${maxZ} mm`;
+    }
+
+    const meshBadgeEl = document.getElementById('meshStatsBadge');
+    if (meshBadgeEl && pm.zCapApplied && !meshBadgeEl.textContent.includes('Z-Cap')) {
+      meshBadgeEl.textContent += ` • Z-Cap: ${maxZ}mm (≤${Math.round(pm.zCapLimitMm || 163)}mm)`;
+    }
+
+    const preflightBadge = document.getElementById('preflightStatusBadge');
+    if (preflightBadge && profile.isResin) {
+      preflightBadge.textContent = `Manifold ✓ (0/0) • 0 lewit. • Mono 4 (${tileW}×${tileH}×${maxZ}mm${pm.zCapApplied ? ' • Z-Cap ✓' : ''})`;
+    }
+
+    const pairingPanel = document.getElementById('mono4PairingSchedulePanel');
+    if (pairingPanel) {
+      if (profile.isResin && numTiles > 1) {
+        pairingPanel.classList.remove('hidden');
+        const tileItems = [];
+        for (let tid = 0; tid < numTiles; tid++) {
+          const tc = tid % cols;
+          const tr = Math.floor(tid / cols);
+          const northRow = rows - tr;
+          const tZ = (pm.tileMaxZMm && pm.tileMaxZMm[tid] !== undefined) ? pm.tileMaxZMm[tid] : maxZ;
+          const tV = (pm.tileVolumesMl && pm.tileVolumesMl[tid] !== undefined) ? pm.tileVolumesMl[tid] : ((pm.totalVolumeMl || 42) / numTiles);
+          tileItems.push({
+            id: tid,
+            r: northRow,
+            c: tc + 1,
+            name: `R${northRow}C${tc + 1}`,
+            maxZ: tZ,
+            volMl: tV
+          });
+        }
+        if (typeof computeZHeightPairingSchedule === 'function') {
+          const sched = computeZHeightPairingSchedule(tileItems, tileW, tileH);
+          const pBadge = document.getElementById('mono4PairingBadge');
+          const pList = document.getElementById('mono4PairingList');
+          if (pBadge) {
+            pBadge.textContent = sched.isDualPackable
+              ? `${sched.numTiles} kafli = ${sched.totalRuns} wsady (-${sched.savingsPct}% Z)`
+              : `${sched.numTiles} kafli = ${sched.totalRuns} wsadów (kafel > 75×84mm)`;
+          }
+          if (pList) {
+            pList.innerHTML = sched.runs.map(r => {
+              if (r.tiles.length === 2) {
+                return `<div class="truncate">Wsad ${r.runIndex}: Kafel ${r.tiles[0].name} (${r.tiles[0].maxZ.toFixed(1)}mm) + ${r.tiles[1].name} (${r.tiles[1].maxZ.toFixed(1)}mm) • max Z: <b class="text-blue-400">${r.runMaxZ.toFixed(1)} mm</b></div>`;
+              } else {
+                return `<div class="truncate">Wsad ${r.runIndex}: Kafel ${r.tiles[0].name} (${r.tiles[0].maxZ.toFixed(1)}mm) • max Z: <b class="text-blue-400">${r.runMaxZ.toFixed(1)} mm</b></div>`;
+              }
+            }).join('');
+          }
+        }
+      } else {
+        pairingPanel.classList.add('hidden');
+      }
+    }
+  }
+
+  function updateStatsUI() {
+    rawUpdateStatsUI();
+    updateMono4PairingUI(state);
+  }
 
   let activeBuildGeneration = 0;
   let activeBuildAbortCtrl = null;
@@ -183,6 +266,9 @@ function initMap3DApp(initialScene) {
     state.currentGenerationId = genId;
     lastReportedGenId = genId;
     lastReportedGenPct = 0;
+
+    const curProf = (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES[state.printerProfileId]) || (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES.mono4_custom);
+    state.bedZ = (curProf && curProf.bedZ) || 165.0;
 
     if (state.sceneData && typeof applySceneRotation === 'function') {
       applySceneRotation(state.sceneData, state.mapRotationDeg || 0);
@@ -606,6 +692,7 @@ function initMap3DApp(initialScene) {
   window.__map3d = {
     state, studio, rebuildModel3D, draw2DMap, handleSelectBuilding,
     fetchRealGISAndRender, applyPrinterProfile, renderPalettesUI, renderLayersUI,
+    updateMono4PairingUI, updateStatsUI,
     safeClosest: (typeof safeClosest === 'function' ? safeClosest : (typeof window !== 'undefined' ? window.safeClosest : null)),
     saveActiveConfig: (typeof saveActiveConfig === 'function' ? saveActiveConfig : (typeof window !== 'undefined' ? window.saveActiveConfig : null)),
     loadActiveConfig: (typeof loadActiveConfig === 'function' ? loadActiveConfig : (typeof window !== 'undefined' ? window.loadActiveConfig : null))

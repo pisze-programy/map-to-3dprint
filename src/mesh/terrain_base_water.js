@@ -352,7 +352,9 @@ function emitStudioWallFrame(ctx, meshes) {
   const { halfW, halfH } = ctx;
   const innerW = halfW + 0.25, innerH = halfH + 0.25;
   const outerW = halfW + 9.9, outerH = halfH + 9.9;
-  const zFrameBot = -1.6, zFrameTop = 3.55;
+  const scaleMm = ctx.scaleMm || 1.0;
+  const zFrameBot = -1.6 / scaleMm;
+  const zFrameTop = (ctx.baseBottomZ || (2.35 / scaleMm)) + 1.1 / scaleMm;
   const miterQuads = [
     [[-outerW, -outerH], [outerW, -outerH], [innerW, -innerH], [-innerW, -innerH]],
     [[outerW, -outerH], [outerW, outerH], [innerW, innerH], [innerW, -innerH]],
@@ -364,6 +366,41 @@ function emitStudioWallFrame(ctx, meshes) {
   });
 }
 
+function emitBaseReliefChimneyShafts(ctx, chimneys, meshes) {
+  if (!chimneys || chimneys.length === 0 || !meshes || !meshes.base) return;
+  const defZBase = (ctx && ctx.baseBottomZ) || 2.35 / ((ctx && ctx.scaleMm) || 1.0);
+
+  for (let ci = 0; ci < chimneys.length; ci++) {
+    const c = chimneys[ci];
+    const chimCW = c.chimneyCW || c.chimneyPoly || c;
+    const zBase = typeof c.zBase === 'number' ? c.zBase : defZBase;
+    const tileId = typeof c.tileId === 'number' ? c.tileId : 0;
+
+    if (!chimCW || chimCW.length < 3 || zBase <= 1e-4) continue;
+
+    for (let i = 0; i < chimCW.length; i++) {
+      const p1 = chimCW[i], p2 = chimCW[(i + 1) % chimCW.length];
+      const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+      const len = Math.hypot(dx, dy) || 1e-6;
+      pushQuad(
+        meshes.base,
+        [p1[0], p1[1], zBase],
+        [p2[0], p2[1], zBase],
+        [p2[0], p2[1], 0.0],
+        [p1[0], p1[1], 0.0],
+        [dy / len, -dx / len, 0],
+        1,
+        -1,
+        tileId
+      );
+    }
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.emitBaseReliefChimneyShafts = emitBaseReliefChimneyShafts;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { buildTerrainBaseAndWaterMeshes, emitStudioWallFrame };
+  module.exports = { buildTerrainBaseAndWaterMeshes, emitStudioWallFrame, emitBaseReliefChimneyShafts };
 }

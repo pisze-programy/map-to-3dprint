@@ -42,16 +42,22 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
         ? pm.tileVolumesMl[tid].toFixed(1)
         : ((pm.totalVolumeMl || 40) / numTiles).toFixed(1);
       const tGrams = Math.round(parseFloat(tVolMl) * 1.12);
+      const tZ = (pm.tileMaxZMm && pm.tileMaxZMm[tid] !== undefined)
+        ? pm.tileMaxZMm[tid]
+        : (pm.maxZMm || 20);
       const fileName = `Kafel_${String(fileIdx++).padStart(2, '0')}_R${northRow}C${tc + 1}_${Math.round(tileW)}x${Math.round(tileH)}mm.stl`;
       zipFiles.push({ name: fileName, content: stlBytes });
       tileEntries.push({
         fileName,
+        id: tid,
         r: northRow,
         c: tc + 1,
+        name: `R${northRow}C${tc + 1}`,
         volMl: tVolMl,
         grams: tGrams,
         w: tileW.toFixed(1),
-        h: tileH.toFixed(1)
+        h: tileH.toFixed(1),
+        maxZ: typeof tZ === 'number' ? tZ : parseFloat(tZ)
       });
     }
   }
@@ -124,7 +130,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
     `--------------------------------------------------------------------------------`,
     `Model:                       ${(state && state.plaqueText) || 'MAP3D'}`,
     `Wymiary docelowe obrazu:     ${targetW_cm} x ${targetH_cm} cm  (${totalW} x ${totalH} mm)`,
-    `Maksymalna wysokość reliefu: ${(pm.maxZMm || 20).toFixed(1)} mm (oś Z)`,
+    `Maksymalna wysokość reliefu: ${(pm.maxZMm || 20).toFixed(1)} mm (oś Z)` + (pm.zCapApplied ? ` [Z-Cap: ograniczono do <= ${(pm.zCapLimitMm || 163).toFixed(1)} mm dla osi Z drukarki]` : ''),
     `Podział na kafle:            ${tileCols} kolumn x ${tileRows} wierszy (${numTiles} kafli ogółem)`,
     `Wymiar pojedynczego kafla:   ${tileW.toFixed(1)} x ${tileH.toFixed(1)} mm`,
     `Auto-rotacja dla Mono 4:     ${isAutoRotated ? `TAK (+90° XY: wymiar na stole ${tileH.toFixed(1)} x ${tileW.toFixed(1)} mm <= 153.4 x 87.0 mm)` : `NIE (mieści się w układzie standardowym <= 153.4 x 87.0 mm)`}`,
@@ -150,13 +156,46 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   ];
 
   tileEntries.forEach(e => {
-    reportLines.push(`  - ${e.fileName.padEnd(38, ' ')} | Kafel [R${e.r}C${e.c}] | Wymiar: ${e.w} x ${e.h} mm | Żywica: ~${e.volMl} ml (~${e.grams} g)`);
+    reportLines.push(`  - ${e.fileName.padEnd(38, ' ')} | Kafel [R${e.r}C${e.c}] | Wymiar: ${e.w} x ${e.h} mm (Z: ${e.maxZ.toFixed(1)} mm) | Żywica: ~${e.volMl} ml (~${e.grams} g)`);
   });
 
   if (frameEntries.length > 0) {
     reportLines.push(``, `5. SEGMENTY MODUŁOWEJ RAMKI 3D:`, `--------------------------------------------------------------------------------`);
     frameEntries.forEach(fe => {
       reportLines.push(`  - ${fe.name.padEnd(38, ' ')} | Wymiar segmentu: ${fe.w} x ${fe.h} mm ${fe.rot ? '(Obrócony o 90° dla Mono 4)' : ''}`);
+    });
+  }
+
+  const getPairingSchedFn = () => {
+    if (typeof computeZHeightPairingSchedule === 'function') return computeZHeightPairingSchedule;
+    if (typeof window !== 'undefined' && typeof window.computeZHeightPairingSchedule === 'function') return window.computeZHeightPairingSchedule;
+    try {
+      return require('../ui/ui_config.js').computeZHeightPairingSchedule;
+    } catch (_) {
+      return null;
+    }
+  };
+  const pairingFn = getPairingSchedFn();
+  if (isResin && numTiles > 1 && typeof pairingFn === 'function') {
+    const sched = pairingFn(tileEntries, tileW, tileH);
+    reportLines.push(
+      ``,
+      `HARMONOGRAM DRUKU WSADOWEGO (PHOTON MONO 4 DUAL-TILE PAIRING):`,
+      `--------------------------------------------------------------------------------`,
+      `Podwójne pakowanie na stół 153.4 x 87.0 mm: ${sched.isDualPackable ? 'TAK (2 kafle na wsad)' : 'NIE (kafel przekracza 75 x 84 mm)'}`,
+      `Liczba wsadów drukarki:                      ${sched.totalRuns} (zamiast ${sched.numTiles} osobnych wydruków)`,
+      `Suma wysokości Z w kolejności:              ${sched.sequentialSumZMm.toFixed(1)} mm`,
+      `Suma wysokości Z po optymalizacji:          ${sched.pairedSumZMm.toFixed(1)} mm`,
+      `Oszczędność czasu druku w osi Z:             ${sched.savedZMm.toFixed(1)} mm (-${sched.savingsPct}%)`,
+      ``,
+      `Szczegóły wsadów (kolejność malejąco wg max Z):`
+    );
+    sched.runs.forEach(r => {
+      if (r.tiles.length === 2) {
+        reportLines.push(`  - Wsad ${r.runIndex}: Kafel R${r.tiles[0].r}C${r.tiles[0].c} (${r.tiles[0].maxZ.toFixed(1)} mm) + Kafel R${r.tiles[1].r}C${r.tiles[1].c} (${r.tiles[1].maxZ.toFixed(1)} mm) -> wysokość wsadu: ${r.runMaxZ.toFixed(1)} mm`);
+      } else {
+        reportLines.push(`  - Wsad ${r.runIndex}: Kafel R${r.tiles[0].r}C${r.tiles[0].c} (${r.tiles[0].maxZ.toFixed(1)} mm) -> wysokość wsadu: ${r.runMaxZ.toFixed(1)} mm`);
+      }
     });
   }
 
@@ -174,9 +213,14 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
     `================================================================================`
   );
 
+  const reportContent = reportLines.join('\n');
+  zipFiles.push({
+    name: 'README.txt',
+    content: reportContent
+  });
   zipFiles.push({
     name: 'INSTRUKCJA_DRUKU_PHOTON_MONO_4.txt',
-    content: reportLines.join('\n')
+    content: reportContent
   });
 
   const zipBytes = createZipArchive(zipFiles);

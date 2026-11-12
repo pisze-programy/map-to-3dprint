@@ -91,9 +91,11 @@ def deg2tile_float(lat_deg, lon_deg, zoom):
 
 
 def choose_adaptive_dem_zoom(span_meters):
-    """Selects Terrarium DEM tile zoom level (11-14) based on area span in meters."""
+    """Selects Terrarium DEM tile zoom level (11-15) based on area span in meters."""
     s = float(span_meters or 1200)
-    if s <= 2200:
+    if s <= 1300:
+        return 15
+    if s <= 2500:
         return 14
     if s <= 5500:
         return 13
@@ -104,13 +106,22 @@ def choose_adaptive_dem_zoom(span_meters):
 
 def fetch_terrarium_dem_grid(south, west, north, east, grid_size=64, zoom=None):
     """Fetches real AWS Terrarium DEM tiles covering [south, west, north, east]."""
+    cos_lat = max(0.2, math.cos(math.radians((south + north) * 0.5)))
     if zoom is None:
-        cos_lat = max(0.2, math.cos(math.radians((south + north) * 0.5)))
         span_ns_m = abs(north - south) * 111320.0
         span_ew_m = abs(east - west) * 111320.0 * cos_lat
         max_span_m = max(span_ns_m, span_ew_m)
         zoom = choose_adaptive_dem_zoom(max_span_m)
 
+    try:
+        return _fetch_terrarium_dem_grid_at_zoom(south, west, north, east, grid_size, zoom, cos_lat)
+    except Exception:
+        if zoom == 15:
+            return _fetch_terrarium_dem_grid_at_zoom(south, west, north, east, grid_size, 14, cos_lat)
+        raise
+
+
+def _fetch_terrarium_dem_grid_at_zoom(south, west, north, east, grid_size, zoom, cos_lat):
     x_min_f, y_min_f = deg2tile_float(north, west, zoom)
     x_max_f, y_max_f = deg2tile_float(south, east, zoom)
 
@@ -161,12 +172,15 @@ def fetch_terrarium_dem_grid(south, west, north, east, grid_size=64, zoom=None):
                 max_elev = elev
         grid.append(row)
 
+    res_m = round((40075016 * cos_lat / (256 * (2 ** zoom))), 1)
     return {
         "gridSize": grid_size,
         "minElev": round(min_elev, 2),
         "maxElev": round(max_elev, 2),
         "grid": grid,
         "zoom": zoom,
+        "source": "AWS Terrarium (USGS 3DEP 10m / LiDAR ~3-5m)",
+        "resolutionMeters": res_m,
     }
 
 

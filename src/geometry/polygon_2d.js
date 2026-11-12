@@ -466,10 +466,151 @@ function dilatePolygonMinSpan2D(ring, minSpanUnits) {
   return out;
 }
 
+function isPolygonStrictlyInside(inner, outer) {
+  if (!inner || inner.length < 3 || !outer || outer.length < 3) return false;
+  if (Math.abs(signedArea2D(inner)) < 1e-4) return false;
+  // 1. All vertices of inner must be strictly inside outer
+  for (let i = 0; i < inner.length; i++) {
+    if (!pointInPoly2D(inner[i][0], inner[i][1], outer)) return false;
+  }
+  // 2. All edge midpoints must be inside outer (guards against reflex bridges)
+  for (let i = 0; i < inner.length; i++) {
+    const p1 = inner[i], p2 = inner[(i + 1) % inner.length];
+    const mx = (p1[0] + p2[0]) * 0.5, my = (p1[1] + p2[1]) * 0.5;
+    if (!pointInPoly2D(mx, my, outer)) return false;
+  }
+  // 3. No edge of inner can intersect any edge of outer
+  for (let i = 0; i < inner.length; i++) {
+    const p1 = inner[i], p2 = inner[(i + 1) % inner.length];
+    for (let j = 0; j < outer.length; j++) {
+      const o1 = outer[j], o2 = outer[(j + 1) % outer.length];
+      if (segmentsIntersectProper(p1, p2, o1, o2)) return false;
+    }
+  }
+  // 4. Ensure inner does not self-intersect
+  for (let i = 0; i < inner.length; i++) {
+    const a1 = inner[i], a2 = inner[(i + 1) % inner.length];
+    for (let j = i + 2; j < inner.length; j++) {
+      if (i === 0 && j === inner.length - 1) continue;
+      const b1 = inner[j], b2 = inner[(j + 1) % inner.length];
+      if (segmentsIntersectProper(a1, a2, b1, b2)) return false;
+    }
+  }
+  return true;
+}
+
+function computeReliefChimneyPolygon(outerRing, holeRings = [], insetDist = 2.0) {
+  if (!outerRing || outerRing.length < 3) return null;
+  const outerClean = cleanPolygonRing(outerRing, true);
+  if (outerClean.length < 3 || Math.abs(signedArea2D(outerClean)) < 1e-4) return null;
+  if (signedArea2D(outerClean) < 0) outerClean.reverse();
+
+  // 1. Primary: Parallel line-intersection inward offset
+  const n = outerClean.length;
+  const offsetLines = [];
+  for (let i = 0; i < n; i++) {
+    const p1 = outerClean[i], p2 = outerClean[(i + 1) % n];
+    const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-5) continue;
+    const nx = -dy / len, ny = dx / len;
+    const c = nx * p1[0] + ny * p1[1] + insetDist;
+    offsetLines.push({ nx, ny, c, p1, p2 });
+  }
+
+  const offsetPts = [];
+  const m = offsetLines.length;
+  if (m >= 3) {
+    for (let i = 0; i < m; i++) {
+      const L1 = offsetLines[(i + m - 1) % m];
+      const L2 = offsetLines[i];
+      const det = L1.nx * L2.ny - L1.ny * L2.nx;
+      if (Math.abs(det) < 1e-4) {
+        offsetPts.push([L2.p1[0] + L2.nx * insetDist, L2.p1[1] + L2.ny * insetDist]);
+      } else {
+        const ix = (L1.c * L2.ny - L1.ny * L2.c) / det;
+        const iy = (L1.nx * L2.c - L1.c * L2.nx) / det;
+        offsetPts.push([ix, iy]);
+      }
+    }
+  }
+
+  let candPoly = (offsetPts.length >= 3 && signedArea2D(offsetPts) > 1e-4) ? cleanPolygonRing(offsetPts, true) : null;
+  const isCandValid = candPoly && candPoly.length >= 3 &&
+    signedArea2D(candPoly) > 1e-4 &&
+    isPolygonStrictlyInside(candPoly, outerClean);
+
+  let chimCW = null;
+  if (isCandValid) {
+    chimCW = candPoly.map(p => [p[0], p[1]]);
+  } else {
+    // 2. Fallback: Concentric OBB Inset
+    const obb = (typeof computeMinAreaOBB2D === 'function')
+      ? computeMinAreaOBB2D(outerClean)
+      : null;
+    if (obb && obb.halfL > insetDist * 1.35 && obb.halfW > insetDist * 1.35) {
+      const hL = obb.halfL - insetDist;
+      const hW = obb.halfW - insetDist;
+      const obbCorners = [
+        [obb.cx + obb.ux * hL + obb.vx * hW, obb.cy + obb.uy * hL + obb.vy * hW],
+        [obb.cx - obb.ux * hL + obb.vx * hW, obb.cy - obb.uy * hL + obb.vy * hW],
+        [obb.cx - obb.ux * hL - obb.vx * hW, obb.cy - obb.uy * hL - obb.vy * hW],
+        [obb.cx + obb.ux * hL - obb.vx * hW, obb.cy + obb.uy * hL - obb.vy * hW]
+      ];
+      if (isPolygonStrictlyInside(obbCorners, outerClean)) {
+        chimCW = obbCorners;
+      }
+    }
+    // 3. Fallback: Centroid Inset
+    if (!chimCW && typeof insetPolygonCentroid === 'function') {
+      const centInset = insetPolygonCentroid(outerClean, insetDist);
+      if (centInset && centInset.length >= 3 && signedArea2D(centInset) > 1e-4 &&
+          isPolygonStrictlyInside(centInset, outerClean)) {
+        chimCW = centInset;
+      }
+    }
+  }
+
+  if (!chimCW || chimCW.length < 3) return null;
+
+  // Courtyard hole collision and containment check
+  if (holeRings && holeRings.length > 0) {
+    for (let h = 0; h < holeRings.length; h++) {
+      const hr = holeRings[h];
+      for (let i = 0; i < chimCW.length; i++) {
+        if (pointInPoly2D(chimCW[i][0], chimCW[i][1], hr)) return null;
+      }
+      for (let i = 0; i < hr.length; i++) {
+        if (pointInPoly2D(hr[i][0], hr[i][1], chimCW)) return null;
+      }
+      for (let i = 0; i < chimCW.length; i++) {
+        const p1 = chimCW[i], p2 = chimCW[(i + 1) % chimCW.length];
+        const mx = (p1[0] + p2[0]) * 0.5, my = (p1[1] + p2[1]) * 0.5;
+        if (pointInPoly2D(mx, my, hr)) return null;
+        for (let j = 0; j < hr.length; j++) {
+          const o1 = hr[j], o2 = hr[(j + 1) % hr.length];
+          if (segmentsIntersectProper(p1, p2, o1, o2)) return null;
+        }
+      }
+    }
+  }
+
+  // Ensure CW orientation for interior hole
+  if (signedArea2D(chimCW) > 0) chimCW.reverse();
+  return chimCW;
+}
+
+if (typeof window !== 'undefined') {
+  window.isPolygonStrictlyInside = isPolygonStrictlyInside;
+  window.computeReliefChimneyPolygon = computeReliefChimneyPolygon;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     signedArea2D, pointInPoly2D, pointInTri2D, dxSq, pointToSegmentDistSq2D, segmentsIntersectProper,
     cleanPolygonRing, triangulateSimplePoly, earcutPolygon2D, mergeHolesIntoOuterKeyhole,
-    clipPolyToBox, clipPolyByConvex, insetPolygonCentroid, dilatePolygonMinSpan2D
+    clipPolyToBox, clipPolyByConvex, insetPolygonCentroid, dilatePolygonMinSpan2D,
+    isPolygonStrictlyInside,
+    computeReliefChimneyPolygon
   };
 }
