@@ -323,15 +323,17 @@ function initMap3DApp(initialScene) {
       updateLandmarkChips();
       updateInspectorUI();
 
-      updateProgressUI(100, 'Model 3D gotowy!', `Wyrenderowano ${(state.totalTriangles || 0).toLocaleString()} trójkątów`);
-      if (statusOverlay) statusOverlay.classList.add('hidden');
+      if (!activeGisAbortCtrl) {
+        updateProgressUI(100, 'Model 3D gotowy!', `Wyrenderowano ${(state.totalTriangles || 0).toLocaleString()} trójkątów`);
+        if (statusOverlay) statusOverlay.classList.add('hidden');
+      }
       return res;
     } catch (err) {
       if (abortCtrl.signal.aborted || genId !== activeBuildGeneration || (err && (err.name === 'AbortError' || err.message === 'Pipeline aborted' || err.message === 'Pipeline cancelled'))) {
         return null;
       }
       console.error('rebuildModel3D error:', err);
-      if (statusOverlay) statusOverlay.classList.add('hidden');
+      if (statusOverlay && !activeGisAbortCtrl) statusOverlay.classList.add('hidden');
       throw err;
     } finally {
       if (activeBuildAbortCtrl === abortCtrl) {
@@ -415,16 +417,14 @@ function initMap3DApp(initialScene) {
       regionLabel = typeof arg3 === 'string' ? arg3 : null;
       options = (arg3 && typeof arg3 === 'object') ? arg3 : ((arg4 && typeof arg4 === 'object') ? arg4 : {});
     } else {
-      if (state.lastFetchBbox) {
-        [south, west, north, east] = state.lastFetchBbox;
-      } else {
-        const selBox = getSelectionBBox();
-        south = selBox.fetchSouth !== undefined ? selBox.fetchSouth : selBox.south;
-        west = selBox.fetchWest !== undefined ? selBox.fetchWest : selBox.west;
-        north = selBox.fetchNorth !== undefined ? selBox.fetchNorth : selBox.north;
-        east = selBox.fetchEast !== undefined ? selBox.fetchEast : selBox.east;
-      }
-      title = arg2 || state.lastFetchTitle || state.plaqueText || 'MAP3D';
+      const selBox = getSelectionBBox();
+      south = selBox.fetchSouth !== undefined ? selBox.fetchSouth : selBox.south;
+      west = selBox.fetchWest !== undefined ? selBox.fetchWest : selBox.west;
+      north = selBox.fetchNorth !== undefined ? selBox.fetchNorth : selBox.north;
+      east = selBox.fetchEast !== undefined ? selBox.fetchEast : selBox.east;
+      state.lastFetchBbox = [south, west, north, east];
+      title = arg2 || state.plaqueText || 'MAP3D';
+      state.lastFetchTitle = title;
       regionLabel = typeof arg3 === 'string' ? arg3 : null;
       options = (arg3 && typeof arg3 === 'object') ? arg3 : {};
     }
@@ -448,7 +448,9 @@ function initMap3DApp(initialScene) {
     if (subText) subText.textContent = `Strumieniowe pobieranie sektorów Overpass API + adaptacyjny model wysokościowy AWS Terrarium`;
     if (btn) btn.disabled = true;
 
-    const INACTIVITY_TIMEOUT_MS = 20000;
+    const INACTIVITY_TIMEOUT_MS = (typeof window !== 'undefined' && typeof window.__map3dInactivityTimeoutMs === 'number' && window.__map3dInactivityTimeoutMs > 0)
+      ? window.__map3dInactivityTimeoutMs
+      : 45000;
     const MAX_TOTAL_WALLCLOCK_MS = 180000;
     let isWatchdogTimeout = false;
     let watchdogTimer = null;
@@ -478,7 +480,10 @@ function initMap3DApp(initialScene) {
       const fetchOptions = {
         signal: abortCtrl.signal,
         onProgress: (info) => {
-          resetWatchdog();
+          const kind = (info && typeof info === 'object') ? info.progressKind : null;
+          if (typeof info === 'number' || !kind || kind === 'chunk' || kind === 'subchunk' || kind === 'assemble') {
+            resetWatchdog();
+          }
           let pct = 10;
           let label = '';
           if (typeof info === 'number') {
@@ -530,7 +535,7 @@ function initMap3DApp(initialScene) {
         if (btn) btn.disabled = false;
         if (errBanner && errText) {
           if (isWatchdogTimeout) {
-            errText.textContent = 'Przekroczono limit czasu oczekiwania na dane GIS po 20s (brak odpowiedzi serwerów). Wyświetlam ostatni model.';
+            errText.textContent = `Przekroczono limit czasu oczekiwania na dane GIS po ${Math.round(INACTIVITY_TIMEOUT_MS / 1000)}s (brak odpowiedzi serwerów). Wyświetlam ostatni model.`;
           } else {
             errText.textContent = `Nie udało się pobrać nowego kadru GIS (${err && err.message ? err.message : 'Timeout Overpass'}). Wyświetlam ostatni model.`;
           }
@@ -587,6 +592,8 @@ function initMap3DApp(initialScene) {
     const clampedKm = Math.min(50.0, Math.max(0.4, Number(km) || 1.2));
     state.mapSpanMeters = Math.round(clampedKm * 1000);
     state.mapZoom = choose2DZoomForSpan(state.mapSpanMeters);
+    state.lastFetchBbox = null;
+    state.lastFetchTitle = null;
     const sc = state.sceneData;
     const baseCrop = (sc && sc._fetchedCropRatio) || 0.88;
     const loadedSpanM = (sc && sc.spanMeters) || 1200;
@@ -601,6 +608,8 @@ function initMap3DApp(initialScene) {
     state.mapRotationDeg = typeof normalizeRotationDeg === 'function'
       ? normalizeRotationDeg(deg)
       : Math.max(-180, Math.min(180, Math.round(Number(deg) || 0)));
+    state.lastFetchBbox = null;
+    state.lastFetchTitle = null;
     updateStatsUI();
     draw2DMap();
     if (shouldRebuild3D) rebuildModel3D();

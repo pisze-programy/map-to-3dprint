@@ -5,23 +5,31 @@
 // ============================================================================
 
 const OVERPASS_ENDPOINTS_BUILDER = [
-  'https://overpass-api.de/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
+  '/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
-  'https://lz4.overpass-api.de/api/interpreter'
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter'
 ];
 
 let _overpassMirrorRoundRobin = 0;
 
+function _getOrderedBuilderMirrors() {
+  const isHttp = typeof window === 'undefined' || !window.location || /^https?:$/i.test(window.location.protocol);
+  const primary = [];
+  if (isHttp) primary.push('/api/interpreter');
+  const rest = OVERPASS_ENDPOINTS_BUILDER.filter(m => !primary.includes(m));
+  const startIdx = (_overpassMirrorRoundRobin++) % Math.max(1, rest.length);
+  const rotatedRest = rest.map((_, i) => rest[(startIdx + i) % rest.length]);
+  return primary.concat(rotatedRest);
+}
+
 function fetchHedgedOverpassJson(query, options = {}) {
   const signal = options.signal || null;
-  const timeoutMs = options.timeoutMs || 18000;
-  const mirrors = OVERPASS_ENDPOINTS_BUILDER;
-  const startIdx = _overpassMirrorRoundRobin;
-  _overpassMirrorRoundRobin = (_overpassMirrorRoundRobin + 1) % mirrors.length;
-
-  const staggerDelays = [0, 2500, 5500, 8500, 11500];
+  const timeoutMs = options.timeoutMs || 15000;
+  const mirrors = _getOrderedBuilderMirrors();
+  const staggerDelays = mirrors[0] === '/api/interpreter'
+    ? [0, 6000, 8500, 11000, 13000]
+    : [0, 2200, 4500, 7200, 9800];
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -63,7 +71,7 @@ function fetchHedgedOverpassJson(query, options = {}) {
     function launchMirror(slotIdx) {
       if (settled || slotIdx >= mirrors.length || launched.has(slotIdx)) return;
       launched.add(slotIdx);
-      const ep = mirrors[(startIdx + slotIdx) % mirrors.length];
+      const ep = mirrors[slotIdx];
       const ctrl = new AbortController();
       abortControllers.push(ctrl);
 
@@ -76,12 +84,16 @@ function fetchHedgedOverpassJson(query, options = {}) {
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const text = await r.text();
-        if (!text || text.trim().startsWith('<')) {
+        const trimmed = text ? text.trim() : '';
+        if (!trimmed || trimmed.startsWith('<') || trimmed.startsWith('#')) {
           throw new Error('Invalid non-JSON response');
         }
-        const j = JSON.parse(text);
+        const j = JSON.parse(trimmed);
         if (!j || !Array.isArray(j.elements)) {
           throw new Error('No elements array in Overpass JSON');
+        }
+        if (j.remark && String(j.remark).trim().length > 0) {
+          throw new Error(`Overpass remark: ${String(j.remark).trim()}`);
         }
         return j;
       })().then(result => {
@@ -112,7 +124,7 @@ function fetchHedgedOverpassJson(query, options = {}) {
     for (let i = 1; i < mirrors.length; i++) {
       const t = setTimeout(() => {
         if (!settled) launchMirror(i);
-      }, staggerDelays[i]);
+      }, staggerDelays[i] || (i * 2500));
       timers.push(t);
     }
   });
@@ -123,15 +135,25 @@ if (typeof window !== 'undefined') {
 }
 
 async function fetchRealGISInBrowser(south, west, north, east, title, options = {}) {
-  const bbox = `${south.toFixed(5)},${west.toFixed(5)},${north.toFixed(5)},${east.toFixed(5)}`;
-  const query = `[out:json][timeout:32][bbox:${bbox}];(way["building"];relation["building"];relation["type"="building"];way["building:part"];relation["building:part"];way["natural"];relation["natural"];way["waterway"];relation["waterway"];way["water"];relation["water"];way["landuse"];relation["landuse"];way["leisure"];relation["leisure"];node["natural"="tree"];way["highway"];relation["highway"="pedestrian"];way["place"="square"];way["railway"];way["man_made"="bridge"];relation["man_made"="bridge"];way["man_made"="pier"];way["man_made"="breakwater"];way["man_made"="groyne"];);out body qt;>;out skel qt;`;
-
   const centerLat = (south + north) * 0.5;
   const centerLon = (west + east) * 0.5;
   const cosLat = Math.max(0.2, Math.cos(centerLat * Math.PI / 180.0));
-  const spanNsM = (north - south) * 111320.0;
-  const spanEwM = (east - west) * 111320.0 * cosLat;
-  const maxSpanM = Math.max(spanEwM, spanNsM);
+  const spanNsM = Math.abs(north - south) * 111320.0;
+  const spanEwM = Math.abs(east - west) * 111320.0 * cosLat;
+  const maxSpanM = Math.max(spanEwM, spanNsM, 1);
+
+  const bbox = `${south.toFixed(5)},${west.toFixed(5)},${north.toFixed(5)},${east.toFixed(5)}`;
+  const query = (typeof buildAdaptiveOverpassQL === 'function' && typeof selectLodTier === 'function')
+    ? buildAdaptiveOverpassQL(south, west, north, east, selectLodTier(maxSpanM), 14)
+    : `[out:json][timeout:14][bbox:${bbox}];` +
+      `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];)->.brels;` +
+      `(.brels;>;)->.ball;` +
+      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"];relation["type"="multipolygon"]["leisure"];relation["type"="multipolygon"]["highway"="pedestrian"];)->.grels;` +
+      `way(r.grels)(${bbox})->.gways;` +
+      `(way["building"];way["building:part"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["man_made"~"^(bridge|pier|breakwater|groyne)$"];.gways;)->.wbox;` +
+      `(relation.ball;.grels;.wbox;way.ball;node["natural"="tree"];);out body qt;` +
+      `(node(w.wbox);node.ball;);out skel qt;`;
+
   const metersToUnits = 169.2 / maxSpanM;
   const halfW = Math.round((84.6 * spanEwM / maxSpanM) * 100) / 100;
   const halfH = Math.round((84.6 * spanNsM / maxSpanM) * 100) / 100;
@@ -221,7 +243,36 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
 
   const s3db = createS3DBClientCollector(halfW, halfH, metersToUnits);
   const relById = new Map(relations.map(r => [r.id, r]));
+  const rawRelWays = new Map();
   const stitchedRelPolys = new Map();
+
+  // Sample river/canal centerlines and standalone building centroids to disambiguate
+  // inside vs. outside faces when bounded geographic multipolygons clip against bbox.
+  const waterSamplePts = [];
+  const buildingSamplePts = [];
+  const bldStep = Math.max(1, Math.floor(ways.size / 180));
+  let wayIterIdx = 0;
+  for (const w of ways.values()) {
+    wayIterIdx++;
+    const wt = w.tags || {};
+    const wn = w.nodes || [];
+    if (wn.length < 2) continue;
+    if ((wt.waterway === 'river' || wt.waterway === 'canal') && !['yes', 'culvert'].includes(wt.tunnel)) {
+      const weight = wt.waterway === 'river' ? 3 : 2;
+      const stride = Math.max(1, Math.floor(wn.length / 8));
+      for (let i = 0; i < wn.length && waterSamplePts.length < 180; i += stride) {
+        const pt = nodes.get(wn[i]);
+        if (pt && Math.abs(pt[0]) <= halfW && Math.abs(pt[1]) <= halfH) {
+          waterSamplePts.push([pt[0], pt[1], weight]);
+        }
+      }
+    } else if (wt.building && wn.length >= 4 && wn[0] === wn[wn.length - 1] && (wayIterIdx % bldStep === 0) && buildingSamplePts.length < 150) {
+      const pt = nodes.get(wn[0]);
+      if (pt && Math.abs(pt[0]) <= halfW && Math.abs(pt[1]) <= halfH) {
+        buildingSamplePts.push([pt[0], pt[1]]);
+      }
+    }
+  }
 
   for (const rel of relations) {
     const outerWays = [], innerWays = [], memberWayIds = [];
@@ -240,6 +291,7 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
       }
     }
     if (outerWays.length > 0) {
+      rawRelWays.set(rel.id, { outerWays, innerWays, memberWayIds });
       const outerPolys = stitchWayRingsJS(outerWays).map(r => nodesToPts(r, 0.018)).filter(p => p.length >= 3);
       const innerPolys = stitchWayRingsJS(innerWays).map(r => nodesToPts(r, 0.018)).filter(p => p.length >= 3);
       if (outerPolys.length > 0) stitchedRelPolys.set(rel.id, { outerPolys, innerPolys, memberWayIds });
@@ -329,12 +381,14 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   for (const rel of relations) {
     if (consumedRels.has(rel.id)) continue;
     const tags = rel.tags || {};
-    const st = stitchedRelPolys.get(rel.id);
-    if (!st) continue;
+    const raw = rawRelWays.get(rel.id);
+    if (!raw) continue;
 
     const hasBld = tags.building && !SKIP_BUILDING_VALS_JS.has(String(tags.building).toLowerCase());
     const hasPart = tags['building:part'] && !SKIP_BUILDING_VALS_JS.has(String(tags['building:part']).toLowerCase());
     if (hasBld || hasPart) {
+      const st = stitchedRelPolys.get(rel.id);
+      if (!st) continue;
       for (const wid of st.memberWayIds) usedWays.add(wid);
       const isPart = Boolean(hasPart && !hasBld);
       for (const op of st.outerPolys) s3db.registerCandidate(rel.id, tags, op, st.innerPolys, isPart, null, false);
@@ -348,19 +402,39 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     const isBr = tags.man_made === 'bridge' || (tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge));
     const isPlaza = (['pedestrian', 'footway', 'living_street'].includes(tags.highway) && tags.area !== 'no') || tags.place === 'square';
 
-    if (isWater) {
-      for (const wid of st.memberWayIds) usedWays.add(wid);
-      for (const op of st.outerPolys) waterPolys.push({ outer: op, holes: st.innerPolys, name: tags.name || 'Woda' });
-    } else if (isGreen) {
-      for (const wid of st.memberWayIds) usedWays.add(wid);
-      for (const op of st.outerPolys) greenPolys.push({ outer: op, holes: st.innerPolys, type: tags.leisure || tags.landuse || tags.natural || 'park' });
-    } else if (isBr) {
+    if (isBr) {
+      const st = stitchedRelPolys.get(rel.id);
+      if (!st) continue;
       for (const wid of st.memberWayIds) usedWays.add(wid);
       const layerVal = Math.max(1, Math.trunc(parseFloatTagJS(tags.layer, 1) || 1));
       for (const op of st.outerPolys) bridgePolys.push({ outer: op, holes: st.innerPolys, name: tags.name || 'Most', layer: layerVal });
-    } else if (isPlaza) {
-      for (const wid of st.memberWayIds) usedWays.add(wid);
-      for (const op of st.outerPolys) roadPolys.push({ outer: op, holes: st.innerPolys, name: tags.name || '' });
+      continue;
+    }
+
+    if (isWater || isGreen || isPlaza) {
+      const clipped = (typeof stitchClippedMultipolygonRingsJS === 'function')
+        ? stitchClippedMultipolygonRingsJS(raw.outerWays, raw.innerWays, nodesToPts, halfW, halfH, {
+            isWater,
+            waterSamplePts,
+            buildingSamplePts,
+            tol: 0.018
+          })
+        : null;
+      const entries = clipped
+        ? clipped.outerEntries
+        : ((stitchedRelPolys.get(rel.id) || { outerPolys: [], innerPolys: [] }).outerPolys.map(op => ({
+            outer: op,
+            holes: (stitchedRelPolys.get(rel.id) || { innerPolys: [] }).innerPolys
+          })));
+      if (entries.length === 0) continue;
+      for (const wid of raw.memberWayIds) usedWays.add(wid);
+      if (isWater) {
+        for (const e of entries) waterPolys.push({ outer: e.outer, holes: e.holes, name: tags.name || 'Woda' });
+      } else if (isGreen) {
+        for (const e of entries) greenPolys.push({ outer: e.outer, holes: e.holes, type: tags.leisure || tags.landuse || tags.natural || 'park' });
+      } else if (isPlaza) {
+        for (const e of entries) roadPolys.push({ outer: e.outer, holes: e.holes, name: tags.name || '' });
+      }
     }
   }
 

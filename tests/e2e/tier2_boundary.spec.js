@@ -207,7 +207,7 @@ test.describe('Tier 2: Boundary, Corner Case & Error Resilience (Opaque-Box E2E 
       await expect(page.locator('#btnRender3D')).toBeEnabled();
     });
 
-    test('2.9 Hard 20-second watchdog timeout triggers on hanging network request', async ({ page }) => {
+    test('2.9 Hard 45-second inactivity watchdog timeout triggers on hanging network request', async ({ page }) => {
       test.setTimeout(90000);
 
       await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -225,12 +225,12 @@ test.describe('Tier 2: Boundary, Corner Case & Error Resilience (Opaque-Box E2E 
       await expect(page.locator('#loadingOverlay3D')).toBeVisible();
       await expect(page.locator('#btnRender3D')).toBeDisabled();
 
-      // Banner must appear after 20s watchdog fires
-      const { errorText, retryButtonVisible } = await waitForGisError(page, 35000);
+      // Banner must appear after 45s inactivity watchdog fires
+      const { errorText, retryButtonVisible } = await waitForGisError(page, 65000);
       const elapsed = performance.now() - tStart;
 
-      expect(elapsed).toBeGreaterThanOrEqual(19500);
-      expect(errorText).toContain('20s');
+      expect(elapsed).toBeGreaterThanOrEqual(44000);
+      expect(errorText).toContain('45s');
       expect(retryButtonVisible).toBe(true);
 
       // CRITICAL: Loader MUST be hidden

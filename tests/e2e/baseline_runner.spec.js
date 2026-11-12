@@ -93,11 +93,9 @@ test.describe('Milestone 1 — Baseline Runner & Test Harness', () => {
           overlay.classList.contains('hidden') ||
           window.getComputedStyle(overlay).display === 'none'
         );
-        const bannerText = banner ? (banner.textContent || '') : '';
         const bannerHidden = !banner || (
           banner.classList.contains('hidden') ||
-          window.getComputedStyle(banner).display === 'none' ||
-          bannerText.includes('Załadowano model terenu DEM')
+          window.getComputedStyle(banner).display === 'none'
         );
         const btnEnabled = btn && !btn.disabled;
         const badgeValid = badge.includes('trójkątów') && !badge.includes('ERR:');

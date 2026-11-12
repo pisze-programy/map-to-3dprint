@@ -86,6 +86,373 @@ function pointInPolyLocal(px, py, ring) {
   return inside;
 }
 
+function _clipSegmentLiangBarsky(p0, p1, Cx, Cy) {
+  const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+  let t0 = 0.0, t1 = 1.0;
+  const checks = [
+    [-dx, p0[0] + Cx],
+    [dx, Cx - p0[0]],
+    [-dy, p0[1] + Cy],
+    [dy, Cy - p0[1]]
+  ];
+  for (let i = 0; i < 4; i++) {
+    const p = checks[i][0], q = checks[i][1];
+    if (Math.abs(p) < 1e-12) {
+      if (q < 0) return null;
+    } else {
+      const r = q / p;
+      if (p < 0) {
+        if (r > t1) return null;
+        if (r > t0) t0 = r;
+      } else {
+        if (r < t0) return null;
+        if (r < t1) t1 = r;
+      }
+    }
+  }
+  if (t0 > t1) return null;
+  const clampPt = (t) => [
+    Math.max(-Cx, Math.min(Cx, p0[0] + t * dx)),
+    Math.max(-Cy, Math.min(Cy, p0[1] + t * dy))
+  ];
+  return { a: clampPt(t0), b: clampPt(t1), entered: t0 > 1e-6, exited: t1 < 1.0 - 1e-6 };
+}
+
+function _clipPolylineToRectPieces(pts, Cx, Cy) {
+  const pieces = [];
+  let cur = null;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const seg = _clipSegmentLiangBarsky(pts[i], pts[i + 1], Cx, Cy);
+    if (!seg) {
+      if (cur && cur.length >= 2) pieces.push(cur);
+      cur = null;
+      continue;
+    }
+    if (!cur || seg.entered) {
+      if (cur && cur.length >= 2) pieces.push(cur);
+      cur = [seg.a, seg.b];
+    } else {
+      const last = cur[cur.length - 1];
+      if (Math.hypot(seg.b[0] - last[0], seg.b[1] - last[1]) > 1e-4) {
+        cur.push(seg.b);
+      }
+    }
+    if (seg.exited) {
+      if (cur && cur.length >= 2) pieces.push(cur);
+      cur = null;
+    }
+  }
+  if (cur && cur.length >= 2) pieces.push(cur);
+  return pieces;
+}
+
+function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, nodesToPts, halfW, halfH, opts = {}) {
+  const tol = opts.tol || 0.018;
+  const innerPolys = stitchWayRingsJS(innerWayNodeLists)
+    .map(r => nodesToPts(r, tol))
+    .filter(p => p && p.length >= 3);
+
+  const closedOuterPolys = [];
+  const openChains = [];
+  const segs = (outerWayNodeLists || []).filter(w => w && w.length >= 2).map(w => w.slice());
+
+  while (segs.length > 0) {
+    let curr = segs.shift();
+    let changed = true;
+    while (changed && curr[0] !== curr[curr.length - 1]) {
+      changed = false;
+      for (let i = 0; i < segs.length; i++) {
+        const seg = segs[i];
+        if (seg[0] === curr[curr.length - 1]) {
+          curr = curr.concat(seg.slice(1));
+          segs.splice(i, 1);
+          changed = true;
+          break;
+        } else if (seg[seg.length - 1] === curr[curr.length - 1]) {
+          curr = curr.concat(seg.slice(0, -1).reverse());
+          segs.splice(i, 1);
+          changed = true;
+          break;
+        } else if (seg[seg.length - 1] === curr[0]) {
+          curr = seg.slice(0, -1).concat(curr);
+          segs.splice(i, 1);
+          changed = true;
+          break;
+        } else if (seg[0] === curr[0]) {
+          curr = seg.slice(1).reverse().concat(curr);
+          segs.splice(i, 1);
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (curr[0] === curr[curr.length - 1]) {
+      if (curr.length >= 4) {
+        const pts = nodesToPts(curr, tol);
+        if (pts.length >= 3) closedOuterPolys.push(pts);
+      }
+    } else if (curr.length >= 2) {
+      const pts = nodesToPts(curr, tol);
+      if (pts.length >= 2) openChains.push(pts);
+    }
+  }
+
+  if (openChains.length > 0) {
+    const Cx = halfW + 1.2;
+    const Cy = halfH + 1.2;
+    const P = 4 * (Cx + Cy);
+    const rectArea = 4 * Cx * Cy;
+
+    const isOnBoundary = (pt) => Math.abs(Math.abs(pt[0]) - Cx) < 0.08 || Math.abs(Math.abs(pt[1]) - Cy) < 0.08;
+    const snapNearBoundary = (pt) => {
+      const dx = Cx - Math.abs(pt[0]);
+      const dy = Cy - Math.abs(pt[1]);
+      if (Math.min(dx, dy) > Math.max(4.5, Math.min(Cx, Cy) * 0.16)) return null;
+      if (dx <= dy) return [pt[0] >= 0 ? Cx : -Cx, Math.max(-Cy, Math.min(Cy, pt[1]))];
+      return [Math.max(-Cx, Math.min(Cx, pt[0])), pt[1] >= 0 ? Cy : -Cy];
+    };
+    const ccwParam = (pt) => {
+      const x = pt[0], y = pt[1];
+      if (Math.abs(y + Cy) <= 0.09) return Math.max(0, Math.min(2 * Cx, x + Cx));
+      if (Math.abs(x - Cx) <= 0.09) return 2 * Cx + Math.max(0, Math.min(2 * Cy, y + Cy));
+      if (Math.abs(y - Cy) <= 0.09) return 2 * Cx + 2 * Cy + Math.max(0, Math.min(2 * Cx, Cx - x));
+      return 4 * Cx + 2 * Cy + Math.max(0, Math.min(2 * Cy, Cy - y));
+    };
+    const ccwCorners = [
+      [2 * Cx, [Cx, -Cy]],
+      [2 * Cx + 2 * Cy, [Cx, Cy]],
+      [4 * Cx + 2 * Cy, [-Cx, Cy]],
+      [P, [-Cx, -Cy]]
+    ];
+    const ccwBoundaryArc = (sFrom, sTo) => {
+      const span = ((sTo - sFrom) % P + P) % P;
+      if (span < 1e-4) return [];
+      return ccwCorners
+        .map(c => [((c[0] - sFrom) % P + P) % P, c[1]])
+        .filter(c => c[0] > 0.04 && c[0] < span - 0.04)
+        .sort((a, b) => a[0] - b[0])
+        .map(c => c[1]);
+    };
+
+    const rawChords = [];
+    for (const ch of openChains) {
+      const pieces = _clipPolylineToRectPieces(ch, Cx, Cy);
+      for (const pc of pieces) {
+        if (pc.length < 2) continue;
+        let p0 = pc[0], pN = pc[pc.length - 1];
+        if (!isOnBoundary(p0)) {
+          if (pc.length >= 4 && Math.hypot(p0[0] - pN[0], p0[1] - pN[1]) < 2.5) {
+            closedOuterPolys.push(pc);
+            continue;
+          }
+          const sn0 = snapNearBoundary(p0);
+          if (!sn0) continue;
+          pc[0] = sn0;
+          p0 = sn0;
+        }
+        if (!isOnBoundary(pN)) {
+          const snN = snapNearBoundary(pN);
+          if (!snN) continue;
+          pc[pc.length - 1] = snN;
+          pN = snN;
+        }
+        if (Math.hypot(p0[0] - pN[0], p0[1] - pN[1]) < 0.12) {
+          if (pc.length >= 4) closedOuterPolys.push(pc);
+          continue;
+        }
+        rawChords.push(pc);
+      }
+    }
+
+    // Merge chords sharing boundary endpoints
+    let mergedChord = true;
+    while (mergedChord && rawChords.length > 1) {
+      mergedChord = false;
+      for (let i = 0; i < rawChords.length && !mergedChord; i++) {
+        for (let j = i + 1; j < rawChords.length; j++) {
+          const A = rawChords[i], B = rawChords[j];
+          const a0 = A[0], a1 = A[A.length - 1], b0 = B[0], b1 = B[B.length - 1];
+          let joined = null;
+          if (Math.hypot(a1[0] - b0[0], a1[1] - b0[1]) < 0.08) joined = A.concat(B.slice(1));
+          else if (Math.hypot(a1[0] - b1[0], a1[1] - b1[1]) < 0.08) joined = A.concat(B.slice(0, -1).reverse());
+          else if (Math.hypot(a0[0] - b1[0], a0[1] - b1[1]) < 0.08) joined = B.slice(0, -1).concat(A);
+          else if (Math.hypot(a0[0] - b0[0], a0[1] - b0[1]) < 0.08) joined = B.slice(1).reverse().concat(A);
+          if (joined) {
+            rawChords.splice(j, 1);
+            if (Math.hypot(joined[0][0] - joined[joined.length - 1][0], joined[0][1] - joined[joined.length - 1][1]) < 0.12) {
+              rawChords.splice(i, 1);
+              if (joined.length >= 4) closedOuterPolys.push(joined);
+            } else {
+              rawChords[i] = joined;
+            }
+            mergedChord = true;
+            break;
+          }
+        }
+      }
+    }
+
+    const K = rawChords.length;
+    if (K >= 1 && K <= 28) {
+      const chords = rawChords.map((pts, idx) => ({
+        idx,
+        pts,
+        sStart: ccwParam(pts[0]),
+        sEnd: ccwParam(pts[pts.length - 1])
+      }));
+
+      const terminals = [];
+      for (let i = 0; i < K; i++) {
+        let s0 = chords[i].sStart, s1 = chords[i].sEnd;
+        if (Math.abs(s0 - s1) < 1e-4) s1 = (s1 + 0.002) % P;
+        terminals.push({ id: 2 * i, s: s0, outHe: 2 * i });
+        terminals.push({ id: 2 * i + 1, s: s1, outHe: 2 * i + 1 });
+      }
+      terminals.sort((a, b) => a.s - b.s);
+      const termRank = new Array(2 * K);
+      for (let r = 0; r < terminals.length; r++) termRank[terminals[r].id] = r;
+
+      const visitedHe = new Array(2 * K).fill(false);
+      const heFace = new Array(2 * K).fill(-1);
+      const faces = [];
+      let validTopology = true;
+
+      for (let startHe = 0; startHe < 2 * K; startHe++) {
+        if (visitedHe[startHe]) continue;
+        const facePts = [];
+        let curHe = startHe;
+        let steps = 0;
+        let chordTouchCount = 0;
+        while (!visitedHe[curHe]) {
+          if (++steps > 2 * K + 2) { validTopology = false; break; }
+          visitedHe[curHe] = true;
+          heFace[curHe] = faces.length;
+          chordTouchCount++;
+          const chordIdx = curHe >> 1;
+          const isRev = (curHe & 1) === 1;
+          const cPts = isRev ? chords[chordIdx].pts.slice().reverse() : chords[chordIdx].pts;
+          for (let k = 0; k < cPts.length; k++) {
+            const p = cPts[k];
+            const prev = facePts[facePts.length - 1];
+            if (!prev || Math.hypot(p[0] - prev[0], p[1] - prev[1]) > 0.01) facePts.push(p);
+          }
+          const endTermId = isRev ? (2 * chordIdx) : (2 * chordIdx + 1);
+          const rank = termRank[endTermId];
+          const nextTerm = terminals[(rank + 1) % (2 * K)];
+          const arcPts = ccwBoundaryArc(terminals[rank].s, nextTerm.s);
+          for (let k = 0; k < arcPts.length; k++) facePts.push(arcPts[k]);
+          curHe = nextTerm.outHe;
+        }
+        if (curHe !== startHe || facePts.length < 3) { validTopology = false; break; }
+        if (Math.hypot(facePts[0][0] - facePts[facePts.length - 1][0], facePts[0][1] - facePts[facePts.length - 1][1]) < 0.02) {
+          facePts.pop();
+        }
+        const area = Math.abs(polyAreaSignedJS(facePts));
+        if (facePts.length >= 3 && area > 0.02) {
+          faces.push({ poly: facePts, area, chordTouchCount });
+        } else {
+          validTopology = false;
+          break;
+        }
+      }
+
+      const sumArea = faces.reduce((acc, f) => acc + f.area, 0);
+      if (validTopology && faces.length === K + 1 && Math.abs(sumArea - rectArea) <= rectArea * 0.14) {
+        const adj = Array.from({ length: faces.length }, () => []);
+        for (let i = 0; i < K; i++) {
+          const fA = heFace[2 * i], fB = heFace[2 * i + 1];
+          if (fA >= 0 && fB >= 0 && fA !== fB) {
+            adj[fA].push(fB);
+            adj[fB].push(fA);
+          } else {
+            validTopology = false;
+          }
+        }
+        if (validTopology) {
+          const colors = new Array(faces.length).fill(-1);
+          colors[0] = 0;
+          const queue = [0];
+          for (let qi = 0; qi < queue.length && validTopology; qi++) {
+            const u = queue[qi];
+            for (const v of adj[u]) {
+              if (colors[v] === -1) {
+                colors[v] = 1 - colors[u];
+                queue.push(v);
+              } else if (colors[v] === colors[u]) {
+                validTopology = false;
+                break;
+              }
+            }
+          }
+
+          if (validTopology && colors.every(c => c === 0 || c === 1)) {
+            const innerHits = [0, 0];
+            const waterHits = [0, 0];
+            const bldHits = [0, 0];
+            const colorArea = [0, 0];
+            const multiChordFaces = [0, 0];
+
+            const waterSamples = opts.waterSamplePts || [];
+            const bldSamples = opts.buildingSamplePts || [];
+
+            for (let fi = 0; fi < faces.length; fi++) {
+              const c = colors[fi];
+              const poly = faces[fi].poly;
+              colorArea[c] += faces[fi].area;
+              if (faces[fi].chordTouchCount >= 2) multiChordFaces[c]++;
+              for (let ii = 0; ii < innerPolys.length; ii++) {
+                const ip = innerPolys[ii];
+                if (ip.length > 0 && pointInPolyLocal(ip[0][0], ip[0][1], poly)) innerHits[c]++;
+              }
+              if (opts.isWater && waterSamples.length > 0) {
+                for (let wi = 0; wi < waterSamples.length; wi++) {
+                  const wp = waterSamples[wi];
+                  if (pointInPolyLocal(wp[0], wp[1], poly)) waterHits[c] += (wp[2] || 1);
+                }
+              }
+              if (bldSamples.length > 0) {
+                for (let bi = 0; bi < bldSamples.length; bi++) {
+                  const bp = bldSamples[bi];
+                  if (pointInPolyLocal(bp[0], bp[1], poly)) bldHits[c]++;
+                }
+              }
+            }
+
+            let chosen = 0;
+            if (innerHits[0] !== innerHits[1]) {
+              chosen = innerHits[0] > innerHits[1] ? 0 : 1;
+            } else if (opts.isWater && (waterHits[0] > 0 || waterHits[1] > 0) && waterHits[0] !== waterHits[1]) {
+              const score0 = waterHits[0] * 4.0 - bldHits[0] * 1.2;
+              const score1 = waterHits[1] * 4.0 - bldHits[1] * 1.2;
+              chosen = score0 >= score1 ? 0 : 1;
+            } else if ((bldHits[0] + bldHits[1]) >= 3 && bldHits[0] !== bldHits[1]) {
+              chosen = bldHits[0] < bldHits[1] ? 0 : 1;
+            } else if (K >= 2 && multiChordFaces[0] !== multiChordFaces[1]) {
+              const cand = multiChordFaces[0] > multiChordFaces[1] ? 0 : 1;
+              chosen = colorArea[cand] <= rectArea * 0.72 ? cand : (colorArea[0] <= colorArea[1] ? 0 : 1);
+            } else {
+              chosen = colorArea[0] <= colorArea[1] ? 0 : 1;
+            }
+
+            for (let fi = 0; fi < faces.length; fi++) {
+              if (colors[fi] === chosen) {
+                closedOuterPolys.push(faces[fi].poly);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const outerEntries = closedOuterPolys.map(op => {
+    const holes = innerPolys.filter(ip => ip.length >= 3 && pointInPolyLocal(ip[0][0], ip[0][1], op));
+    return { outer: op, holes };
+  });
+
+  return { outerEntries, outerPolys: closedOuterPolys, innerPolys };
+}
+
 function stitchCoastlineSeaPolysJS(coastWays, halfW, halfH, waterPolys) {
   if (!coastWays || coastWays.length === 0) return;
   const chains = coastWays.map(c => c.slice());
@@ -271,12 +638,15 @@ if (typeof window !== 'undefined') {
   window.chooseAdaptiveDemZoom = chooseAdaptiveDemZoom;
   window.fetchAdaptiveTerrariumDem = fetchAdaptiveTerrariumDem;
   window.fetchTerrariumDemInBrowser = fetchTerrariumDemInBrowser;
+  window.stitchClippedMultipolygonRingsJS = stitchClippedMultipolygonRingsJS;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     chooseAdaptiveDemZoom,
     fetchAdaptiveTerrariumDem,
-    fetchTerrariumDemInBrowser
+    fetchTerrariumDemInBrowser,
+    stitchWayRingsJS,
+    stitchClippedMultipolygonRingsJS
   };
 }

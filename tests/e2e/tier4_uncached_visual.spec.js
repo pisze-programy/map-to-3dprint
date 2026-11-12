@@ -8,8 +8,10 @@ const {
   waitForAppReady,
   waitForRenderComplete,
   mockPhotonPlaceSearch,
+  setupLivePhotonWithFallback,
   captureAndInspectScreenshot,
   assertWebGLCanvasNotBlank,
+  assertWebGL3DShadingDiversity,
 } = require('./test_utils');
 
 const SCREENSHOT_DIR = path.resolve(__dirname, 'screenshots');
@@ -39,7 +41,7 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
   // Test 4.V1: Explicit Render UX Decoupling
   // --------------------------------------------------------------------------
   test('4.V1 Explicit Render UX: parameter mutations update 2D map & UI without auto-rebuilding 3D until Render clicked', async ({ page }) => {
-    test.setTimeout(90000);
+    test.setTimeout(120000);
 
     // Mock photon autocomplete for Cape Town
     await mockPhotonPlaceSearch(page, 'Cape Town', [
@@ -104,11 +106,12 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
     // 6. Explicitly clicking #btnRender3D initiates the 3D build
     await renderBtn.click();
 
-    // Await completion of explicit render
-    await waitForRenderComplete(page);
-    const finalTriangles = await page.evaluate(() => window.__map3d?.state?.totalTriangles || 0);
-    expect(finalTriangles).toBeGreaterThan(0);
+    // Await completion of explicit render (strictly rejects #gisErrorBanner & DEM fallback)
+    const renderResult = await waitForRenderComplete(page, '', 90000);
+    expect(renderResult.totalTriangles).toBeGreaterThan(3000);
+    expect(renderResult.isFallback).toBe(false);
     await expect(page.locator('#loadingOverlay3D')).toBeHidden();
+    await expect(page.locator('#gisErrorBanner')).toBeHidden();
   });
 
   // --------------------------------------------------------------------------
@@ -336,49 +339,91 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
   });
 
   // --------------------------------------------------------------------------
-  // Test 4.V6: Uncached Live GIS (Cape Town)
+  // Test 4.V6: Uncached Live GIS via Real UI (2.5 km + Render, Zero Fallback Loophole)
   // --------------------------------------------------------------------------
-  test('4.V6 Uncached Live GIS: Cape Town progressive streaming completes without 20s timeout or freeze', async ({ page }) => {
-    test.setTimeout(120000);
+  test('4.V6 Uncached Live GIS: Cape Town 2.5 km UI render completes with real 3D buildings and zero DEM fallback banner', async ({ page }) => {
+    test.setTimeout(150000);
+
+    // Disable local cache/osm_*.json proxy route so this test runs 100% live against Overpass
+    await page.unroute('**/*interpreter*').catch(() => {});
+
+    await setupLivePhotonWithFallback(page, [
+      {
+        query: 'Cape Town',
+        name: 'Cape Town',
+        city: 'Cape Town',
+        state: 'Western Cape',
+        country: 'South Africa',
+        lat: -33.9249,
+        lon: 18.4241,
+      },
+    ]);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
 
-    // Cape Town uncached coordinates (bypass 1.5km proximity cache)
-    const ctBbox = [-33.930, 18.415, -33.920, 18.435];
-    const ctCenter = [-33.9249, 18.4241];
+    // Drive 100% via real UI controls (no window.__map3d.fetchRealGISAndRender shortcut!)
+    const searchInput = page.locator('#placeSearchInput');
+    await searchInput.click();
+    await searchInput.fill('');
+    await searchInput.pressSequentially('Cape Town', { delay: 30 });
 
-    // Trigger Cape Town fetch
-    await page.evaluate(({ bbox, center }) => {
-      window.__map3d.state.mapCenterLat = center[0];
-      window.__map3d.state.mapCenterLon = center[1];
-      window.__map3d.state.plaqueText = 'CAPE TOWN';
-      window.__map3d.fetchRealGISAndRender(bbox, 'CAPE TOWN');
-    }, { bbox: ctBbox, center: ctCenter });
+    const dropdown = page.locator('#searchSuggestionsDropdown');
+    await expect(dropdown).toBeVisible({ timeout: 8000 });
+
+    const suggestionButtons = dropdown.locator('button');
+    const count = await suggestionButtons.count();
+    expect(count).toBeGreaterThan(0);
+
+    let clicked = false;
+    for (let i = 0; i < count; i++) {
+      const txt = (await suggestionButtons.nth(i).textContent()) || '';
+      if (txt.includes('-33.') || /South Africa|Cape Town/i.test(txt)) {
+        await suggestionButtons.nth(i).click();
+        clicked = true;
+        break;
+      }
+    }
+    if (!clicked) {
+      await suggestionButtons.first().click();
+    }
+    await expect(dropdown).toBeHidden();
+
+    // Select 2.5 km span chip in UI
+    const span25Btn = page.locator('button[data-span-km="2.5"]');
+    await expect(span25Btn).toBeVisible();
+    await span25Btn.click();
+    await expect(page.locator('#cropSizeLabel')).toContainText('2.50 km');
+
+    // Click Render (#btnRender3D) like a real user
+    const renderBtn = page.locator('#btnRender3D');
+    await expect(renderBtn).toBeEnabled();
+    await renderBtn.click();
 
     // Capture progressive streaming screenshot while loading overlay is active
-    await page.waitForTimeout(400);
+    await expect(page.locator('#loadingOverlay3D')).toBeVisible({ timeout: 5000 });
+    await page.waitForTimeout(300);
     const ctProg = await captureAndInspectScreenshot(page, null, '05_capetown_progressive.png', { minBytes: 15000 });
     expect(ctProg.size).toBeGreaterThan(15000);
 
-    // Await render completion (ensuring watchdog resets on progress without 20s killswitch)
-    const result = await waitForRenderComplete(page, 'CAPE TOWN', 90000);
-    expect(result.totalTriangles).toBeGreaterThan(0);
+    // Await render completion — strictly rejects #gisErrorBanner AND 0-building DEM fallback!
+    const result = await waitForRenderComplete(page, 'CAPE TOWN', 120000);
 
     await expect(page.locator('#loadingOverlay3D')).toBeHidden();
-    const bannerVisible = await page.locator('#gisErrorBanner').isVisible();
-    if (bannerVisible) {
-      const bannerText = (await page.locator('#gisErrorText').textContent()) || '';
-      expect(bannerText).toContain('Załadowano model terenu DEM');
-    }
-    await expect(page.locator('#btnRender3D')).toBeEnabled();
+    await expect(page.locator('#gisErrorBanner')).toBeHidden();
+    await expect(renderBtn).toBeEnabled();
+
+    expect(result.isFallback).toBe(false);
+    expect(result.buildingCount).toBeGreaterThanOrEqual(30);
+    expect(result.totalTriangles).toBeGreaterThan(3000);
 
     // Capture final completion screenshot
     const ctComplete = await captureAndInspectScreenshot(page, null, '05_capetown_complete.png', { minBytes: 15000 });
     expect(ctComplete.size).toBeGreaterThan(15000);
 
-    // Verify WebGL Canvas pixel diversity via gl.readPixels
+    // Verify WebGL Canvas pixel & 3D shading diversity via gl.readPixels
     await assertWebGLCanvasNotBlank(page);
+    await assertWebGL3DShadingDiversity(page);
   });
 
   // --------------------------------------------------------------------------

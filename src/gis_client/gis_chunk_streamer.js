@@ -38,7 +38,7 @@ if (typeof window !== 'undefined' && window.fetch) {
         text: async () => 'File URI protocol'
       };
     }
-    if (_injectedGisPayload && _injectedGisPayload.osmElements && url.includes('overpass')) {
+    if (_injectedGisPayload && _injectedGisPayload.osmElements && (url.includes('overpass') || url.includes('interpreter'))) {
       const payload = { elements: _injectedGisPayload.osmElements };
       return {
         ok: true,
@@ -64,6 +64,10 @@ async function buildSceneFromPreloadedGis(south, west, north, east, title, dem, 
 }
 
 async function fetchChunkedGISInBrowser(south, west, north, east, title, options = {}) {
+  if (![south, west, north, east].every(Number.isFinite) || south >= north || west >= east) {
+    throw new Error('Nieprawidłowy zakres współrzędnych BBox GIS.');
+  }
+
   const centerLat = (south + north) * 0.5;
   const centerLon = (west + east) * 0.5;
   const cosLat = Math.max(0.2, Math.cos(centerLat * Math.PI / 180.0));
@@ -84,82 +88,154 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
       loadedChunks: 0,
       totalChunks,
       pct: 8,
+      progressKind: 'init',
       statusText: totalChunks > 1
         ? `Pobieranie siatki ${rows}×${cols} (${totalChunks} sektorów • tryb ${lodTier.toUpperCase()})...`
         : `Pobieranie danych GIS + DEM (${(maxSpanM / 1000).toFixed(2)} km)...`
     });
   }
 
-  const demPromise = fetchAdaptiveTerrariumDem(
-    centerLat - sqDLat, centerLon - sqDLon, centerLat + sqDLat, centerLon + sqDLon, 72, null
-  );
-
   const collectedChunkElements = [];
-  let loadedChunks = 0, failedChunks = 0, partialRendered = false;
+  let loadedChunks = 0, failedChunks = 0, totalLoadedEls = 0, partialRendered = false;
+  let partialPreviewPromise = null;
 
-  for (let i = 0; i < chunks.length; i += 2) {
-    if (abortSignal && abortSignal.aborted) break;
-    const batch = chunks.slice(i, i + 2);
-    const batchResults = await Promise.allSettled(
-      batch.map(chunk => fetchChunkWithRecursiveSplit(chunk, abortSignal, (splitChunk) => {
-        if (typeof options.onProgress === 'function') {
-          options.onProgress({
-            loadedChunks,
-            totalChunks,
-            pct: Math.min(92, Math.round(12 + (loadedChunks / totalChunks) * 75)),
-            statusText: `Sektor ${splitChunk.id} duży — dzielenie na 2×2 pod-sektory...`
-          });
-        }
-      }))
-    );
-
-    for (let bIdx = 0; bIdx < batchResults.length; bIdx++) {
-      const res = batchResults[bIdx];
-      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
-        collectedChunkElements.push(res.value);
-        loadedChunks++;
-      } else {
-        failedChunks++;
-        console.warn(`[GIS Chunk Streamer] Chunk ${batch[bIdx].id} failed:`, res.reason);
-      }
-    }
-
-    const totalLoadedEls = collectedChunkElements.reduce((acc, a) => acc + a.length, 0);
+  const demPromise = fetchAdaptiveTerrariumDem(
+    centerLat - sqDLat, centerLon - sqDLon, centerLat + sqDLat, centerLon + sqDLon, 72, null, abortSignal
+  );
+  demPromise.then((demData) => {
+    if (abortSignal && abortSignal.aborted) return;
     if (typeof options.onProgress === 'function') {
       options.onProgress({
         loadedChunks,
         totalChunks,
-        pct: Math.min(92, Math.round(15 + ((loadedChunks + failedChunks) / totalChunks) * 75)),
-        statusText: `Pobrano sektor ${loadedChunks}/${totalChunks} (${totalLoadedEls.toLocaleString()} obiektów OSM)...`
+        pct: Math.min(90, Math.round(10 + ((loadedChunks + failedChunks) / Math.max(1, totalChunks)) * 75)),
+        progressKind: 'dem',
+        statusText: loadedChunks > 0
+          ? `Model wysokościowy DEM gotowy (Z=${demData && demData.zoom ? demData.zoom : 14}) • sektory ${loadedChunks}/${totalChunks}...`
+          : `Pobrano model wysokościowy DEM • pobieranie sektorów OSM (0/${totalChunks})...`
       });
     }
+  }).catch(() => {});
 
-    if (
-      !partialRendered &&
-      totalChunks >= 4 &&
-      loadedChunks >= Math.ceil(totalChunks * 0.5) &&
-      loadedChunks < totalChunks &&
-      typeof options.onPartialScene === 'function' &&
-      !(abortSignal && abortSignal.aborted)
-    ) {
-      partialRendered = true;
+  const concurrency = totalChunks > 4 ? 3 : Math.min(2, totalChunks);
+  let nextChunkIdx = 0;
+
+  const runChunkWorker = async () => {
+    while (nextChunkIdx < chunks.length) {
+      if (abortSignal && abortSignal.aborted) break;
+      const cIdx = nextChunkIdx++;
+      const chunk = chunks[cIdx];
+
+      if (typeof options.onProgress === 'function') {
+        options.onProgress({
+          loadedChunks,
+          totalChunks,
+          pct: Math.min(90, Math.round(11 + ((loadedChunks + failedChunks) / totalChunks) * 75)),
+          progressKind: 'chunk-start',
+          statusText: totalChunks > 1
+            ? `Pobieranie sektora ${chunk.id} (${cIdx + 1}/${totalChunks})...`
+            : `Pobieranie danych OSM (${(maxSpanM / 1000).toFixed(2)} km)...`
+        });
+      }
+
+      let chunkSucceeded = false;
       try {
-        const demNow = await demPromise;
-        const partialElements = mergeAndDeduplicateElements(collectedChunkElements, maxSpanM);
-        const partialScene = await buildSceneFromPreloadedGis(
-          south, west, north, east, `${title} (${loadedChunks}/${totalChunks})`, demNow, partialElements, 900
-        );
-        partialScene._isPartialPreview = true;
-        options.onPartialScene(partialScene, loadedChunks, totalChunks);
-      } catch (partialErr) {
-        console.warn('[GIS Chunk Streamer] Partial preview skipped:', partialErr);
+        const els = await fetchChunkWithRecursiveSplit(chunk, abortSignal, {
+          onSubSplit: (splitChunk) => {
+            if (abortSignal && abortSignal.aborted) return;
+            if (typeof options.onProgress === 'function') {
+              options.onProgress({
+                loadedChunks,
+                totalChunks,
+                pct: Math.min(92, Math.round(12 + ((loadedChunks + failedChunks) / totalChunks) * 75)),
+                progressKind: 'split',
+                statusText: `Sektor ${splitChunk.id} duży — dzielenie na 2×2 pod-sektory...`
+              });
+            }
+          },
+          onSubChunkDone: (subChunk, subCount, subDone, subTotal) => {
+            if (abortSignal && abortSignal.aborted) return;
+            if (typeof options.onProgress === 'function') {
+              options.onProgress({
+                loadedChunks,
+                totalChunks,
+                pct: Math.min(92, Math.round(13 + ((loadedChunks + failedChunks + (subDone / subTotal)) / totalChunks) * 75)),
+                progressKind: 'subchunk',
+                statusText: `Pobrano pod-sektor ${subChunk.id} (${subDone}/${subTotal} • +${subCount.toLocaleString()} el.)...`
+              });
+            }
+          }
+        });
+
+        if (Array.isArray(els)) {
+          collectedChunkElements.push(els);
+          loadedChunks++;
+          totalLoadedEls += els.length;
+          chunkSucceeded = true;
+        } else {
+          failedChunks++;
+        }
+      } catch (err) {
+        failedChunks++;
+        if (!(abortSignal && abortSignal.aborted)) {
+          console.warn(`[GIS Chunk Streamer] Chunk ${chunk.id} failed:`, err);
+        }
+      }
+
+      if (abortSignal && abortSignal.aborted) break;
+
+      if (typeof options.onProgress === 'function') {
+        options.onProgress({
+          loadedChunks,
+          totalChunks,
+          pct: Math.min(92, Math.round(15 + ((loadedChunks + failedChunks) / totalChunks) * 75)),
+          progressKind: chunkSucceeded ? 'chunk' : 'chunk-failed',
+          statusText: chunkSucceeded
+            ? `Pobrano sektor ${loadedChunks}/${totalChunks} (${totalLoadedEls.toLocaleString()} obiektów OSM)...`
+            : `Pominięto niedostępny sektor ${chunk.id} (${loadedChunks}/${totalChunks})...`
+        });
+      }
+
+      if (
+        !partialRendered &&
+        totalChunks >= 4 &&
+        loadedChunks >= Math.ceil(totalChunks * 0.5) &&
+        loadedChunks < totalChunks &&
+        typeof options.onPartialScene === 'function' &&
+        !(abortSignal && abortSignal.aborted)
+      ) {
+        partialRendered = true;
+        const snapshotArrays = collectedChunkElements.slice();
+        const snapLoaded = loadedChunks;
+        partialPreviewPromise = (async () => {
+          try {
+            const demNow = await demPromise;
+            if (abortSignal && abortSignal.aborted) return;
+            const partialElements = mergeAndDeduplicateElements(snapshotArrays, maxSpanM);
+            const partialScene = await buildSceneFromPreloadedGis(
+              south, west, north, east, `${title} (${snapLoaded}/${totalChunks})`, demNow, partialElements, 900
+            );
+            partialScene._isPartialPreview = true;
+            if (!(abortSignal && abortSignal.aborted)) {
+              options.onPartialScene(partialScene, snapLoaded, totalChunks);
+            }
+          } catch (partialErr) {
+            console.warn('[GIS Chunk Streamer] Partial preview skipped:', partialErr);
+          }
+        })();
       }
     }
+  };
+
+  await Promise.all(Array.from({ length: concurrency }, () => runChunkWorker()));
+
+  if (partialPreviewPromise) {
+    try { await partialPreviewPromise; } catch (_) {}
   }
 
   if (collectedChunkElements.length === 0) {
     if (abortSignal && abortSignal.aborted) {
-      throw new Error('Przekroczono limit czasu oczekiwania na dane GIS po 20s');
+      throw new Error('Przekroczono limit czasu oczekiwania na dane GIS po 45s');
     }
     console.warn('[GIS Chunk Streamer] Overpass unavailable, building terrain-only DEM scene fallback.');
     let dem = null;
@@ -195,6 +271,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
       loadedChunks,
       totalChunks,
       pct: 95,
+      progressKind: 'assemble',
       statusText: `Budowanie geometrii 3D (${mergedElements.length.toLocaleString()} elementów OSM)...`
     });
   }

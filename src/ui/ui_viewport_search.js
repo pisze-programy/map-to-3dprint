@@ -105,6 +105,8 @@ function bindViewportAndSearchControls(ctx) {
     const cyTile = lat2tileF(state.mapCenterLat, z) - dy / 256.0;
     state.mapCenterLon = Math.max(-179.9, Math.min(179.9, tileF2lon(cxTile, z)));
     state.mapCenterLat = Math.max(-80.0, Math.min(80.0, tileF2lat(cyTile, z)));
+    state.lastFetchBbox = null;
+    state.lastFetchTitle = null;
     draw2DMap();
   });
 
@@ -147,22 +149,39 @@ function bindViewportAndSearchControls(ctx) {
       suggestionsBox.classList.add('hidden');
       return [];
     }
+    const mapPhotonFeatures = (data) => (data && Array.isArray(data.features) ? data.features : []).map(f => {
+      const props = f.properties || {};
+      const coords = (f.geometry && f.geometry.coordinates) || [11.5855, 48.1338];
+      return {
+        name: props.name || props.city || props.locality || q,
+        sub: [props.state, props.country].filter(Boolean).join(', '),
+        kind: props.osm_value || props.type || 'miejsce',
+        lat: coords[1],
+        lon: coords[0]
+      };
+    });
     try {
-      const resp = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6`);
-      if (!resp.ok) throw new Error('Photon status ' + resp.status);
-      const data = await resp.json();
-      return (data.features || []).map(f => {
-        const props = f.properties || {};
-        const coords = (f.geometry && f.geometry.coordinates) || [11.5855, 48.1338];
-        return {
-          name: props.name || props.city || props.locality || q,
-          sub: [props.state, props.country].filter(Boolean).join(', '),
-          kind: props.osm_value || props.type || 'miejsce',
-          lat: coords[1],
-          lon: coords[0]
-        };
-      });
+      const ctrl = new AbortController();
+      const t = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, 6000);
+      try {
+        const resp = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6`, { signal: ctrl.signal });
+        if (!resp.ok) throw new Error('Photon status ' + resp.status);
+        const data = await resp.json();
+        return mapPhotonFeatures(data);
+      } finally {
+        clearTimeout(t);
+      }
     } catch (e) {
+      const isHttp = typeof window !== 'undefined' && window.location && /^https?:$/i.test(window.location.protocol);
+      if (isHttp) {
+        try {
+          const fb = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+          if (fb.ok) {
+            const fbData = await fb.json();
+            return mapPhotonFeatures(fbData);
+          }
+        } catch (_) {}
+      }
       console.warn('Autocomplete fallback:', e);
       return [];
     }
@@ -174,6 +193,8 @@ function bindViewportAndSearchControls(ctx) {
     state.mapZoom = choose2DZoomForSpan(state.mapSpanMeters);
     state.plaqueText = shortTitle;
     state.regionLabel = regionDesc;
+    state.lastFetchBbox = null;
+    state.lastFetchTitle = null;
     const pInput = document.getElementById('plaqueTextInput');
     if (pInput) pInput.value = shortTitle;
     const regBadge = document.getElementById('currentRegionBadge');

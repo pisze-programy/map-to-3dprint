@@ -9,9 +9,8 @@ const _origWindowFetch = (typeof window !== 'undefined' && window.fetch) ? windo
 
 const OVERPASS_MIRRORS = [
   '/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
   'https://overpass-api.de/api/interpreter'
 ];
 
@@ -25,18 +24,46 @@ function selectLodTier(spanMeters) {
   return 'mountain';
 }
 
-function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', timeoutSec = 22) {
+function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', timeoutSec = 11) {
   const bbox = `${south.toFixed(5)},${west.toFixed(5)},${north.toFixed(5)},${east.toFixed(5)}`;
   if (lodTier === 'detail') {
-    return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];(way["building"];relation["building"];relation["type"="building"];way["building:part"];relation["building:part"];way["natural"];relation["natural"];way["waterway"];relation["waterway"];way["water"];relation["water"];way["landuse"];relation["landuse"];way["leisure"];relation["leisure"];node["natural"="tree"];way["highway"];relation["highway"="pedestrian"];way["place"="square"];way["railway"];way["man_made"="bridge"];relation["man_made"="bridge"];way["man_made"="pier"];way["man_made"="breakwater"];way["man_made"="groyne"];);out body qt;>;out skel qt;`;
+    return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
+      `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];)->.brels;` +
+      `(.brels;>;)->.ball;` +
+      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];relation["type"="multipolygon"]["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground)$"];relation["type"="multipolygon"]["highway"="pedestrian"];)->.grels;` +
+      `way(r.grels)(${bbox})->.gways;` +
+      `(way["building"];way["building:part"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["man_made"~"^(bridge|pier|breakwater|groyne)$"];.gways;)->.wbox;` +
+      `(relation.ball;.grels;.wbox;way.ball;node["natural"="tree"];);out body qt;` +
+      `(node(w.wbox);node.ball;);out skel qt;`;
   }
   if (lodTier === 'urban') {
-    return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];(way["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|sty|greenhouse|static_caravan|ger)$"];relation["building"];relation["type"="building"];way["building:part"];relation["building:part"];way["natural"~"^(water|coastline|wood|scrub|grassland|heath)$"];relation["natural"~"^(water|wood|scrub|grassland|heath)$"];way["waterway"];relation["waterway"];way["water"];relation["water"];way["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green)$"];relation["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery)$"];way["leisure"~"^(park|garden|nature_reserve|pitch|common|golf_course|recreation_ground)$"];relation["leisure"~"^(park|garden|nature_reserve|common|golf_course)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|motorway_link|trunk_link|primary_link|secondary_link|service|cycleway)$"];way["highway"]["bridge"~"^(yes|viaduct|aqueduct|boardwalk|cantilever|covered|movable|suspension|trestle)$"];way["place"="square"];way["railway"~"^(rail|light_rail|tram|narrow_gauge)$"];way["man_made"~"^(bridge|pier|breakwater|groyne|tower|lighthouse)$"];relation["man_made"="bridge"];);out body qt;>;out skel qt;`;
+    return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
+      `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];)->.brels;` +
+      `(.brels;>;)->.ball;` +
+      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green)$"];relation["type"="multipolygon"]["leisure"~"^(park|garden|nature_reserve|pitch|common|golf_course|recreation_ground)$"];)->.grels;` +
+      `way(r.grels)(${bbox})->.gways;` +
+      `(way["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|sty|greenhouse|static_caravan|ger)$"];way["building:part"];way["natural"~"^(water|coastline|wood|scrub|grassland|heath)$"];way["waterway"];way["water"];way["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green)$"];way["leisure"~"^(park|garden|nature_reserve|pitch|common|golf_course|recreation_ground)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|motorway_link|trunk_link|primary_link|secondary_link|service|cycleway)$"];way["highway"]["bridge"~"^(yes|viaduct|aqueduct|boardwalk|cantilever|covered|movable|suspension|trestle)$"];way["place"="square"];way["railway"~"^(rail|light_rail|tram|narrow_gauge)$"];way["man_made"~"^(bridge|pier|breakwater|groyne|tower|lighthouse)$"];.gways;)->.wbox;` +
+      `(relation.ball;.grels;.wbox;way.ball;);out body qt;` +
+      `(node(w.wbox);node.ball;);out skel qt;`;
   }
   if (lodTier === 'regional') {
-    return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];(way["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|greenhouse|house|detached|terrace|semidetached_house|bungalow|farm_auxiliary|barn)$"];way["building"]["height"];way["building"]["building:levels"];way["building"]["name"];relation["building"];relation["type"="building"];way["building:part"];way["natural"~"^(water|coastline|wood|scrub|grassland)$"];relation["natural"~"^(water|wood|scrub)$"];way["waterway"~"^(river|riverbank|canal|stream|dock)$"];relation["waterway"];way["water"];relation["water"];way["landuse"~"^(reservoir|basin|forest|meadow|grass)$"];relation["landuse"~"^(reservoir|basin|forest|meadow)$"];way["leisure"~"^(park|nature_reserve|garden|golf_course)$"];relation["leisure"~"^(park|nature_reserve)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|motorway_link|trunk_link|primary_link)$"];way["highway"]["bridge"~"^(yes|viaduct|suspension)$"];way["railway"~"^(rail|light_rail)$"];way["man_made"~"^(bridge|pier|breakwater|tower|lighthouse)$"];relation["man_made"="bridge"];);out body qt;>;out skel qt;`;
+    return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
+      `(relation["building"];relation["type"="building"];relation["man_made"="bridge"];)->.brels;` +
+      `(.brels;>;)->.ball;` +
+      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|meadow)$"];relation["type"="multipolygon"]["leisure"~"^(park|nature_reserve)$"];)->.grels;` +
+      `way(r.grels)(${bbox})->.gways;` +
+      `(way["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|greenhouse|house|detached|terrace|semidetached_house|bungalow|farm_auxiliary|barn)$"];way["building"]["height"];way["building"]["building:levels"~"^([3-9]|[1-9][0-9])"];way["building"]["name"];way["building:part"];way["natural"~"^(water|coastline|wood|scrub|grassland)$"];way["waterway"~"^(river|riverbank|canal|stream|dock)$"];way["water"];way["landuse"~"^(reservoir|basin|forest|meadow|grass)$"];way["leisure"~"^(park|nature_reserve|garden|golf_course)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|motorway_link|trunk_link|primary_link)$"];way["highway"]["bridge"~"^(yes|viaduct|suspension)$"];way["railway"~"^(rail|light_rail)$"];way["man_made"~"^(bridge|pier|breakwater|tower|lighthouse)$"];.gways;)->.wbox;` +
+      `(relation.ball;.grels;.wbox;way.ball;);out body qt;` +
+      `(node(w.wbox);node.ball;);out skel qt;`;
   }
-  return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];(way["building"]["height"];way["building"]["building:levels"];way["building"]["name"];way["building"~"^(church|cathedral|chapel|castle|palace|public|civic|commercial|industrial|apartments|hotel|hospital|university|train_station|tower)$"];relation["building"];relation["type"="building"];way["natural"~"^(water|coastline|wood|scrub)$"];relation["natural"~"^(water|wood)$"];way["waterway"~"^(river|riverbank|canal|dock)$"];relation["waterway"];way["water"];relation["water"];way["landuse"~"^(reservoir|basin|forest)$"];relation["landuse"~"^(reservoir|basin|forest)$"];way["leisure"~"^(park|nature_reserve)$"];relation["leisure"~"^(park|nature_reserve)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|motorway_link|trunk_link)$"];way["highway"]["bridge"~"^(yes|viaduct|suspension)$"];way["railway"="rail"];way["man_made"~"^(bridge|pier|tower|lighthouse)$"];relation["man_made"="bridge"];);out body qt;>;out skel qt;`;
+  return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
+    `(relation["building"]["name"];relation["building"]["height"];relation["building"~"^(church|cathedral|chapel|castle|palace|public|civic|commercial|industrial|apartments|hotel|hospital|university|train_station|tower|stadium)$"];relation["type"="building"];relation["man_made"="bridge"];)->.brels;` +
+    `(.brels;>;)->.ball;` +
+    `(relation["type"="multipolygon"]["natural"~"^(water|wood)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest)$"];relation["type"="multipolygon"]["leisure"~"^(park|nature_reserve)$"];)->.grels;` +
+    `way(r.grels)(${bbox})->.gways;` +
+    `(way["building"]["height"];way["building"]["building:levels"~"^([5-9]|[1-9][0-9])"];way["building"]["name"];way["building"~"^(church|cathedral|chapel|castle|palace|public|civic|commercial|industrial|apartments|hotel|hospital|university|train_station|tower|stadium)$"];way["natural"~"^(water|coastline|wood|scrub)$"];way["waterway"~"^(river|riverbank|canal|dock)$"];way["water"];way["landuse"~"^(reservoir|basin|forest)$"];way["leisure"~"^(park|nature_reserve)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|motorway_link|trunk_link)$"];way["highway"]["bridge"~"^(yes|viaduct|suspension)$"];way["railway"="rail"];way["man_made"~"^(bridge|pier|tower|lighthouse)$"];.gways;)->.wbox;` +
+    `(relation.ball;.grels;.wbox;way.ball;);out body qt;` +
+    `(node(w.wbox);node.ball;);out skel qt;`;
 }
 
 function buildSpatialChunkGrid(south, west, north, east, spanMeters) {
@@ -76,16 +103,42 @@ function buildSpatialChunkGrid(south, west, north, east, spanMeters) {
   return { rows, cols, lodTier, chunks };
 }
 
-async function fetchSingleOverpassQuery(query, timeoutMs = 19000, abortSignal = null) {
-  const startIdx = (_mirrorRoundRobinIdx++) % OVERPASS_MIRRORS.length;
-  const orderedMirrors = OVERPASS_MIRRORS.map((_, i) => OVERPASS_MIRRORS[(startIdx + i) % OVERPASS_MIRRORS.length]);
+function getPrioritizedOverpassMirrors() {
+  const isHttpOrigin = typeof window === 'undefined' || !window.location || /^https?:$/i.test(window.location.protocol);
+  const primary = [];
+  if (isHttpOrigin) primary.push('/api/interpreter');
+  const secondaryPool = OVERPASS_MIRRORS.filter(m => !primary.includes(m));
+  const rot = (_mirrorRoundRobinIdx++) % Math.max(1, secondaryPool.length);
+  const rotatedSecondary = secondaryPool.map((_, i) => secondaryPool[(rot + i) % secondaryPool.length]);
+  return primary.concat(rotatedSecondary);
+}
+
+async function fetchSingleOverpassQuery(query, timeoutMs = 12500, abortSignal = null) {
+  const orderedMirrors = getPrioritizedOverpassMirrors();
+  const activeControllers = new Set();
+
+  const abortAllActive = () => {
+    for (const c of activeControllers) {
+      try { c.abort(); } catch (_) {}
+    }
+    activeControllers.clear();
+  };
 
   const attemptMirror = async (ep, perMirrorTimeoutMs) => {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), perMirrorTimeoutMs);
-    const onParentAbort = () => ctrl.abort();
+    activeControllers.add(ctrl);
+    let timedOutLocal = false;
+    const timer = setTimeout(() => {
+      timedOutLocal = true;
+      try { ctrl.abort(); } catch (_) {}
+    }, perMirrorTimeoutMs);
+    const onParentAbort = () => { try { ctrl.abort(); } catch (_) {} };
     if (abortSignal) {
-      if (abortSignal.aborted) { clearTimeout(timer); throw new Error('Aborted'); }
+      if (abortSignal.aborted) {
+        clearTimeout(timer);
+        activeControllers.delete(ctrl);
+        throw new Error('Aborted');
+      }
       abortSignal.addEventListener('abort', onParentAbort, { once: true });
     }
     try {
@@ -95,70 +148,150 @@ async function fetchSingleOverpassQuery(query, timeoutMs = 19000, abortSignal = 
         headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
         signal: ctrl.signal
       });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) {
+        const httpErr = new Error(`HTTP ${r.status}`);
+        httpErr.status = r.status;
+        throw httpErr;
+      }
       const text = await r.text();
-      if (!text || text.trim().startsWith('<')) throw new Error('Overpass XML/HTML rate-limit');
-      const j = JSON.parse(text);
+      const trimmed = text ? text.trim() : '';
+      if (!trimmed || trimmed.startsWith('<') || trimmed.startsWith('#')) {
+        throw new Error('Overpass XML/HTML rate-limit');
+      }
+      const j = JSON.parse(trimmed);
       if (!j || !Array.isArray(j.elements)) throw new Error('Invalid Overpass JSON');
+      if (j.remark && String(j.remark).trim().length > 0) {
+        const rem = String(j.remark).trim();
+        const remErr = new Error(`Overpass remark: ${rem}`);
+        if (/timed out|out of memory|runtime error/i.test(rem)) {
+          remErr.isQueryTooHeavy = true;
+        }
+        throw remErr;
+      }
       return j.elements;
+    } catch (err) {
+      if (timedOutLocal && !(abortSignal && abortSignal.aborted)) {
+        const tErr = new Error(`Mirror timeout (${perMirrorTimeoutMs}ms)`);
+        tErr.isTimeout = true;
+        throw tErr;
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
+      activeControllers.delete(ctrl);
       if (abortSignal) abortSignal.removeEventListener('abort', onParentAbort);
     }
   };
 
   return new Promise((resolve, reject) => {
-    let settled = false, pending = 0, nextMirrorIdx = 0;
-    const errors = [], hedgeTimers = [];
+    let settled = false, pending = 0, nextMirrorIdx = 0, stopLaunchingMore = false;
+    const errors = [], rawErrors = [], hedgeTimers = [];
     const clearHedges = () => { while (hedgeTimers.length) clearTimeout(hedgeTimers.pop()); };
 
+    const finishReject = () => {
+      if (settled) return;
+      settled = true;
+      clearHedges();
+      abortAllActive();
+      const combined = new Error(`Mirrors failed: ${errors.join(', ')}`);
+      combined.allFatalNetwork = rawErrors.length > 0 && rawErrors.every(e => {
+        const m = String(e && e.message ? e.message : e);
+        return (
+          !e.isTimeout &&
+          !e.isQueryTooHeavy &&
+          (m.includes('Failed to fetch') || m.includes('NetworkError') || m.includes('HTTP 500') || m.includes('ECONNREFUSED') || m.includes('Load failed'))
+        );
+      });
+      reject(combined);
+    };
+
     const launchNext = () => {
-      if (settled || nextMirrorIdx >= orderedMirrors.length) return;
+      if (settled || stopLaunchingMore || nextMirrorIdx >= orderedMirrors.length) return;
       if (abortSignal && abortSignal.aborted) {
-        settled = true; clearHedges(); reject(new Error('Aborted')); return;
+        settled = true;
+        clearHedges();
+        abortAllActive();
+        reject(new Error('Aborted'));
+        return;
       }
       const ep = orderedMirrors[nextMirrorIdx++];
       pending++;
       attemptMirror(ep, timeoutMs)
         .then((elements) => {
           if (settled) return;
-          settled = true; clearHedges(); resolve(elements);
+          settled = true;
+          clearHedges();
+          abortAllActive();
+          resolve(elements);
         })
         .catch((err) => {
-          errors.push(err.message || String(err));
+          if (abortSignal && abortSignal.aborted) {
+            if (!settled) {
+              settled = true;
+              clearHedges();
+              abortAllActive();
+              reject(new Error('Aborted'));
+            }
+            return;
+          }
+          rawErrors.push(err);
+          errors.push(err && err.message ? err.message : String(err));
           pending--;
           if (settled) return;
-          if (nextMirrorIdx < orderedMirrors.length) launchNext();
-          else if (pending === 0) {
-            settled = true; clearHedges(); reject(new Error(`Mirrors failed: ${errors.join(', ')}`));
+          if (err && err.isQueryTooHeavy) {
+            stopLaunchingMore = true;
+            clearHedges();
+            abortAllActive();
+            finishReject();
+            return;
+          }
+          if (!stopLaunchingMore && nextMirrorIdx < orderedMirrors.length) {
+            launchNext();
+            if (ep === '/api/interpreter') {
+              hedgeTimers.push(setTimeout(() => { if (!settled && !stopLaunchingMore && nextMirrorIdx < orderedMirrors.length) launchNext(); }, 2200));
+              hedgeTimers.push(setTimeout(() => { if (!settled && !stopLaunchingMore && nextMirrorIdx < orderedMirrors.length) launchNext(); }, 4500));
+            }
+          } else if (pending === 0) {
+            finishReject();
           }
         });
     };
 
+    const startsWithLocalProxy = orderedMirrors[0] === '/api/interpreter';
     launchNext();
-    hedgeTimers.push(setTimeout(() => { if (!settled && nextMirrorIdx < orderedMirrors.length) launchNext(); }, 3200));
-    hedgeTimers.push(setTimeout(() => { if (!settled && nextMirrorIdx < orderedMirrors.length) launchNext(); }, 7000));
+    if (!startsWithLocalProxy) {
+      hedgeTimers.push(setTimeout(() => { if (!settled && !stopLaunchingMore && nextMirrorIdx < orderedMirrors.length) launchNext(); }, 2200));
+      hedgeTimers.push(setTimeout(() => { if (!settled && !stopLaunchingMore && nextMirrorIdx < orderedMirrors.length) launchNext(); }, 4500));
+      hedgeTimers.push(setTimeout(() => { if (!settled && !stopLaunchingMore && nextMirrorIdx < orderedMirrors.length) launchNext(); }, 7500));
+    }
   });
 }
 
-async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, onSubSplit = null) {
-  const cacheKey = `v5_${chunk.lodTier}_${chunk.south.toFixed(4)}_${chunk.west.toFixed(4)}_${chunk.north.toFixed(4)}_${chunk.east.toFixed(4)}`;
+async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, callbacks = null) {
+  const onSubSplit = typeof callbacks === 'function'
+    ? callbacks
+    : (callbacks && typeof callbacks.onSubSplit === 'function' ? callbacks.onSubSplit : null);
+  const onSubChunkDone = (callbacks && typeof callbacks === 'object' && typeof callbacks.onSubChunkDone === 'function')
+    ? callbacks.onSubChunkDone
+    : null;
+
+  const cacheKey = `v6_${chunk.lodTier}_${chunk.south.toFixed(4)}_${chunk.west.toFixed(4)}_${chunk.north.toFixed(4)}_${chunk.east.toFixed(4)}`;
   if (_overpassChunkCache.has(cacheKey)) return _overpassChunkCache.get(cacheKey);
 
-  const timeoutSec = chunk.depth === 0 ? 18 : 14;
+  const timeoutSec = chunk.depth === 0 ? 13 : 10;
+  const perAttemptMs = chunk.depth === 0 ? 15500 : 12000;
   const query = buildAdaptiveOverpassQL(chunk.south, chunk.west, chunk.north, chunk.east, chunk.lodTier, timeoutSec);
 
   try {
-    const elements = await fetchSingleOverpassQuery(query, (timeoutSec + 2) * 1000, abortSignal);
+    const elements = await fetchSingleOverpassQuery(query, perAttemptMs, abortSignal);
     _overpassChunkCache.set(cacheKey, elements);
     if (_overpassChunkCache.size > 80) _overpassChunkCache.delete(_overpassChunkCache.keys().next().value);
     return elements;
   } catch (err) {
     if (abortSignal && abortSignal.aborted) throw err;
-    const msg = String(err && err.message ? err.message : err);
-    const isFatalNetwork = msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('HTTP 500') || msg.includes('ECONNREFUSED');
+    const isFatalNetwork = Boolean(err && err.allFatalNetwork);
     if (chunk.depth < 1 && !isFatalNetwork) {
-      if (typeof onSubSplit === 'function') onSubSplit(chunk);
+      if (onSubSplit) onSubSplit(chunk);
       const midLat = (chunk.south + chunk.north) * 0.5;
       const midLon = (chunk.west + chunk.east) * 0.5;
       const fallbackTier = chunk.lodTier === 'detail' ? 'urban' : (chunk.lodTier === 'urban' ? 'regional' : chunk.lodTier);
@@ -169,12 +302,23 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, onSubSpli
         { id: `${chunk.id}.4`, south: midLat, west: midLon, north: chunk.north, east: chunk.east, lodTier: fallbackTier, depth: 1 }
       ];
       const mergedSub = [];
-      for (let i = 0; i < subChunks.length; i += 2) {
-        const results = await Promise.allSettled(subChunks.slice(i, i + 2).map(sc => fetchChunkWithRecursiveSplit(sc, abortSignal, null)));
-        for (const res of results) {
-          if (res.status === 'fulfilled' && Array.isArray(res.value)) mergedSub.push(...res.value);
+      let subCursor = 0;
+      let subDoneCount = 0;
+      const subWorker = async () => {
+        while (subCursor < subChunks.length) {
+          if (abortSignal && abortSignal.aborted) break;
+          const sc = subChunks[subCursor++];
+          try {
+            const subEls = await fetchChunkWithRecursiveSplit(sc, abortSignal, null);
+            if (Array.isArray(subEls)) {
+              mergedSub.push(...subEls);
+              subDoneCount++;
+              if (onSubChunkDone) onSubChunkDone(sc, subEls.length, subDoneCount, subChunks.length);
+            }
+          } catch (_) {}
         }
-      }
+      };
+      await Promise.all([subWorker(), subWorker()]);
       if (mergedSub.length > 0) {
         _overpassChunkCache.set(cacheKey, mergedSub);
         return mergedSub;
@@ -218,7 +362,7 @@ function filterPrintableBuildingsForScale(scene, maxBuildings = 1850) {
       mustKeep.push(b);
     } else {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const [x, y] of (b.outer || [])) {
+      for (const [x, y] of (b.outer || b.poly || [])) {
         if (x < minX) minX = x; if (x > maxX) maxX = x;
         if (y < minY) minY = y; if (y > maxY) maxY = y;
       }

@@ -96,19 +96,6 @@ async function setupOverpassProxy(page) {
             }
           }
 
-          if (!bestFile) {
-            for (const f of files) {
-              const parts = f.replace('osm_', '').replace('.json', '').split('_').map(Number);
-              if (parts.length === 4) {
-                const latStr = parts[0].toFixed(2);
-                if (url.includes(latStr) || decoded.includes(latStr)) {
-                  bestFile = f;
-                  break;
-                }
-              }
-            }
-          }
-
           if (bestFile) {
             const data = fs.readFileSync(path.join(cacheDir, bestFile), 'utf-8');
             await route.fulfill({
@@ -128,8 +115,10 @@ async function setupOverpassProxy(page) {
 /**
  * Attaches listeners to track console errors, warnings, and pageerrors.
  * Provides an assertClean() method ensuring zero forbidden error patterns.
+ * @param {import('@playwright/test').Page} page
+ * @param {{ liveNetwork?: boolean }} [setupOptions]
  */
-function setupConsoleHygiene(page) {
+function setupConsoleHygiene(page, setupOptions = {}) {
   /** @type {string[]} */
   const pageErrors = [];
   /** @type {string[]} */
@@ -152,8 +141,10 @@ function setupConsoleHygiene(page) {
   page.on('pageerror', onPageError);
   page.on('console', onConsole);
 
-  // Resilient Overpass proxy with genuine User-Agent and cache fallback
-  setupOverpassProxy(page);
+  // Only attach Overpass cache-fallback proxy on deterministic cached tests, NEVER when liveNetwork=true
+  if (!setupOptions.liveNetwork) {
+    setupOverpassProxy(page);
+  }
 
   return {
     pageErrors,
@@ -217,8 +208,10 @@ async function waitForAppReady(page, timeout = 45000) {
 
 /**
  * Waits for 3D model render to complete.
- * Verifies #loadingOverlay3D hidden, #gisErrorBanner hidden, #btnRender3D enabled,
- * #meshStatsBadge updated, totalTriangles > 0, and optional title match.
+ * Strictly verifies #loadingOverlay3D hidden, #gisErrorBanner strictly hidden
+ * (NEVER accepting 0-building DEM fallback 'Załadowano model terenu DEM'),
+ * state.sceneData._fallback falsy, #btnRender3D enabled, #meshStatsBadge updated,
+ * totalTriangles > 0, and optional title match.
  * @param {import('@playwright/test').Page} page
  * @param {string} [expectedTitleSubstring='']
  * @param {number} [timeout=45000]
@@ -236,12 +229,19 @@ async function waitForRenderComplete(page, expectedTitleSubstring = '', timeout 
       overlay.classList.contains('hidden') ||
       window.getComputedStyle(overlay).display === 'none'
     );
-    const bannerText = banner ? (banner.textContent || '') : '';
-    const bannerIsFatal = banner && !banner.classList.contains('hidden') &&
-      window.getComputedStyle(banner).display !== 'none' &&
-      !bannerText.includes('Załadowano model terenu DEM');
-    const bannerHidden = !bannerIsFatal;
+    const bannerVisible = Boolean(
+      banner &&
+      !banner.classList.contains('hidden') &&
+      window.getComputedStyle(banner).display !== 'none'
+    );
+    const isFallback = Boolean(st?.sceneData?._fallback);
     const btnEnabled = btn && !btn.disabled;
+
+    // Wake immediately on terminal GIS error or 0-building DEM fallback so the test fails fast with diagnostics
+    if (overlayHidden && btnEnabled && (bannerVisible || isFallback)) {
+      return true;
+    }
+
     const badgeValid = badge.includes('trójkątów') && !badge.includes('ERR:') && !badge.includes('Ładowanie siatki');
     const trianglesValid = st && typeof st.totalTriangles === 'number' && st.totalTriangles > 0;
     const titleMatches = expectedSubstring
@@ -250,8 +250,34 @@ async function waitForRenderComplete(page, expectedTitleSubstring = '', timeout 
            .includes(expectedSubstring.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()))
       : true;
 
-    return overlayHidden && bannerHidden && btnEnabled && badgeValid && trianglesValid && titleMatches;
+    return overlayHidden && !bannerVisible && !isFallback && btnEnabled && badgeValid && trianglesValid && titleMatches;
   }, expectedTitleSubstring, { timeout });
+
+  const renderDiag = await page.evaluate(() => {
+    const banner = document.getElementById('gisErrorBanner');
+    const errText = document.getElementById('gisErrorText');
+    const st = /** @type {any} */ (window).__map3d?.state;
+    const bannerVisible = Boolean(
+      banner &&
+      !banner.classList.contains('hidden') &&
+      window.getComputedStyle(banner).display !== 'none'
+    );
+    return {
+      bannerVisible,
+      bannerText: (errText?.textContent || banner?.textContent || '').trim(),
+      isFallback: Boolean(st?.sceneData?._fallback),
+    };
+  });
+
+  expect(
+    renderDiag.bannerVisible,
+    `#gisErrorBanner must remain hidden on render completion, got: "${renderDiag.bannerText}"`
+  ).toBe(false);
+  expect(
+    renderDiag.isFallback,
+    `Scene must NOT be a 0-building DEM fallback (state.sceneData._fallback=true; banner="${renderDiag.bannerText}")`
+  ).toBe(false);
+  await expect(page.locator('#gisErrorBanner')).toBeHidden();
 
   // Two requestAnimationFrame cycles for GPU frame presentation
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -261,8 +287,10 @@ async function waitForRenderComplete(page, expectedTitleSubstring = '', timeout 
     return {
       totalTriangles: s?.totalTriangles || 0,
       buildingCount: s?.sceneData?.buildings?.length || 0,
+      isFallback: Boolean(s?.sceneData?._fallback),
       title: s?.plaqueText || s?.sceneData?.title || '',
       center: s?.sceneData?.center || null,
+      spanMeters: s?.sceneData?.spanMeters || s?.mapSpanMeters || 0,
       lat: s?.mapCenterLat,
       lon: s?.mapCenterLon,
     };
@@ -672,13 +700,219 @@ async function assertWebGLCanvasNotBlank(page) {
   expect(sample.uniqueColorCount, 'Scene must display color variation across geometry').toBeGreaterThan(2);
 }
 
+/**
+ * Samples a central 192x192 region of #view3dCanvas via gl.readPixels and verifies
+ * genuine 3D shading diversity (unique RGB colors, luminance variance, and spatial
+ * edge contrast from building walls, roofs, streets, and directional cast shadows).
+ * @param {import('@playwright/test').Page} page
+ * @param {{ minUniqueColors?: number, minLumStdDev?: number, minEdgeTransitions?: number }} [options]
+ */
+async function assertWebGL3DShadingDiversity(page, options = {}) {
+  const minUniqueColors = options.minUniqueColors ?? 20;
+  const minLumStdDev = options.minLumStdDev ?? 2.0;
+  const minEdgeTransitions = options.minEdgeTransitions ?? 80;
+
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+  const metrics = await page.evaluate(() => {
+    const canvas = /** @type {HTMLCanvasElement | null} */ (document.getElementById('view3dCanvas'));
+    if (!canvas) return { ok: false, reason: 'missing_canvas' };
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) return { ok: false, reason: 'missing_gl' };
+
+    const studio = /** @type {any} */ (window).__map3d?.studio;
+    if (studio && typeof studio.render === 'function') {
+      studio.render(true);
+    }
+
+    const w = Math.min(192, Math.max(32, Math.floor(canvas.width * 0.35)));
+    const h = Math.min(192, Math.max(32, Math.floor(canvas.height * 0.35)));
+    const x = Math.max(0, Math.floor(canvas.width / 2 - w / 2));
+    const y = Math.max(0, Math.floor(canvas.height / 2 - h / 2));
+    const pixels = new Uint8Array(w * h * 4);
+    gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    const n = w * h;
+    const lums = new Float32Array(n);
+    const uniqueColors = new Set();
+    let nonZeroRgb = 0;
+    let lumSum = 0;
+
+    for (let i = 0, p = 0; i < pixels.length; i += 4, p++) {
+      const r = pixels[i];
+      const g = pixels[i + 1];
+      const b = pixels[i + 2];
+      if (r > 10 || g > 10 || b > 10) nonZeroRgb++;
+      uniqueColors.add((r << 16) | (g << 8) | b);
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      lums[p] = lum;
+      lumSum += lum;
+    }
+
+    const lumMean = lumSum / n;
+    let varSum = 0;
+    for (let p = 0; p < n; p++) {
+      const d = lums[p] - lumMean;
+      varSum += d * d;
+    }
+    const lumStdDev = Math.sqrt(varSum / n);
+
+    let edgeTransitions = 0;
+    const quadrantSums = [0, 0, 0, 0];
+    const quadrantCounts = [0, 0, 0, 0];
+    const halfW = w >> 1;
+    const halfH = h >> 1;
+
+    for (let py = 0; py < h; py++) {
+      const rowOff = py * w;
+      for (let px = 0; px < w; px++) {
+        const cur = lums[rowOff + px];
+        if (px + 1 < w && Math.abs(lums[rowOff + px + 1] - cur) >= 5.0) {
+          edgeTransitions++;
+        }
+        if (py + 1 < h && Math.abs(lums[rowOff + w + px] - cur) >= 5.0) {
+          edgeTransitions++;
+        }
+        const qIdx = (py >= halfH ? 2 : 0) + (px >= halfW ? 1 : 0);
+        quadrantSums[qIdx] += cur;
+        quadrantCounts[qIdx]++;
+      }
+    }
+
+    const quadrantMeans = quadrantSums.map((s, idx) =>
+      Math.round((s / Math.max(1, quadrantCounts[idx])) * 100) / 100
+    );
+
+    return {
+      ok: true,
+      sampleWidth: w,
+      sampleHeight: h,
+      totalPixels: n,
+      nonZeroPixels: nonZeroRgb,
+      uniqueColorCount: uniqueColors.size,
+      lumMean: Math.round(lumMean * 100) / 100,
+      lumStdDev: Math.round(lumStdDev * 100) / 100,
+      edgeTransitions,
+      quadrantMeans,
+    };
+  });
+
+  expect(metrics.ok, 'WebGL context must be readable via gl.readPixels').toBe(true);
+  expect(metrics.nonZeroPixels, 'WebGL sample must not be pure black').toBeGreaterThan(metrics.totalPixels * 0.6);
+  expect(
+    metrics.uniqueColorCount,
+    `WebGL 3D scene must exhibit shading diversity (>= ${minUniqueColors} unique RGB colors, got ${metrics.uniqueColorCount})`
+  ).toBeGreaterThanOrEqual(minUniqueColors);
+  expect(
+    metrics.lumStdDev,
+    `WebGL 3D scene must have non-flat luminance variance (>= ${minLumStdDev}, got ${metrics.lumStdDev})`
+  ).toBeGreaterThanOrEqual(minLumStdDev);
+  expect(
+    metrics.edgeTransitions,
+    `WebGL 3D scene must contain spatial 3D building/shadow edges (>= ${minEdgeTransitions}, got ${metrics.edgeTransitions})`
+  ).toBeGreaterThanOrEqual(minEdgeTransitions);
+
+  return metrics;
+}
+
+/**
+ * Installs a pass-through Photon Komoot autocomplete handler that uses live
+ * https://photon.komoot.io/api/ first and falls back to accurate city coordinates
+ * ONLY if live Photon rate-limits (HTTP 429/5xx) or times out.
+ * Never touches GIS/Overpass/DEM endpoints.
+ * @param {import('@playwright/test').Page} page
+ * @param {Array<{ query: string, name: string, city?: string, state?: string, country?: string, lat: number, lon: number }>} fallbackCities
+ */
+async function setupLivePhotonWithFallback(page, fallbackCities) {
+  /** @type {Array<{ query: string, source: 'live' | 'fallback', status?: number }>} */
+  const events = [];
+
+  await page.route('**/photon.komoot.io/**', async (route) => {
+    const reqUrl = route.request().url();
+    let qParam = '';
+    try {
+      qParam = new URL(reqUrl).searchParams.get('q') || '';
+    } catch (_) {}
+
+    const normQ = normalizeTitle(qParam);
+    const matchedCity = fallbackCities.find(c =>
+      normQ.includes(normalizeTitle(c.query)) ||
+      normalizeTitle(c.query).includes(normQ) ||
+      normQ.includes(normalizeTitle(c.name))
+    ) || fallbackCities[0];
+
+    try {
+      const resp = await route.fetch({
+        headers: {
+          ...route.request().headers(),
+          'User-Agent': 'Map3DStudio-LiveUserJourney/2.0',
+        },
+        timeout: 5000,
+      });
+      if (resp.ok()) {
+        const data = await resp.json();
+        const features = Array.isArray(data?.features) ? data.features : [];
+        const hasNearMatch = matchedCity
+          ? features.some(f => {
+              const coords = f?.geometry?.coordinates;
+              return Array.isArray(coords) &&
+                Math.abs(coords[1] - matchedCity.lat) < 0.6 &&
+                Math.abs(coords[0] - matchedCity.lon) < 0.6;
+            })
+          : features.length > 0;
+
+        if (features.length > 0 && hasNearMatch) {
+          events.push({ query: qParam, source: 'live', status: resp.status() });
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(data),
+          });
+          return;
+        }
+      }
+    } catch (_) {
+      // Live Photon timed out or errored; supply fallback suggestion below
+    }
+
+    events.push({ query: qParam, source: 'fallback' });
+    const list = matchedCity ? [matchedCity] : fallbackCities;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        type: 'FeatureCollection',
+        features: list.map(item => ({
+          type: 'Feature',
+          properties: {
+            name: item.name,
+            city: item.city || item.name,
+            state: item.state || '',
+            country: item.country || '',
+            type: 'city',
+            osm_value: 'city',
+          },
+          geometry: {
+            type: 'Point',
+            coordinates: [item.lon, item.lat],
+          },
+        })),
+      }),
+    });
+  });
+
+  return events;
+}
+
 module.exports = {
   TEST_LOCATIONS,
+  normalizeTitle,
   setupConsoleHygiene,
   waitForAppReady,
   waitForRenderComplete,
   waitForGisError,
   mockPhotonPlaceSearch,
+  setupLivePhotonWithFallback,
   mockGisFailure,
   mockGisHang,
   unmockGis,
@@ -687,4 +921,5 @@ module.exports = {
   assertLocalStorageConfig,
   captureAndInspectScreenshot,
   assertWebGLCanvasNotBlank,
+  assertWebGL3DShadingDiversity,
 };

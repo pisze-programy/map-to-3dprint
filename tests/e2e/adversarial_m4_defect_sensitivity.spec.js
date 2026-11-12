@@ -82,19 +82,14 @@ test.describe('Adversarial Defect Sensitivity: Uncached GIS Streaming & Watchdog
       expect(totalElapsed).toBeGreaterThan(20000); // Proves total time strictly exceeded 20s
 
       await expect(page.locator('#loadingOverlay3D')).toBeHidden();
+      await expect(page.locator('#gisErrorBanner')).toBeHidden();
       await expect(page.locator('#btnRender3D')).toBeEnabled();
-
-      const bannerVisible = await page.locator('#gisErrorBanner').isVisible();
-      if (bannerVisible) {
-        const txt = (await page.locator('#gisErrorText').textContent()) || '';
-        expect(txt).not.toContain('20s');
-      }
 
       hygiene.assertClean();
     });
 
-    test('1.2 Inactivity stall of >20s mid-stream triggers watchdog killswitch', async ({ page }) => {
-      test.setTimeout(90000);
+    test('1.2 Inactivity stall of >45s mid-stream triggers watchdog killswitch', async ({ page }) => {
+      test.setTimeout(120000);
       const hygiene = setupConsoleHygiene(page);
 
       await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -107,7 +102,7 @@ test.describe('Adversarial Defect Sensitivity: Uncached GIS Streaming & Watchdog
       const tStart = Date.now();
 
       // Batch 1 (requests 1 & 2) returns at 2s.
-      // Batch 2 (requests >= 3) hangs indefinitely (>25s stall).
+      // Batch 2 (requests >= 3) hangs indefinitely (>45s stall).
       await page.route('**/*interpreter*', async (route) => {
         requestIndex++;
         if (requestIndex <= 2) {
@@ -139,17 +134,17 @@ test.describe('Adversarial Defect Sensitivity: Uncached GIS Streaming & Watchdog
 
       await expect(page.locator('#loadingOverlay3D')).toBeVisible();
 
-      // Wait for watchdog to trigger (inactivity timeout fires at ~2s + 20s = ~22s)
+      // Wait for watchdog to trigger (inactivity timeout fires at ~2s + 45s = ~47s)
       await page.waitForFunction(() => {
         const overlay = document.getElementById('loadingOverlay3D');
         const overlayHidden = overlay && (overlay.classList.contains('hidden') || window.getComputedStyle(overlay).display === 'none');
         const btn = /** @type {HTMLButtonElement | null} */ (document.getElementById('btnRender3D'));
         return overlayHidden && btn && !btn.disabled;
-      }, null, { timeout: 35000 });
+      }, null, { timeout: 65000 });
 
       const elapsed = Date.now() - tStart;
       console.log(`[Empirical Test 1.2] Watchdog aborted hanging stream after ${elapsed}ms.`);
-      expect(elapsed).toBeGreaterThanOrEqual(21500);
+      expect(elapsed).toBeGreaterThanOrEqual(45500);
 
       // Verify watchdog warning fired
       const watchdogWarn = hygiene.consoleWarnings.find(w => w.includes('[GIS Watchdog] Inactivity timeout'));

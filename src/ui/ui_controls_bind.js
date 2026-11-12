@@ -16,13 +16,15 @@ function bindStudioPanelControls(ctx) {
   const btnRender = document.getElementById('btnRender3D');
   if (btnRender) {
     btnRender.addEventListener('click', () => {
+      state.lastFetchBbox = null;
+      state.lastFetchTitle = null;
       fetchRealGISAndRender(null, state.plaqueText).catch(() => {});
     });
   }
   const btnRetryGis = document.getElementById('btnRetryGis');
   if (btnRetryGis) {
     btnRetryGis.addEventListener('click', () => {
-      fetchRealGISAndRender(null, state.plaqueText).catch(() => {});
+      fetchRealGISAndRender(state.lastFetchBbox || null, state.lastFetchTitle || state.plaqueText).catch(() => {});
     });
   }
 
@@ -69,6 +71,15 @@ function bindStudioPanelControls(ctx) {
 
   const targetWidthCmInput = document.getElementById('targetWidthCmInput');
   const targetHeightCmInput = document.getElementById('targetHeightCmInput');
+  function syncFrameSizeChips() {
+    const activeKey = `${Math.round(Number(state.targetWidthCm) || 50)}x${Math.round(Number(state.targetHeightCm) || 50)}`;
+    document.querySelectorAll('[data-frame-size]').forEach(chip => {
+      const isMatch = chip.getAttribute('data-frame-size') === activeKey;
+      chip.className = isMatch
+        ? 'px-1.5 py-0.5 rounded bg-blue-600 text-white border border-blue-500 text-[11px] font-mono transition'
+        : 'px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition';
+    });
+  }
   function handleTargetDimensionChange() {
     const wVal = Math.max(8, Math.min(150, parseFloat(targetWidthCmInput ? targetWidthCmInput.value : 32) || 32));
     const hVal = Math.max(8, Math.min(150, parseFloat(targetHeightCmInput ? targetHeightCmInput.value : 32) || 32));
@@ -76,15 +87,19 @@ function bindStudioPanelControls(ctx) {
     state.targetHeightCm = hVal;
     state.bedSizeMm = Math.round(wVal * 10);
     state.totalHeightMm = Math.round(hVal * 10);
+    state.lastFetchBbox = null;
+    state.lastFetchTitle = null;
     const prof = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.fdm_330_1x1;
     if (prof.isResin) {
       const optGrid = computeOptimalMono4Grid(state.bedSizeMm, state.totalHeightMm);
       state.tileCols = optGrid.cols;
       state.tileRows = optGrid.rows;
     }
+    syncFrameSizeChips();
     draw2DMap();
     if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
   }
+  syncFrameSizeChips();
   if (targetWidthCmInput) targetWidthCmInput.addEventListener('change', handleTargetDimensionChange);
   if (targetHeightCmInput) targetHeightCmInput.addEventListener('change', handleTargetDimensionChange);
   document.querySelectorAll('[data-frame-size]').forEach(btn => {
@@ -182,6 +197,8 @@ function bindStudioPanelControls(ctx) {
   function applyPrinterProfile(profileId) {
     const prof = PRINT_PROFILES[profileId] || PRINT_PROFILES.mono4_custom || PRINT_PROFILES.fdm_330_1x1;
     state.printerProfileId = prof.id;
+    state.lastFetchBbox = null;
+    state.lastFetchTitle = null;
     if (prof.isCustomMono4) {
       const curW = state.targetWidthCm || Math.round(prof.totalWidthMm / 10) || 50;
       const curH = state.targetHeightCm || Math.round(prof.totalHeightMm / 10) || 50;
@@ -206,6 +223,7 @@ function bindStudioPanelControls(ctx) {
       const lbl = document.getElementById('tileExplodeValueLabel');
       if (lbl) lbl.textContent = '0%';
     }
+    syncFrameSizeChips();
     draw2DMap();
     rebuildModel3D();
     if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
@@ -391,6 +409,7 @@ function bindStudioPanelControls(ctx) {
   document.getElementById('frameStyleSelect').addEventListener('change', e => { state.frameStyle = e.target.value; });
   document.getElementById('plaqueTextInput').addEventListener('input', e => {
     state.plaqueText = e.target.value || 'MAP3D';
+    state.lastFetchTitle = null;
     if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 300);
   });
   document.getElementById('printerSelect').addEventListener('change', e => applyPrinterProfile(e.target.value));
