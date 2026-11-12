@@ -10,11 +10,21 @@ if (typeof triangulateSimplePoly === 'undefined' && typeof require !== 'undefine
 }
 
 // Guaranteed interior point of a (possibly concave L/C-shaped or holed O-ring) footprint:
-// picks the centroid of the largest 2D ear-clipped triangle!
+// picks the centroid of the largest 2D ear-clipped triangle strictly outside all holes,
+// with horizontal scanline chord-midpoint fallback when a keyhole ring is non-simple!
 function computeSolidInteriorPoint2D(outerPts, holesPts) {
+  if (!outerPts || outerPts.length === 0) return [0, 0];
+  const validHoles = (holesPts || []).filter(h => h && h.length >= 3);
+  const inAnyHole = (px, py) => {
+    for (let h = 0; h < validHoles.length; h++) {
+      if (pointInPoly2D(px, py, validHoles[h])) return true;
+    }
+    return false;
+  };
+
   let ring = outerPts;
-  if (holesPts && holesPts.length > 0) {
-    const merged = mergeHolesIntoOuterKeyhole(outerPts, holesPts);
+  if (validHoles.length > 0) {
+    const merged = mergeHolesIntoOuterKeyhole(outerPts, validHoles);
     if (merged.length >= 3 && isSimplePolygon(merged)) ring = merged;
   }
   const tris = triangulateSimplePoly(ring);
@@ -24,14 +34,164 @@ function computeSolidInteriorPoint2D(outerPts, holesPts) {
     const [a, b, c] = tris[i];
     const area2 = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
     if (area2 > bestArea) {
-      bestArea = area2;
-      bestPt = [(a[0] + b[0] + c[0]) / 3.0, (a[1] + b[1] + c[1]) / 3.0];
+      const mx = (a[0] + b[0] + c[0]) / 3.0;
+      const my = (a[1] + b[1] + c[1]) / 3.0;
+      if (pointInPoly2D(mx, my, outerPts) && !inAnyHole(mx, my)) {
+        bestArea = area2;
+        bestPt = [mx, my];
+      }
     }
   }
   if (bestPt) return bestPt;
+
+  // Scanline chord-midpoint fallback (exact for O-rings & concave polygons even if keyhole failed)
+  const ys = [];
+  let minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < outerPts.length; i++) {
+    const y = outerPts[i][1];
+    ys.push(y);
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  for (let h = 0; h < validHoles.length; h++) {
+    for (let i = 0; i < validHoles[h].length; i++) ys.push(validHoles[h][i][1]);
+  }
+  ys.sort((a, b) => a - b);
+  const yMids = [];
+  for (let i = 0; i < ys.length - 1; i++) {
+    if (ys[i + 1] - ys[i] > 1e-5) yMids.push((ys[i] + ys[i + 1]) * 0.5);
+  }
+  if (maxY - minY > 1e-5) {
+    for (let k = 1; k <= 7; k++) yMids.push(minY + (maxY - minY) * (k / 8));
+  }
+  const scanYs = yMids.length <= 28
+    ? yMids
+    : Array.from({ length: 28 }, (_, idx) => yMids[Math.floor((idx * yMids.length) / 28)]);
+
+  let bestChord = -1;
+  const collectHits = (loop, yScan, xs) => {
+    for (let i = 0, n = loop.length; i < n; i++) {
+      const a = loop[i], b = loop[(i + 1) % n];
+      if ((a[1] > yScan) !== (b[1] > yScan)) {
+        xs.push(a[0] + (yScan - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+      }
+    }
+  };
+  for (let si = 0; si < scanYs.length; si++) {
+    const yScan = scanYs[si];
+    const xs = [];
+    collectHits(outerPts, yScan, xs);
+    for (let h = 0; h < validHoles.length; h++) collectHits(validHoles[h], yScan, xs);
+    if (xs.length < 2) continue;
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k < xs.length - 1; k++) {
+      const w = xs[k + 1] - xs[k];
+      if (w <= bestChord || w <= 1e-5) continue;
+      const xm = (xs[k] + xs[k + 1]) * 0.5;
+      if (pointInPoly2D(xm, yScan, outerPts) && !inAnyHole(xm, yScan)) {
+        bestChord = w;
+        bestPt = [xm, yScan];
+      }
+    }
+  }
+  if (bestPt) return bestPt;
+
   let cx = 0, cy = 0;
   for (let i = 0; i < outerPts.length; i++) { cx += outerPts[i][0]; cy += outerPts[i][1]; }
-  return [cx / (outerPts.length || 1), cy / (outerPts.length || 1)];
+  cx /= (outerPts.length || 1); cy /= (outerPts.length || 1);
+  if (pointInPoly2D(cx, cy, outerPts) && !inAnyHole(cx, cy)) return [cx, cy];
+  return [outerPts[0][0], outerPts[0][1]];
+}
+
+// Sanitizes courtyard holes against clippedOuter so grazing/simplified OSM inner rings
+// stay strictly interior and never trigger keyhole drop in extrudeBuildingLoD2.
+function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles) {
+  if (!rawClippedHoles || rawClippedHoles.length === 0 || !clippedOuter || clippedOuter.length < 3) return [];
+  const outerArea = Math.abs(signedArea2D(clippedOuter));
+  if (outerArea < 1e-4) return [];
+
+  const nearestOuterBoundaryPt = (px, py) => {
+    let bestX = px, bestY = py, bestDSq = Infinity;
+    for (let e = 0, n = clippedOuter.length; e < n; e++) {
+      const a = clippedOuter[e], b = clippedOuter[(e + 1) % n];
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const lenSq = dx * dx + dy * dy;
+      const t = lenSq > 1e-12 ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / lenSq)) : 0;
+      const qx = a[0] + t * dx, qy = a[1] + t * dy;
+      const dSq = (px - qx) * (px - qx) + (py - qy) * (py - qy);
+      if (dSq < bestDSq) { bestDSq = dSq; bestX = qx; bestY = qy; }
+    }
+    return [bestX, bestY, bestDSq];
+  };
+
+  const candidates = [];
+  for (let hi = 0; hi < rawClippedHoles.length; hi++) {
+    let h = rawClippedHoles[hi];
+    if (!h || h.length < 3) continue;
+    let hArea = Math.abs(signedArea2D(h));
+    if (hArea < 0.01 || hArea >= outerArea * 0.985) continue;
+
+    const hIp = computeSolidInteriorPoint2D(h, []);
+    if (!pointInPoly2D(hIp[0], hIp[1], clippedOuter)) continue;
+
+    let needsClamp = false;
+    for (let v = 0; v < h.length; v++) {
+      const pt = h[v];
+      if (!pointInPoly2D(pt[0], pt[1], clippedOuter) || nearestOuterBoundaryPt(pt[0], pt[1])[2] < 4e-4) {
+        needsClamp = true;
+        break;
+      }
+    }
+
+    if (needsClamp) {
+      const clamped = h.map(pt => {
+        const inside = pointInPoly2D(pt[0], pt[1], clippedOuter);
+        const [bx, by, dSq] = nearestOuterBoundaryPt(pt[0], pt[1]);
+        if (inside && dSq >= 4e-4) return pt;
+        const baseX = inside ? pt[0] : bx;
+        const baseY = inside ? pt[1] : by;
+        const vx = hIp[0] - baseX, vy = hIp[1] - baseY;
+        const vLen = Math.hypot(vx, vy);
+        if (vLen <= 1e-6) return [baseX, baseY];
+        const pull = Math.min(0.032, vLen * 0.35);
+        return [baseX + (vx / vLen) * pull, baseY + (vy / vLen) * pull];
+      });
+      const cleaned = cleanPolygonRing(clamped, false);
+      if (cleaned.length < 3 || !isSimplePolygon(cleaned) || !cleaned.every(p => pointInPoly2D(p[0], p[1], clippedOuter))) {
+        continue;
+      }
+      h = cleaned;
+      hArea = Math.abs(signedArea2D(h));
+      if (hArea < 0.01) continue;
+    }
+
+    candidates.push({ h, area: hArea, ip: hIp });
+  }
+
+  if (candidates.length === 0) return [];
+  candidates.sort((a, b) => b.area - a.area);
+
+  // Drop duplicate/nested holes and verify keyhole simplicity incrementally
+  const accepted = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const cand = candidates[i];
+    if (accepted.some(prev => pointInPoly2D(cand.ip[0], cand.ip[1], prev))) continue;
+    const trial = accepted.concat([cand.h]);
+    const merged = mergeHolesIntoOuterKeyhole(clippedOuter, trial);
+    if (merged.length >= 3 && isSimplePolygon(merged)) {
+      accepted.push(cand.h);
+    } else if (typeof insetPolygonCentroid === 'function') {
+      const insetH = cleanPolygonRing(insetPolygonCentroid(cand.h, 0.028), false);
+      if (insetH.length >= 3 && insetH.every(p => pointInPoly2D(p[0], p[1], clippedOuter))) {
+        const trialInset = accepted.concat([insetH]);
+        const mergedInset = mergeHolesIntoOuterKeyhole(clippedOuter, trialInset);
+        if (mergedInset.length >= 3 && isSimplePolygon(mergedInset)) {
+          accepted.push(insetH);
+        }
+      }
+    }
+  }
+  return accepted;
 }
 
 // Checks whether (px, py) lies inside `part.clippedOuter` (within tol) AND strictly outside all courtyard holes
@@ -93,10 +253,30 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     if (b.hidden || b.btype === 'pier') continue;
     if (b.part) {
       const bedPoly = b.outer.map(toBed);
-      let cx = 0, cy = 0;
-      for (let k = 0; k < bedPoly.length; k++) { cx += bedPoly[k][0]; cy += bedPoly[k][1]; }
-      cx /= (bedPoly.length || 1); cy /= (bedPoly.length || 1);
-      childEntries.push({ idx: i, b, bedPoly, cx, cy, area: Math.abs(signedArea2D(bedPoly)) });
+      if (bedPoly.length < 3) continue;
+      const holesBed = (b.holes || []).map(h => h.map(toBed)).filter(h => h.length >= 3);
+      const interiorPt = computeSolidInteriorPoint2D(bedPoly, holesBed);
+      let cMinX = Infinity, cMaxX = -Infinity, cMinY = Infinity, cMaxY = -Infinity;
+      for (let k = 0; k < bedPoly.length; k++) {
+        const p = bedPoly[k];
+        if (p[0] < cMinX) cMinX = p[0]; if (p[0] > cMaxX) cMaxX = p[0];
+        if (p[1] < cMinY) cMinY = p[1]; if (p[1] > cMaxY) cMaxY = p[1];
+      }
+      const outerArea = Math.abs(signedArea2D(bedPoly));
+      const holesArea = holesBed.reduce((acc, h) => acc + ( pointInPoly2D(computeSolidInteriorPoint2D(h, [])[0], computeSolidInteriorPoint2D(h, [])[1], bedPoly) ? Math.abs(signedArea2D(h)) : 0 ), 0);
+      const netArea = Math.max(1e-4, outerArea - holesArea);
+      childEntries.push({
+        idx: i,
+        b,
+        bedPoly,
+        holesBed,
+        interiorPt,
+        cx: interiorPt[0],
+        cy: interiorPt[1],
+        bbox: [cMinX, cMinY, cMaxX, cMaxY],
+        area: netArea,
+        minH: b.minH || 0
+      });
     }
   }
 
@@ -106,29 +286,73 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     if (b.isOutline) { suppressedIdx.add(i); continue; }
     if (!b.part && childEntries.length > 0) {
       const bOuterBed = b.outer.map(toBed);
-      const bArea = Math.abs(signedArea2D(bOuterBed));
-      if (bArea < 1e-4) continue;
+      const bOuterArea = Math.abs(signedArea2D(bOuterBed));
+      if (bOuterArea < 1e-4) continue;
+      let bMinX = Infinity, bMaxX = -Infinity, bMinY = Infinity, bMaxY = -Infinity;
+      for (let k = 0; k < bOuterBed.length; k++) {
+        const p = bOuterBed[k];
+        if (p[0] < bMinX) bMinX = p[0]; if (p[0] > bMaxX) bMaxX = p[0];
+        if (p[1] < bMinY) bMinY = p[1]; if (p[1] > bMaxY) bMaxY = p[1];
+      }
+      const bHolesBed = (b.holes || []).map(h => h.map(toBed)).filter(h => {
+        if (h.length < 3) return false;
+        const hip = computeSolidInteriorPoint2D(h, []);
+        return pointInPoly2D(hip[0], hip[1], bOuterBed);
+      });
+      const bHolesArea = bHolesBed.reduce((acc, h) => acc + Math.abs(signedArea2D(h)), 0);
+      const bNetArea = Math.max(1e-4, bOuterArea - bHolesArea);
       const parentKey = b.osmId || b.id;
-      let explicitChild = false;
+
       let childAreaSum = 0;
+      let groundChildAreaSum = 0;
+      let groundChildCount = 0;
       const matchedChildren = [];
 
       for (let j = 0; j < childEntries.length; j++) {
         const ce = childEntries[j];
-        if (ce.b.groupId && (ce.b.groupId === b.id || ce.b.groupId === b.osmId)) {
-          explicitChild = true;
-          matchedChildren.push(ce);
-        } else if (pointInPoly2D(ce.cx, ce.cy, bOuterBed)) {
+        const [cMinX, cMinY, cMaxX, cMaxY] = ce.bbox;
+        const bboxOverlaps = !(cMinX > bMaxX + 0.25 || cMaxX < bMinX - 0.25 || cMinY > bMaxY + 0.25 || cMaxY < bMinY - 0.25);
+        if (!bboxOverlaps) continue;
+
+        const [pix, piy] = ce.interiorPt;
+        const inHole = bHolesBed.some(h => pointInPoly2D(pix, piy, h));
+        let matched = false;
+        if (ce.b.groupId && (ce.b.groupId === b.id || ce.b.groupId === b.osmId) && !inHole) {
+          matched = true;
+        } else if (!inHole && pointInPoly2D(pix, piy, bOuterBed)) {
+          matched = true;
+        } else if (!inHole) {
+          let inCnt = 0;
+          const nPts = ce.bedPoly.length;
+          for (let k = 0; k < nPts; k++) {
+            const a = ce.bedPoly[k];
+            const vx = a[0] + (pix - a[0]) * 1e-3, vy = a[1] + (piy - a[1]) * 1e-3;
+            if (pointInPoly2D(vx, vy, bOuterBed) && !bHolesBed.some(h => pointInPoly2D(vx, vy, h))) inCnt++;
+          }
+          if (nPts > 0 && inCnt >= nPts * 0.55) matched = true;
+        }
+
+        if (matched) {
           childAreaSum += ce.area;
+          if (ce.minH <= 3.5) {
+            groundChildAreaSum += ce.area;
+            groundChildCount++;
+          }
           matchedChildren.push(ce);
         }
       }
-      if (explicitChild || childAreaSum >= bArea * 0.30) {
-        suppressedIdx.add(i);
+
+      if (matchedChildren.length > 0) {
         for (let k = 0; k < matchedChildren.length; k++) {
           const mc = matchedChildren[k];
           if (!mc.b.groupId) effectiveGid.set(mc.idx, parentKey);
           if (!mc.b.name && b.name) inheritedName.set(mc.idx, b.name);
+        }
+        const groundCov = groundChildAreaSum / bNetArea;
+        const totalCov = childAreaSum / bNetArea;
+        const holelessMultiWing = bHolesBed.length === 0 && groundChildCount >= 2 && groundCov >= 0.16;
+        if (groundCov >= 0.28 || totalCov >= 0.34 || holelessMultiWing) {
+          suppressedIdx.add(i);
         }
       }
     }
@@ -224,11 +448,13 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       }
     }
 
-    const clippedHoles = (b.holes || [])
+    const rawClippedHoles = (b.holes || [])
       .map(h => cleanPolygonRing(clipPolyToBox(h.map(toBed), -halfW + 0.38, -halfH + 0.38, halfW - 0.38, halfH - 0.38), false))
       .filter(h => h.length >= 3);
+    const clippedHoles = sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles);
 
     const interiorPt = computeSolidInteriorPoint2D(clippedOuter, clippedHoles);
+    const maxSpan = Math.max(maxX - minX, maxY - minY);
 
     prepared.push({
       rawIdx: i,
@@ -239,6 +465,7 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       interiorPt,
       minX, maxX, minY, maxY,
       minSpan,
+      maxSpan,
       area,
       cx: interiorPt[0],
       cy: interiorPt[1],
@@ -321,7 +548,7 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     });
   }
 
-  // 4. Compute foundation ground pad tZ and exact S3DB heights (b.h = ground-to-ridge total height)
+  // 4. Compute foundation ground pad tZ, slope foundation seating effBaseZ, and exact S3DB heights
   for (let i = 0; i < prepared.length; i++) {
     const item = prepared[i];
     const b = item.b;
@@ -330,15 +557,57 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     const gyMin = Math.max(0, Math.floor(((item.minY + halfH) / (2 * halfH)) * TERRAIN_RES_Y));
     const gyMax = Math.min(TERRAIN_RES_Y - 1, Math.floor(((item.maxY + halfH) / (2 * halfH)) * TERRAIN_RES_Y));
 
-    let minPadZ = getActualPrintedSurfaceMinZ(item.cx, item.cy);
+    const centerSurfZ = getActualPrintedSurfaceMinZ(item.cx, item.cy);
+    let minPadZ = centerSurfZ;
+    let maxPadZ = centerSurfZ;
+
+    const hasRawDemSampler = Boolean(ctx && ctx.isTopographicRelief && typeof ctx.sampleRawTerrainGridZ === 'function');
+    const rawFloorClamp = (ctx && ctx.zSubWater !== undefined) ? ctx.zSubWater : (0.40 / scaleMm);
+
+    const sampleFootprintTerrainZ = (px, py) => {
+      const sz = getActualPrintedSurfaceMinZ(px, py);
+      if (sz < minPadZ) minPadZ = sz;
+      if (sz > maxPadZ) maxPadZ = sz;
+      if (hasRawDemSampler) {
+        const isWet = Boolean(ctx.waterMask && typeof ctx.sampleMaskIdx === 'function' && ctx.waterMask[ctx.sampleMaskIdx(px, py)]);
+        if (!isWet) {
+          const rz = ctx.sampleRawTerrainGridZ(px, py);
+          if (Number.isFinite(rz) && rz >= rawFloorClamp && rz < minPadZ) minPadZ = rz;
+        }
+      }
+    };
+
     for (let k = 0; k < item.clippedOuter.length; k++) {
       const pA = item.clippedOuter[k], pB = item.clippedOuter[(k + 1) % item.clippedOuter.length];
       const segLen = Math.hypot(pB[0] - pA[0], pB[1] - pA[1]);
-      const steps = Math.max(1, Math.ceil(segLen / 0.45));
+      const steps = Math.max(1, Math.ceil(segLen / 0.30));
       for (let s = 0; s < steps; s++) {
         const t = s / steps;
-        const sz = getActualPrintedSurfaceMinZ(pA[0] + (pB[0] - pA[0]) * t, pA[1] + (pB[1] - pA[1]) * t);
-        if (sz < minPadZ) minPadZ = sz;
+        sampleFootprintTerrainZ(pA[0] + (pB[0] - pA[0]) * t, pA[1] + (pB[1] - pA[1]) * t);
+      }
+    }
+
+    for (let h = 0; h < item.clippedHoles.length; h++) {
+      const hole = item.clippedHoles[h];
+      for (let k = 0; k < hole.length; k++) {
+        const pA = hole[k], pB = hole[(k + 1) % hole.length];
+        sampleFootprintTerrainZ(pA[0], pA[1]);
+        sampleFootprintTerrainZ((pA[0] + pB[0]) * 0.5, (pA[1] + pB[1]) * 0.5);
+      }
+    }
+
+    const gridStep = Math.max(0.35, Math.min((ctx && ctx.cellStepX) || 0.65, 0.65));
+    if (item.maxX - item.minX > gridStep || item.maxY - item.minY > gridStep) {
+      const nx = Math.min(12, Math.max(1, Math.floor((item.maxX - item.minX) / gridStep)));
+      const ny = Math.min(12, Math.max(1, Math.floor((item.maxY - item.minY) / gridStep)));
+      for (let iy = 1; iy <= ny; iy++) {
+        const py = item.minY + ((item.maxY - item.minY) * iy) / (ny + 1);
+        for (let ix = 1; ix <= nx; ix++) {
+          const px = item.minX + ((item.maxX - item.minX) * ix) / (nx + 1);
+          if (isPointInsidePart2D(px, py, item, 0)) {
+            sampleFootprintTerrainZ(px, py);
+          }
+        }
       }
     }
 
@@ -362,10 +631,12 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     for (let gy = gyMin; gy <= gyMax; gy++) {
       for (let gx = gxMin; gx <= gxMax; gx++) {
         const tList = cellTerracePolys[gy * TERRAIN_RES_X + gx];
+        if (!tList) continue;
         for (let t = 0; t < tList.length; t++) {
           const tp = tList[t];
-          if (tp.zSurf < minPadZ && polyOverlapsTerrace(tp.poly)) {
-            minPadZ = tp.zSurf;
+          if ((tp.zSurf < minPadZ || tp.zSurf > maxPadZ) && polyOverlapsTerrace(tp.poly)) {
+            if (tp.zSurf < minPadZ) minPadZ = tp.zSurf;
+            if (tp.zSurf > maxPadZ) maxPadZ = tp.zSurf;
           }
         }
       }
@@ -396,13 +667,28 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       roofHMm = 0;
     }
 
-    const tZ = minPadZ;
+    const slopeSpan = Math.max(0, maxPadZ - minPadZ);
+    const hasSlope = Boolean((ctx && ctx.isTopographicRelief) || slopeSpan > 1e-3);
+    let effBaseZ = minPadZ;
+    if (hasSlope) {
+      const embedDepth = Math.min(0.30 / scaleMm, Math.max(0.15 / scaleMm, slopeSpan * 0.12));
+      const minSafeFloorZ = Math.min(
+        minPadZ,
+        Math.max(0.15 / scaleMm, (ctx && ctx.zDrainVault !== undefined) ? (ctx.zDrainVault + 0.15 / scaleMm) : (0.40 / scaleMm))
+      );
+      effBaseZ = quantizeZUnits(Math.max(minSafeFloorZ, minPadZ - embedDepth));
+    }
+
+    const tZ = slopeSpan > 1e-3
+      ? Math.min(maxPadZ, Math.max(centerSurfZ, maxPadZ - totalHMm * 0.45))
+      : minPadZ;
     const zTop = quantizeZUnits(tZ + totalHMm);
     const zEaves = hasPitched ? quantizeZUnits(Math.max(tZ + 0.55, zTop - roofHMm)) : zTop;
     const zRidge = hasPitched ? Math.max(zEaves + 0.14, zTop) : zEaves;
 
     item.tZ = tZ;
-    item.effBaseZ = tZ;
+    item.effBaseZ = effBaseZ;
+    item.groundSeatZ = effBaseZ;
     item.roofShape = roofShape;
     item.hMult = hMult;
     item.totalHMm = totalHMm;
@@ -467,6 +753,7 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     computeSolidInteriorPoint2D,
+    sanitizeBuildingHoles2D,
     isPointInsidePart2D,
     polygonsOverlap2D,
     prepareAndClusterS3DBBuildings

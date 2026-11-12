@@ -518,6 +518,112 @@ def _fetch_json_ipv4_preferred(url, headers=None, timeout_sec=3.0):
     return json.loads(raw.decode("utf-8"))
 
 
+_ISO_COUNTRY_RAW = (
+    "ABW:AW:Aruba|AFG:AF:Afghanistan|AGO:AO:Angola|AIA:AI:Anguilla|ALA:AX:Åland Islands|"
+    "ALB:AL:Albania|AND:AD:Andorra|ARE:AE:United Arab Emirates|ARG:AR:Argentina|"
+    "ARM:AM:Armenia|ASM:AS:American Samoa|ATA:AQ:Antarctica|"
+    "ATF:TF:French Southern Territories|ATG:AG:Antigua & Barbuda|AUS:AU:Australia|"
+    "AUT:AT:Austria|AZE:AZ:Azerbaijan|BDI:BI:Burundi|BEL:BE:Belgium|BEN:BJ:Benin|"
+    "BES:BQ:Caribbean Netherlands|BFA:BF:Burkina Faso|BGD:BD:Bangladesh|BGR:BG:Bulgaria|"
+    "BHR:BH:Bahrain|BHS:BS:Bahamas|BIH:BA:Bosnia and Herzegovina|BLM:BL:St. Barthélemy|"
+    "BLR:BY:Belarus|BLZ:BZ:Belize|BMU:BM:Bermuda|BOL:BO:Bolivia|BRA:BR:Brazil|"
+    "BRB:BB:Barbados|BRN:BN:Brunei|BTN:BT:Bhutan|BVT:BV:Bouvet Island|BWA:BW:Botswana|"
+    "CAF:CF:Central African Republic|CAN:CA:Canada|CCK:CC:Cocos (Keeling) Islands|"
+    "CHE:CH:Switzerland|CHL:CL:Chile|CHN:CN:China|CIV:CI:Côte d'Ivoire|CMR:CM:Cameroon|"
+    "COD:CD:Congo - Kinshasa|COG:CG:Congo - Brazzaville|COK:CK:Cook Islands|"
+    "COL:CO:Colombia|COM:KM:Comoros|CPV:CV:Cape Verde|CRI:CR:Costa Rica|CUB:CU:Cuba|"
+    "CUW:CW:Curaçao|CXR:CX:Christmas Island|CYM:KY:Cayman Islands|CYP:CY:Cyprus|"
+    "CZE:CZ:Czechia|DEU:DE:Germany|DJI:DJ:Djibouti|DMA:DM:Dominica|DNK:DK:Denmark|"
+    "DOM:DO:Dominican Republic|DZA:DZ:Algeria|ECU:EC:Ecuador|EGY:EG:Egypt|ERI:ER:Eritrea|"
+    "ESH:EH:Western Sahara|ESP:ES:Spain|EST:EE:Estonia|ETH:ET:Ethiopia|FIN:FI:Finland|"
+    "FJI:FJ:Fiji|FLK:FK:Falkland Islands|FRA:FR:France|FRO:FO:Faroe Islands|"
+    "FSM:FM:Micronesia|GAB:GA:Gabon|GBR:GB:United Kingdom|GEO:GE:Georgia|GGY:GG:Guernsey|"
+    "GHA:GH:Ghana|GIB:GI:Gibraltar|GIN:GN:Guinea|GLP:GP:Guadeloupe|GMB:GM:Gambia|"
+    "GNB:GW:Guinea-Bissau|GNQ:GQ:Equatorial Guinea|GRC:GR:Greece|GRD:GD:Grenada|"
+    "GRL:GL:Greenland|GTM:GT:Guatemala|GUF:GF:French Guiana|GUM:GU:Guam|GUY:GY:Guyana|"
+    "HKG:HK:Hong Kong|HMD:HM:Heard & McDonald Islands|HND:HN:Honduras|HRV:HR:Croatia|"
+    "HTI:HT:Haiti|HUN:HU:Hungary|IDN:ID:Indonesia|IMN:IM:Isle of Man|IND:IN:India|"
+    "IOT:IO:British Indian Ocean Territory|IRL:IE:Ireland|IRN:IR:Iran|IRQ:IQ:Iraq|"
+    "ISL:IS:Iceland|ISR:IL:Israel|ITA:IT:Italy|JAM:JM:Jamaica|JEY:JE:Jersey|JOR:JO:Jordan|"
+    "JPN:JP:Japan|KAZ:KZ:Kazakhstan|KEN:KE:Kenya|KGZ:KG:Kyrgyzstan|KHM:KH:Cambodia|"
+    "KIR:KI:Kiribati|KNA:KN:St. Kitts & Nevis|KOR:KR:South Korea|KWT:KW:Kuwait|"
+    "LAO:LA:Laos|LBN:LB:Lebanon|LBR:LR:Liberia|LBY:LY:Libya|LCA:LC:St. Lucia|"
+    "LIE:LI:Liechtenstein|LKA:LK:Sri Lanka|LSO:LS:Lesotho|LTU:LT:Lithuania|"
+    "LUX:LU:Luxembourg|LVA:LV:Latvia|MAC:MO:Macao|MAF:MF:St. Martin|MAR:MA:Morocco|"
+    "MCO:MC:Monaco|MDA:MD:Moldova|MDG:MG:Madagascar|MDV:MV:Maldives|MEX:MX:Mexico|"
+    "MHL:MH:Marshall Islands|MKD:MK:North Macedonia|MLI:ML:Mali|MLT:MT:Malta|"
+    "MMR:MM:Myanmar|MNE:ME:Montenegro|MNG:MN:Mongolia|MNP:MP:Northern Mariana Islands|"
+    "MOZ:MZ:Mozambique|MRT:MR:Mauritania|MSR:MS:Montserrat|MTQ:MQ:Martinique|"
+    "MUS:MU:Mauritius|MWI:MW:Malawi|MYS:MY:Malaysia|MYT:YT:Mayotte|NAM:NA:Namibia|"
+    "NCL:NC:New Caledonia|NER:NE:Niger|NFK:NF:Norfolk Island|NGA:NG:Nigeria|"
+    "NIC:NI:Nicaragua|NIU:NU:Niue|NLD:NL:Netherlands|NOR:NO:Norway|NPL:NP:Nepal|"
+    "NRU:NR:Nauru|NZL:NZ:New Zealand|OMN:OM:Oman|PAK:PK:Pakistan|PAN:PA:Panama|"
+    "PCN:PN:Pitcairn Islands|PER:PE:Peru|PHL:PH:Philippines|PLW:PW:Palau|"
+    "PNG:PG:Papua New Guinea|POL:PL:Poland|PRI:PR:Puerto Rico|PRK:KP:North Korea|"
+    "PRT:PT:Portugal|PRY:PY:Paraguay|PSE:PS:Palestine|PYF:PF:French Polynesia|"
+    "QAT:QA:Qatar|REU:RE:Réunion|ROU:RO:Romania|RUS:RU:Russia|RWA:RW:Rwanda|"
+    "SAU:SA:Saudi Arabia|SDN:SD:Sudan|SEN:SN:Senegal|SGP:SG:Singapore|"
+    "SGS:GS:South Georgia & South Sandwich Islands|SHN:SH:St. Helena|"
+    "SJM:SJ:Svalbard & Jan Mayen|SLB:SB:Solomon Islands|SLE:SL:Sierra Leone|"
+    "SLV:SV:El Salvador|SMR:SM:San Marino|SOM:SO:Somalia|SPM:PM:St. Pierre & Miquelon|"
+    "SRB:RS:Serbia|SSD:SS:South Sudan|STP:ST:São Tomé & Príncipe|SUR:SR:Suriname|"
+    "SVK:SK:Slovakia|SVN:SI:Slovenia|SWE:SE:Sweden|SWZ:SZ:Eswatini|SXM:SX:Sint Maarten|"
+    "SYC:SC:Seychelles|SYR:SY:Syria|TCA:TC:Turks & Caicos Islands|TCD:TD:Chad|TGO:TG:Togo|"
+    "THA:TH:Thailand|TJK:TJ:Tajikistan|TKL:TK:Tokelau|TKM:TM:Turkmenistan|"
+    "TLS:TL:Timor-Leste|TON:TO:Tonga|TTO:TT:Trinidad & Tobago|TUN:TN:Tunisia|"
+    "TUR:TR:Turkey|TUV:TV:Tuvalu|TWN:TW:Taiwan|TZA:TZ:Tanzania|UGA:UG:Uganda|"
+    "UKR:UA:Ukraine|UMI:UM:U.S. Outlying Islands|URY:UY:Uruguay|USA:US:United States|"
+    "UZB:UZ:Uzbekistan|VAT:VA:Vatican City|VCT:VC:St. Vincent & Grenadines|"
+    "VEN:VE:Venezuela|VGB:VG:British Virgin Islands|VIR:VI:U.S. Virgin Islands|"
+    "VNM:VN:Vietnam|VUT:VU:Vanuatu|WLF:WF:Wallis & Futuna|WSM:WS:Samoa|XKX:XK:Kosovo|"
+    "YEM:YE:Yemen|ZAF:ZA:South Africa|ZMB:ZM:Zambia|ZWE:ZW:Zimbabwe|"
+    "ASC:AC:Ascension Island|TAA:TA:Tristan da Cunha|DGA:DG:Diego Garcia|"
+    "UAE:AE:United Arab Emirates|ROM:RO:Romania|ZAR:CD:Congo - Kinshasa|BUR:MM:Myanmar|"
+    "TMP:TL:Timor-Leste|SCG:RS:Serbia|YUG:RS:Serbia|SUN:RU:Russia|ANT:CW:Curaçao"
+)
+
+
+def _build_iso_country_lookup():
+    table = {"UK": "United Kingdom", "EL": "Greece", "IC": "Canary Islands", "EA": "Ceuta & Melilla"}
+    for entry in _ISO_COUNTRY_RAW.split("|"):
+        a3, a2, full_name = entry.split(":", 2)
+        table[a3] = full_name
+        table.setdefault(a2, full_name)
+    return table
+
+
+_ISO_COUNTRY_NAMES = _build_iso_country_lookup()
+_BARE_ISO_CODE_RE = re.compile(r"^[A-Za-z]{2,3}$")
+
+
+def _is_bare_iso_country_code(val):
+    return bool(_BARE_ISO_CODE_RE.match((val or "").strip()))
+
+
+def _resolve_country_name(country="", country_code=""):
+    """
+    Resolves full human-readable country name using full name (e.g. CntryName) first,
+    falling back to comprehensive ISO-3166-1 alpha-3 / alpha-2 lookup.
+    Never returns a bare 2- or 3-letter ISO country code.
+    """
+    c = (country or "").strip()
+    cc = (country_code or "").strip()
+    if c:
+        if _is_bare_iso_country_code(c):
+            mapped = _ISO_COUNTRY_NAMES.get(c.upper())
+            if mapped:
+                return mapped
+            if cc and _is_bare_iso_country_code(cc):
+                return _ISO_COUNTRY_NAMES.get(cc.upper(), "")
+            return ""
+        return c
+    if cc:
+        if _is_bare_iso_country_code(cc):
+            return _ISO_COUNTRY_NAMES.get(cc.upper(), "")
+        return cc
+    return ""
+
+
 def _make_photon_feature(
     lat,
     lon,
@@ -528,18 +634,31 @@ def _make_photon_feature(
     street="",
     housenumber="",
     osm_value="miejsce",
+    postcode="",
+    district="",
+    county="",
+    country_code="",
 ):
+    resolved_country = _resolve_country_name(country, country_code)
     props = {"name": name, "osm_value": osm_value, "type": osm_value}
-    if city:
-        props["city"] = city
-    if state:
-        props["state"] = state
-    if country:
-        props["country"] = country
     if street:
         props["street"] = street
     if housenumber:
         props["housenumber"] = housenumber
+    if postcode:
+        props["postcode"] = postcode
+    if district:
+        props["district"] = district
+    if city:
+        props["city"] = city
+    if county:
+        props["county"] = county
+    if state:
+        props["state"] = state
+    if resolved_country:
+        props["country"] = resolved_country
+    if country_code and _is_bare_iso_country_code(country_code):
+        props["countrycode"] = country_code.strip().upper()
     return {
         "type": "Feature",
         "properties": props,
@@ -576,6 +695,10 @@ def _parse_direct_coordinate_query(q):
     ]
 
 
+def _norm_place_token(val):
+    return re.sub(r"[^\w]+", " ", (val or "").lower(), flags=re.UNICODE).strip()
+
+
 def _dedupe_features(features, limit):
     kept = []
     for f in features:
@@ -583,15 +706,49 @@ def _dedupe_features(features, limit):
         if len(coords) < 2:
             continue
         lon, lat = float(coords[0]), float(coords[1])
-        name_norm = ((f.get("properties") or {}).get("name") or "").strip().lower()
+        props = f.get("properties") or {}
+        name_norm = _norm_place_token(props.get("name"))
+        sig = (
+            name_norm,
+            _norm_place_token(props.get("street")),
+            _norm_place_token(props.get("district")),
+            _norm_place_token(props.get("city")),
+            _norm_place_token(props.get("county")),
+            _norm_place_token(props.get("state")),
+            _norm_place_token(props.get("country")),
+        )
+        is_admin = (props.get("osm_value") or "").lower() in {
+            "state or province",
+            "county",
+            "country",
+            "administrative",
+        }
         is_dup = False
         for prev in kept:
             pcoords = prev["geometry"]["coordinates"]
-            pname = (prev["properties"].get("name") or "").strip().lower()
+            pprops = prev["properties"]
+            pname = _norm_place_token(pprops.get("name"))
             if (
                 pname == name_norm
                 and abs(pcoords[1] - lat) < 0.0025
                 and abs(pcoords[0] - lon) < 0.0025
+            ):
+                is_dup = True
+                break
+            psig = (
+                pname,
+                _norm_place_token(pprops.get("street")),
+                _norm_place_token(pprops.get("district")),
+                _norm_place_token(pprops.get("city")),
+                _norm_place_token(pprops.get("county")),
+                _norm_place_token(pprops.get("state")),
+                _norm_place_token(pprops.get("country")),
+            )
+            if (
+                is_admin
+                and sig == psig
+                and abs(pcoords[1] - lat) < 0.55
+                and abs(pcoords[0] - lon) < 0.55
             ):
                 is_dup = True
                 break
@@ -607,7 +764,11 @@ def _geocode_via_arcgis(q, limit):
         {
             "f": "json",
             "maxLocations": max(limit * 2, 10),
-            "outFields": "PlaceName,Place_addr,Type,Country,Region,City,ShortLabel",
+            "outFields": (
+                "PlaceName,Place_addr,Type,Country,CntryName,Subregion,Region,"
+                "City,District,Nbrhd,Postal,StAddr,ShortLabel,LongLabel"
+            ),
+            "langCode": "ENG",
             "SingleLine": q,
         }
     )
@@ -626,40 +787,88 @@ def _geocode_via_arcgis(q, limit):
         attrs = c.get("attributes") or {}
         place_name = (attrs.get("PlaceName") or "").strip()
         short_lbl = (attrs.get("ShortLabel") or "").strip()
+        long_lbl = (attrs.get("LongLabel") or "").strip()
         place_addr = (attrs.get("Place_addr") or c.get("address") or "").strip()
+        st_addr = (attrs.get("StAddr") or "").strip()
+        postal = (attrs.get("Postal") or "").strip()
+        nbrhd = (attrs.get("Nbrhd") or "").strip()
+        district_raw = (attrs.get("District") or "").strip()
+        city = (attrs.get("City") or "").strip()
+        subregion = (attrs.get("Subregion") or "").strip()
+        region = (attrs.get("Region") or "").strip()
+        country_code = (attrs.get("Country") or "").strip()
+        cntry_name = (attrs.get("CntryName") or "").strip()
+        if not cntry_name and not country_code and long_lbl:
+            tail = long_lbl.rsplit(",", 1)[-1].strip()
+            if _is_bare_iso_country_code(tail) and tail.upper() in _ISO_COUNTRY_NAMES:
+                country_code = tail.upper()
+        country = _resolve_country_name(cntry_name, country_code)
+
         name = (
             place_name
             or short_lbl
+            or st_addr
             or (place_addr.split(",")[0].strip() if place_addr else q)
         )
-        city = (attrs.get("City") or "").strip()
-        state = (attrs.get("Region") or "").strip()
-        country = (attrs.get("Country") or "").strip()
-        street = ""
-        if place_addr:
+        name_l = name.lower()
+        name_norm = _norm_place_token(name)
+        street = (
+            st_addr
+            if st_addr and _norm_place_token(st_addr) != name_norm
+            else ""
+        )
+
+        district_parts = []
+        seen_dist = {
+            s.lower()
+            for s in (name, street, postal, city, subregion, region, country)
+            if s
+        }
+        for dp in (nbrhd, district_raw):
+            if dp and dp.lower() not in seen_dist:
+                seen_dist.add(dp.lower())
+                district_parts.append(dp)
+
+        if not street and place_addr:
+            known_lower = seen_dist | {
+                s.lower() for s in (cntry_name, country_code) if s
+            }
             addr_parts = [p.strip() for p in place_addr.split(",") if p.strip()]
             extra_parts = [
                 p
                 for p in addr_parts
-                if p.lower()
-                not in {
-                    name.lower(),
-                    city.lower(),
-                    state.lower(),
-                    country.lower(),
-                }
+                if p.lower() not in known_lower
+                and not (len(p) == 3 and p.isupper() and p in _ISO_COUNTRY_NAMES)
             ]
             if extra_parts:
                 street = ", ".join(extra_parts[:2])
+
+        city_out = city if city and city.lower() != name_l else ""
+        state_out = (
+            region
+            if region and region.lower() not in {name_l, city_out.lower()}
+            else ""
+        )
+        county_out = (
+            subregion
+            if subregion
+            and subregion.lower()
+            not in {name_l, city.lower(), region.lower()}
+            else ""
+        )
         kind = (attrs.get("Type") or "miejsce").strip().lower()
         out.append(
             _make_photon_feature(
                 lat=lat,
                 lon=lon,
                 name=name,
-                city=city if city.lower() != name.lower() else "",
-                state=state,
+                postcode=postal,
+                district=", ".join(district_parts),
+                city=city_out,
+                county=county_out,
+                state=state_out,
                 country=country,
+                country_code=country_code,
                 street=street,
                 osm_value=kind or "miejsce",
             )
@@ -683,7 +892,9 @@ def _geocode_via_nominatim(q, limit):
         {"format": "jsonv2", "addressdetails": 1, "limit": limit, "q": q}
     )
     url = f"https://nominatim.openstreetmap.org/search?{qs}"
-    data = _fetch_json_ipv4_preferred(url, timeout_sec=3.2)
+    data = _fetch_json_ipv4_preferred(
+        url, headers={"Accept-Language": "en,pl;q=0.9"}, timeout_sec=3.2
+    )
     if not isinstance(data, list):
         return []
     out = []
@@ -696,6 +907,15 @@ def _geocode_via_nominatim(q, limit):
         addr = item.get("address") or {}
         road = (addr.get("road") or addr.get("pedestrian") or "").strip()
         house = (addr.get("house_number") or "").strip()
+        postcode = (addr.get("postcode") or "").strip()
+        district = (
+            addr.get("city_district")
+            or addr.get("suburb")
+            or addr.get("borough")
+            or addr.get("quarter")
+            or addr.get("neighbourhood")
+            or ""
+        ).strip()
         city = (
             addr.get("city")
             or addr.get("town")
@@ -703,21 +923,38 @@ def _geocode_via_nominatim(q, limit):
             or addr.get("municipality")
             or ""
         ).strip()
-        state = (addr.get("state") or addr.get("county") or "").strip()
-        country = (addr.get("country") or "").strip()
+        county_raw = (addr.get("county") or "").strip()
+        state_raw = (
+            addr.get("state") or addr.get("region") or addr.get("province") or ""
+        ).strip()
+        state = state_raw or county_raw
+        county = (
+            county_raw
+            if state_raw
+            and county_raw
+            and county_raw.lower() not in {city.lower(), state_raw.lower()}
+            else ""
+        )
+        country_code = (addr.get("country_code") or "").strip()
+        country = _resolve_country_name(addr.get("country"), country_code)
         disp_head = (item.get("display_name") or "").split(",")[0].strip()
         road_with_num = " ".join([p for p in (road, house) if p]).strip()
         name = (item.get("name") or "").strip() or road_with_num or disp_head or q
+        name_l = name.lower()
         out.append(
             _make_photon_feature(
                 lat=lat,
                 lon=lon,
                 name=name,
-                city=city if city.lower() != name.lower() else "",
-                state=state,
+                postcode=postcode,
+                district=district if district.lower() != name_l else "",
+                city=city if city.lower() != name_l else "",
+                county=county if county.lower() != name_l else "",
+                state=state if state.lower() != name_l else "",
                 country=country,
-                street=road if road.lower() != name.lower() else "",
-                housenumber=house if house not in name else "",
+                country_code=country_code,
+                street=road if road.lower() != name_l else "",
+                housenumber=house if house and house not in name else "",
                 osm_value=(item.get("type") or item.get("category") or "miejsce"),
             )
         )
@@ -726,7 +963,7 @@ def _geocode_via_nominatim(q, limit):
 
 def _geocode_via_open_meteo(q, limit):
     qs = urllib.parse.urlencode(
-        {"name": q, "count": limit, "language": "pl", "format": "json"}
+        {"name": q, "count": limit, "language": "en", "format": "json"}
     )
     url = f"https://geocoding-api.open-meteo.com/v1/search?{qs}"
     data = _fetch_json_ipv4_preferred(url, timeout_sec=2.8)
@@ -739,14 +976,23 @@ def _geocode_via_open_meteo(q, limit):
         lon = r.get("longitude")
         if lat is None or lon is None:
             continue
+        name = (r.get("name") or q).strip()
+        name_l = name.lower()
+        admin3 = (r.get("admin3") or "").strip()
+        admin2 = (r.get("admin2") or "").strip()
+        admin1 = (r.get("admin1") or "").strip()
+        country_code = (r.get("country_code") or "").strip()
+        country = _resolve_country_name(r.get("country"), country_code)
         out.append(
             _make_photon_feature(
                 lat=lat,
                 lon=lon,
-                name=(r.get("name") or q).strip(),
-                city=(r.get("admin2") or "").strip(),
-                state=(r.get("admin1") or "").strip(),
-                country=(r.get("country") or r.get("country_code") or "").strip(),
+                name=name,
+                district=admin3 if admin3.lower() != name_l else "",
+                city=admin2 if admin2.lower() != name_l else "",
+                state=admin1 if admin1.lower() not in {name_l, admin2.lower()} else "",
+                country=country,
+                country_code=country_code,
                 osm_value=(r.get("feature_code") or "city").lower(),
             )
         )
@@ -760,7 +1006,21 @@ def _geocode_via_photon(q, limit):
     features = data.get("features") if isinstance(data, dict) else None
     if not isinstance(features, list):
         raise ValueError("Invalid Photon FeatureCollection")
-    return features[:limit]
+    sanitized = []
+    for f in features[:limit]:
+        if not isinstance(f, dict):
+            continue
+        props = dict(f.get("properties") or {})
+        resolved_country = _resolve_country_name(
+            props.get("country"),
+            props.get("countrycode") or props.get("country_code"),
+        )
+        if resolved_country:
+            props["country"] = resolved_country
+        else:
+            props.pop("country", None)
+        sanitized.append({**f, "properties": props})
+    return sanitized
 
 
 _GEOCODE_FETCHERS = {

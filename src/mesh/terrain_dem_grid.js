@@ -9,18 +9,110 @@ if (typeof pointInPolyOrNear2D === 'undefined' && typeof require !== 'undefined'
 }
 
 function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
+  scene = scene || {};
+  maskCtx = maskCtx || {};
+  state = state || {};
   const {
-    maxDimMm, scaleMm, mmPerUnit, halfW, halfH,
-    tileCols, tileRows, cellsPerCol, cellsPerRow, TERRAIN_RES_X, TERRAIN_RES_Y,
-    cellStepX, cellStepY, kerfUnits, scaleToBed, cropCX, cropCY,
-    padW, padH, spanW, spanH, toBed, sampleBilinearMask, waterSDF
+    maxDimMm = 320,
+    scaleMm = maxDimMm / 169.2,
+    mmPerUnit = scaleMm,
+    halfW = 84.6,
+    halfH = 84.6,
+    tileCols = 1,
+    tileRows = 1,
+    cellsPerCol = 180,
+    cellsPerRow = 180,
+    TERRAIN_RES_X = cellsPerCol * tileCols,
+    TERRAIN_RES_Y = cellsPerRow * tileRows,
+    cellStepX = (2 * halfW) / TERRAIN_RES_X,
+    cellStepY = (2 * halfH) / TERRAIN_RES_Y,
+    kerfUnits = 0,
+    scaleToBed = 1.0,
+    cropCX = 0,
+    cropCY = 0,
+    padW = halfW + 0.4,
+    padH = halfH + 0.4,
+    spanW = 2 * padW,
+    spanH = 2 * padH,
+    toBed = (pt) => [(pt[0] - cropCX) * scaleToBed, (pt[1] - cropCY) * scaleToBed],
+    sampleBilinearMask,
+    waterSDF
   } = maskCtx;
 
   const demObj = scene.dem || { gridSize: 2, minElev: 0, maxElev: 10, grid: [[0, 0], [0, 0]] };
-  const demN = demObj.gridSize;
-  const demRaw = demObj.grid;
-  const minElev = demObj.minElev;
-  const maxElev = Math.max(minElev + 4.0, demObj.maxElev);
+  const rawGrid = (Array.isArray(demObj.grid) && demObj.grid.length >= 2) ? demObj.grid : [[0, 0], [0, 0]];
+  const demN = demObj.gridSize || rawGrid.length;
+
+  let gridMin = Infinity;
+  let gridMax = -Infinity;
+  for (let j = 0; j < demN; j++) {
+    const row = rawGrid[j];
+    if (!row) continue;
+    for (let i = 0; i < demN; i++) {
+      const v = row[i];
+      if (Number.isFinite(v)) {
+        if (v < gridMin) gridMin = v;
+        if (v > gridMax) gridMax = v;
+      }
+    }
+  }
+  const rawMin = Number.isFinite(gridMin)
+    ? (Number.isFinite(demObj.minElev) ? Math.min(gridMin, demObj.minElev) : gridMin)
+    : (Number.isFinite(demObj.minElev) ? demObj.minElev : 0);
+  const rawMax = Number.isFinite(gridMax)
+    ? (Number.isFinite(demObj.maxElev) ? Math.max(gridMax, demObj.maxElev) : gridMax)
+    : (Number.isFinite(demObj.maxElev) ? demObj.maxElev : 10);
+
+  let hasWaterOrCoastline = Boolean(
+    (Array.isArray(scene.waterPolys) && scene.waterPolys.length > 0) ||
+    (Array.isArray(scene.coastlines) && scene.coastlines.length > 0) ||
+    (Array.isArray(scene.waterLines) && scene.waterLines.length > 0)
+  );
+  if (!hasWaterOrCoastline) {
+    if (maskCtx.waterMask && maskCtx.waterMask.length > 0) {
+      for (let i = 0; i < maskCtx.waterMask.length; i += 16) {
+        if (maskCtx.waterMask[i]) { hasWaterOrCoastline = true; break; }
+      }
+    } else if (waterSDF && waterSDF.length > 0) {
+      for (let i = 0; i < waterSDF.length; i += 16) {
+        if (waterSDF[i] < 0) { hasWaterOrCoastline = true; break; }
+      }
+    }
+  }
+
+  // Clamp negative submarine ocean bathymetry (< 0 m) to 0 m sea-level datum on coastal/harbour scenes
+  // before computing realMin, realElevDelta, p80Span, contourStepM, and demGrid, while preserving
+  // genuine sub-sea-level dry land depressions (e.g. Dead Sea / Death Valley rawMax < 2 m, Dutch polders rawMin >= -8 m).
+  const bathymetryClamped = (rawMin < -8.0) && (rawMax >= 2.0) && (hasWaterOrCoastline || rawMin < -15.0);
+
+  let demRaw = rawGrid;
+  let realMin;
+  let realMax;
+  if (bathymetryClamped) {
+    demRaw = new Array(demN);
+    let cMin = Infinity;
+    let cMax = -Infinity;
+    for (let j = 0; j < demN; j++) {
+      const srcRow = rawGrid[j];
+      const dstRow = new Float64Array(demN);
+      for (let i = 0; i < demN; i++) {
+        const v = (srcRow && Number.isFinite(srcRow[i])) ? srcRow[i] : 0;
+        const cv = v < 0.0 ? 0.0 : v;
+        dstRow[i] = cv;
+        if (cv < cMin) cMin = cv;
+        if (cv > cMax) cMax = cv;
+      }
+      demRaw[j] = dstRow;
+    }
+    realMin = Number.isFinite(cMin) ? cMin : 0.0;
+    realMax = Number.isFinite(cMax) ? cMax : Math.max(0.0, rawMax);
+  } else {
+    realMin = Number.isFinite(demObj.minElev) ? demObj.minElev : rawMin;
+    realMax = Number.isFinite(demObj.maxElev) ? demObj.maxElev : rawMax;
+  }
+
+  const minElev = realMin;
+  const maxElev = Math.max(minElev + 4.0, realMax);
 
   function sampleRawDemMeters(bx, by) {
     const ox = bx / scaleToBed + cropCX;
@@ -105,6 +197,7 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
       ? Math.max(8, Math.min(18, Math.round(maxReliefUnits / 0.42)))
       : Math.max(3, Math.min(8, Math.round(maxReliefUnits / 0.42)));
   const stepUnits = maxReliefUnits > 0 ? Math.max(layerHeightMm / mmPerUnit, quantizeZUnits(maxReliefUnits / numContourSteps)) : quantizeZUnits(0.42);
+  const contourStepM = elevSpan / Math.max(1, numContourSteps);
 
   const thresholds = [];
   for (let k = 0; k <= numContourSteps + 2; k++) thresholds.push(baseBottomZ + k * stepUnits);
@@ -114,7 +207,7 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
     const by = -halfH + (gy / TERRAIN_RES_Y) * (2 * halfH);
     for (let gx = 0; gx <= TERRAIN_RES_X; gx++) {
       const bx = -halfW + (gx / TERRAIN_RES_X) * (2 * halfW);
-      const sdf = sampleBilinearMask(waterSDF, bx, by);
+      const sdf = (sampleBilinearMask && waterSDF) ? sampleBilinearMask(waterSDF, bx, by) : 10.0;
       if (sdf < 0.0) {
         zGrid[gy * strideTX + gx] = baseBottomZ + Math.max(-0.95 / scaleMm, (sdf * 0.35) / scaleMm);
       } else if (!isTopographicRelief) {
@@ -263,6 +356,7 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
 
   return Object.assign({}, maskCtx, {
     mToU, hollowBase, layerHeightMm,
+    realMin, realMax, realElevDelta, p80Span, contourStepM, bathymetryClamped, demGrid,
     isTopographicRelief, isAlpineRelief, numContourSteps, stepUnits, thresholds,
     baseBottomZ, deepWaterZ, zSubWater, zDrainVault, gHeight, rHeight, pathHeight, brHeight,
     strideTX, strideTY, zGrid, tileBounds,

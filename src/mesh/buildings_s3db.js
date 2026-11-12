@@ -167,6 +167,7 @@ function buildS3DBBuildingsMesh(scene, ctx, baseInfo, state, meshes) {
         } else {
           for (let s = 0; s < supportingParts.length; s++) flattenSupportingPodium(supportingParts[s]);
           C.effBaseZ = Math.min(...supportingParts.map(p => p.zTop));
+          C.supportRef = supportingParts[0];
         }
       }
 
@@ -205,6 +206,9 @@ function buildS3DBBuildingsMesh(scene, ctx, baseInfo, state, meshes) {
       item.zEaves = item.effBaseZ + Math.min(0.25, (item.zTop - item.effBaseZ) * 0.5);
     }
 
+    const groundRefMaxZ = Math.max(item.tZ, item.groundSeatZ !== undefined ? item.groundSeatZ : item.tZ);
+    const isElevatedTier = Boolean(item.supportRef || item.isLateralCantilever || item.effBaseZ > groundRefMaxZ + 0.05);
+
     const bShell = [];
     const shellId = nextBldShellId++;
 
@@ -221,6 +225,9 @@ function buildS3DBBuildingsMesh(scene, ctx, baseInfo, state, meshes) {
       0,
       item.roofShape || 'flat',
       {
+        scaleMm: ctx.scaleMm,
+        supportRef: item.supportRef || null,
+        isGroundSeated: !isElevatedTier,
         roofDir: b.roofDir,
         roofOrient: b.roofOrient,
         leanTargetPt: item.leanTargetPt || null
@@ -228,7 +235,7 @@ function buildS3DBBuildingsMesh(scene, ctx, baseInfo, state, meshes) {
     );
 
     const tagElevatedBottom = (t) => {
-      if (item.effBaseZ > item.tZ + 0.05 && t.n && t.n[2] < -0.5) {
+      if (isElevatedTier && t.n && t.n[2] < -0.5) {
         t.n = [0, 0, -0.49];
       }
     };
@@ -265,7 +272,7 @@ function buildS3DBBuildingsMesh(scene, ctx, baseInfo, state, meshes) {
       pickId: item.pickId,
       groupId: item.groupId,
       interiorPt: item.interiorPt,
-      samplePts: [item.interiorPt, item.clippedOuter[0]],
+      samplePts: [item.interiorPt, item.clippedOuter[0], item.clippedOuter[item.clippedOuter.length >> 1]],
       isCantileverSupported: !!item.isLateralCantilever,
       minX: item.minX, maxX: item.maxX,
       minY: item.minY, maxY: item.maxY,
