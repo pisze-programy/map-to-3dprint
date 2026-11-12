@@ -11,7 +11,7 @@ const OVERPASS_MIRRORS = [
   '/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass-api.de/api/interpreter'
+  'https://overpass.openstreetmap.fr/api/interpreter'
 ];
 
 let _mirrorRoundRobinIdx = 0;
@@ -24,35 +24,74 @@ function selectLodTier(spanMeters) {
   return 'mountain';
 }
 
-function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', timeoutSec = 11) {
+function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', timeoutSec = 11, lodOptions = null) {
   const bbox = `${south.toFixed(5)},${west.toFixed(5)},${north.toFixed(5)},${east.toFixed(5)}`;
+  const wantTrees = (lodOptions && typeof lodOptions.wantTrees === 'boolean')
+    ? lodOptions.wantTrees
+    : (lodTier === 'detail' || lodTier === 'urban');
+  const minBldM = (lodOptions && typeof lodOptions.minBuildingFootprintM === 'number')
+    ? lodOptions.minBuildingFootprintM
+    : 0;
+  const roadDetail = (lodOptions && lodOptions.roadDetail) || 'all';
+
   if (lodTier === 'detail') {
+    const treeClause = wantTrees ? 'node["natural"="tree"];' : '';
+    const roadClause = roadDetail === 'major'
+      ? 'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|pedestrian|motorway_link|trunk_link|primary_link|secondary_link)$"];'
+      : 'way["highway"];';
     return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
       `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];)->.brels;` +
       `(.brels;>;)->.ball;` +
-      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];relation["type"="multipolygon"]["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground)$"];relation["type"="multipolygon"]["highway"="pedestrian"];)->.grels;` +
+      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath|wetland|beach)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];relation["type"="multipolygon"]["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground|dog_park|marina)$"];relation["type"="multipolygon"]["highway"="pedestrian"];)->.grels;` +
       `way(r.grels)(${bbox})->.gways;` +
-      `(way["building"];way["building:part"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["man_made"~"^(bridge|pier|breakwater|groyne)$"];.gways;)->.wbox;` +
-      `(relation.ball;.grels;.wbox;way.ball;node["natural"="tree"];);out body qt;` +
+      `(way["building"];way["building:part"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];${roadClause}way["highway"]["bridge"~"^(yes|viaduct|aqueduct|boardwalk|cantilever|covered|movable|suspension|trestle)$"];way["place"="square"];way["railway"];way["man_made"~"^(bridge|pier|breakwater|groyne|tower|lighthouse)$"];.gways;)->.wbox;` +
+      `(relation.ball;.grels;.wbox;way.ball;${treeClause});out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
   }
   if (lodTier === 'urban') {
+    const treeClause = wantTrees ? 'node["natural"="tree"];' : '';
+    const bldWayClause = minBldM <= 0
+      ? 'way["building"];way["building:part"];'
+      : 'way["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|sty|greenhouse|static_caravan|ger)$"];way["building:part"];';
+    const hwyWayClause = roadDetail === 'major'
+      ? 'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|pedestrian|motorway_link|trunk_link|primary_link|secondary_link)$"];'
+      : 'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|motorway_link|trunk_link|primary_link|secondary_link|service|cycleway|footway|path|steps|track)$"];';
     return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
       `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];)->.brels;` +
       `(.brels;>;)->.ball;` +
-      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green)$"];relation["type"="multipolygon"]["leisure"~"^(park|garden|nature_reserve|pitch|common|golf_course|recreation_ground)$"];)->.grels;` +
+      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath|wetland|beach)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];relation["type"="multipolygon"]["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground|dog_park|marina)$"];relation["type"="multipolygon"]["highway"="pedestrian"];)->.grels;` +
       `way(r.grels)(${bbox})->.gways;` +
-      `(way["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|sty|greenhouse|static_caravan|ger)$"];way["building:part"];way["natural"~"^(water|coastline|wood|scrub|grassland|heath)$"];way["waterway"];way["water"];way["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green)$"];way["leisure"~"^(park|garden|nature_reserve|pitch|common|golf_course|recreation_ground)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|motorway_link|trunk_link|primary_link|secondary_link|service|cycleway)$"];way["highway"]["bridge"~"^(yes|viaduct|aqueduct|boardwalk|cantilever|covered|movable|suspension|trestle)$"];way["place"="square"];way["railway"~"^(rail|light_rail|tram|narrow_gauge)$"];way["man_made"~"^(bridge|pier|breakwater|groyne|tower|lighthouse)$"];.gways;)->.wbox;` +
-      `(relation.ball;.grels;.wbox;way.ball;);out body qt;` +
+      `(${bldWayClause}way["natural"~"^(water|coastline|wood|scrub|grassland|heath|tree_row|beach|wetland)$"];way["waterway"];way["water"];way["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];way["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground|dog_park|marina)$"];${hwyWayClause}way["highway"]["bridge"~"^(yes|viaduct|aqueduct|boardwalk|cantilever|covered|movable|suspension|trestle)$"];way["place"="square"];way["railway"~"^(rail|light_rail|tram|narrow_gauge)$"];way["man_made"~"^(bridge|pier|breakwater|groyne|tower|lighthouse)$"];.gways;)->.wbox;` +
+      `(relation.ball;.grels;.wbox;way.ball;${treeClause});out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
   }
   if (lodTier === 'regional') {
+    const treeClause = (lodOptions && lodOptions.wantTrees === true) ? 'node["natural"="tree"];' : '';
+    const natRegex = (lodOptions && lodOptions.wantTrees === true)
+      ? '^(water|coastline|wood|scrub|grassland|tree_row)$'
+      : '^(water|coastline|wood|scrub|grassland)$';
     return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
       `(relation["building"];relation["type"="building"];relation["man_made"="bridge"];)->.brels;` +
       `(.brels;>;)->.ball;` +
       `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|meadow)$"];relation["type"="multipolygon"]["leisure"~"^(park|nature_reserve)$"];)->.grels;` +
       `way(r.grels)(${bbox})->.gways;` +
-      `(way["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|greenhouse|house|detached|terrace|semidetached_house|bungalow|farm_auxiliary|barn)$"];way["building"]["height"];way["building"]["building:levels"~"^([3-9]|[1-9][0-9])"];way["building"]["name"];way["building:part"];way["natural"~"^(water|coastline|wood|scrub|grassland)$"];way["waterway"~"^(river|riverbank|canal|stream|dock)$"];way["water"];way["landuse"~"^(reservoir|basin|forest|meadow|grass)$"];way["leisure"~"^(park|nature_reserve|garden|golf_course)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|motorway_link|trunk_link|primary_link)$"];way["highway"]["bridge"~"^(yes|viaduct|suspension)$"];way["railway"~"^(rail|light_rail)$"];way["man_made"~"^(bridge|pier|breakwater|tower|lighthouse)$"];.gways;)->.wbox;` +
+      `(way["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|greenhouse|house|detached|terrace|semidetached_house|bungalow|farm_auxiliary|barn)$"];way["building"]["height"];way["building"]["building:levels"~"^([3-9]|[1-9][0-9])"];way["building"]["name"];way["building:part"];way["natural"~"${natRegex}"];way["waterway"~"^(river|riverbank|canal|stream|dock)$"];way["water"];way["landuse"~"^(reservoir|basin|forest|meadow|grass)$"];way["leisure"~"^(park|nature_reserve|garden|golf_course)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|motorway_link|trunk_link|primary_link)$"];way["highway"]["bridge"~"^(yes|viaduct|suspension)$"];way["railway"~"^(rail|light_rail)$"];way["man_made"~"^(bridge|pier|breakwater|tower|lighthouse)$"];.gways;)->.wbox;` +
+      `(relation.ball;.grels;.wbox;way.ball;${treeClause});out body qt;` +
+      `(node(w.wbox);node.ball;);out skel qt;`;
+  }
+  const midLatRad = ((south + north) * 0.5) * Math.PI / 180;
+  const chunkSpanM = Math.max(
+    Math.abs(north - south) * 111320,
+    Math.abs(east - west) * 111320 * Math.max(0.2, Math.cos(midLatRad))
+  );
+  const isWideMetropolisScale = (lodOptions && Number(lodOptions.fetchSpanMeters) > 15500) || chunkSpanM > 5200;
+  if (isWideMetropolisScale) {
+    return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
+      `(relation["building"~"^(church|cathedral|chapel|castle|palace|tower|stadium)$"];relation["building:levels"~"^(1[2-9]|[2-9][0-9])"]["building"];)->.brels;` +
+      `(.brels;>;)->.ball;` +
+      `(relation["type"="multipolygon"]["natural"="water"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin)$"];relation["type"="multipolygon"]["leisure"="park"];)->.grels;` +
+      `way(r.grels)(${bbox})->.gways;` +
+      `(way["building:levels"~"^(1[2-9]|[2-9][0-9])"]["building"];way["building"~"^(church|cathedral|chapel|castle|palace|tower|stadium)$"];way["natural"~"^(water|coastline)$"];way["waterway"~"^(river|riverbank|canal)$"];way["water"];way["landuse"~"^(reservoir|basin)$"];way["leisure"="park"];way["highway"~"^(motorway|trunk|primary|motorway_link|trunk_link)$"];.gways;)->.wbox;` +
       `(relation.ball;.grels;.wbox;way.ball;);out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
   }
@@ -66,13 +105,13 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
     `(node(w.wbox);node.ball;);out skel qt;`;
 }
 
-function buildSpatialChunkGrid(south, west, north, east, spanMeters) {
+function buildSpatialChunkGrid(south, west, north, east, spanMeters, lodOptions = null) {
   const s = Number(spanMeters) || 1200;
-  let rows = 1, cols = 1;
-  if (s > 1450 && s <= 7500) { rows = 2; cols = 2; }
-  else if (s > 7500) { rows = 3; cols = 3; }
-
+  const fetchSpan = (lodOptions && Number(lodOptions.fetchSpanMeters) > 0) ? Number(lodOptions.fetchSpanMeters) : s;
   const lodTier = selectLodTier(s);
+  let rows = 1, cols = 1;
+  if (fetchSpan > 7500 || (lodTier === 'urban' && fetchSpan > 3300)) { rows = 3; cols = 3; }
+  else if (fetchSpan > 1450) { rows = 2; cols = 2; }
   const dLat = (north - south) / rows;
   const dLon = (east - west) / cols;
   const padLat = rows > 1 ? dLat * 0.015 : 0;
@@ -94,6 +133,7 @@ function buildSpatialChunkGrid(south, west, north, east, spanMeters) {
         id: `R${r + 1}C${c + 1}`,
         south: cSouth, west: cWest, north: cNorth, east: cEast,
         lodTier,
+        lodOptions: lodOptions || null,
         distCenter: Math.hypot(midLat - centerLat, midLon - centerLon),
         depth: 0
       });
@@ -275,12 +315,16 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, callbacks
     ? callbacks.onSubChunkDone
     : null;
 
-  const cacheKey = `v6_${chunk.lodTier}_${chunk.south.toFixed(4)}_${chunk.west.toFixed(4)}_${chunk.north.toFixed(4)}_${chunk.east.toFixed(4)}`;
+  const lo = chunk.lodOptions || null;
+  const lodKey = lo
+    ? `t${lo.wantTrees === false ? 0 : 1}_b${Math.round(lo.minBuildingFootprintM || 0)}_r${lo.roadDetail || 'all'}`
+    : 'def';
+  const cacheKey = `v7_${chunk.lodTier}_${lodKey}_${chunk.south.toFixed(4)}_${chunk.west.toFixed(4)}_${chunk.north.toFixed(4)}_${chunk.east.toFixed(4)}`;
   if (_overpassChunkCache.has(cacheKey)) return _overpassChunkCache.get(cacheKey);
 
   const timeoutSec = chunk.depth === 0 ? 13 : 10;
   const perAttemptMs = chunk.depth === 0 ? 15500 : 12000;
-  const query = buildAdaptiveOverpassQL(chunk.south, chunk.west, chunk.north, chunk.east, chunk.lodTier, timeoutSec);
+  const query = buildAdaptiveOverpassQL(chunk.south, chunk.west, chunk.north, chunk.east, chunk.lodTier, timeoutSec, lo);
 
   try {
     const elements = await fetchSingleOverpassQuery(query, perAttemptMs, abortSignal);
@@ -294,12 +338,14 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, callbacks
       if (onSubSplit) onSubSplit(chunk);
       const midLat = (chunk.south + chunk.north) * 0.5;
       const midLon = (chunk.west + chunk.east) * 0.5;
-      const fallbackTier = chunk.lodTier === 'detail' ? 'urban' : (chunk.lodTier === 'urban' ? 'regional' : chunk.lodTier);
+      // Sub-chunks are already 1/4 the geographic area; preserve chunk.lodTier & lodOptions
+      // so split urban/detail sectors retain full trees, greenery, and building detail.
+      const fallbackTier = chunk.lodTier;
       const subChunks = [
-        { id: `${chunk.id}.1`, south: chunk.south, west: chunk.west, north: midLat, east: midLon, lodTier: fallbackTier, depth: 1 },
-        { id: `${chunk.id}.2`, south: chunk.south, west: midLon, north: midLat, east: chunk.east, lodTier: fallbackTier, depth: 1 },
-        { id: `${chunk.id}.3`, south: midLat, west: chunk.west, north: chunk.north, east: midLon, lodTier: fallbackTier, depth: 1 },
-        { id: `${chunk.id}.4`, south: midLat, west: midLon, north: chunk.north, east: chunk.east, lodTier: fallbackTier, depth: 1 }
+        { id: `${chunk.id}.1`, south: chunk.south, west: chunk.west, north: midLat, east: midLon, lodTier: fallbackTier, lodOptions: lo, depth: 1 },
+        { id: `${chunk.id}.2`, south: chunk.south, west: midLon, north: midLat, east: chunk.east, lodTier: fallbackTier, lodOptions: lo, depth: 1 },
+        { id: `${chunk.id}.3`, south: midLat, west: chunk.west, north: chunk.north, east: midLon, lodTier: fallbackTier, lodOptions: lo, depth: 1 },
+        { id: `${chunk.id}.4`, south: midLat, west: midLon, north: chunk.north, east: chunk.east, lodTier: fallbackTier, lodOptions: lo, depth: 1 }
       ];
       const mergedSub = [];
       let subCursor = 0;
@@ -328,22 +374,48 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, callbacks
   }
 }
 
-function mergeAndDeduplicateElements(elementArrays, maxSpanM = 1200) {
+function mergeAndDeduplicateElements(elementArrays, maxSpanM = 1200, lodOptions = null) {
   const nodes = [], ways = [], relations = [];
-  const seenNodes = new Set(), seenWays = new Set(), seenRels = new Set();
+  const nodeMap = new Map(), wayMap = new Map(), relMap = new Map();
   for (const arr of elementArrays) {
     if (!Array.isArray(arr)) continue;
     for (let i = 0; i < arr.length; i++) {
       const el = arr[i];
       if (!el) continue;
-      if (el.type === 'node' && !seenNodes.has(el.id)) { seenNodes.add(el.id); nodes.push(el); }
-      else if (el.type === 'way' && !seenWays.has(el.id)) { seenWays.add(el.id); ways.push(el); }
-      else if (el.type === 'relation' && !seenRels.has(el.id)) { seenRels.add(el.id); relations.push(el); }
+      if (el.type === 'node') {
+        const prev = nodeMap.get(el.id);
+        if (!prev) {
+          nodeMap.set(el.id, el);
+          nodes.push(el);
+        } else if (el.tags && !prev.tags) {
+          prev.tags = el.tags;
+        }
+      } else if (el.type === 'way') {
+        const prev = wayMap.get(el.id);
+        if (!prev) {
+          wayMap.set(el.id, el);
+          ways.push(el);
+        } else {
+          if (el.tags && !prev.tags) prev.tags = el.tags;
+          if (el.nodes && (!prev.nodes || el.nodes.length > prev.nodes.length)) prev.nodes = el.nodes;
+        }
+      } else if (el.type === 'relation') {
+        const prev = relMap.get(el.id);
+        if (!prev) {
+          relMap.set(el.id, el);
+          relations.push(el);
+        } else if (el.tags && !prev.tags) {
+          prev.tags = el.tags;
+        }
+      }
     }
   }
 
   let filteredWays = ways;
-  if (maxSpanM > 1800 && ways.length > 4200) {
+  const minBldM = (lodOptions && typeof lodOptions.minBuildingFootprintM === 'number')
+    ? lodOptions.minBuildingFootprintM
+    : -1;
+  if (maxSpanM > 3900 && minBldM !== 0 && ways.length > 4800) {
     const skipMinorTypes = new Set(['shed', 'garage', 'garages', 'hut', 'cabin', 'kiosk', 'roof', 'allotment_house', 'greenhouse', 'farm_auxiliary']);
     filteredWays = ways.filter(w => {
       const t = w.tags;
@@ -356,6 +428,7 @@ function mergeAndDeduplicateElements(elementArrays, maxSpanM = 1200) {
 
 function filterPrintableBuildingsForScale(scene, maxBuildings = 1850) {
   if (!scene || !Array.isArray(scene.buildings) || scene.buildings.length <= maxBuildings) return scene;
+  const inBedFn = typeof scene._priorityBedCheck === 'function' ? scene._priorityBedCheck : null;
   const mustKeep = [], candidates = [];
   for (const b of scene.buildings) {
     if (b.landmark || b.church || b.tower || b.part || (b.h && b.h >= 22)) {
@@ -367,11 +440,13 @@ function filterPrintableBuildingsForScale(scene, maxBuildings = 1850) {
         if (y < minY) minY = y; if (y > maxY) maxY = y;
       }
       const approxArea = Math.max(0.01, (maxX - minX) * (maxY - minY));
-      candidates.push({ b, score: approxArea * (1 + (b.h || 10) * 0.04) });
+      const inBedBoost = (inBedFn && inBedFn(b.cx || 0, b.cy || 0)) ? 6.0 : 1.0;
+      candidates.push({ b, score: approxArea * (1 + (b.h || 10) * 0.04) * inBedBoost });
     }
   }
   candidates.sort((a, b) => b.score - a.score);
-  const kept = mustKeep.concat(candidates.slice(0, Math.max(250, maxBuildings - mustKeep.length)).map(c => c.b));
+  const remainSlots = Math.max(0, maxBuildings - mustKeep.length);
+  const kept = mustKeep.concat(candidates.slice(0, remainSlots).map(c => c.b));
   for (let i = 0; i < kept.length; i++) kept[i].id = i + 1;
   scene.buildings = kept;
   return scene;

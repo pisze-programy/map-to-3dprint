@@ -52,12 +52,14 @@ if (typeof window !== 'undefined' && window.fetch) {
   };
 }
 
-async function buildSceneFromPreloadedGis(south, west, north, east, title, dem, osmElements, maxBuildings = 1850) {
+async function buildSceneFromPreloadedGis(south, west, north, east, title, dem, osmElements, maxBuildings = 1850, sceneOptions = {}) {
   const prevPayload = _injectedGisPayload;
   _injectedGisPayload = { dem, osmElements };
   try {
-    const scene = await fetchRealGISInBrowser(south, west, north, east, title);
-    return filterPrintableBuildingsForScale(scene, maxBuildings);
+    const scene = await fetchRealGISInBrowser(south, west, north, east, title, sceneOptions);
+    const filtered = filterPrintableBuildingsForScale(scene, maxBuildings);
+    if (filtered && filtered._priorityBedCheck) delete filtered._priorityBedCheck;
+    return filtered;
   } finally {
     _injectedGisPayload = prevPayload;
   }
@@ -74,12 +76,39 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   const spanNsM = Math.abs(north - south) * 111320.0;
   const spanEwM = Math.abs(east - west) * 111320.0 * cosLat;
   const maxSpanM = Math.max(spanEwM, spanNsM);
+  const effectiveSpanM = (options && Number(options.targetSpanMeters) > 0)
+    ? Number(options.targetSpanMeters)
+    : maxSpanM;
+
+  const lodSettings = (options && options.lodSettings) || null;
+  const spanKm = effectiveSpanM / 1000.0;
+  const wantTrees = lodSettings
+    ? (lodSettings.enableTrees !== false && spanKm <= (lodSettings.treeMaxSpanKm ?? 4.0))
+    : (spanKm <= 4.0);
+  const minBldFootprintM = (lodSettings && typeof lodSettings.minBuildingFootprintM === 'number')
+    ? lodSettings.minBuildingFootprintM
+    : 0;
+  const roadDetail = (lodSettings && lodSettings.roadDetail) || 'all';
+  const lodQueryOpts = {
+    wantTrees,
+    minBuildingFootprintM: minBldFootprintM,
+    roadDetail,
+    fetchSpanMeters: maxSpanM
+  };
+
+  const sceneOptions = {
+    targetSpanMeters: effectiveSpanM,
+    targetWidthMm: options && options.targetWidthMm,
+    targetHeightMm: options && options.targetHeightMm,
+    rotationDeg: options && options.rotationDeg,
+    lodSettings
+  };
 
   const halfM = maxSpanM * 0.5;
   const sqDLat = halfM / 111320.0;
   const sqDLon = halfM / (111320.0 * cosLat);
 
-  const { rows, cols, lodTier, chunks } = buildSpatialChunkGrid(south, west, north, east, maxSpanM);
+  const { rows, cols, lodTier, chunks } = buildSpatialChunkGrid(south, west, north, east, effectiveSpanM, lodQueryOpts);
   const totalChunks = chunks.length;
   const abortSignal = options.signal || null;
 
@@ -91,7 +120,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
       progressKind: 'init',
       statusText: totalChunks > 1
         ? `Pobieranie siatki ${rows}×${cols} (${totalChunks} sektorów • tryb ${lodTier.toUpperCase()})...`
-        : `Pobieranie danych GIS + DEM (${(maxSpanM / 1000).toFixed(2)} km)...`
+        : `Pobieranie danych GIS + DEM (${(effectiveSpanM / 1000).toFixed(2)} km)...`
     });
   }
 
@@ -117,7 +146,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     }
   }).catch(() => {});
 
-  const concurrency = totalChunks > 4 ? 3 : Math.min(2, totalChunks);
+  const concurrency = Math.min(3, totalChunks);
   let nextChunkIdx = 0;
 
   const runChunkWorker = async () => {
@@ -211,9 +240,9 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
           try {
             const demNow = await demPromise;
             if (abortSignal && abortSignal.aborted) return;
-            const partialElements = mergeAndDeduplicateElements(snapshotArrays, maxSpanM);
+            const partialElements = mergeAndDeduplicateElements(snapshotArrays, effectiveSpanM, lodQueryOpts);
             const partialScene = await buildSceneFromPreloadedGis(
-              south, west, north, east, `${title} (${snapLoaded}/${totalChunks})`, demNow, partialElements, 900
+              south, west, north, east, `${title} (${snapLoaded}/${totalChunks})`, demNow, partialElements, 900, sceneOptions
             );
             partialScene._isPartialPreview = true;
             if (!(abortSignal && abortSignal.aborted)) {
@@ -245,10 +274,13 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
       console.warn('DEM fetch error during fallback:', e);
     }
     if (dem) {
+      const mToU = 169.2 / Math.max(1, effectiveSpanM);
       const fallbackScene = {
         title: `${title || 'TEREN'} (DEM)`,
         center: [centerLat, centerLon],
-        spanMeters: Math.round(maxSpanM),
+        spanMeters: Math.round(effectiveSpanM),
+        metersToUnits: mToU,
+        _demHalfUnits: Math.round((halfM * mToU) * 100) / 100,
         buildings: [],
         waterPolys: [],
         greenPolys: [],
@@ -264,7 +296,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   }
 
   const dem = await demPromise;
-  const mergedElements = mergeAndDeduplicateElements(collectedChunkElements, maxSpanM);
+  const mergedElements = mergeAndDeduplicateElements(collectedChunkElements, effectiveSpanM, lodQueryOpts);
 
   if (typeof options.onProgress === 'function') {
     options.onProgress({
@@ -276,8 +308,10 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     });
   }
 
-  const maxBlds = maxSpanM > 4500 ? 1550 : 1950;
-  const finalScene = await buildSceneFromPreloadedGis(south, west, north, east, title, dem, mergedElements, maxBlds);
+  const maxBlds = (minBldFootprintM === 0 && effectiveSpanM <= 3800)
+    ? 4500
+    : (effectiveSpanM > 4500 ? 1550 : 2200);
+  const finalScene = await buildSceneFromPreloadedGis(south, west, north, east, title, dem, mergedElements, maxBlds, sceneOptions);
   finalScene._chunkStats = { rows, cols, loadedChunks, totalChunks, lodTier, demZoom: dem.zoom || 14 };
 
   return finalScene;

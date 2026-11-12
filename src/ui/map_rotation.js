@@ -55,30 +55,34 @@ function ensureUnrotatedSceneSnapshot(scene) {
       minElev: scene.dem.minElev,
       maxElev: scene.dem.maxElev,
       grid: (scene.dem.grid || []).map(row => row.slice())
-    } : null
+    } : null,
+    demHalfUnits: scene._demHalfUnits || Math.max((scene.halfW || 84.6) + 0.4, (scene.halfH || 84.6) + 0.4)
   };
-  scene._appliedRotationDeg = 0;
+  scene._appliedRotationDeg = null;
+  scene._appliedDemSig = '';
 }
 
-function rotateDemGridBilinear(rawDem, rad) {
+function rotateDemGridBilinear(rawDem, rad, padW = 85.0, padH = 85.0, demHalfU = 85.0) {
   if (!rawDem || !rawDem.grid || rawDem.grid.length < 2) return rawDem;
   const N = rawDem.gridSize || rawDem.grid.length;
   const src = rawDem.grid;
   const cosA = Math.cos(rad);
   const sinA = Math.sin(rad);
-  const half = (N - 1) * 0.5;
+  const denom = Math.max(1, N - 1);
+  const effDemHalf = Math.max(1.0, demHalfU || Math.max(padW, padH));
+  const invDemSpan = 1.0 / (2.0 * effDemHalf);
   const outGrid = [];
   let minElev = Infinity, maxElev = -Infinity;
 
   for (let gy = 0; gy < N; gy++) {
-    const ny = (gy - half) / Math.max(1, half);
+    const by = -padH + (gy / denom) * (2.0 * padH);
     const row = new Array(N);
     for (let gx = 0; gx < N; gx++) {
-      const nx = (gx - half) / Math.max(1, half);
-      const ux = nx * cosA + ny * sinA;
-      const uy = -nx * sinA + ny * cosA;
-      const su = Math.min(N - 1.0001, Math.max(0, (ux + 1) * 0.5 * (N - 1)));
-      const sv = Math.min(N - 1.0001, Math.max(0, (uy + 1) * 0.5 * (N - 1)));
+      const bx = -padW + (gx / denom) * (2.0 * padW);
+      const wx = bx * cosA + by * sinA;
+      const wy = -bx * sinA + by * cosA;
+      const su = Math.min(N - 1.0001, Math.max(0, (wx + effDemHalf) * invDemSpan * denom));
+      const sv = Math.min(N - 1.0001, Math.max(0, (wy + effDemHalf) * invDemSpan * denom));
       const i0 = Math.floor(su), i1 = Math.min(N - 1, i0 + 1);
       const j0 = Math.floor(sv), j1 = Math.min(N - 1, j0 + 1);
       const fu = su - i0, fv = sv - j0;
@@ -100,13 +104,18 @@ function rotateDemGridBilinear(rawDem, rad) {
   };
 }
 
-function applySceneRotation(scene, rotationDeg) {
+function applySceneRotation(scene, rotationDeg, bedHalfW = null, bedHalfH = null) {
   if (!scene) return scene;
   ensureUnrotatedSceneSnapshot(scene);
   const normDeg = normalizeRotationDeg(rotationDeg);
-  if (scene._appliedRotationDeg === normDeg) return scene;
-
+  const effHalfW = (typeof bedHalfW === 'number' && bedHalfW > 0) ? bedHalfW : (scene.halfW || 84.6);
+  const effHalfH = (typeof bedHalfH === 'number' && bedHalfH > 0) ? bedHalfH : (scene.halfH || 84.6);
+  const padW = effHalfW + 0.4;
+  const padH = effHalfH + 0.4;
   const snap = scene._unrotatedSnapshot;
+  const demHalfU = snap.demHalfUnits || scene._demHalfUnits || Math.max(padW, padH);
+  const demSig = `${normDeg}_${padW.toFixed(2)}_${padH.toFixed(2)}_${demHalfU.toFixed(2)}`;
+  if (scene._appliedRotationDeg === normDeg && scene._appliedDemSig === demSig) return scene;
   const bStateById = new Map();
   for (const b of (scene.buildings || [])) {
     bStateById.set(b.id, {
@@ -162,17 +171,19 @@ function applySceneRotation(scene, rotationDeg) {
   });
 
   if (snap.dem) {
-    scene.dem = (normDeg === 0)
+    const needsDemResample = normDeg !== 0 || Math.abs(demHalfU - padW) > 0.5 || Math.abs(demHalfU - padH) > 0.5;
+    scene.dem = !needsDemResample
       ? {
           gridSize: snap.dem.gridSize,
           minElev: snap.dem.minElev,
           maxElev: snap.dem.maxElev,
           grid: snap.dem.grid.map(r => r.slice())
         }
-      : rotateDemGridBilinear(snap.dem, rad);
+      : rotateDemGridBilinear(snap.dem, rad, padW, padH, demHalfU);
   }
 
   scene._appliedRotationDeg = normDeg;
+  scene._appliedDemSig = demSig;
   return scene;
 }
 
@@ -181,6 +192,7 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizeRotationDeg,
     formatRotationBadgeText,
     ensureUnrotatedSceneSnapshot,
+    rotateDemGridBilinear,
     applySceneRotation
   };
 }

@@ -168,12 +168,13 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
         if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
         if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
       }
-      const isImportant = b.part || b.tower || b.church || b.landmark || (b.h || 0) >= 20;
+      const isImportant = b.part || b.tower || b.church || b.landmark || (b.h || 0) >= 20 || b.isLandmark;
       const minSpan = Math.min(maxX - minX, maxY - minY);
       const area = Math.abs(signedArea2D(clipped));
-      if (isImportant ? (area < 0.004) : (minSpan < 0.32 || area < 0.10)) return;
+      const minPrintUnits = 0.35 / scaleMm;
+      if (isImportant ? (area < 0.002) : (minSpan < minPrintUnits || area < minPrintUnits * minPrintUnits * 0.65)) return;
 
-      const padR = (minSpan * scaleMm < 0.48) ? Math.max(0.24, 0.32 / scaleMm) : 0.22;
+      const padR = (minSpan * scaleMm < 0.48) ? Math.min(0.24, 0.32 / scaleMm) : Math.min(0.16, 0.28 / scaleMm);
       const gxMin = Math.max(0, Math.floor(((minX - padR + halfW) / (2 * halfW)) * TERRAIN_RES_X));
       const gxMax = Math.min(TERRAIN_RES_X - 1, Math.floor(((maxX + padR + halfW) / (2 * halfW)) * TERRAIN_RES_X));
       const gyMin = Math.max(0, Math.floor(((minY - padR + halfH) / (2 * halfH)) * TERRAIN_RES_Y));

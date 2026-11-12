@@ -207,17 +207,20 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       }
       minSpan = Math.min(maxX - minX, maxY - minY);
       area = Math.abs(signedArea2D(clippedOuter));
-      if (minSpan < 0.18 || area < 0.004) continue;
+      if (minSpan < Math.min(0.18, 0.35 / scaleMm) || area < Math.min(0.004, 0.10 / (scaleMm * scaleMm))) continue;
     }
 
     // Douglas-Peucker tolerance: ~0.10 mm on print (~5 m at 50 km)
     const dpTolMm = 0.10;
     const dpTolUnits = dpTolMm / scaleMm;
 
-    if (clippedOuter.length > 5 && dpTolUnits > 0.005 && typeof simplifyClosedRingDP2D === 'function') {
+    if (clippedOuter.length > 5 && dpTolUnits > 0.005 && (!b.holes || b.holes.length === 0) && typeof simplifyClosedRingDP2D === 'function') {
       const simplified = simplifyClosedRingDP2D(clippedOuter, dpTolUnits);
-      if (simplified && simplified.length >= 3 && (typeof isSimplePolygon !== 'function' || isSimplePolygon(simplified))) {
-        clippedOuter = cleanPolygonRing(simplified, true);
+      if (simplified && simplified.length >= 3) {
+        const cleanedSimp = cleanPolygonRing(simplified, true);
+        if (cleanedSimp.length >= 3 && (typeof isSimplePolygon !== 'function' || isSimplePolygon(cleanedSimp)) && !hasSelfTouchingEdge2D(cleanedSimp, 1e-4)) {
+          clippedOuter = cleanedSimp;
+        }
       }
     }
 

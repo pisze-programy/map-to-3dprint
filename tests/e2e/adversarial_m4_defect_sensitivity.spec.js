@@ -101,12 +101,12 @@ test.describe('Adversarial Defect Sensitivity: Uncached GIS Streaming & Watchdog
       let requestIndex = 0;
       const tStart = Date.now();
 
-      // Batch 1 (requests 1 & 2) returns at 2s.
-      // Batch 2 (requests >= 3) hangs indefinitely (>45s stall).
+      // Urban 3.3 km span uses 3x3 = 9 chunks (onPartialScene fires at ceil(9 * 0.5) = 5 chunks).
+      // Requests 1..5 return at 1.5s; requests >= 6 hang indefinitely (>45s stall).
       await page.route('**/*interpreter*', async (route) => {
         requestIndex++;
-        if (requestIndex <= 2) {
-          await new Promise(r => setTimeout(r, 2000));
+        if (requestIndex <= 5) {
+          await new Promise(r => setTimeout(r, 1500));
           const osmPayload = {
             version: 0.6,
             elements: [
@@ -123,18 +123,18 @@ test.describe('Adversarial Defect Sensitivity: Uncached GIS Streaming & Watchdog
             body: JSON.stringify(osmPayload)
           });
         } else {
-          // Batch 2 hangs indefinitely
+          // Remaining chunks hang indefinitely
         }
       });
 
-      // 4 chunks: 52.2300 to 52.2600
+      // 9 chunks (3x3 urban): 52.2300 to 52.2600
       await page.evaluate(() => {
         window.fetchRealGISAndRender(52.2300, 21.0000, 52.2600, 21.0500, 'MID_STREAM_STALL');
       });
 
       await expect(page.locator('#loadingOverlay3D')).toBeVisible();
 
-      // Wait for watchdog to trigger (inactivity timeout fires at ~2s + 45s = ~47s)
+      // Wait for watchdog to trigger (inactivity timeout fires at ~3s + 45s = ~48s)
       await page.waitForFunction(() => {
         const overlay = document.getElementById('loadingOverlay3D');
         const overlayHidden = overlay && (overlay.classList.contains('hidden') || window.getComputedStyle(overlay).display === 'none');
@@ -150,10 +150,25 @@ test.describe('Adversarial Defect Sensitivity: Uncached GIS Streaming & Watchdog
       const watchdogWarn = hygiene.consoleWarnings.find(w => w.includes('[GIS Watchdog] Inactivity timeout'));
       expect(watchdogWarn).toBeTruthy();
 
-      // Verify partial assembly occurred (only 2 of 4 chunks loaded before watchdog abort)
-      const stats = await page.evaluate(() => window.__map3d?.state?.sceneData?._chunkStats);
-      expect(stats.loadedChunks).toBe(2);
-      expect(stats.totalChunks).toBe(4);
+      // Verify partial assembly occurred (5 of 9 chunks loaded into partialScene before watchdog abort)
+      const partialInfo = await page.evaluate(() => {
+        const sc = window.__map3d?.state?.sceneData;
+        return sc ? {
+          title: sc.title || '',
+          isPartialPreview: Boolean(sc._isPartialPreview),
+          chunkStats: sc._chunkStats || null,
+          buildingCount: Array.isArray(sc.buildings) ? sc.buildings.length : 0,
+        } : null;
+      });
+      expect(partialInfo).toBeTruthy();
+      if (partialInfo.chunkStats) {
+        expect(partialInfo.chunkStats.loadedChunks).toBe(5);
+        expect(partialInfo.chunkStats.totalChunks).toBe(9);
+      } else {
+        expect(partialInfo.isPartialPreview).toBe(true);
+        expect(partialInfo.title).toContain('(5/9)');
+        expect(partialInfo.buildingCount).toBeGreaterThanOrEqual(1);
+      }
 
       await expect(page.locator('#loadingOverlay3D')).toBeHidden();
       await expect(page.locator('#btnRender3D')).toBeEnabled();

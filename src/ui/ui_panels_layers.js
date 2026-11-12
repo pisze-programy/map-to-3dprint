@@ -38,19 +38,72 @@ function toColorHex(col, defaultHex = '#ffffff') {
   return defaultHex;
 }
 
+const PALETTE_SWATCH_KEYS = ['water', 'base', 'greenery', 'roads', 'buildings'];
+
 function createUILayersStatsController(state, onRebuildNeeded) {
+  let colorRafId = 0;
+
+  function getStudioInstance() {
+    return (state && state.studio) ||
+      (typeof window !== 'undefined' && window.__map3d && window.__map3d.studio) ||
+      null;
+  }
+
+  function triggerStudioRecolorImmediate() {
+    if (colorRafId) {
+      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(colorRafId);
+      colorRafId = 0;
+    }
+    const studio = getStudioInstance();
+    if (studio && typeof studio.render === 'function') {
+      studio.render(true);
+    }
+  }
+
+  function scheduleFastColorRepaint() {
+    if (colorRafId) return;
+    if (typeof requestAnimationFrame === 'function') {
+      colorRafId = requestAnimationFrame(() => {
+        colorRafId = 0;
+        const studio = getStudioInstance();
+        if (studio && typeof studio.render === 'function') {
+          studio.render(true);
+        }
+      });
+    } else {
+      triggerStudioRecolorImmediate();
+    }
+  }
+
+  function syncPaletteActiveButtonsInPlace() {
+    const container = document.getElementById('paletteButtonsContainer');
+    if (!container) return;
+    container.querySelectorAll('button[data-palette-id]').forEach(btn => {
+      const active = state.activePalette === btn.getAttribute('data-palette-id');
+      btn.className = `p-2 rounded-lg border text-left transition flex flex-col gap-1 ${
+        active ? 'border-blue-500 bg-blue-500/10' : 'border-[var(--border)] bg-[var(--background)] hover:opacity-85'
+      }`;
+    });
+  }
+
   function renderPalettesUI() {
     const container = document.getElementById('paletteButtonsContainer');
     if (!container) return;
+    if (state && state.colors && 'highlighted' in state.colors) {
+      delete state.colors.highlighted;
+    }
     container.innerHTML = '';
     PALETTES.forEach(p => {
       const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-palette-id', p.id);
       const active = state.activePalette === p.id;
       btn.className = `p-2 rounded-lg border text-left transition flex flex-col gap-1 ${
         active ? 'border-blue-500 bg-blue-500/10' : 'border-[var(--border)] bg-[var(--background)] hover:opacity-85'
       }`;
-      const swatches = Object.values(p.colors)
-        .map(c => `<span class="w-3.5 h-3.5 rounded-sm border border-black/25 inline-block" style="background:${toColorHex(c)}"></span>`)
+      const swatches = PALETTE_SWATCH_KEYS
+        .filter(k => p.colors && p.colors[k])
+        .map(k => `<span class="w-3.5 h-3.5 rounded-sm border border-black/25 inline-block" style="background:${toColorHex(p.colors[k])}"></span>`)
         .join('');
       btn.innerHTML = `
         <div class="text-xs font-semibold text-[var(--foreground)] truncate">${p.name}</div>
@@ -58,11 +111,15 @@ function createUILayersStatsController(state, onRebuildNeeded) {
       `;
       btn.addEventListener('click', () => {
         state.activePalette = p.id;
+        state._treesColorCustomized = false;
         state.colors = {};
-        for (const [k, v] of Object.entries(p.colors)) state.colors[k] = toColorHex(v);
-        renderPalettesUI();
+        PALETTE_SWATCH_KEYS.forEach(k => {
+          if (p.colors && p.colors[k]) state.colors[k] = toColorHex(p.colors[k]);
+        });
+        syncPaletteActiveButtonsInPlace();
         renderLayersUI();
-        if (onRebuildNeeded) onRebuildNeeded();
+        triggerStudioRecolorImmediate();
+        if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
       });
       container.appendChild(btn);
     });
@@ -71,6 +128,9 @@ function createUILayersStatsController(state, onRebuildNeeded) {
   function renderLayersUI() {
     const container = document.getElementById('layersListContainer');
     if (!container) return;
+    if (state && state.colors && 'highlighted' in state.colors) {
+      delete state.colors.highlighted;
+    }
     container.innerHTML = '';
     LAYERS_META.forEach(m => {
       const row = document.createElement('div');
@@ -99,15 +159,39 @@ function createUILayersStatsController(state, onRebuildNeeded) {
       });
     });
 
-    container.querySelectorAll('[data-layer-col]').forEach(inp => {
-      inp.addEventListener('input', e => {
-        const k = e.target.getAttribute('data-layer-col');
-        state.colors[k] = toColorHex(e.target.value);
-        if (k === 'greenery' && !state.colors.trees) state.colors.trees = toColorHex(e.target.value);
+    const applyColorInputChange = (e, isCommit) => {
+      const k = e.target.getAttribute('data-layer-col');
+      if (!k) return;
+      const hex = toColorHex(e.target.value);
+      if (!state.colors) state.colors = {};
+      delete state.colors.highlighted;
+      state.colors[k] = hex;
+
+      if (k === 'trees') {
+        state._treesColorCustomized = true;
+      } else if (k === 'greenery' && !state._treesColorCustomized) {
+        delete state.colors.trees;
+        const treeInp = container.querySelector('[data-layer-col="trees"]');
+        if (treeInp && treeInp !== e.target) treeInp.value = hex;
+      }
+
+      if (state.activePalette !== 'custom') {
         state.activePalette = 'custom';
-        renderPalettesUI();
-        if (onRebuildNeeded) onRebuildNeeded();
-      });
+        syncPaletteActiveButtonsInPlace();
+      }
+
+      if (isCommit) {
+        triggerStudioRecolorImmediate();
+        if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+      } else {
+        scheduleFastColorRepaint();
+        if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 250);
+      }
+    };
+
+    container.querySelectorAll('[data-layer-col]').forEach(inp => {
+      inp.addEventListener('input', e => applyColorInputChange(e, false));
+      inp.addEventListener('change', e => applyColorInputChange(e, true));
     });
   }
 

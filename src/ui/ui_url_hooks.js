@@ -7,6 +7,10 @@ const STORAGE_KEY_ACTIVE_CONFIG = 'map3d_active_config';
 let saveConfigTimer = null;
 
 function saveActiveConfig(state) {
+  if (saveConfigTimer) {
+    clearTimeout(saveConfigTimer);
+    saveConfigTimer = null;
+  }
   if (!state || typeof state !== 'object') return null;
 
   try {
@@ -30,6 +34,19 @@ function saveActiveConfig(state) {
       tileCols: Math.max(1, Math.min(50, Math.round(Number(state.tileCols)) || 4)),
       tileRows: Math.max(1, Math.min(100, Math.round(Number(state.tileRows)) || 6)),
       palette: state.activePalette || 'white',
+      customColors: (state.activePalette === 'custom' && state.colors && typeof state.colors === 'object')
+        ? (() => {
+            const allowed = ['water', 'base', 'greenery', 'trees', 'roads', 'buildings'];
+            const out = {};
+            for (const k of allowed) {
+              const v = state.colors[k];
+              if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.trim())) {
+                out[k] = v.trim().toLowerCase();
+              }
+            }
+            return Object.keys(out).length > 0 ? out : undefined;
+          })()
+        : undefined,
       lod: state.lodSettings ? { ...state.lodSettings } : undefined,
       zScale: typeof state.zScale === 'number' ? Number(state.zScale.toFixed(2)) : 1.25,
       terrainScale: typeof state.terrainScale === 'number' ? Number(state.terrainScale.toFixed(2)) : 1.15,
@@ -111,6 +128,24 @@ function loadActiveConfig() {
     }
     if (typeof parsed.palette === 'string' && parsed.palette.trim().length > 0) {
       sanitized.palette = parsed.palette.trim();
+    }
+    if (sanitized.palette === 'custom') {
+      const rawCustom = (parsed.customColors && typeof parsed.customColors === 'object' && !Array.isArray(parsed.customColors))
+        ? parsed.customColors
+        : ((parsed.colors && typeof parsed.colors === 'object' && !Array.isArray(parsed.colors)) ? parsed.colors : null);
+      if (rawCustom) {
+        const allowed = ['water', 'base', 'greenery', 'trees', 'roads', 'buildings'];
+        const cleanCustom = {};
+        for (const k of allowed) {
+          const v = rawCustom[k];
+          if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.trim())) {
+            cleanCustom[k] = v.trim().toLowerCase();
+          }
+        }
+        if (Object.keys(cleanCustom).length > 0) {
+          sanitized.customColors = cleanCustom;
+        }
+      }
     }
     if (typeof parsed.zScale === 'number' && Number.isFinite(parsed.zScale) && parsed.zScale > 0) {
       sanitized.zScale = parsed.zScale;
@@ -246,114 +281,253 @@ async function applyMap3DUrlParams(ctx) {
 
   try {
     const params = new URLSearchParams(window.location.search);
+    const isVideoMode = Boolean(window.MAP3D_STANDALONE_VIDEO_MODULE || params.get('mode') === 'video');
     const placeInput = document.getElementById('placeSearchInput');
     const chkHollowBase = document.getElementById('chkHollowBase');
     const tileExplodeSlider = document.getElementById('tileExplodeSlider');
     const explodeSlider = document.getElementById('explodeSlider');
     const exportTileSelect = document.getElementById('exportTileSelect');
 
+    // ------------------------------------------------------------------------
+    // 1. Determine GIS target & apply ALL synchronous URL state BEFORE `await`
+    //    so (a) initial GIS fetch uses URL `rot`/`frame`/`span`/`z_scale` and
+    //    (b) user actions during an in-flight reload fetch are never clobbered.
+    // ------------------------------------------------------------------------
     const bboxStr = params.get('bbox');
-    const titleStr = params.get('title') || (state ? state.plaqueText : 'KRAKÓW');
+    const rawBboxParts = bboxStr ? bboxStr.split(',').map(Number) : null;
+    const bboxParts = (rawBboxParts && rawBboxParts.length === 4 && rawBboxParts.every(n => Number.isFinite(n)))
+      ? rawBboxParts
+      : null;
+
+    const latParam = params.get('lat');
+    const lonParam = params.get('lon');
+    const spanParam = params.get('span');
+    const hasLatLonParams = Boolean(
+      !bboxParts &&
+      latParam !== null && lonParam !== null &&
+      latParam !== '' && lonParam !== '' &&
+      Number.isFinite(Number(latParam)) && Number.isFinite(Number(lonParam))
+    );
+
+    const titleParam = params.get('title') || params.get('city');
+    const titleStr = titleParam || (state ? state.plaqueText : 'KRAKÓW');
     const regionStr = params.get('region') || '';
-    if (bboxStr) {
-      const parts = bboxStr.split(',').map(Number);
-      if (parts.length === 4 && parts.every(n => !isNaN(n))) {
-        if (placeInput && regionStr) placeInput.value = regionStr;
-        const pInput = document.getElementById('plaqueTextInput');
-        if (pInput) pInput.value = titleStr;
-        state.plaqueText = titleStr;
-        await fetchRealGISAndRender(parts, titleStr, regionStr);
+
+    let needs2DUpdate = false;
+    let needs3DRebuild = false;
+
+    if (titleParam && state) {
+      state.plaqueText = titleParam;
+      const pInput = document.getElementById('plaqueTextInput');
+      if (pInput) pInput.value = titleParam;
+    }
+
+    if (bboxParts) {
+      if (placeInput && regionStr) placeInput.value = regionStr;
+      const pInput = document.getElementById('plaqueTextInput');
+      if (pInput) pInput.value = titleStr;
+      if (state) state.plaqueText = titleStr;
+    } else if (hasLatLonParams && state) {
+      state.mapCenterLat = Number(latParam);
+      state.mapCenterLon = Number(lonParam);
+      if (spanParam !== null && spanParam !== '' && Number.isFinite(Number(spanParam))) {
+        if (typeof setMapSpanKm === 'function') setMapSpanKm(Number(spanParam), false);
+        else state.mapSpanMeters = Math.round(Number(spanParam) * 1000);
+      } else {
+        needs2DUpdate = true;
       }
-    } else {
-      // Check if lat/lon in URL or hydrated state differs from bundled sceneData center
-      const latParam = params.get('lat');
-      const lonParam = params.get('lon');
-      const spanParam = params.get('span');
-      if (latParam && lonParam && !isNaN(Number(latParam)) && !isNaN(Number(lonParam))) {
-        state.mapCenterLat = Number(latParam);
-        state.mapCenterLon = Number(lonParam);
-        if (spanParam && !isNaN(Number(spanParam))) {
-          if (typeof setMapSpanKm === 'function') setMapSpanKm(Number(spanParam), false);
-          else state.mapSpanMeters = Math.round(Number(spanParam) * 1000);
+    } else if (spanParam !== null && spanParam !== '' && Number.isFinite(Number(spanParam)) && state) {
+      const prevSpan = state.mapSpanMeters;
+      if (typeof setMapSpanKm === 'function') setMapSpanKm(Number(spanParam), false);
+      else state.mapSpanMeters = Math.round(Number(spanParam) * 1000);
+      if (state.mapSpanMeters !== prevSpan) needs3DRebuild = true;
+    }
+
+    const needsSavedCenterFetch = Boolean(
+      !bboxParts && !hasLatLonParams &&
+      state && state.sceneData && state.sceneData.center &&
+      (Math.abs(state.mapCenterLat - state.sceneData.center[0]) > 0.01 ||
+       Math.abs(state.mapCenterLon - state.sceneData.center[1]) > 0.01)
+    );
+    const willFetchGIS = Boolean(bboxParts || hasLatLonParams || needsSavedCenterFetch);
+
+    // Frame dimensions (`frame=WxH` in 3D print studio mode)
+    const frameParam = !isVideoMode ? params.get('frame') : null;
+    const hasFrameParam3D = Boolean(frameParam && /^\d+x\d+$/.test(frameParam));
+    if (hasFrameParam3D && state) {
+      const [fw, fh] = frameParam.split('x').map(Number);
+      const nextW = Math.max(8, Math.min(150, fw || 50));
+      const nextH = Math.max(8, Math.min(150, fh || 50));
+      const nextBedMm = Math.round(nextW * 10);
+      const nextHeightMm = Math.round(nextH * 10);
+      if (state.bedSizeMm !== nextBedMm || state.totalHeightMm !== nextHeightMm) {
+        needs2DUpdate = true;
+        needs3DRebuild = true;
+      }
+      state.targetWidthCm = nextW;
+      state.targetHeightCm = nextH;
+      state.bedSizeMm = nextBedMm;
+      state.totalHeightMm = nextHeightMm;
+      const wInp = document.getElementById('targetWidthCmInput');
+      const hInp = document.getElementById('targetHeightCmInput');
+      if (wInp) wInp.value = nextW;
+      if (hInp) hInp.value = nextH;
+    }
+
+    const gridParam = params.get('grid');
+    const hasGridParam = Boolean(gridParam && /^\d+x\d+$/.test(gridParam));
+    const hollowParam = params.get('hollow');
+    const tileExplodeParam = params.get('tile_explode');
+
+    // Printer profile (applied without premature rebuild/save so explicit grid/hollow/rot stay intact)
+    const printerParam = params.get('printer');
+    if (printerParam && typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES[printerParam] && state) {
+      const prof = PRINT_PROFILES[printerParam];
+      const prevGeomSig = `${state.printerProfileId}|${state.bedSizeMm}|${state.totalHeightMm}|${state.tileCols}|${state.tileRows}|${state.isResin}|${state.hollowBase}`;
+      state.printerProfileId = prof.id;
+      state.bedZ = prof.bedZ || state.bedZ || 165.0;
+      state.isResin = Boolean(prof.isResin);
+      state.layerHeightMm = prof.isResin ? 0.05 : 0.20;
+      if (prof.isCustomMono4) {
+        const curW = state.targetWidthCm || Math.round(prof.totalWidthMm / 10) || 50;
+        const curH = state.targetHeightCm || Math.round(prof.totalHeightMm / 10) || 50;
+        state.targetWidthCm = curW;
+        state.targetHeightCm = curH;
+        state.bedSizeMm = Math.round(curW * 10);
+        state.totalHeightMm = Math.round(curH * 10);
+        if (!hasGridParam && typeof computeOptimalMono4Grid === 'function') {
+          const opt = computeOptimalMono4Grid(state.bedSizeMm, state.totalHeightMm);
+          state.tileCols = opt.cols;
+          state.tileRows = opt.rows;
         }
-        await fetchRealGISAndRender(null, titleStr, regionStr);
-      } else if (state && state.sceneData && state.sceneData.center) {
-        const dLat = Math.abs(state.mapCenterLat - state.sceneData.center[0]);
-        const dLon = Math.abs(state.mapCenterLon - state.sceneData.center[1]);
-        if (dLat > 0.01 || dLon > 0.01) {
-          await fetchRealGISAndRender(null, state.plaqueText || titleStr, regionStr);
+      } else {
+        if (!hasFrameParam3D) {
+          state.bedSizeMm = prof.totalWidthMm;
+          state.totalHeightMm = prof.totalHeightMm;
+          state.targetWidthCm = Math.round(prof.totalWidthMm / 10);
+          state.targetHeightCm = Math.round(prof.totalHeightMm / 10);
+          const wInp = document.getElementById('targetWidthCmInput');
+          const hInp = document.getElementById('targetHeightCmInput');
+          if (wInp) wInp.value = state.targetWidthCm;
+          if (hInp) hInp.value = state.targetHeightCm;
         }
+        if (!hasGridParam) {
+          state.tileCols = prof.cols;
+          state.tileRows = prof.rows;
+        }
+      }
+      if (hollowParam !== '0' && hollowParam !== '1') {
+        state.hollowBase = Boolean(prof.isResin);
+        if (chkHollowBase) chkHollowBase.checked = state.hollowBase;
+      }
+      const pSel = document.getElementById('printerSelect');
+      if (pSel) pSel.value = prof.id;
+      const nextGeomSig = `${state.printerProfileId}|${state.bedSizeMm}|${state.totalHeightMm}|${state.tileCols}|${state.tileRows}|${state.isResin}|${state.hollowBase}`;
+      if (nextGeomSig !== prevGeomSig) {
+        needs2DUpdate = true;
+        needs3DRebuild = true;
       }
     }
 
+    if (hasGridParam && state) {
+      const [gc, gr] = gridParam.split('x').map(Number);
+      const nextCols = Math.max(1, Math.min(50, gc));
+      const nextRows = Math.max(1, Math.min(100, gr));
+      if (state.tileCols !== nextCols || state.tileRows !== nextRows) {
+        state.tileCols = nextCols;
+        state.tileRows = nextRows;
+        needs2DUpdate = true;
+        needs3DRebuild = true;
+      }
+    }
+
+    if (state) {
+      const gridSel = document.getElementById('tileGridSelect');
+      if (gridSel) gridSel.value = `${state.tileCols}x${state.tileRows}`;
+      const activeFrameKey = `${Math.round(Number(state.targetWidthCm) || 50)}x${Math.round(Number(state.targetHeightCm) || 50)}`;
+      document.querySelectorAll('[data-frame-size]').forEach(chip => {
+        const isMatch = chip.getAttribute('data-frame-size') === activeFrameKey;
+        chip.className = isMatch
+          ? 'px-1.5 py-0.5 rounded bg-blue-600 text-white border border-blue-500 text-[11px] font-mono transition'
+          : 'px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition';
+      });
+      if (state.tileCols === 1 && state.tileRows === 1 && tileExplodeParam === null) {
+        state.tileExplode = 0;
+        if (tileExplodeSlider) tileExplodeSlider.value = 0;
+        const lbl = document.getElementById('tileExplodeValueLabel');
+        if (lbl) lbl.textContent = '0%';
+      }
+    }
+
+    if ((hollowParam === '0' || hollowParam === '1') && state) {
+      const nextHollow = (hollowParam === '1');
+      if (state.hollowBase !== nextHollow) {
+        state.hollowBase = nextHollow;
+        needs3DRebuild = true;
+      }
+      if (chkHollowBase) chkHollowBase.checked = state.hollowBase;
+    }
+
     const zScaleParam = params.get('z_scale');
-    if (zScaleParam && !isNaN(Number(zScaleParam))) {
-      state.zScale = Number(zScaleParam);
+    if (zScaleParam !== null && zScaleParam !== '' && Number.isFinite(Number(zScaleParam)) && state) {
+      const nextZ = Number(zScaleParam);
+      if (Math.abs((state.zScale || 1.25) - nextZ) > 1e-6) {
+        state.zScale = nextZ;
+        needs3DRebuild = true;
+      }
       const zInp = document.getElementById('zScaleSlider');
       if (zInp) zInp.value = Math.round(state.zScale * 100);
       const zLbl = document.getElementById('zScaleLabel');
       if (zLbl) zLbl.textContent = `${state.zScale.toFixed(2)}×`;
-      rebuildModel3D();
     }
 
     const rotParam = params.get('rot');
-    if (rotParam && !isNaN(Number(rotParam))) {
+    if (rotParam !== null && rotParam !== '' && Number.isFinite(Number(rotParam)) && state) {
       const rotVal = Number(rotParam);
+      const prevRot = state.mapRotationDeg || 0;
       if (typeof setMapRotationDeg === 'function') {
-        setMapRotationDeg(rotVal, true);
+        setMapRotationDeg(rotVal, false);
       } else {
         state.mapRotationDeg = rotVal;
-        draw2DMap();
-        rebuildModel3D();
+        needs2DUpdate = true;
       }
+      if (state.mapRotationDeg !== prevRot) needs3DRebuild = true;
       const rotInp = document.getElementById('mapRotationSlider');
-      if (rotInp) rotInp.value = rotVal;
-    }
-
-    const searchQ = params.get('search');
-    if (searchQ && placeInput) {
-      placeInput.value = searchQ;
-      const items = await queryPlaceSuggestions(searchQ);
-      renderSuggestionsDropdown(items);
+      if (rotInp) rotInp.value = state.mapRotationDeg;
     }
 
     const palParam = params.get('palette');
-    if (palParam && params.get('mode') !== 'video') {
-      const pal = PALETTES.find(p => p.id === palParam);
-      if (pal) {
-        state.activePalette = pal.id;
-        state.colors = { ...pal.colors };
+    if (!isVideoMode && state) {
+      if (state.colors && 'highlighted' in state.colors) {
+        delete state.colors.highlighted;
+      }
+      const targetPalId = palParam || state.activePalette || 'white';
+      if (targetPalId === 'custom') {
+        state.activePalette = 'custom';
+        const saved = loadActiveConfig();
+        if (saved && saved.customColors) {
+          state.colors = { ...PALETTES[0].colors, ...saved.customColors };
+          delete state.colors.highlighted;
+          state._treesColorCustomized = Boolean(saved.customColors.trees);
+        }
         renderPalettesUI();
         renderLayersUI();
-        studio.render(true);
+        if (studio && typeof studio.render === 'function') studio.render(true);
+      } else {
+        const pal = PALETTES.find(p => p.id === targetPalId) || PALETTES[0];
+        if (pal) {
+          state.activePalette = pal.id;
+          state._treesColorCustomized = false;
+          state.colors = { ...pal.colors };
+          delete state.colors.highlighted;
+          renderPalettesUI();
+          renderLayersUI();
+          if (studio && typeof studio.render === 'function') studio.render(true);
+        }
       }
     }
 
-    const printerParam = params.get('printer');
-    if (printerParam && PRINT_PROFILES[printerParam]) {
-      const pSel = document.getElementById('printerSelect');
-      if (pSel) pSel.value = printerParam;
-      applyPrinterProfile(printerParam);
-    }
-
-    const gridParam = params.get('grid');
-    if (gridParam && /^\d+x\d+$/.test(gridParam)) {
-      const [gc, gr] = gridParam.split('x').map(Number);
-      state.tileCols = Math.max(1, Math.min(50, gc));
-      state.tileRows = Math.max(1, Math.min(100, gr));
-      draw2DMap();
-      rebuildModel3D();
-    }
-
-    const hollowParam = params.get('hollow');
-    if (hollowParam === '0' || hollowParam === '1') {
-      state.hollowBase = (hollowParam === '1');
-      if (chkHollowBase) chkHollowBase.checked = state.hollowBase;
-      rebuildModel3D();
-    }
-
-    const tileExplodeParam = params.get('tile_explode');
-    if (tileExplodeParam !== null) {
+    if (tileExplodeParam !== null && state) {
       const tev = parseInt(tileExplodeParam, 10) || 0;
       state.tileExplode = tev / 100;
       if (tileExplodeSlider) tileExplodeSlider.value = tev;
@@ -362,95 +536,43 @@ async function applyMap3DUrlParams(ctx) {
     }
 
     const tileParam = params.get('tile');
-    if (tileParam !== null && exportTileSelect) {
+    if (tileParam !== null && state) {
       state.exportTileFilter = tileParam;
-      exportTileSelect.value = tileParam;
-      draw2DMap();
-    }
-
-    const multi = params.get('multi');
-    if (multi === '1' && state.sceneData && state.sceneData.buildings) {
-      const blds = state.sceneData.buildings;
-      const targets = blds.filter(b => b.name && (
-        b.name.includes('Sandomierska') || b.name.includes('Wawel') ||
-        b.name.includes('Katedra') || b.name.includes('Lukas') || b.landmark
-      ));
-      const seenPids = new Set();
-      const uniqueTargets = [];
-      for (const t of targets) {
-        const pid = t._pickId || t.id;
-        if (!seenPids.has(pid)) {
-          seenPids.add(pid);
-          uniqueTargets.push(t);
-          if (uniqueTargets.length >= 3) break;
-        }
-      }
-      uniqueTargets.forEach((t, idx) => handleSelectBuilding(t, idx > 0));
-      if (uniqueTargets.length > 0) {
-        const pid0 = uniqueTargets[0]._pickId || uniqueTargets[0].id;
-        const info0 = state.pickIdMap && state.pickIdMap.get(pid0);
-        const members0 = (info0 && info0.buildings) || [uniqueTargets[0]];
-        members0.forEach(m => { m.highlighted = true; });
-        rebuildModel3D();
-      }
-    }
-
-    const selectOsm = params.get('select_osm');
-    if (selectOsm && state.sceneData && state.sceneData.buildings) {
-      const targetOsm = Number(selectOsm);
-      const found = state.sceneData.buildings.find(b => b.osmId === targetOsm || b.groupId === targetOsm);
-      if (found) handleSelectBuilding(found, false);
-    }
-
-    const hoverOsm = params.get('hover_osm');
-    if (hoverOsm && state.sceneData && state.sceneData.buildings) {
-      const targetOsm = Number(hoverOsm);
-      const found = state.sceneData.buildings.find(b => b.osmId === targetOsm || b.groupId === targetOsm);
-      if (found && found._pickId) {
-        const pid = found._pickId;
-        state.hoveredBuildingId = pid;
-        const tooltip = document.getElementById('hoverTooltip');
-        if (tooltip) {
-          const info = (state.pickIdMap && state.pickIdMap.get(pid)) || null;
-          const dispName = (info && info.name) || found.name || `Budynek OSM #${found.osmId || found.id}`;
-          const dispH = Math.round((info && info.maxH) || found.h || 10);
-          const dispLvls = Math.max(1, found.levels || Math.round(dispH / 3.5));
-          const partsNote = (info && info.buildings && info.buildings.length > 1) ? ` • ${info.buildings.length} brył` : '';
-          tooltip.classList.remove('hidden');
-          tooltip.style.left = '54%';
-          tooltip.style.top = '58%';
-          tooltip.innerHTML = `<strong>${escapeHtml(dispName)}</strong><br/><span class="text-blue-300 font-mono">Wysokość: ${dispH}m (${dispLvls} p.)${partsNote} • Klik: zaznacz • Shift+Klik: dodaj</span>`;
-        }
-      }
+      if (exportTileSelect) exportTileSelect.value = tileParam;
+      needs2DUpdate = true;
     }
 
     const cam = params.get('cam');
-    if (cam) state.autoRotate = false;
-    if (cam === 'top') {
-      studio.camera.yaw = 0; studio.camera.pitch = 1.51; studio.camera.distance = 248;
-      studio.camera.target = [0, 0, 2.0];
-    } else if (cam === 'low') {
-      studio.camera.yaw = -0.58; studio.camera.pitch = 0.22; studio.camera.distance = 175;
-      studio.camera.target = [0, -10, 5.0];
-    } else if (cam === 'closeup') {
-      studio.camera.yaw = 0.32; studio.camera.pitch = 0.25; studio.camera.distance = 135;
-      studio.camera.target = [-12, -25, 4.5];
-    } else if (cam === 'exploded') {
-      studio.camera.yaw = -0.45; studio.camera.pitch = 0.34; studio.camera.distance = 265;
-      if (explodeSlider) explodeSlider.value = 70;
-      state.explodeFactor = 0.70;
-      document.getElementById('explodeValueLabel').textContent = '70%';
-      document.getElementById('explodedLegendOverlay').classList.remove('hidden');
-    } else if (cam === 'tiles') {
-      studio.camera.yaw = -0.38; studio.camera.pitch = 0.64; studio.camera.distance = 298;
-      studio.camera.target = [0, 0, 2.5];
-    } else if (cam === 'bottom') {
-      studio.camera.yaw = -0.42; studio.camera.pitch = -0.68; studio.camera.distance = 248;
-      studio.camera.target = [0, 0, 1.0];
+    if (cam && state && studio && studio.camera) {
+      state.autoRotate = false;
+      if (cam === 'top') {
+        studio.camera.yaw = 0; studio.camera.pitch = 1.51; studio.camera.distance = 248;
+        studio.camera.target = [0, 0, 2.0];
+      } else if (cam === 'low') {
+        studio.camera.yaw = -0.58; studio.camera.pitch = 0.22; studio.camera.distance = 175;
+        studio.camera.target = [0, -10, 5.0];
+      } else if (cam === 'closeup') {
+        studio.camera.yaw = 0.32; studio.camera.pitch = 0.25; studio.camera.distance = 135;
+        studio.camera.target = [-12, -25, 4.5];
+      } else if (cam === 'exploded') {
+        studio.camera.yaw = -0.45; studio.camera.pitch = 0.34; studio.camera.distance = 265;
+        if (explodeSlider) explodeSlider.value = 70;
+        state.explodeFactor = 0.70;
+        const expLbl = document.getElementById('explodeValueLabel');
+        if (expLbl) expLbl.textContent = '70%';
+        const expLegend = document.getElementById('explodedLegendOverlay');
+        if (expLegend) expLegend.classList.remove('hidden');
+      } else if (cam === 'tiles') {
+        studio.camera.yaw = -0.38; studio.camera.pitch = 0.64; studio.camera.distance = 298;
+        studio.camera.target = [0, 0, 2.5];
+      } else if (cam === 'bottom') {
+        studio.camera.yaw = -0.42; studio.camera.pitch = -0.68; studio.camera.distance = 248;
+        studio.camera.target = [0, 0, 1.0];
+      }
     }
 
     const camCustom = params.get('cam_custom');
-    if (camCustom) {
+    if (camCustom && state && studio && studio.camera) {
       state.autoRotate = false;
       const cp = camCustom.split(',').map(Number);
       if (cp.length >= 6 && cp.every(n => Number.isFinite(n))) {
@@ -459,6 +581,37 @@ async function applyMap3DUrlParams(ctx) {
         studio.camera.distance = cp[2];
         studio.camera.target = [cp[3], cp[4], cp[5]];
       }
+    }
+
+    if (needs2DUpdate && typeof draw2DMap === 'function') {
+      draw2DMap();
+    }
+    if (!willFetchGIS && needs3DRebuild && typeof rebuildModel3D === 'function') {
+      rebuildModel3D();
+    } else if (!willFetchGIS && studio && typeof studio.render === 'function') {
+      studio.render(true);
+    }
+
+    // ------------------------------------------------------------------------
+    // 2. Async operations (live GIS fetch, search dropdown, video preset)
+    // ------------------------------------------------------------------------
+    if (bboxParts) {
+      await fetchRealGISAndRender(bboxParts, titleStr, regionStr);
+    } else if (hasLatLonParams) {
+      await fetchRealGISAndRender(null, titleStr, regionStr);
+    } else if (needsSavedCenterFetch) {
+      await fetchRealGISAndRender(null, state.plaqueText || titleStr, regionStr);
+    }
+
+    if (tileParam !== null && exportTileSelect && state && state.exportTileFilter === tileParam) {
+      exportTileSelect.value = tileParam;
+    }
+
+    const searchQ = params.get('search');
+    if (searchQ && placeInput) {
+      placeInput.value = searchQ;
+      const items = await queryPlaceSuggestions(searchQ);
+      renderSuggestionsDropdown(items);
     }
 
     if (window.MAP3D_STANDALONE_VIDEO_MODULE || params.get('mode') === 'video') {

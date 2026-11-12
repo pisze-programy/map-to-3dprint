@@ -55,19 +55,9 @@ const TEST_LOCATIONS = {
 async function setupOverpassProxy(page) {
   try {
     await page.route('**/*interpreter*', async (route) => {
-      try {
-        const resp = await route.fetch({
-          headers: {
-            ...route.request().headers(),
-            'User-Agent': 'Map3DStudio/2.0 (OpenStreetMap 3D Print Studio)'
-          },
-          timeout: 15000
-        });
-        if (resp && resp.status() < 400) {
-          await route.fulfill({ response: resp });
-          return;
-        }
-      } catch (_) {}
+      // 1. For deterministic cached test fixtures (small <= ~3 km chunks matching cache/osm_*.json),
+      // serve exact local bbox fixture first so 48 cached UI tests do not exhaust public Overpass IP slots
+      // right before live_user_journey.spec.js / 4.V6 / 4.3 run against live Overpass.
       try {
         const url = route.request().url();
         const postData = route.request().postData() || '';
@@ -76,21 +66,35 @@ async function setupOverpassProxy(page) {
         if (fs.existsSync(cacheDir)) {
           const files = fs.readdirSync(cacheDir).filter(f => f.startsWith('osm_') && f.endsWith('.json'));
           let bestFile = null;
+          let bestDist = Infinity;
 
-          // Check if requested bounding box overlaps with any locally cached scene
           const m = decoded.match(/\[bbox:([0-9.-]+),([0-9.-]+),([0-9.-]+),([0-9.-]+)\]/) ||
                     decoded.match(/\(([0-9.-]+),([0-9.-]+),([0-9.-]+),([0-9.-]+)\)/) ||
                     url.match(/bbox=([0-9.-]+),([0-9.-]+),([0-9.-]+),([0-9.-]+)/);
           if (m) {
             const qS = parseFloat(m[1]), qW = parseFloat(m[2]), qN = parseFloat(m[3]), qE = parseFloat(m[4]);
-            for (const f of files) {
-              const parts = f.replace('osm_', '').replace('.json', '').split('_').map(Number);
-              if (parts.length === 4) {
-                const fMidLat = (parts[0] + parts[2]) * 0.5;
-                const fMidLon = (parts[1] + parts[3]) * 0.5;
-                if (fMidLat >= qS && fMidLat <= qN && fMidLon >= qW && fMidLon <= qE) {
-                  bestFile = f;
-                  break;
+            const qLatSpan = Math.abs(qN - qS);
+            const qLonSpan = Math.abs(qE - qW);
+            const qMidLat = (qS + qN) * 0.5;
+            const qMidLon = (qW + qE) * 0.5;
+            // Only match tight local fixtures (never wide 25 km / 50 km scalability chunks!)
+            if (qLatSpan > 0 && qLatSpan < 0.035 && qLonSpan < 0.045) {
+              for (const f of files) {
+                const parts = f.replace('osm_', '').replace('.json', '').split('_').map(Number);
+                if (parts.length === 4 && parts.every(Number.isFinite)) {
+                  const [fS, fW, fN, fE] = parts;
+                  const fMidLat = (fS + fN) * 0.5;
+                  const fMidLon = (fW + fE) * 0.5;
+                  const overlaps =
+                    (fMidLat >= qS && fMidLat <= qN && fMidLon >= qW && fMidLon <= qE) ||
+                    (qMidLat >= fS && qMidLat <= fN && qMidLon >= fW && qMidLon <= fE);
+                  if (overlaps) {
+                    const d = Math.hypot(fMidLat - qMidLat, fMidLon - qMidLon);
+                    if (d < bestDist) {
+                      bestDist = d;
+                      bestFile = f;
+                    }
+                  }
                 }
               }
             }
@@ -105,6 +109,21 @@ async function setupOverpassProxy(page) {
             });
             return;
           }
+        }
+      } catch (_) {}
+
+      // 2. Otherwise forward live to Overpass with genuine User-Agent
+      try {
+        const resp = await route.fetch({
+          headers: {
+            ...route.request().headers(),
+            'User-Agent': 'Map3DStudio/2.0 (OpenStreetMap 3D Print Studio)'
+          },
+          timeout: 15000
+        });
+        if (resp && resp.status() < 400) {
+          await route.fulfill({ response: resp });
+          return;
         }
       } catch (_) {}
       await route.continue().catch(() => {});
@@ -126,13 +145,25 @@ function setupConsoleHygiene(page, setupOptions = {}) {
   /** @type {string[]} */
   const consoleWarnings = [];
 
+  /** @type {string[]} */
+  const externalResourceWarnings = [];
+
   const onPageError = err => {
     pageErrors.push(err.message || String(err));
   };
   const onConsole = msg => {
     const text = msg.text();
     if (msg.type() === 'error') {
-      consoleErrors.push(text);
+      const locUrl = (typeof msg.location === 'function' && msg.location() && msg.location().url) || '';
+      const isHandledExternalTileOrMirrorBlip =
+        /^Failed to load resource:/i.test(text) &&
+        /^https?:\/\//i.test(locUrl) &&
+        !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(locUrl);
+      if (isHandledExternalTileOrMirrorBlip) {
+        externalResourceWarnings.push(`${text} [${locUrl}]`);
+      } else {
+        consoleErrors.push(locUrl ? `${text} [${locUrl}]` : text);
+      }
     } else if (msg.type() === 'warning') {
       consoleWarnings.push(text);
     }
@@ -150,6 +181,7 @@ function setupConsoleHygiene(page, setupOptions = {}) {
     pageErrors,
     consoleErrors,
     consoleWarnings,
+    externalResourceWarnings,
 
     /**
      * Asserts console hygiene according to R3 & M4 requirements.

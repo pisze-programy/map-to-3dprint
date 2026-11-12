@@ -3,8 +3,7 @@
     "argv": [
       "/opt/homebrew/Cellar/node/26.7.0/bin/node",
       "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/node_modules/.bin/playwright",
-      "test",
-      "tests/e2e/live_user_journey.spec.js"
+      "test"
     ],
     "configFile": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/playwright.config.js",
     "rootDir": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e",
@@ -122,6 +121,489 @@
   },
   "suites": [
     {
+      "title": "adversarial_m4_defect_sensitivity.spec.js",
+      "file": "adversarial_m4_defect_sensitivity.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Adversarial Defect Sensitivity: Uncached GIS Streaming & Watchdog",
+          "file": "adversarial_m4_defect_sensitivity.spec.js",
+          "line": 13,
+          "column": 6,
+          "specs": [],
+          "suites": [
+            {
+              "title": "1. Watchdog Progress Reset & Inactivity Stalls (Mutant A)",
+              "file": "adversarial_m4_defect_sensitivity.spec.js",
+              "line": 18,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "1.1 Legitimate progressive stream spanning >20s survives when watchdog resets on progress",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 34501,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "[Empirical Test 1.1] Completed in 33595ms with 9 delayed chunks.\n"
+                            },
+                            {
+                              "text": "[Empirical Test 1.1] Console warnings: []\n"
+                            },
+                            {
+                              "text": "[Empirical Test 1.1] Chunk stats: {\n  rows: \u001b[33m3\u001b[39m,\n  cols: \u001b[33m3\u001b[39m,\n  loadedChunks: \u001b[33m9\u001b[39m,\n  totalChunks: \u001b[33m9\u001b[39m,\n  lodTier: \u001b[32m'urban'\u001b[39m,\n  demZoom: \u001b[33m13\u001b[39m\n}\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:23:14.900Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "886931a98693a3726103-3b2899457f8777bda3b0",
+                  "file": "adversarial_m4_defect_sensitivity.spec.js",
+                  "line": 20,
+                  "column": 5
+                },
+                {
+                  "title": "1.2 Inactivity stall of >45s mid-stream triggers watchdog killswitch",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 120000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 49250,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "[Empirical Test 1.2] Watchdog aborted hanging stream after 48513ms.\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:23:50.269Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "886931a98693a3726103-af7f336e3ff61f0e0000",
+                  "file": "adversarial_m4_defect_sensitivity.spec.js",
+                  "line": 91,
+                  "column": 5
+                }
+              ]
+            },
+            {
+              "title": "2. Uncached Coordinates & Cache Catalog Shortcut Audit (Mutant B)",
+              "file": "adversarial_m4_defect_sensitivity.spec.js",
+              "line": 182,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "2.1 Truly uncached coordinates (Mount Fuji) without local cache fallback",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2541,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "[Empirical Test 2.1] Mount Fuji DEM fallback rendered: 178320 triangles, 0 buildings.\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:24:39.527Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "886931a98693a3726103-5983cc469dd0694b44bf",
+                  "file": "adversarial_m4_defect_sensitivity.spec.js",
+                  "line": 184,
+                  "column": 5
+                },
+                {
+                  "title": "2.2 Proxy shortcut sensitivity: detecting if files[0] cache shortcut masks errors",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 138,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "[Audit 2.2] setupOverpassProxy has files[0] unconditional fallback: false\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:24:42.076Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "886931a98693a3726103-7bf02da2d72f0de8021f",
+                  "file": "adversarial_m4_defect_sensitivity.spec.js",
+                  "line": 244,
+                  "column": 5
+                }
+              ]
+            },
+            {
+              "title": "3. Unhandled Rejection Hygiene Sensitivity (Mutant C)",
+              "file": "adversarial_m4_defect_sensitivity.spec.js",
+              "line": 260,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "3.1 Playwright pageerror vs unhandledrejection event capture behavior",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 1048,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "[Empirical Test 3.1] pageerror: \"ADVERSARIAL_UNHANDLED_PROMISE_REJECTION\", console.error: \"Failed to load resource: the server responded with a status of 404 (File not found)\"\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:24:42.224Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "886931a98693a3726103-97ec29fd5946dc79f4e7",
+                  "file": "adversarial_m4_defect_sensitivity.spec.js",
+                  "line": 262,
+                  "column": 5
+                },
+                {
+                  "title": "3.2 assertClean() sensitivity to unhandled promise rejections",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 1308,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "[Empirical Test 3.2] hygiene.assertClean() threw as expected: Must have zero unhandled page errors\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"INJECTED_TEST_REJECTION\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:24:43.279Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "886931a98693a3726103-73aaccef096938dca18a",
+                  "file": "adversarial_m4_defect_sensitivity.spec.js",
+                  "line": 290,
+                  "column": 5
+                },
+                {
+                  "title": "3.3 GIS Streaming pipeline rejection hygiene: verify fetchChunkedGIS catches all sub-promises",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 4395,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:24:44.598Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "886931a98693a3726103-75a884913e9db437b692",
+                  "file": "adversarial_m4_defect_sensitivity.spec.js",
+                  "line": 320,
+                  "column": 5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "baseline_runner.spec.js",
+      "file": "baseline_runner.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Milestone 1 — Baseline Runner & Test Harness",
+          "file": "baseline_runner.spec.js",
+          "line": 28,
+          "column": 6,
+          "specs": [
+            {
+              "title": "Baseline city selection to 3D preview: Warsaw (Old Town)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6088,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "[BASELINE SPEC] Warsaw (Old Town):\n"
+                        },
+                        {
+                          "text": "  - Start Epoch:          2026-11-12T13:24:49.121Z (1794489889121 ms)\n"
+                        },
+                        {
+                          "text": "  - City Selection Epoch: 2026-11-12T13:24:49.721Z (1794489889721 ms)\n"
+                        },
+                        {
+                          "text": "  - Render Complete Epoch:2026-11-12T13:24:55.066Z (1794489895066 ms)\n"
+                        },
+                        {
+                          "text": "  - Harness Elapsed:      5344.67 ms\n"
+                        },
+                        {
+                          "text": "  - In-Page Elapsed:      5344.90 ms\n"
+                        },
+                        {
+                          "text": "  - Total Triangles:      651,045\n"
+                        },
+                        {
+                          "text": "  - WebGL Renderer:       ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:24:49.018Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "86d988e49495e24f7510-85f01de86ed903698d97",
+              "file": "baseline_runner.spec.js",
+              "line": 30,
+              "column": 5
+            },
+            {
+              "title": "Baseline city selection to 3D preview: New York (Central Park)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 5185,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "[BASELINE SPEC] New York (Central Park):\n"
+                        },
+                        {
+                          "text": "  - Start Epoch:          2026-11-12T13:24:55.240Z (1794489895240 ms)\n"
+                        },
+                        {
+                          "text": "  - City Selection Epoch: 2026-11-12T13:24:55.765Z (1794489895765 ms)\n"
+                        },
+                        {
+                          "text": "  - Render Complete Epoch:2026-11-12T13:25:00.268Z (1794489900268 ms)\n"
+                        },
+                        {
+                          "text": "  - Harness Elapsed:      4502.82 ms\n"
+                        },
+                        {
+                          "text": "  - In-Page Elapsed:      4502.90 ms\n"
+                        },
+                        {
+                          "text": "  - Total Triangles:      443,902\n"
+                        },
+                        {
+                          "text": "  - WebGL Renderer:       ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:24:55.113Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "86d988e49495e24f7510-0325c5de4349d953e13b",
+              "file": "baseline_runner.spec.js",
+              "line": 30,
+              "column": 5
+            },
+            {
+              "title": "Baseline city selection via URL parameters: Warsaw",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7226,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "[BASELINE SPEC] Warsaw via URL params: 7033.25 ms | Triangles: 651045\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:25:00.305Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "86d988e49495e24f7510-65361f5c6ec51bc1e8f8",
+              "file": "baseline_runner.spec.js",
+              "line": 162,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
       "title": "live_user_journey.spec.js",
       "file": "live_user_journey.spec.js",
       "column": 0,
@@ -150,49 +632,52 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 41268,
+                      "duration": 110801,
                       "errors": [],
                       "stdout": [
                         {
-                          "text": "[Live User Journey] Selected uncached pair: City 1 = Wrocław (51.1095, 17.0325) @ 2.5 km -> City 2 = Zürich (47.3769, 8.5417) @ 5.0 km\n"
+                          "text": "[Live User Journey] Selected uncached pair: City 1 = Porto (41.1496, -8.611) @ 2.5 km -> City 2 = Zürich (47.3769, 8.5417) @ 5.0 km\n"
                         },
                         {
-                          "text": "[Live User Journey] City 1 selected from dropdown: \"Wrocław Lower Silesian Voivodeship, Poland 51.11°, 17.03°\" -> (51.1090, 17.0327)\n"
+                          "text": "[Live User Journey] City 1 selected from dropdown: \"Porto Portugal 41.15°, -8.61°\" -> (41.1502, -8.6103)\n"
                         },
                         {
-                          "text": "[Live User Journey] Saved screenshot: /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e/screenshots/before_render.png (178754 bytes, 1280x720)\n"
+                          "text": "[Live User Journey] Saved screenshot: /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e/screenshots/before_render.png (178722 bytes, 1280x720)\n"
                         },
                         {
-                          "text": "[Live User Journey] Saved screenshot: /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e/screenshots/during_progress.png (226619 bytes, 1280x720)\n"
+                          "text": "[Live User Journey] Saved screenshot: /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e/screenshots/during_progress.png (226899 bytes, 1280x720)\n"
                         },
                         {
-                          "text": "[Live User Journey] City 1 (Wrocław @ 2.5 km) rendered in 18.48s: 3321 buildings, 429734 triangles, center=[51.10898,17.03267]\n"
+                          "text": "[Live User Journey] City 1 (Porto @ 2.5 km) rendered in 20.79s: 4500 buildings, 751656 triangles, center=[41.15022,-8.61035]\n"
                         },
                         {
-                          "text": "[Live User Journey] City 1 WebGL shading metrics: uniqueColors=1057, lumStdDev=35.34, edgeTransitions=29469\n"
+                          "text": "[Live User Journey] City 1 Round 2 checks: trees=2600 (greeneryTris=100712, roadTris=206496, maxWaterFrac=0.09), waterColor=#f6f6f6, avgAbsRB=0.74\n"
                         },
                         {
-                          "text": "[Live User Journey] Saved screenshot: /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e/screenshots/after_render_city1_2_5km.png (536403 bytes, 1280x720)\n"
+                          "text": "[Live User Journey] City 1 WebGL shading metrics: uniqueColors=738, lumStdDev=33.43, edgeTransitions=35563\n"
+                        },
+                        {
+                          "text": "[Live User Journey] Saved screenshot: /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e/screenshots/after_render_city1_2_5km.png (640070 bytes, 1280x720)\n"
                         },
                         {
                           "text": "[Live User Journey] City 2 selected from dropdown: \"Zurich Zurich, Switzerland 47.37°, 8.54°\" -> (47.3744, 8.5410)\n"
                         },
                         {
-                          "text": "[Live User Journey] City 2 (Zürich @ 5.0 km) rendered in 18.00s: 2572 buildings, 378806 triangles, center=[47.37445,8.54104]\n"
+                          "text": "[Live User Journey] City 2 (Zürich @ 5.0 km) rendered in 81.53s: 2239 buildings, 675114 triangles, center=[47.374449,8.541042]\n"
                         },
                         {
-                          "text": "[Live User Journey] City 2 WebGL shading metrics: uniqueColors=1052, lumStdDev=34.12, edgeTransitions=31074\n"
+                          "text": "[Live User Journey] City 2 WebGL shading metrics: uniqueColors=771, lumStdDev=34.08, edgeTransitions=28486\n"
                         },
                         {
-                          "text": "[Live User Journey] Saved screenshot: /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e/screenshots/after_render_city2_5km_switched.png (561014 bytes, 1280x720)\n"
+                          "text": "[Live User Journey] Saved screenshot: /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/tests/e2e/screenshots/after_render_city2_5km_switched.png (526700 bytes, 1280x720)\n"
                         },
                         {
-                          "text": "[Live User Journey] Photon resolution log: [{\"query\":\"Wrocław\",\"source\":\"live\",\"status\":200},{\"query\":\"Zürich\",\"source\":\"live\",\"status\":200}]\n"
+                          "text": "[Live User Journey] Photon resolution log: [{\"query\":\"Porto\",\"source\":\"live\",\"status\":200},{\"query\":\"Zürich\",\"source\":\"live\",\"status\":200}]\n"
                         }
                       ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-11-12T07:46:33.217Z",
+                      "startTime": "2026-11-12T13:25:07.555Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -208,13 +693,1571 @@
           ]
         }
       ]
+    },
+    {
+      "title": "tier1_features.spec.js",
+      "file": "tier1_features.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Tier 1: Feature Coverage (Opaque-Box E2E Tests)",
+          "file": "tier1_features.spec.js",
+          "line": 11,
+          "column": 6,
+          "specs": [
+            {
+              "title": "1.1 Preset Warsaw (Old Town) loads 3D model with valid mesh stats",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6143,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:26:58.383Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2b406a1e1e2d3da110b8-33397a19c2d0b1ef23fe",
+              "file": "tier1_features.spec.js",
+              "line": 26,
+              "column": 3
+            },
+            {
+              "title": "1.2 Preset New York (Central Park) loads 3D model with valid mesh stats",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 5511,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:27:04.534Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2b406a1e1e2d3da110b8-72c4a3e5adb62ddc318e",
+              "file": "tier1_features.spec.js",
+              "line": 69,
+              "column": 3
+            },
+            {
+              "title": "1.3 Preset Munich (Marienplatz / Isar) loads 3D model with valid mesh stats",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7615,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:27:10.053Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2b406a1e1e2d3da110b8-bb42696deec312abf421",
+              "file": "tier1_features.spec.js",
+              "line": 100,
+              "column": 3
+            },
+            {
+              "title": "1.4 Custom coordinate entry via URL bbox query param loads Warsaw",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6081,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:27:17.673Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2b406a1e1e2d3da110b8-7c7e99fd38d35d1e950e",
+              "file": "tier1_features.spec.js",
+              "line": 132,
+              "column": 3
+            },
+            {
+              "title": "1.5 Custom coordinate entry via URL lat/lon and span loads Kraków",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7411,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:27:23.760Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2b406a1e1e2d3da110b8-bfcc83fde1b5c07f4d36",
+              "file": "tier1_features.spec.js",
+              "line": 158,
+              "column": 3
+            },
+            {
+              "title": "1.6 Search bar autocomplete populates coordinates and initiates 3D render",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6564,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:27:31.178Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2b406a1e1e2d3da110b8-8d9605c822d299bd4a48",
+              "file": "tier1_features.spec.js",
+              "line": 187,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "tier2_boundary.spec.js",
+      "file": "tier2_boundary.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Tier 2: Boundary, Corner Case & Error Resilience (Opaque-Box E2E Tests)",
+          "file": "tier2_boundary.spec.js",
+          "line": 14,
+          "column": 6,
+          "specs": [],
+          "suites": [
+            {
+              "title": "1. Search Input Boundary Handling",
+              "file": "tier2_boundary.spec.js",
+              "line": 29,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "2.1 Empty search string on #placeSearchInput with button click",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 566,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:27:37.758Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-52670356ce85718020a9",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 30,
+                  "column": 5
+                },
+                {
+                  "title": "2.2 Whitespace-only search string with Enter keypress",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 561,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:27:38.331Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-0fc0bcda74cadadeeba7",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 54,
+                  "column": 5
+                },
+                {
+                  "title": "2.3 Single character input does not trigger autocomplete dropdown",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 896,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:27:38.898Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-de4c608191197203c5bb",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 73,
+                  "column": 5
+                }
+              ]
+            },
+            {
+              "title": "2. Coordinate Boundary & Inverted Bounding Boxes",
+              "file": "tier2_boundary.spec.js",
+              "line": 91,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "2.4 Inverted bounding box (south > north) surfaces error banner without freeze",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 525,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:27:39.801Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-c0c77b6a3f27dad71374",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 92,
+                  "column": 5
+                },
+                {
+                  "title": "2.5 NaN bounding box coordinates handled gracefully without unhandled crash",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 550,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:27:40.332Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-46f1741d1e7c5092ac2a",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 119,
+                  "column": 5
+                },
+                {
+                  "title": "2.6 Out-of-range coordinates via URL parameters (?bbox=120,0,130,10)",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 1040,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:27:40.887Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-74530bdcd7959914dbd4",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 140,
+                  "column": 5
+                }
+              ]
+            },
+            {
+              "title": "3. Network Failure & Interception Resilience",
+              "file": "tier2_boundary.spec.js",
+              "line": 162,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "2.7 HTTP 500 error on GIS backend surfaces #gisErrorBanner and dismisses #loadingOverlay3D",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 882,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:27:41.933Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-f7d38ded3123f5da0a51",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 163,
+                  "column": 5
+                },
+                {
+                  "title": "2.8 Network drop / connection refusal simulation",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 856,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:27:42.822Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-f162d5d76eca67e862b8",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 186,
+                  "column": 5
+                },
+                {
+                  "title": "2.9 Hard 45-second inactivity watchdog timeout triggers on hanging network request",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 45791,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:27:43.684Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-855398eff9b4a5b60364",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 210,
+                  "column": 5
+                }
+              ]
+            },
+            {
+              "title": "4. Error Recovery & Cancellation Lifecycle",
+              "file": "tier2_boundary.spec.js",
+              "line": 245,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "2.10 Retry flow (#btnRetryGis) recovers after network failure",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 7233,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:28:29.483Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-787216e67d04a8a6c805",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 246,
+                  "column": 5
+                },
+                {
+                  "title": "2.11 User cancellation via #btnCancelGisFetch dismisses overlay without false error banner",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 664,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:28:36.723Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-feccc478c6e545c1f589",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 282,
+                  "column": 5
+                }
+              ]
+            },
+            {
+              "title": "5. Rapid Multi-Click & Event Delegation Cleanliness",
+              "file": "tier2_boundary.spec.js",
+              "line": 313,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "2.12 Rapid triple-click on #btnRender3D does not cause concurrent fetch collisions",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 6977,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:28:37.393Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-b1f3b0b17fd9bd7d1ef8",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 314,
+                  "column": 5
+                },
+                {
+                  "title": "2.13 Rapid consecutive city triggers (preemption via AbortController)",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5129,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:28:44.376Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-5334dcc8692f6449feab",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 334,
+                  "column": 5
+                },
+                {
+                  "title": "2.14 Safe event delegation: zero TypeError: ev.target.closest across non-Element targets",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 832,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-12T13:28:49.511Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "97decbdcf7063a1d3b98-4e1f1a70267da63ce203",
+                  "file": "tier2_boundary.spec.js",
+                  "line": 363,
+                  "column": 5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "tier3_combinations.spec.js",
+      "file": "tier3_combinations.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Tier 3: Cross-Feature Combinations (Opaque-Box E2E Tests)",
+          "file": "tier3_combinations.spec.js",
+          "line": 11,
+          "column": 6,
+          "specs": [
+            {
+              "title": "3.1 City Selection (Warsaw) + Span Slider Adjustment (2.5 km) + 3D Render",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 13157,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:28:50.357Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "18efb3e9ce2dfa337c05-893c8f2035387d5ac1b6",
+              "file": "tier3_combinations.spec.js",
+              "line": 26,
+              "column": 3
+            },
+            {
+              "title": "3.2 City Selection (New York) + Frame Dimensions Change (30x40 cm) + 3D Render",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 14667,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:29:03.521Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "18efb3e9ce2dfa337c05-bcbe7a8443342e9899b0",
+              "file": "tier3_combinations.spec.js",
+              "line": 88,
+              "column": 3
+            },
+            {
+              "title": "3.3 City Selection (Munich) + Grid Tile Rows/Columns Change (2x2) + 3D Render",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 19613,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:29:18.212Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "18efb3e9ce2dfa337c05-d4aba987596a79893923",
+              "file": "tier3_combinations.spec.js",
+              "line": 140,
+              "column": 3
+            },
+            {
+              "title": "3.4 Custom Coordinates (Kraków) + Span Distance (1.5 km) + 3D Render",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 8579,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:29:37.840Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "18efb3e9ce2dfa337c05-c180210d371f9b6577ae",
+              "file": "tier3_combinations.spec.js",
+              "line": 189,
+              "column": 3
+            },
+            {
+              "title": "3.5 City Selection + Settings Mutation + Reset / Default Recovery",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7972,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:29:46.413Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "18efb3e9ce2dfa337c05-40b0dd084da14c7a1345",
+              "file": "tier3_combinations.spec.js",
+              "line": 214,
+              "column": 3
+            },
+            {
+              "title": "3.6 City Selection (Warsaw) + Map Rotation (90 deg) + 3D Render",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 10785,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:29:54.387Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "18efb3e9ce2dfa337c05-7783bab35f5bba004540",
+              "file": "tier3_combinations.spec.js",
+              "line": 264,
+              "column": 3
+            },
+            {
+              "title": "3.7 City Selection + Palette Switch + Layer Visibility Toggles",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7382,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:30:05.175Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "18efb3e9ce2dfa337c05-c6c48a3398d66cb00257",
+              "file": "tier3_combinations.spec.js",
+              "line": 298,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "tier4_realworld.spec.js",
+      "file": "tier4_realworld.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Tier 4: Real-World Scenarios, Scalability & Responsiveness (Opaque-Box E2E Tests)",
+          "file": "tier4_realworld.spec.js",
+          "line": 13,
+          "column": 6,
+          "specs": [
+            {
+              "title": "4.1 Warsaw full user workflow retains settings and restores 3D preview across page reload",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 17021,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:30:12.576Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d71856ff2fea4b06d71b-35a2cec7de9e1a20b3fb",
+              "file": "tier4_realworld.spec.js",
+              "line": 31,
+              "column": 3
+            },
+            {
+              "title": "4.2 New York full user workflow retains custom settings and restores 3D preview across reload",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 13057,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:30:29.603Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d71856ff2fea4b06d71b-3616d48bd1a84c4c63dc",
+              "file": "tier4_realworld.spec.js",
+              "line": 111,
+              "column": 3
+            },
+            {
+              "title": "4.3 Large area scalability: 25 km span renders without memory explosion or browser crash",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 180000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 26285,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:30:42.674Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d71856ff2fea4b06d71b-e273786624c29992aab0",
+              "file": "tier4_realworld.spec.js",
+              "line": 167,
+              "column": 3
+            },
+            {
+              "title": "4.4 Large grid scalability: 50x100 grid (5,000 tiles) processes without freeze warnings or crash",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6781,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:31:08.971Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d71856ff2fea4b06d71b-682a6303c6450c71c37b",
+              "file": "tier4_realworld.spec.js",
+              "line": 212,
+              "column": 3
+            },
+            {
+              "title": "4.5 UI responsiveness audit: main thread is never blocked for >2,000ms during GIS loading and rendering",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 5276,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "[R2 Audit] Warsaw render: max single task = 160ms, max timer drift = 3502ms, total blocked = 1320ms across 13 tasks\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:31:15.763Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d71856ff2fea4b06d71b-6d90da48a1a1f884b45a",
+              "file": "tier4_realworld.spec.js",
+              "line": 238,
+              "column": 3
+            },
+            {
+              "title": "4.6 Progressive UI: progress indicator displays active phases and advances monotonically",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 13674,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:31:21.048Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d71856ff2fea4b06d71b-f3ae685be7ee02a02b77",
+              "file": "tier4_realworld.spec.js",
+              "line": 277,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "tier4_uncached_visual.spec.js",
+      "file": "tier4_uncached_visual.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Tier 4: Uncached Live Locations, Visual Verification & Explicit Render UX",
+          "file": "tier4_uncached_visual.spec.js",
+          "line": 19,
+          "column": 6,
+          "specs": [
+            {
+              "title": "4.V1 Explicit Render UX: parameter mutations update 2D map & UI without auto-rebuilding 3D until Render clicked",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 18831,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:31:34.750Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4412be8689c28e9d06e6-f05a50fa592c01d178bf",
+              "file": "tier4_uncached_visual.spec.js",
+              "line": 43,
+              "column": 3
+            },
+            {
+              "title": "4.V2 Expanded Scale: crop slider range, quick span chips, frame dimension limits, and grid calculation",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1006,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:31:53.593Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4412be8689c28e9d06e6-aa3865777c614ef947b9",
+              "file": "tier4_uncached_visual.spec.js",
+              "line": 120,
+              "column": 3
+            },
+            {
+              "title": "4.V3 LoD Detail Controls: detail filtering and scale-adaptive geometry stability at large spans",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 928,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:31:54.608Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4412be8689c28e9d06e6-c0ad39a0fcba01af0806",
+              "file": "tier4_uncached_visual.spec.js",
+              "line": 187,
+              "column": 3
+            },
+            {
+              "title": "4.V4 Clean Viewport: orbit navigation operates smoothly without obstructive tooltips or interaction errors",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 595,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:31:55.543Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4412be8689c28e9d06e6-1167c5692212802e3a36",
+              "file": "tier4_uncached_visual.spec.js",
+              "line": 255,
+              "column": 3
+            },
+            {
+              "title": "4.V5 Palette System: Pure Architectural White achromatic water, 5 swatches, and zero-rebuild fast recolor",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7060,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:31:56.144Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4412be8689c28e9d06e6-f21294ad57cc8c2f587c",
+              "file": "tier4_uncached_visual.spec.js",
+              "line": 310,
+              "column": 3
+            },
+            {
+              "title": "4.V6 Uncached Live GIS: Cape Town 2.5 km UI render completes with real 3D buildings and zero DEM fallback banner",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 150000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 19002,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:32:03.212Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4412be8689c28e9d06e6-f76a30831ae1ed4e3108",
+              "file": "tier4_uncached_visual.spec.js",
+              "line": 431,
+              "column": 3
+            },
+            {
+              "title": "4.V7 Visual Verification: progressive screenshots captured to tests/e2e/screenshots/ and validated",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6025,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:32:22.225Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4412be8689c28e9d06e6-5e4b5f79424ee27bf5a7",
+              "file": "tier4_uncached_visual.spec.js",
+              "line": 519,
+              "column": 3
+            },
+            {
+              "title": "4.V8 Round 2 Geometry Parity: 2x2 Tile Explode (Rozsuń) & +45° rotated frame preserve manifold & 1:1 scale",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7526,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:32:28.260Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4412be8689c28e9d06e6-b91d250b6d1c4959ef2d",
+              "file": "tier4_uncached_visual.spec.js",
+              "line": 569,
+              "column": 3
+            },
+            {
+              "title": "4.V9 Reload & URL Hook Hygiene: immediate reload after palette click preserves preset & URL params apply before fetch",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 8127,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-12T13:32:35.796Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4412be8689c28e9d06e6-0065adb80030fc883923",
+              "file": "tier4_uncached_visual.spec.js",
+              "line": 659,
+              "column": 3
+            }
+          ]
+        }
+      ]
     }
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-11-12T07:46:32.940Z",
-    "duration": 42506.89,
-    "expected": 1,
+    "startTime": "2026-11-12T13:23:14.504Z",
+    "duration": 569611.6340000001,
+    "expected": 53,
     "skipped": 0,
     "unexpected": 0,
     "flaky": 0

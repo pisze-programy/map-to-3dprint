@@ -246,9 +246,8 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
     }
     chainedCandidates.push({ rd: baseRd, pts: chain, isExplicit: true });
   }
-  for (let i = 0; i < otherRoads.length; i++) {
-    chainedCandidates.push({ rd: otherRoads[i].rd, pts: otherRoads[i].pts, isExplicit: false });
-  }
+  // Only explicit bridges (bridge=yes / man_made=bridge / layer >= 1) may cross water on piers;
+  // ground streets (otherRoads) must NEVER be turned into floating bridges over coastal/bay water.
 
   let linSpanIdx = 0;
   chainedCandidates.forEach(({ rd, pts, isExplicit }) => {

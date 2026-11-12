@@ -45,13 +45,18 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
     const rad = Math.abs(rotDeg) * Math.PI / 180.0;
     const absCos = Math.abs(Math.cos(rad));
     const absSin = Math.abs(Math.sin(rad));
-    const envHalfMx = Math.min(Math.max(halfMx, halfMy) * 1.25, halfMx * absCos + halfMy * absSin);
-    const envHalfMy = Math.min(Math.max(halfMx, halfMy) * 1.25, halfMx * absSin + halfMy * absCos);
+    const envPad = 1.045;
+    const envHalfMx = (halfMx * absCos + halfMy * absSin) * envPad;
+    const envHalfMy = (halfMx * absSin + halfMy * absCos) * envPad;
     const fetchDLat = envHalfMy / 111320.0;
     const fetchDLon = envHalfMx / (111320.0 * cosLat);
 
     return {
       south, west, north, east, spanX, spanY,
+      targetSpanMeters: baseSpan,
+      targetWidthMm: totalWidthMm,
+      targetHeightMm: totalHeightMm,
+      rotationDeg: rotDeg,
       fetchSouth: state.mapCenterLat - fetchDLat,
       fetchWest: state.mapCenterLon - fetchDLon,
       fetchNorth: state.mapCenterLat + fetchDLat,
@@ -63,6 +68,10 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
     const b = getSelectionBBox();
     const arr = [b.south, b.west, b.north, b.east];
     arr.south = b.south; arr.west = b.west; arr.north = b.north; arr.east = b.east;
+    arr.targetSpanMeters = b.targetSpanMeters;
+    arr.targetWidthMm = b.targetWidthMm;
+    arr.targetHeightMm = b.targetHeightMm;
+    arr.rotationDeg = b.rotationDeg;
     arr.fetchSouth = b.fetchSouth; arr.fetchWest = b.fetchWest;
     arr.fetchNorth = b.fetchNorth; arr.fetchEast = b.fetchEast;
     return arr;
@@ -139,13 +148,22 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
       if (Math.hypot(scCenterSx - cw / 2, scCenterSy - ch / 2) < Math.max(cw, ch) * 1.5) {
         ctx2d.fillStyle = 'rgba(14, 165, 233, 0.24)';
         ((geoScene && geoScene.waterPolys) || []).forEach(wp => {
+          if (!wp || !wp.outer || wp.outer.length < 3) return;
           ctx2d.beginPath();
           wp.outer.forEach((p, i) => {
             const [sx, sy] = toScreenGeo(p);
             if (i === 0) ctx2d.moveTo(sx, sy); else ctx2d.lineTo(sx, sy);
           });
           ctx2d.closePath();
-          ctx2d.fill();
+          (wp.holes || []).forEach(h => {
+            if (!h || h.length < 3) return;
+            h.forEach((p, i) => {
+              const [sx, sy] = toScreenGeo(p);
+              if (i === 0) ctx2d.moveTo(sx, sy); else ctx2d.lineTo(sx, sy);
+            });
+            ctx2d.closePath();
+          });
+          ctx2d.fill('evenodd');
         });
 
         const geoBlds = (geoScene && geoScene.buildings) || [];

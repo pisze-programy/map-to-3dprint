@@ -43,6 +43,7 @@ function createWebGLStudio(canvas3d, state) {
   const glBuffers = {};
   let meshUploadVersion = 0;
   let lastRenderSig = '';
+  let lastShadowSig = '';
   let activeGenerationId = 0;
 
   function setGenerationId(id) {
@@ -293,81 +294,90 @@ function createWebGLStudio(canvas3d, state) {
     if (!force && sig === lastRenderSig) return;
     lastRenderSig = sig;
 
+    const tCols = state.tileCols || 1;
+    const tRows = state.tileRows || 1;
+    const tExplode = state.tileExplode || 0.0;
+    const explodeSpan = Math.max(tCols - 1, tRows - 1) * 0.5 * tExplode * 15.0;
+
     const sunRad = state.sunAngleDeg * Math.PI / 180;
     const sunDir = [Math.cos(sunRad) * 0.68, Math.sin(sunRad) * 0.68, 0.73];
     const lightEye = [sunDir[0] * 180, sunDir[1] * 180, sunDir[2] * 180];
     const lightView = mat4LookAt(lightEye, [0, 0, 6], [0, 0, 1]);
-    const lightProj = mat4Ortho(-115, 115, -115, 115, 20, 380);
+    const orthoR = 115 + explodeSpan;
+    const lightProj = mat4Ortho(-orthoR, orthoR, -orthoR, orthoR, 20, 380 + explodeSpan);
     const lightMatrix = mat4Multiply(lightProj, lightView);
 
     const drawOrder = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted', 'frame'];
     const stride = 9 * 4;
-    const tCols = state.tileCols || 1;
-    const tRows = state.tileRows || 1;
-    const tExplode = state.tileExplode || 0.0;
     const activeTile = (state.exportTileFilter !== undefined && state.exportTileFilter !== 'all')
       ? parseFloat(state.exportTileFilter)
       : -1.0;
 
-    // PASS 1: SHADOW MAP
-    gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);
-    gl.viewport(0, 0, SHADOW_RES, SHADOW_RES);
-    gl.clearColor(1.0, 1.0, 1.0, 1.0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
+    // PASS 1: SHADOW MAP (cached across pure color-picker & camera orbit frames)
+    const shadowSig = `${meshUploadVersion}|${state.sunAngleDeg}|${state.explodeFactor}|${tCols}x${tRows}|${tExplode}|${state.showFrame}|${visKey}|${halfW.toFixed(1)}x${halfH.toFixed(1)}`;
+    if (shadowSig !== lastShadowSig) {
+      lastShadowSig = shadowSig;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);
+      gl.viewport(0, 0, SHADOW_RES, SHADOW_RES);
+      gl.clearColor(1.0, 1.0, 1.0, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
 
-    gl.useProgram(shadowProg);
-    gl.uniformMatrix4fv(gl.getUniformLocation(shadowProg, 'uLightMatrix'), false, lightMatrix);
-    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uExplode'), state.explodeFactor);
-    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileCols'), tCols);
-    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileRows'), tRows);
-    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileExplode'), tExplode);
-    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uHalfW'), halfW);
-    gl.uniform1f(gl.getUniformLocation(shadowProg, 'uHalfH'), halfH);
+      gl.useProgram(shadowProg);
+      gl.uniformMatrix4fv(gl.getUniformLocation(shadowProg, 'uLightMatrix'), false, lightMatrix);
+      gl.uniform1f(gl.getUniformLocation(shadowProg, 'uExplode'), state.explodeFactor);
+      gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileCols'), tCols);
+      gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileRows'), tRows);
+      gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileExplode'), tExplode);
+      gl.uniform1f(gl.getUniformLocation(shadowProg, 'uHalfW'), halfW);
+      gl.uniform1f(gl.getUniformLocation(shadowProg, 'uHalfH'), halfH);
 
-    const sLocPos = gl.getAttribLocation(shadowProg, 'aPos');
-    const sLocLayer = gl.getAttribLocation(shadowProg, 'aLayerId');
-    const sLocTile = gl.getAttribLocation(shadowProg, 'aTileId');
-    gl.enableVertexAttribArray(sLocPos);
-    gl.enableVertexAttribArray(sLocLayer);
-    if (sLocTile >= 0) gl.enableVertexAttribArray(sLocTile);
+      const sLocPos = gl.getAttribLocation(shadowProg, 'aPos');
+      const sLocLayer = gl.getAttribLocation(shadowProg, 'aLayerId');
+      const sLocTile = gl.getAttribLocation(shadowProg, 'aTileId');
+      gl.enableVertexAttribArray(sLocPos);
+      gl.enableVertexAttribArray(sLocLayer);
+      if (sLocTile >= 0) gl.enableVertexAttribArray(sLocTile);
 
-    drawOrder.forEach(key => {
-      if (key === 'frame') {
-        if (!state.showFrame || state.explodeFactor > 0.08 || tExplode > 0.03) return;
-      } else if (!state.layerVisible[key]) return;
-      const b = glBuffers[key];
-      if (!b) return;
+      drawOrder.forEach(key => {
+        if (key === 'frame') {
+          if (!state.showFrame || state.explodeFactor > 0.08 || tExplode > 0.03) return;
+        } else if (!state.layerVisible[key]) return;
+        const b = glBuffers[key];
+        if (!b) return;
 
-      if (b.chunks && b.chunks.length > 0) {
-        for (let ci = 0; ci < b.chunks.length; ci++) {
-          const c = b.chunks[ci];
-          if (!c || c.count === 0) continue;
-          gl.bindBuffer(gl.ARRAY_BUFFER, c.buf);
+        if (b.chunks && b.chunks.length > 0) {
+          for (let ci = 0; ci < b.chunks.length; ci++) {
+            const c = b.chunks[ci];
+            if (!c || c.count === 0) continue;
+            gl.bindBuffer(gl.ARRAY_BUFFER, c.buf);
+            gl.vertexAttribPointer(sLocPos, 3, gl.FLOAT, false, stride, 0);
+            gl.vertexAttribPointer(sLocLayer, 1, gl.FLOAT, false, stride, 24);
+            if (sLocTile >= 0) gl.vertexAttribPointer(sLocTile, 1, gl.FLOAT, false, stride, 32);
+            gl.drawArrays(gl.TRIANGLES, 0, c.count);
+          }
+        } else if (b.buf && b.count > 0) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
           gl.vertexAttribPointer(sLocPos, 3, gl.FLOAT, false, stride, 0);
           gl.vertexAttribPointer(sLocLayer, 1, gl.FLOAT, false, stride, 24);
           if (sLocTile >= 0) gl.vertexAttribPointer(sLocTile, 1, gl.FLOAT, false, stride, 32);
-          gl.drawArrays(gl.TRIANGLES, 0, c.count);
+          gl.drawArrays(gl.TRIANGLES, 0, b.count);
         }
-      } else if (b.buf && b.count > 0) {
-        gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
-        gl.vertexAttribPointer(sLocPos, 3, gl.FLOAT, false, stride, 0);
-        gl.vertexAttribPointer(sLocLayer, 1, gl.FLOAT, false, stride, 24);
-        if (sLocTile >= 0) gl.vertexAttribPointer(sLocTile, 1, gl.FLOAT, false, stride, 32);
-        gl.drawArrays(gl.TRIANGLES, 0, b.count);
-      }
-    });
+      });
+    }
 
     // PASS 2: STUDIO CAMERA RENDER
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, w, h);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
     if (state.studioBg) gl.clearColor(0.985, 0.986, 0.99, 1.0);
     else gl.clearColor(0.075, 0.105, 0.165, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     gl.useProgram(mainProg);
-    const proj = mat4Perspective(34 * Math.PI / 180, (w / h) || 1, 25.0, 680.0);
+    const proj = mat4Perspective(34 * Math.PI / 180, (w / h) || 1, 20.0, 720.0 + explodeSpan * 2.5);
     const eye = getCameraEye();
     const view = mat4LookAt(eye, camera.target, [0, 0, 1]);
 
@@ -391,9 +401,10 @@ function createWebGLStudio(canvas3d, state) {
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorWater'), hexToRgbNorm(state.colors.water));
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorBase'), hexToRgbNorm(state.colors.base));
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorGreenery'), hexToRgbNorm(state.colors.greenery));
+    gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorTrees'), hexToRgbNorm(state.colors.trees || state.colors.greenery));
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorRoads'), hexToRgbNorm(state.colors.roads));
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorBuildings'), hexToRgbNorm(state.colors.buildings));
-    gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorHighlighted'), hexToRgbNorm(state.colors.highlighted));
+    gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorHighlighted'), hexToRgbNorm(state.colors.highlighted || state.colors.buildings));
 
     const frameCol =
       state.frameStyle === 'black' ? [0.13, 0.14, 0.16] :

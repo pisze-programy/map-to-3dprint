@@ -54,26 +54,22 @@ function triangulateCutLoopExact(loopPts) {
   }
 
   function isInsideTri(p, a, b, c) {
-    const v0x = c[0] - a[0], v0y = c[1] - a[1];
-    const v1x = b[0] - a[0], v1y = b[1] - a[1];
-    const v2x = p[0] - a[0], v2y = p[1] - a[1];
-    const dot00 = v0x * v0x + v0y * v0y;
-    const dot01 = v0x * v1x + v0y * v1y;
-    const dot02 = v0x * v2x + v0y * v2y;
-    const dot11 = v1x * v1x + v1y * v1y;
-    const dot12 = v1x * v2x + v1y * v2y;
-    const denom = dot00 * dot11 - dot01 * dot01;
-    if (Math.abs(denom) < 1e-11) return false;
-    const inv = 1 / denom;
-    const u = (dot11 * dot02 - dot01 * dot12) * inv;
-    const v = (dot00 * dot12 - dot01 * dot02) * inv;
-    return (u > 1e-6) && (v > 1e-6) && (u + v < 1 - 1e-6);
+    const px = p[0], py = p[1];
+    if ((Math.abs(px - a[0]) < 1e-7 && Math.abs(py - a[1]) < 1e-7) ||
+        (Math.abs(px - b[0]) < 1e-7 && Math.abs(py - b[1]) < 1e-7) ||
+        (Math.abs(px - c[0]) < 1e-7 && Math.abs(py - c[1]) < 1e-7)) {
+      return false;
+    }
+    const c1 = (b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0]);
+    const c2 = (c[0] - b[0]) * (py - b[1]) - (c[1] - b[1]) * (px - b[0]);
+    const c3 = (a[0] - c[0]) * (py - c[1]) - (a[1] - c[1]) * (px - c[0]);
+    return c1 > -1e-9 && c2 > -1e-9 && c3 > -1e-9;
   }
 
   function isEar(ear) {
     const a = ear.prev.pt, b = ear.pt, c = ear.next.pt;
     const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    if (cross <= 1e-8) return false;
+    if (cross <= 1e-11) return false;
     let p = ear.next.next;
     const minX = Math.min(a[0], b[0], c[0]) - 1e-5;
     const maxX = Math.max(a[0], b[0], c[0]) + 1e-5;
@@ -111,13 +107,40 @@ function triangulateCutLoopExact(loopPts) {
     guard++;
     curr = next;
     if (curr === stop) {
-      // Degenerate/collinear fallback: cut ear with largest positive convex angle
-      let bestCross = 1e-8, bestNode = null;
+      let bestNode = null;
+      let bestIntersects = 2;
+      let bestInside = 1e9;
+      let bestChordSq = Infinity;
       let check = curr;
       do {
         const a = check.prev.pt, b = check.pt, c = check.next.pt;
         const cr = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-        if (cr > bestCross) { bestCross = cr; bestNode = check; }
+        if (cr > 1e-12) {
+          let hasInter = 0;
+          let insideCnt = 0;
+          let e = check.next;
+          while (e !== check.prev) {
+            if (e !== check.next && e.next !== check.prev && typeof segmentsIntersectProper === 'function') {
+              if (segmentsIntersectProper(a, c, e.pt, e.next.pt)) {
+                hasInter = 1;
+                break;
+              }
+            }
+            if (e !== check.next) {
+              if (isInsideTri(e.pt, a, b, c)) insideCnt++;
+            }
+            e = e.next;
+          }
+          const chordSq = (c[0] - a[0]) ** 2 + (c[1] - a[1]) ** 2;
+          if (hasInter < bestIntersects ||
+              (hasInter === bestIntersects && insideCnt < bestInside) ||
+              (hasInter === bestIntersects && insideCnt === bestInside && chordSq < bestChordSq)) {
+            bestIntersects = hasInter;
+            bestInside = insideCnt;
+            bestChordSq = chordSq;
+            bestNode = check;
+          }
+        }
         check = check.next;
       } while (check !== curr);
       if (bestNode) {
@@ -136,7 +159,7 @@ function triangulateCutLoopExact(loopPts) {
   if (rem === 3) {
     const a = curr.prev.pt, b = curr.pt, c = curr.next.pt;
     const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    if (Math.abs(cross) > 1e-9) {
+    if (Math.abs(cross) > 1e-12) {
       tris.push([a, b, c]);
     }
   } else if (rem > 3) {
@@ -149,7 +172,8 @@ function triangulateCutLoopExact(loopPts) {
     for (let k = 1; k < remPts.length - 1; k++) {
       const a = remPts[0], b = remPts[k], c = remPts[k + 1];
       const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-      if (cross > 1e-9) tris.push([a, b, c]);
+      if (cross > 1e-12) tris.push([a, b, c]);
+      else if (cross < -1e-12) tris.push([a, c, b]);
     }
   }
 
@@ -466,11 +490,158 @@ function clipMeshToBox3D(shellTris, xMin, xMax, yMin, yMax, tileId = 0) {
   return cur;
 }
 
+// Splits a closed 2-manifold 3D shell across an nx × ny tile grid in O(C + R) plane cuts,
+// guaranteeing 0 open edges, 0 non-manifold edges, and 0 triangles protruding outside tile bounds.
+function splitClosedShellToTileGrid3D(shellTris, tileBounds, tileCols, tileRows) {
+  if (!shellTris || shellTris.length === 0) return [];
+  if (!tileBounds || tileBounds.length === 0 || (tileCols <= 1 && tileRows <= 1)) {
+    for (let i = 0; i < shellTris.length; i++) shellTris[i].tileId = 0;
+    return shellTris;
+  }
+
+  let sMinX = Infinity, sMaxX = -Infinity;
+  let sMinY = Infinity, sMaxY = -Infinity;
+  for (let i = 0; i < shellTris.length; i++) {
+    const t = shellTris[i];
+    const a = t.v0, b = t.v1, c = t.v2;
+    if (a[0] < sMinX) sMinX = a[0]; if (a[0] > sMaxX) sMaxX = a[0];
+    if (b[0] < sMinX) sMinX = b[0]; if (b[0] > sMaxX) sMaxX = b[0];
+    if (c[0] < sMinX) sMinX = c[0]; if (c[0] > sMaxX) sMaxX = c[0];
+    if (a[1] < sMinY) sMinY = a[1]; if (a[1] > sMaxY) sMaxY = a[1];
+    if (b[1] < sMinY) sMinY = b[1]; if (b[1] > sMaxY) sMaxY = b[1];
+    if (c[1] < sMinY) sMinY = c[1]; if (c[1] > sMaxY) sMaxY = c[1];
+  }
+
+  let tcMin = tileCols, tcMax = -1;
+  for (let tc = 0; tc < tileCols; tc++) {
+    const tb = tileBounds[tc];
+    if (tb && sMaxX >= tb.x0 - 1e-4 && sMinX <= tb.x1 + 1e-4) {
+      if (tc < tcMin) tcMin = tc;
+      if (tc > tcMax) tcMax = tc;
+    }
+  }
+  let trMin = tileRows, trMax = -1;
+  for (let tr = 0; tr < tileRows; tr++) {
+    const tb = tileBounds[tr * tileCols];
+    if (tb && sMaxY >= tb.y0 - 1e-4 && sMinY <= tb.y1 + 1e-4) {
+      if (tr < trMin) trMin = tr;
+      if (tr > trMax) trMax = tr;
+    }
+  }
+
+  if (tcMin > tcMax || trMin > trMax) {
+    // Shell falls entirely inside kerf gap; clamp to nearest tile only if needed, otherwise empty
+    return [];
+  }
+
+  // Fast O(T) path when shell lies strictly inside a single tile box
+  if (tcMin === tcMax && trMin === trMax) {
+    const tid = trMin * tileCols + tcMin;
+    const tb = tileBounds[tid];
+    if (sMinX >= tb.x0 - 1e-4 && sMaxX <= tb.x1 + 1e-4 && sMinY >= tb.y0 - 1e-4 && sMaxY <= tb.y1 + 1e-4) {
+      for (let i = 0; i < shellTris.length; i++) {
+        shellTris[i].tileId = tid;
+      }
+      return shellTris;
+    }
+  }
+
+  const fix = v => Math.abs(v) < 1e-9 ? 0 : v;
+  const result = [];
+  let remX = shellTris;
+
+  for (let tc = tcMin; tc <= tcMax && remX.length > 0; tc++) {
+    const colTb = tileBounds[tc];
+    const x0 = colTb.x0, x1 = colTb.x1;
+
+    let rxMin = Infinity, rxMax = -Infinity;
+    for (let i = 0; i < remX.length; i++) {
+      const t = remX[i];
+      if (t.v0[0] < rxMin) rxMin = t.v0[0]; if (t.v0[0] > rxMax) rxMax = t.v0[0];
+      if (t.v1[0] < rxMin) rxMin = t.v1[0]; if (t.v1[0] > rxMax) rxMax = t.v1[0];
+      if (t.v2[0] < rxMin) rxMin = t.v2[0]; if (t.v2[0] > rxMax) rxMax = t.v2[0];
+    }
+    if (rxMax < x0 - 1e-4) continue;
+
+    let colStrip = remX;
+    if (rxMin < x0 - 1e-4) {
+      colStrip = clipClosedMeshByAxisPlane(colStrip, 0, x0, true, true);
+    }
+    if (colStrip.length > 0 && rxMax > x1 + 1e-4) {
+      colStrip = clipClosedMeshByAxisPlane(colStrip, 0, x1, false, true);
+    }
+
+    if (tc < tcMax && remX.length > 0) {
+      const nextX0 = tileBounds[tc + 1].x0;
+      if (rxMax >= nextX0 - 1e-4) {
+        remX = (rxMin < nextX0 - 1e-4) ? clipClosedMeshByAxisPlane(remX, 0, nextX0, true, true) : remX;
+      } else {
+        remX = [];
+      }
+    }
+
+    if (colStrip.length === 0) continue;
+
+    let remY = colStrip;
+    for (let tr = trMin; tr <= trMax && remY.length > 0; tr++) {
+      const tid = tr * tileCols + tc;
+      const tb = tileBounds[tid];
+      const y0 = tb.y0, y1 = tb.y1;
+
+      let ryMin = Infinity, ryMax = -Infinity;
+      for (let i = 0; i < remY.length; i++) {
+        const t = remY[i];
+        if (t.v0[1] < ryMin) ryMin = t.v0[1]; if (t.v0[1] > ryMax) ryMax = t.v0[1];
+        if (t.v1[1] < ryMin) ryMin = t.v1[1]; if (t.v1[1] > ryMax) ryMax = t.v1[1];
+        if (t.v2[1] < ryMin) ryMin = t.v2[1]; if (t.v2[1] > ryMax) ryMax = t.v2[1];
+      }
+      if (ryMax < y0 - 1e-4) continue;
+
+      let cellMesh = remY;
+      if (ryMin < y0 - 1e-4) {
+        cellMesh = clipClosedMeshByAxisPlane(cellMesh, 1, y0, true, true);
+      }
+      if (cellMesh.length > 0 && ryMax > y1 + 1e-4) {
+        cellMesh = clipClosedMeshByAxisPlane(cellMesh, 1, y1, false, true);
+      }
+
+      if (tr < trMax && remY.length > 0) {
+        const nextY0 = tileBounds[(tr + 1) * tileCols + tc].y0;
+        if (ryMax >= nextY0 - 1e-4) {
+          remY = (ryMin < nextY0 - 1e-4) ? clipClosedMeshByAxisPlane(remY, 1, nextY0, true, true) : remY;
+        } else {
+          remY = [];
+        }
+      }
+
+      for (let i = 0; i < cellMesh.length; i++) {
+        const t = cellMesh[i];
+        const v0 = [fix(t.v0[0]), fix(t.v0[1]), fix(t.v0[2])];
+        const v1 = [fix(t.v1[0]), fix(t.v1[1]), fix(t.v1[2])];
+        const v2 = [fix(t.v2[0]), fix(t.v2[1]), fix(t.v2[2])];
+        result.push({
+          v0,
+          v1,
+          v2,
+          n: t.n ? [t.n[0], t.n[1], t.n[2]] : computeFaceNormal(v0, v1, v2),
+          layerId: t.layerId,
+          buildingId: t.buildingId,
+          tileId: tid,
+          shellId: t.shellId
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     edgeInterpCanonical3D,
     triangulateCutLoopExact,
     clipClosedMeshByAxisPlane,
-    clipMeshToBox3D
+    clipMeshToBox3D,
+    splitClosedShellToTileGrid3D
   };
 }

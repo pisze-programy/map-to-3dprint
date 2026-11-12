@@ -12,11 +12,12 @@ if (typeof extractMarchingSquaresPolygons2D === 'undefined' && typeof require !=
   Object.assign(global, require('./mesh_clipper_3d.js'));
 }
 
-// Clips a SINGLE watertight 2-manifold 3D shell across tile boundaries with fast centroid assignment
+// Clips a SINGLE watertight 2-manifold 3D shell across tile boundaries cleanly (0 overhangs on Rozsuń & per-tile export)
 function appendShellClippedToTiles(shellTris, ctx, targetMeshArr) {
   if (!shellTris || shellTris.length === 0) return;
-  const { tileCols, tileRows, halfW, halfH } = ctx;
-  if (tileCols <= 1 && tileRows <= 1) {
+  const { tileCols, tileRows, halfW, halfH, tileBounds } = ctx;
+  const numTiles = (tileCols || 1) * (tileRows || 1);
+  if (numTiles <= 1) {
     for (let i = 0; i < shellTris.length; i++) {
       shellTris[i].tileId = 0;
       targetMeshArr.push(shellTris[i]);
@@ -24,7 +25,15 @@ function appendShellClippedToTiles(shellTris, ctx, targetMeshArr) {
     return;
   }
 
-  // O(1) centroid tile assignment for live preview
+  if ((ctx.isExport || numTiles <= 400) && tileBounds && typeof splitClosedShellToTileGrid3D === 'function') {
+    const pieces = splitClosedShellToTileGrid3D(shellTris, tileBounds, tileCols, tileRows);
+    for (let i = 0; i < pieces.length; i++) {
+      targetMeshArr.push(pieces[i]);
+    }
+    return;
+  }
+
+  // Fallback O(1) centroid assignment for synthetic >400-tile stress grids
   let sMinX = Infinity, sMaxX = -Infinity, sMinY = Infinity, sMaxY = -Infinity;
   for (let i = 0; i < shellTris.length; i++) {
     const t = shellTris[i];
@@ -86,18 +95,23 @@ function buildParksStreetsFootpathsAndTreesSync(scene, ctx, baseInfo, state, mes
     baseBottomZ, gHeight, rHeight, pathHeight,
     getStepIdxForVal, sampleRawTerrainGridZ, cellStepX, cellStepY
   } = ctx;
+  const scaleMm = ctx.scaleMm || 1.89;
+  const bldMask = ctx.bldMask || roadAndBldMask;
   const getSurfZ = baseInfo && baseInfo.getActualPrintedSurfaceMinZ;
 
-  const roadsVisible = !state.layerVisible || state.layerVisible.roads !== false;
-  const greenVisible = !state.layerVisible || state.layerVisible.greenery !== false;
+  const lv = state.layerVisible || state.layers;
+  const roadsVisible = !lv || lv.roads !== false;
+  const greenVisible = !lv || lv.greenery !== false;
   const lod = (state && state.lodSettings) || {};
   const spanKm = Number(state.spanKm) || (Number(state.mapSpanMeters) / 1000) || ((scene.spanMeters || 1200) / 1000);
+  const allDetailsFilter = (lod.minBuildingFootprintM === 0 || lod.minBuildingMeters === 0 || state.minFeatureSizeMeters === 0 || state.minBuildingMeters === 0);
+  const defaultTreeKm = allDetailsFilter ? 6.0 : 4.5;
   const treeThresholdKm = (lod.treeThresholdKm !== undefined)
     ? Number(lod.treeThresholdKm)
-    : (lod.treeMaxSpanKm !== undefined ? Number(lod.treeMaxSpanKm) : 4.0);
+    : (lod.treeMaxSpanKm !== undefined ? Number(lod.treeMaxSpanKm) : defaultTreeKm);
   const userEnableTrees = (lod.enableTrees !== undefined) ? Boolean(lod.enableTrees) : true;
   const allowTreesByScale = spanKm <= treeThresholdKm;
-  const treesVisible = (!state.layerVisible || state.layerVisible.trees !== false) &&
+  const treesVisible = (!lv || lv.trees !== false) &&
                        userEnableTrees &&
                        allowTreesByScale;
 
@@ -129,7 +143,7 @@ function buildParksStreetsFootpathsAndTreesSync(scene, ctx, baseInfo, state, mes
   const printedSurfaceState = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   const pixelBandIdx = new Int16Array(MASK_RES_X * MASK_RES_Y).fill(-1);
   {
-    const rPx = Math.max(2, Math.ceil(0.46 / dxMS));
+    const rPx = isTopographicRelief ? Math.max(2, Math.ceil(0.42 / dxMS)) : 1;
     for (let iy = rPx; iy < MASK_RES_Y - rPx; iy++) {
       const row = iy * MASK_RES_X;
       for (let ix = rPx; ix < MASK_RES_X - rPx; ix++) {
@@ -149,6 +163,9 @@ function buildParksStreetsFootpathsAndTreesSync(scene, ctx, baseInfo, state, mes
       }
     }
   }
+
+  const greenMinArea = Math.min(0.030, 0.085 / (scaleMm * scaleMm));
+  const greenIso = 0.48;
 
   if (roadsVisible || greenVisible) {
     const bandMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
@@ -178,19 +195,19 @@ function buildParksStreetsFootpathsAndTreesSync(scene, ctx, baseInfo, state, mes
       let greenField = null;
       if (greenVisible) {
         greenField = buildSmoothedBandField(greenMask, bandMask, MASK_RES_X, MASK_RES_Y);
-        emitPolysFromField(greenField, tZ, tZ + gHeight, 2, meshes.greenery, 0.030, 0.52);
+        emitPolysFromField(greenField, tZ, tZ + gHeight, 2, meshes.greenery, greenMinArea, greenIso);
         if (greenField) {
           for (let iy = 1; iy < MASK_RES_Y - 1; iy++) {
             const row = iy * MASK_RES_X;
             for (let ix = 1; ix < MASK_RES_X - 1; ix++) {
               if (!bandMask[row + ix]) continue;
               const gf = greenField[row + ix];
-              if (gf >= 0.92 &&
-                  greenField[row - MASK_RES_X + ix] >= 0.72 && greenField[row + MASK_RES_X + ix] >= 0.72 &&
-                  greenField[row + ix - 1] >= 0.72 && greenField[row + ix + 1] >= 0.72) {
+              if (gf >= 0.78 &&
+                  greenField[row - MASK_RES_X + ix] >= 0.56 && greenField[row + MASK_RES_X + ix] >= 0.56 &&
+                  greenField[row + ix - 1] >= 0.56 && greenField[row + ix + 1] >= 0.56) {
                 printedSurfaceState[row + ix] = 1;
-              } else if (gf > 0.12) {
-                printedSurfaceState[row + ix] = 0; // boundary transition zone — keep trees & footpaths off edge!
+              } else if (gf > 0.24) {
+                printedSurfaceState[row + ix] = 0; // boundary transition zone — footpaths stay off lawn edge
               }
             }
           }
@@ -232,44 +249,53 @@ function buildParksStreetsFootpathsAndTreesSync(scene, ctx, baseInfo, state, mes
     const placedTrees = [];
     (scene.trees || []).forEach((tr, idx) => {
       const [bx, by] = toBed([tr[0], tr[1]]);
-      if (bx < -halfW + 1.2 || bx > halfW - 1.2 || by < -halfH + 1.2 || by > halfH - 1.2) return;
+      if (bx < -halfW + 0.9 || bx > halfW - 0.9 || by < -halfH + 0.9 || by > halfH - 0.9) return;
       const mIdx = sampleMaskIdx(bx, by);
       if (waterMask[mIdx] || roadAndBldMask[mIdx]) return;
 
       const msCenter = sampleMSIdx(bx, by);
       const kCenter = pixelBandIdx[msCenter];
       const surfState = printedSurfaceState[msCenter];
-      if (kCenter < 0 || (surfState !== 1 && surfState !== 2)) return;
+      if (kCenter < 0) return;
 
-      const realRadiusM = 3.0 + (idx % 5) * 0.52;
-      const realHeightM = 5.5 + (idx % 6) * 0.65;
-      const treeRadius = Math.max(0.18, Math.min(0.40, realRadiusM * mToU));
-      const treeHeight = Math.max(0.22, Math.min(0.54, realHeightM * mToU * (state.zScale || 1.0)));
+      const realRadiusM = 3.2 + (idx % 5) * 0.55;
+      const osmH = (Number(tr[2]) > 2.0) ? Number(tr[2]) : (6.0 + (idx % 6) * 0.75);
+      const treeRadius = Math.max(0.24, Math.min(0.44, Math.max(realRadiusM * mToU * 1.30, 0.75 / scaleMm)));
+      const baseTreeH = Math.max(0.30, Math.min(0.64, Math.max(osmH * mToU * 1.15, 0.92 / scaleMm) * (state.zScale || 1.0)));
 
-      const checkR = treeRadius + 0.24;
+      const checkR = treeRadius * 1.04;
+      const innerCheckR = treeRadius * 0.65;
       let crownValid = true;
+      let allOnLawn = (surfState === 1);
       for (let a = 0; a < 8; a++) {
         const ang = (a / 8) * Math.PI * 2;
-        const px = bx + Math.cos(ang) * checkR;
-        const py = by + Math.sin(ang) * checkR;
+        const ca = Math.cos(ang), sa = Math.sin(ang);
+        const px = bx + ca * checkR;
+        const py = by + sa * checkR;
         const pMask = sampleMaskIdx(px, py);
         const pMS = sampleMSIdx(px, py);
-        if (waterMask[pMask] || roadAndBldMask[pMask] || pixelBandIdx[pMS] !== kCenter || printedSurfaceState[pMS] !== surfState) {
+        const pInnerMask = sampleMaskIdx(bx + ca * innerCheckR, by + sa * innerCheckR);
+        if (waterMask[pMask] || bldMask[pMask] || roadAndBldMask[pInnerMask] || pixelBandIdx[pMS] !== kCenter) {
           crownValid = false; break;
         }
+        if (printedSurfaceState[pMS] !== 1) allOnLawn = false;
       }
       if (!crownValid) return;
 
       for (let j = 0; j < placedTrees.length; j++) {
         const pt = placedTrees[j];
-        if (Math.hypot(bx - pt[0], by - pt[1]) < (treeRadius + pt[2]) * 1.12) return;
+        if (Math.hypot(bx - pt[0], by - pt[1]) < (treeRadius + pt[2]) * 0.96) return;
       }
       placedTrees.push([bx, by, treeRadius]);
 
       const tZ = thresholds[kCenter];
-      const zGround = (surfState === 1 && greenVisible) ? (tZ + gHeight) : tZ;
+      const onLawn = (allOnLawn && greenVisible);
+      const zGround = onLawn ? (tZ + gHeight) : tZ;
+      const effTreeHeight = onLawn
+        ? baseTreeH
+        : (baseTreeH + ((surfState === 1 || surfState === 0 || greenMask[mIdx]) && greenVisible ? gHeight : 0));
       const treeShell = [];
-      addTreeCrown3D(bx, by, zGround, treeRadius, treeHeight, 2, treeShell, 0, allocShellId());
+      addTreeCrown3D(bx, by, zGround, treeRadius, effTreeHeight, 2, treeShell, 0, allocShellId());
       appendShellClippedToTiles(treeShell, ctx, meshes.greenery);
     });
   }
@@ -286,18 +312,23 @@ async function buildParksStreetsFootpathsAndTreesProgressive(scene, ctx, baseInf
     baseBottomZ, gHeight, rHeight, pathHeight,
     getStepIdxForVal, sampleRawTerrainGridZ, cellStepX, cellStepY
   } = ctx;
+  const scaleMm = ctx.scaleMm || 1.89;
+  const bldMask = ctx.bldMask || roadAndBldMask;
   const getSurfZ = baseInfo && baseInfo.getActualPrintedSurfaceMinZ;
 
-  const roadsVisible = !state.layerVisible || state.layerVisible.roads !== false;
-  const greenVisible = !state.layerVisible || state.layerVisible.greenery !== false;
+  const lv = state.layerVisible || state.layers;
+  const roadsVisible = !lv || lv.roads !== false;
+  const greenVisible = !lv || lv.greenery !== false;
   const lod = (state && state.lodSettings) || {};
   const spanKm = Number(state.spanKm) || (Number(state.mapSpanMeters) / 1000) || ((scene.spanMeters || 1200) / 1000);
+  const allDetailsFilter = (lod.minBuildingFootprintM === 0 || lod.minBuildingMeters === 0 || state.minFeatureSizeMeters === 0 || state.minBuildingMeters === 0);
+  const defaultTreeKm = allDetailsFilter ? 6.0 : 4.5;
   const treeThresholdKm = (lod.treeThresholdKm !== undefined)
     ? Number(lod.treeThresholdKm)
-    : (lod.treeMaxSpanKm !== undefined ? Number(lod.treeMaxSpanKm) : 4.0);
+    : (lod.treeMaxSpanKm !== undefined ? Number(lod.treeMaxSpanKm) : defaultTreeKm);
   const userEnableTrees = (lod.enableTrees !== undefined) ? Boolean(lod.enableTrees) : true;
   const allowTreesByScale = spanKm <= treeThresholdKm;
-  const treesVisible = (!state.layerVisible || state.layerVisible.trees !== false) &&
+  const treesVisible = (!lv || lv.trees !== false) &&
                        userEnableTrees &&
                        allowTreesByScale;
 
@@ -336,7 +367,7 @@ async function buildParksStreetsFootpathsAndTreesProgressive(scene, ctx, baseInf
   const printedSurfaceState = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   const pixelBandIdx = new Int16Array(MASK_RES_X * MASK_RES_Y).fill(-1);
   {
-    const rPx = Math.max(2, Math.ceil(0.46 / dxMS));
+    const rPx = isTopographicRelief ? Math.max(2, Math.ceil(0.42 / dxMS)) : 1;
     for (let iy = rPx; iy < MASK_RES_Y - rPx; iy++) {
       if ((iy & 31) === 0) {
         yieldCtrl.checkCancellation();
@@ -360,6 +391,9 @@ async function buildParksStreetsFootpathsAndTreesProgressive(scene, ctx, baseInf
       }
     }
   }
+
+  const greenMinArea = Math.min(0.030, 0.085 / (scaleMm * scaleMm));
+  const greenIso = 0.48;
 
   if (roadsVisible || greenVisible) {
     const bandMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
@@ -423,19 +457,19 @@ async function buildParksStreetsFootpathsAndTreesProgressive(scene, ctx, baseInf
       let greenField = null;
       if (greenVisible) {
         greenField = buildSmoothedBandField(greenMask, bandMask, MASK_RES_X, MASK_RES_Y);
-        await emitPolysFromField(greenField, tZ, tZ + gHeight, 2, meshes.greenery, 0.030, 0.52, 'greenery', k);
+        await emitPolysFromField(greenField, tZ, tZ + gHeight, 2, meshes.greenery, greenMinArea, greenIso, 'greenery', k);
         if (greenField) {
           for (let iy = 1; iy < MASK_RES_Y - 1; iy++) {
             const row = iy * MASK_RES_X;
             for (let ix = 1; ix < MASK_RES_X - 1; ix++) {
               if (!bandMask[row + ix]) continue;
               const gf = greenField[row + ix];
-              if (gf >= 0.92 &&
-                  greenField[row - MASK_RES_X + ix] >= 0.72 && greenField[row + MASK_RES_X + ix] >= 0.72 &&
-                  greenField[row + ix - 1] >= 0.72 && greenField[row + ix + 1] >= 0.72) {
+              if (gf >= 0.78 &&
+                  greenField[row - MASK_RES_X + ix] >= 0.56 && greenField[row + MASK_RES_X + ix] >= 0.56 &&
+                  greenField[row + ix - 1] >= 0.56 && greenField[row + ix + 1] >= 0.56) {
                 printedSurfaceState[row + ix] = 1;
-              } else if (gf > 0.12) {
-                printedSurfaceState[row + ix] = 0; // boundary transition zone — keep trees & footpaths off edge!
+              } else if (gf > 0.24) {
+                printedSurfaceState[row + ix] = 0; // boundary transition zone — footpaths stay off lawn edge
               }
             }
           }
@@ -498,38 +532,43 @@ async function buildParksStreetsFootpathsAndTreesProgressive(scene, ctx, baseInf
 
       const tr = treeList[idx];
       const [bx, by] = toBed([tr[0], tr[1]]);
-      if (bx < -halfW + 1.2 || bx > halfW - 1.2 || by < -halfH + 1.2 || by > halfH - 1.2) continue;
+      if (bx < -halfW + 0.9 || bx > halfW - 0.9 || by < -halfH + 0.9 || by > halfH - 0.9) continue;
       const mIdx = sampleMaskIdx(bx, by);
       if (waterMask[mIdx] || roadAndBldMask[mIdx]) continue;
 
       const msCenter = sampleMSIdx(bx, by);
       const kCenter = pixelBandIdx[msCenter];
       const surfState = printedSurfaceState[msCenter];
-      if (kCenter < 0 || (surfState !== 1 && surfState !== 2)) continue;
+      if (kCenter < 0) continue;
 
-      const realRadiusM = 3.0 + (idx % 5) * 0.52;
-      const realHeightM = 5.5 + (idx % 6) * 0.65;
-      const treeRadius = Math.max(0.18, Math.min(0.40, realRadiusM * mToU));
-      const treeHeight = Math.max(0.22, Math.min(0.54, realHeightM * mToU * (state.zScale || 1.0)));
+      const realRadiusM = 3.2 + (idx % 5) * 0.55;
+      const osmH = (Number(tr[2]) > 2.0) ? Number(tr[2]) : (6.0 + (idx % 6) * 0.75);
+      const treeRadius = Math.max(0.24, Math.min(0.44, Math.max(realRadiusM * mToU * 1.30, 0.75 / scaleMm)));
+      const baseTreeH = Math.max(0.30, Math.min(0.64, Math.max(osmH * mToU * 1.15, 0.92 / scaleMm) * (state.zScale || 1.0)));
 
-      const checkR = treeRadius + 0.24;
+      const checkR = treeRadius * 1.04;
+      const innerCheckR = treeRadius * 0.65;
       let crownValid = true;
+      let allOnLawn = (surfState === 1);
       for (let a = 0; a < 8; a++) {
         const ang = (a / 8) * Math.PI * 2;
-        const px = bx + Math.cos(ang) * checkR;
-        const py = by + Math.sin(ang) * checkR;
+        const ca = Math.cos(ang), sa = Math.sin(ang);
+        const px = bx + ca * checkR;
+        const py = by + sa * checkR;
         const pMask = sampleMaskIdx(px, py);
         const pMS = sampleMSIdx(px, py);
-        if (waterMask[pMask] || roadAndBldMask[pMask] || pixelBandIdx[pMS] !== kCenter || printedSurfaceState[pMS] !== surfState) {
+        const pInnerMask = sampleMaskIdx(bx + ca * innerCheckR, by + sa * innerCheckR);
+        if (waterMask[pMask] || bldMask[pMask] || roadAndBldMask[pInnerMask] || pixelBandIdx[pMS] !== kCenter) {
           crownValid = false; break;
         }
+        if (printedSurfaceState[pMS] !== 1) allOnLawn = false;
       }
       if (!crownValid) continue;
 
       let collided = false;
       for (let j = 0; j < placedTrees.length; j++) {
         const pt = placedTrees[j];
-        if (Math.hypot(bx - pt[0], by - pt[1]) < (treeRadius + pt[2]) * 1.12) {
+        if (Math.hypot(bx - pt[0], by - pt[1]) < (treeRadius + pt[2]) * 0.96) {
           collided = true;
           break;
         }
@@ -538,9 +577,13 @@ async function buildParksStreetsFootpathsAndTreesProgressive(scene, ctx, baseInf
       placedTrees.push([bx, by, treeRadius]);
 
       const tZ = thresholds[kCenter];
-      const zGround = (surfState === 1 && greenVisible) ? (tZ + gHeight) : tZ;
+      const onLawn = (allOnLawn && greenVisible);
+      const zGround = onLawn ? (tZ + gHeight) : tZ;
+      const effTreeHeight = onLawn
+        ? baseTreeH
+        : (baseTreeH + ((surfState === 1 || surfState === 0 || greenMask[mIdx]) && greenVisible ? gHeight : 0));
       const treeShell = [];
-      addTreeCrown3D(bx, by, zGround, treeRadius, treeHeight, 2, treeShell, 0, allocShellId());
+      addTreeCrown3D(bx, by, zGround, treeRadius, effTreeHeight, 2, treeShell, 0, allocShellId());
       appendShellClippedToTiles(treeShell, ctx, meshes.greenery);
     }
   }

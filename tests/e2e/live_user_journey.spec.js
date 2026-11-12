@@ -281,6 +281,68 @@ test.describe('Live Real-User Journey: Uncached Multi-City 2.5 km -> 5.0 km UI F
     expect(Math.abs(city1Result.center[0] - sel1.selectedLat)).toBeLessThan(0.06);
     expect(Math.abs(city1Result.center[1] - sel1.selectedLon)).toBeLessThan(0.06);
 
+    // Round 2 Live Checks on City 1 @ 2.5 km:
+    // - Real 3D trees fetched & generated at 2.5 km urban span (Bug #4)
+    // - Pure Architectural White water is neutral #f6f6f6 with 0 blue tint & no highlighted key (Bugs #5/#7)
+    const city1Round2 = await page.evaluate(() => {
+      const st = window.__map3d.state;
+      const canvas = /** @type {HTMLCanvasElement | null} */ (document.getElementById('view3dCanvas'));
+      const gl = canvas && (canvas.getContext('webgl2') || canvas.getContext('webgl'));
+      if (window.__map3d?.studio?.render) window.__map3d.studio.render(true);
+      let avgAbsRB = 999;
+      let blueRatio = 1;
+      if (canvas && gl) {
+        const w = 160, h = 160;
+        const x0 = Math.max(0, Math.floor((canvas.width - w) / 2));
+        const y0 = Math.max(0, Math.floor((canvas.height - h) / 2));
+        const buf = new Uint8Array(w * h * 4);
+        gl.readPixels(x0, y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        let sumAbsRB = 0, blueCnt = 0;
+        const n = w * h;
+        for (let i = 0; i < buf.length; i += 4) {
+          sumAbsRB += Math.abs(buf[i] - buf[i + 2]);
+          if (buf[i + 2] - buf[i] > 12) blueCnt++;
+        }
+        avgAbsRB = Number((sumAbsRB / n).toFixed(2));
+        blueRatio = blueCnt / n;
+      }
+      // Compute max single water polygon area fraction vs 169.2x169.2 slab (catches inverted water multipolygon flooding!)
+      const slabArea = 169.2 * 169.2;
+      let maxWaterArea = 0;
+      for (const wp of (st.sceneData?.waterPolys || [])) {
+        const ring = Array.isArray(wp) ? wp : (wp && wp.outer);
+        if (!Array.isArray(ring) || ring.length < 3) continue;
+        let a = 0;
+        for (let i = 0; i < ring.length; i++) {
+          const p1 = ring[i], p2 = ring[(i + 1) % ring.length];
+          a += p1[0] * p2[1] - p2[0] * p1[1];
+        }
+        const absA = Math.abs(a * 0.5);
+        if (absA > maxWaterArea) maxWaterArea = absA;
+      }
+      return {
+        treeCount: Array.isArray(st.sceneData?.trees) ? st.sceneData.trees.length : 0,
+        greeneryTriCount: Array.isArray(st.layerMeshes?.greenery) ? st.layerMeshes.greenery.length : 0,
+        roadTriCount: Array.isArray(st.layerMeshes?.roads) ? st.layerMeshes.roads.length : 0,
+        maxWaterFraction: Number((maxWaterArea / slabArea).toFixed(3)),
+        waterColor: st.colors?.water || '',
+        hasHighlightedKey: Boolean(st.colors && 'highlighted' in st.colors),
+        avgAbsRB,
+        blueRatio,
+      };
+    });
+    console.log(
+      `[Live User Journey] City 1 Round 2 checks: trees=${city1Round2.treeCount} (greeneryTris=${city1Round2.greeneryTriCount}, roadTris=${city1Round2.roadTriCount}, maxWaterFrac=${city1Round2.maxWaterFraction}), waterColor=${city1Round2.waterColor}, avgAbsRB=${city1Round2.avgAbsRB}`
+    );
+    expect(city1Round2.waterColor.toLowerCase()).toBe('#f6f6f6');
+    expect(city1Round2.hasHighlightedKey).toBe(false);
+    expect(city1Round2.maxWaterFraction, 'No single water polygon may flood >60% of an inland/river city slab').toBeLessThan(0.60);
+    expect(city1Round2.roadTriCount, `City 1 (${city1.name} @ 2.5 km) must emit real road mesh triangles`).toBeGreaterThan(500);
+    expect(city1Round2.treeCount, `City 1 (${city1.name} @ 2.5 km) must fetch real 3D trees`).toBeGreaterThan(0);
+    expect(city1Round2.greeneryTriCount, `City 1 (${city1.name} @ 2.5 km) must emit real greenery & 3D tree mesh triangles`).toBeGreaterThan(500);
+    expect(city1Round2.avgAbsRB, 'Pure Architectural White WebGL render must be neutral gray/white without blue tint').toBeLessThan(4.0);
+    expect(city1Round2.blueRatio).toBeLessThan(0.01);
+
     await assertWebGLCanvasNotBlank(page);
     const shading1 = await assertWebGL3DShadingDiversity(page, {
       minUniqueColors: 20,
@@ -294,6 +356,18 @@ test.describe('Live Real-User Journey: Uncached Multi-City 2.5 km -> 5.0 km UI F
     // Capture Staged Screenshot 3: after_render_city1_2_5km.png
     const shotCity1 = await captureAndInspectScreenshot(page, null, 'after_render_city1_2_5km.png', { minBytes: 25000 });
     console.log(`[Live User Journey] Saved screenshot: ${shotCity1.filePath} (${shotCity1.size} bytes, ${shotCity1.width}x${shotCity1.height})`);
+
+    // Exercise interactive Tile Explode (Rozsuń) & fast uniform recoloring on live 2.5 km mesh (Bugs #6/#8)
+    const explodeSlider = page.locator('#tileExplodeSlider');
+    await explodeSlider.fill('35');
+    await explodeSlider.dispatchEvent('input');
+    await expect(page.locator('#tileExplodeValueLabel')).toHaveText('35%');
+    await explodeSlider.fill('0');
+    await explodeSlider.dispatchEvent('input');
+    await expect(page.locator('#tileExplodeValueLabel')).toHaveText('0%');
+
+    // Brief human-like pause after inspecting City 1 so public Overpass per-IP slot window releases cleanly before City 2
+    await page.waitForTimeout(3000);
 
     // ------------------------------------------------------------------------
     // STEP 4: Switch to City 2 @ 5.0 km in the SAME Tab (Catches lastFetchBbox Bug!)

@@ -283,17 +283,27 @@ async function buildS3DBBuildingsMeshProgressive(scene, ctx, baseInfo, state, me
       tagElevatedBottom(bShell[ti]);
     }
 
-    const cx = (item.minX + item.maxX) * 0.5;
-    const cy = (item.minY + item.maxY) * 0.5;
-    const tileId = (tileCols <= 1 && tileRows <= 1)
-      ? 0
-      : (typeof getTileIdForCentroid === 'function' ? getTileIdForCentroid(cx, cy, halfW, halfH, tileCols, tileRows) : 0);
+    const numTiles = (tileCols || 1) * (tileRows || 1);
+    if (numTiles > 1 && (ctx.isExport || numTiles <= 400) && ctx.tileBounds && typeof splitClosedShellToTileGrid3D === 'function') {
+      const pieces = splitClosedShellToTileGrid3D(bShell, ctx.tileBounds, tileCols, tileRows);
+      for (let ti = 0; ti < pieces.length; ti++) {
+        tagElevatedBottom(pieces[ti]);
+        targetMainList.push(pieces[ti]);
+        targetBatchArr.push(pieces[ti]);
+      }
+    } else {
+      const cx = (item.minX + item.maxX) * 0.5;
+      const cy = (item.minY + item.maxY) * 0.5;
+      const tileId = (tileCols <= 1 && tileRows <= 1)
+        ? 0
+        : (typeof getTileIdForCentroid === 'function' ? getTileIdForCentroid(cx, cy, halfW, halfH, tileCols, tileRows) : 0);
 
-    for (let ti = 0; ti < bShell.length; ti++) {
-      bShell[ti].tileId = tileId;
-      tagElevatedBottom(bShell[ti]);
-      targetMainList.push(bShell[ti]);
-      targetBatchArr.push(bShell[ti]);
+      for (let ti = 0; ti < bShell.length; ti++) {
+        bShell[ti].tileId = tileId;
+        tagElevatedBottom(bShell[ti]);
+        targetMainList.push(bShell[ti]);
+        targetBatchArr.push(bShell[ti]);
+      }
     }
 
     buildingBounds.push({
@@ -390,6 +400,7 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
   yieldCtrl.checkCancellation();
 
   const ctx = buildTerrainAndMasks(scene, state);
+  ctx.isExport = Boolean(options && options.isExport);
   await yieldCtrl.yieldIfNeeded();
   yieldCtrl.checkCancellation();
 
@@ -475,7 +486,7 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
 /**
  * Complete synchronous 3D model builder (preserved for backward compatibility).
  */
-function buildComplete3DModel(scene, state) {
+function buildComplete3DModel(scene, state, options = {}) {
   const meshes = {
     water: [],
     base: [],
@@ -508,8 +519,9 @@ function buildComplete3DModel(scene, state) {
   let nextFeatureShellId = -100;
   const allocShellId = () => (nextFeatureShellId--);
 
-  // 1. High-resolution 720px masks (Euclidean Water SDF, Streets, Unbroken Parks, Footpaths) & DEM Grid
+  // 1. High-resolution masks (Euclidean Water SDF, Streets, Unbroken Parks, Footpaths) & DEM Grid
   const ctx = buildTerrainAndMasks(scene, state);
+  ctx.isExport = Boolean(options && options.isExport);
 
   // 2. Per-tile watertight stepped DEM base, SLA hollow vault ribs/drains/ID patch & smooth water basin
   const tBase0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();

@@ -35,11 +35,16 @@ function buildTerrainAndMasks(scene, state) {
   const tileRows = Math.max(1, Math.min(100, state.tileRows || 1));
   const numTiles = tileCols * tileRows;
 
-  // Budget total terrain resolution to avoid memory explosion (max ~240x240 cells total)
+  // Budget total terrain resolution (~180x180 crisp shoreline/DEM cells on normal grids, capped at 240x240 on 50x100 stress grids)
   const maxAxisRes = 240;
-  const cellsPerCol = Math.max(1, Math.min(14, Math.floor(maxAxisRes / tileCols)));
+  const desiredAxisRes = 180;
+  const cellsPerCol = (numTiles <= 400)
+    ? Math.max(1, Math.min(Math.floor(maxAxisRes / tileCols), Math.max(14, Math.round((desiredAxisRes * (totalWidthMm / maxDimMm)) / tileCols))))
+    : Math.max(1, Math.min(14, Math.floor(maxAxisRes / tileCols)));
   const TERRAIN_RES_X = cellsPerCol * tileCols;
-  const cellsPerRow = Math.max(1, Math.min(10, Math.floor(maxAxisRes / tileRows)));
+  const cellsPerRow = (numTiles <= 400)
+    ? Math.max(1, Math.min(Math.floor(maxAxisRes / tileRows), Math.max(12, Math.round((desiredAxisRes * (totalHeightMm / maxDimMm)) / tileRows))))
+    : Math.max(1, Math.min(10, Math.floor(maxAxisRes / tileRows)));
   const TERRAIN_RES_Y = cellsPerRow * tileRows;
 
   const cellStepX = (2 * halfW) / TERRAIN_RES_X;
@@ -59,8 +64,9 @@ function buildTerrainAndMasks(scene, state) {
     return [(pt[0] - cropCX) * scaleToBed, (pt[1] - cropCY) * scaleToBed];
   }
 
-  const MASK_RES_X = Math.max(256, Math.round(720 * (totalWidthMm / maxDimMm)));
-  const MASK_RES_Y = Math.max(256, Math.round(720 * (totalHeightMm / maxDimMm)));
+  const baseMaskRes = (numTiles <= 400 && maxDimMm >= 400) ? 864 : 720;
+  const MASK_RES_X = Math.max(256, Math.round(baseMaskRes * (totalWidthMm / maxDimMm)));
+  const MASK_RES_Y = Math.max(256, Math.round(baseMaskRes * (totalHeightMm / maxDimMm)));
   const maskCanvas = (typeof document !== 'undefined' && document.createElement)
     ? document.createElement('canvas')
     : createSoftwareMaskCanvas(MASK_RES_X, MASK_RES_Y);
@@ -152,7 +158,12 @@ function buildTerrainAndMasks(scene, state) {
             wSum += w;
           }
         }
-        next[y * MASK_RES_X + x] = sum / wSum;
+        const idx = y * MASK_RES_X + x;
+        let val = sum / wSum;
+        // Preserve sign of true land/water mask so narrow peninsulas, bays & islands never erode across zero
+        if (!waterMask[idx] && val < 0.015) val = 0.015;
+        else if (waterMask[idx] && val > -0.015) val = -0.015;
+        next[idx] = val;
       }
     }
     waterSDF = next;
@@ -169,9 +180,9 @@ function buildTerrainAndMasks(scene, state) {
            (buf[y1 * MASK_RES_X + x0] * (1 - wx) + buf[y1 * MASK_RES_X + x1] * wx) * wy;
   }
 
-  // 2. Crisp Building Footprint Clearance Mask (preserving narrow European Altstadt lanes!)
+  // 2. Crisp Building Footprint Clearance Mask (preserving narrow European Altstadt lanes & boulevard strips!)
   mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
-  mctx.lineWidth = Math.max(1.2, 0.08 * pxPerUnit);
+  mctx.lineWidth = Math.max(0.85, Math.min(0.08, 0.14 / scaleMm) * pxPerUnit);
   (scene.buildings || []).forEach(b => {
     if (b.hidden || b.btype === 'pier') return;
     mctx.beginPath();
@@ -197,12 +208,24 @@ function buildTerrainAndMasks(scene, state) {
   const bldMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   for (let i = 0; i < bldMask.length; i++) bldMask[i] = bldImg[i * 4 + 3] > 96 ? 1 : 0;
 
-  // 3. Raw Greenery Mask (authentic OSM parks, lawns, forests & gardens ONLY)
+  // 3. Raw Greenery Mask (authentic OSM parks, lawns, forests, boulevard medians & gardens ONLY)
   mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
   fillPolysOnCtx(scene.greenPolys || scene.greeneryPolys);
+  mctx.lineWidth = Math.max(1.15, Math.min(0.22, 0.28 / scaleMm) * pxPerUnit);
+  (scene.greenPolys || scene.greeneryPolys || []).forEach(poly => {
+    if (!poly || !poly.outer || poly.outer.length < 3 || (poly.holes && poly.holes.length > 0)) return;
+    mctx.beginPath();
+    poly.outer.forEach((p, i) => {
+      const b = toBed(p);
+      const [px, py] = bedToMask(b[0], b[1]);
+      if (i === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
+    });
+    mctx.closePath();
+    mctx.stroke();
+  });
   const rawGreenImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
   const rawGreenMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
-  for (let i = 0; i < rawGreenMask.length; i++) rawGreenMask[i] = rawGreenImg[i * 4 + 3] > 96 ? 1 : 0;
+  for (let i = 0; i < rawGreenMask.length; i++) rawGreenMask[i] = rawGreenImg[i * 4 + 3] > 64 ? 1 : 0;
 
   // 4. Separate Major Streets/Plazas vs Delicate Park Footpaths (CityFrames Central Park Layering!)
   const isFootpathRoad = (rd) => {
@@ -226,8 +249,9 @@ function buildTerrainAndMasks(scene, state) {
         return;
       }
     }
-    const minWUnits = Math.max((rd.width || 1.0) * 0.90 * scaleToBed, 0.44 / scaleMm);
-    mctx.lineWidth = Math.max(3.8, minWUnits * pxPerUnit + 0.55);
+    const minWUnits = Math.max((rd.width || 1.0) * 0.90 * scaleToBed, 0.40 / scaleMm);
+    const minRoadPx = (rtype === 'service' || rtype === 'living_street') ? 2.1 : 2.6;
+    mctx.lineWidth = Math.max(minRoadPx, minWUnits * pxPerUnit + 0.25);
     mctx.beginPath();
     rd.pts.forEach((p, i) => {
       const b = toBed(p);
@@ -242,8 +266,8 @@ function buildTerrainAndMasks(scene, state) {
   if (roadDetail !== 'major') {
     (scene.roads || []).forEach(rd => {
       if (!rd.pts || rd.pts.length < 2 || !isFootpathRoad(rd)) return;
-      const pathWUnits = Math.max(Math.min(0.62, rd.width || 0.36) * scaleToBed, 0.38 / scaleMm);
-      mctx.lineWidth = Math.max(3.3, pathWUnits * pxPerUnit + 0.45);
+      const pathWUnits = Math.max(Math.min(0.62, rd.width || 0.36) * scaleToBed, 0.36 / scaleMm);
+      mctx.lineWidth = Math.max(2.6, pathWUnits * pxPerUnit + 0.35);
       mctx.beginPath();
       rd.pts.forEach((p, i) => {
         const b = toBed(p);
@@ -258,9 +282,9 @@ function buildTerrainAndMasks(scene, state) {
   const majorRoadMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   const greenMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   for (let i = 0; i < majorRoadMask.length; i++) {
-    const clearOfWater = !waterMask[i] && shoreDist[i] >= 2.2;
+    const clearOfWater = !waterMask[i] && shoreDist[i] >= 1.25;
     majorRoadMask[i] = (majorRoadImg[i * 4 + 3] > 96 && clearOfWater && !bldMask[i]) ? 1 : 0;
-    const clearRoadHalo = majorRoadImg[i * 4 + 3] <= 48;
+    const clearRoadHalo = majorRoadImg[i * 4 + 3] <= 96;
     greenMask[i] = (rawGreenMask[i] && clearOfWater && !bldMask[i] && clearRoadHalo) ? 1 : 0;
   }
 
@@ -273,10 +297,10 @@ function buildTerrainAndMasks(scene, state) {
   const roadAndBldMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
 
   for (let i = 0; i < parkPathOnGreenMask.length; i++) {
-    const hasFoot = footpathImg[i * 4 + 3] > 96 && !waterMask[i] && shoreDist[i] >= 2.2 && !bldMask[i];
-    if (hasFoot && greenInnerDist[i] >= 2.8 && majorRoadDist[i] >= 1.6) {
+    const hasFoot = footpathImg[i * 4 + 3] > 96 && !waterMask[i] && shoreDist[i] >= 1.35 && !bldMask[i];
+    if (hasFoot && greenInnerDist[i] >= 2.2 && majorRoadDist[i] >= 1.4) {
       parkPathOnGreenMask[i] = 1;
-    } else if (hasFoot && !greenMask[i] && greenOuterDist[i] >= 2.2 && majorRoadDist[i] >= 1.6) {
+    } else if (hasFoot && !greenMask[i] && greenOuterDist[i] >= 1.8 && majorRoadDist[i] >= 1.4) {
       parkPathOnGroundMask[i] = 1;
     }
     roadAndBldMask[i] = (bldMask[i] || majorRoadMask[i] || parkPathOnGreenMask[i] || parkPathOnGroundMask[i]) ? 1 : 0;

@@ -16,7 +16,9 @@ const WEBGL_SHADOW_VS = `
   uniform float uTileExplode;
   varying float vDepth;
   varying vec3 vWorldPos;
+  varying vec3 vRawPos;
   varying float vLayerId;
+  varying float vTileId;
   void main() {
     float lift = (aLayerId >= 0.0 && aLayerId <= 5.0) ? (aLayerId * uExplode * 14.0) : 0.0;
     float shiftX = 0.0;
@@ -29,8 +31,10 @@ const WEBGL_SHADOW_VS = `
       shiftY = (tr - (uTileRows - 1.0) * 0.5) * uTileExplode * 15.0;
     }
     vec3 pos = vec3(aPos.x + shiftX, aPos.y + shiftY, aPos.z + lift);
+    vRawPos = aPos;
     vWorldPos = pos;
     vLayerId = aLayerId;
+    vTileId = aTileId;
     vec4 clip = uLightMatrix * vec4(pos, 1.0);
     vDepth = clip.z * 0.5 + 0.5;
     gl_Position = clip;
@@ -41,7 +45,11 @@ const WEBGL_SHADOW_FS = `
   precision highp float;
   varying float vDepth;
   varying vec3 vWorldPos;
+  varying vec3 vRawPos;
   varying float vLayerId;
+  varying float vTileId;
+  uniform float uTileCols;
+  uniform float uTileRows;
   uniform float uTileExplode;
   uniform float uHalfW;
   uniform float uHalfH;
@@ -54,10 +62,19 @@ const WEBGL_SHADOW_FS = `
   }
   void main() {
     int lid = int(vLayerId + 0.5);
-    float clipLimX = uHalfW + 0.25 + uTileExplode * 32.0;
-    float clipLimY = uHalfH + 0.25 + uTileExplode * 32.0;
-    if (lid < 6 && (abs(vWorldPos.x) > clipLimX || abs(vWorldPos.y) > clipLimY)) {
+    if (lid < 6 && (abs(vRawPos.x) > uHalfW + 0.25 || abs(vRawPos.y) > uHalfH + 0.25)) {
       discard;
+    }
+    if (lid < 6 && vTileId >= 0.0 && (uTileCols > 1.0 || uTileRows > 1.0) && uTileExplode > 0.001) {
+      float tid = floor(vTileId + 0.5);
+      float tc = mod(tid, uTileCols);
+      float tr = floor(tid / uTileCols);
+      float stepX = (2.0 * uHalfW) / uTileCols;
+      float stepY = (2.0 * uHalfH) / uTileRows;
+      if (vRawPos.x < -uHalfW + tc * stepX - 0.015 || vRawPos.x > -uHalfW + (tc + 1.0) * stepX + 0.015 ||
+          vRawPos.y < -uHalfH + tr * stepY - 0.015 || vRawPos.y > -uHalfH + (tr + 1.0) * stepY + 0.015) {
+        discard;
+      }
     }
     gl_FragColor = packDepth(clamp(vDepth, 0.0, 1.0));
   }
@@ -155,6 +172,7 @@ const WEBGL_MAIN_FS = `
   uniform vec3 uColorWater;
   uniform vec3 uColorBase;
   uniform vec3 uColorGreenery;
+  uniform vec3 uColorTrees;
   uniform vec3 uColorRoads;
   uniform vec3 uColorBuildings;
   uniform vec3 uColorHighlighted;
@@ -199,10 +217,19 @@ const WEBGL_MAIN_FS = `
   void main() {
     int lid = int(vLayerId + 0.5);
 
-    float clipLimX = uHalfW + 0.25 + uTileExplode * 32.0;
-    float clipLimY = uHalfH + 0.25 + uTileExplode * 32.0;
-    if (lid < 6 && (abs(vWorldPos.x) > clipLimX || abs(vWorldPos.y) > clipLimY)) {
+    if (lid < 6 && (abs(vRawPos.x) > uHalfW + 0.25 || abs(vRawPos.y) > uHalfH + 0.25)) {
       discard;
+    }
+    if (lid < 6 && vTileId >= 0.0 && (uTileCols > 1.0 || uTileRows > 1.0) && uTileExplode > 0.001) {
+      float tid = floor(vTileId + 0.5);
+      float tc = mod(tid, uTileCols);
+      float tr = floor(tid / uTileCols);
+      float stepX = (2.0 * uHalfW) / uTileCols;
+      float stepY = (2.0 * uHalfH) / uTileRows;
+      if (vRawPos.x < -uHalfW + tc * stepX - 0.015 || vRawPos.x > -uHalfW + (tc + 1.0) * stepX + 0.015 ||
+          vRawPos.y < -uHalfH + tr * stepY - 0.015 || vRawPos.y > -uHalfH + (tr + 1.0) * stepY + 0.015) {
+        discard;
+      }
     }
 
     if (lid == 7) {
@@ -224,9 +251,13 @@ const WEBGL_MAIN_FS = `
         baseCol *= 0.82;
       }
     } else if (lid == 2) {
-      baseCol = uColorGreenery;
-      if (vNorm.z < 0.88 && vNorm.z > -0.1) {
-        baseCol *= 0.88;
+      if (vNorm.z > 0.04 && vNorm.z < 0.98) {
+        baseCol = uColorTrees * 0.92;
+      } else {
+        baseCol = uColorGreenery;
+        if (vNorm.z < 0.88 && vNorm.z > -0.1) {
+          baseCol *= 0.88;
+        }
       }
     } else if (lid == 3) {
       baseCol = uColorRoads;

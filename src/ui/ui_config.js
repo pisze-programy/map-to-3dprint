@@ -8,12 +8,11 @@ const PALETTES = [
     id: 'white',
     name: 'Pure Architectural White',
     colors: {
-      water: '#dce5ed',
+      water: '#f6f6f6',
       base: '#f4f5f7',
-      greenery: '#e8ecef',
-      roads: '#f0f2f5',
-      buildings: '#ffffff',
-      highlighted: '#2563eb'
+      greenery: '#f2f2f2',
+      roads: '#fafafa',
+      buildings: '#ffffff'
     }
   },
   {
@@ -24,8 +23,7 @@ const PALETTES = [
       base: '#e8be8c',
       greenery: '#488e52',
       roads: '#f4f3ef',
-      buildings: '#faf9f5',
-      highlighted: '#f59e0b'
+      buildings: '#faf9f5'
     }
   },
   {
@@ -36,8 +34,7 @@ const PALETTES = [
       base: '#e6dec8',
       greenery: '#689f63',
       roads: '#efede8',
-      buildings: '#ffffff',
-      highlighted: '#d4af37'
+      buildings: '#ffffff'
     }
   },
   {
@@ -48,8 +45,7 @@ const PALETTES = [
       base: '#2b323c',
       greenery: '#2f5d46',
       roads: '#4b5563',
-      buildings: '#e5e7eb',
-      highlighted: '#f59e0b'
+      buildings: '#e5e7eb'
     }
   },
   {
@@ -60,8 +56,7 @@ const PALETTES = [
       base: '#e9d3b0',
       greenery: '#5a8f52',
       roads: '#f2ece1',
-      buildings: '#d97757',
-      highlighted: '#2563eb'
+      buildings: '#d97757'
     }
   }
 ];

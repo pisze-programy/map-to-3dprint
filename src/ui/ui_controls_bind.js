@@ -249,6 +249,9 @@ function bindStudioPanelControls(ctx) {
       if (!state.lodSettings) state.lodSettings = {};
       state.lodSettings.minBuildingFootprintM = val;
       state.lodSettings.minBuildingMeters = val;
+      state.lastFetchBbox = null;
+      state.lastFetchTitle = null;
+      state.lastFetchMeta = null;
       if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
     });
   }
@@ -280,6 +283,9 @@ function bindStudioPanelControls(ctx) {
     lodEnableTreesCheck.addEventListener('change', e => {
       if (!state.lodSettings) state.lodSettings = {};
       state.lodSettings.enableTrees = e.target.checked;
+      state.lastFetchBbox = null;
+      state.lastFetchTitle = null;
+      state.lastFetchMeta = null;
       updateLodTreeBadge();
       if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
     });
@@ -296,6 +302,9 @@ function bindStudioPanelControls(ctx) {
       if (!state.lodSettings) state.lodSettings = {};
       state.lodSettings.treeMaxSpanKm = val;
       state.lodSettings.treeThresholdKm = val;
+      state.lastFetchBbox = null;
+      state.lastFetchTitle = null;
+      state.lastFetchMeta = null;
       updateLodTreeBadge();
       if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
     });
@@ -309,6 +318,9 @@ function bindStudioPanelControls(ctx) {
     lodRoadDetailSelect.addEventListener('change', e => {
       if (!state.lodSettings) state.lodSettings = {};
       state.lodSettings.roadDetail = e.target.value;
+      state.lastFetchBbox = null;
+      state.lastFetchTitle = null;
+      state.lastFetchMeta = null;
       if (typeof scheduleSaveActiveConfig === 'function') scheduleSaveActiveConfig(state, 200);
     });
   }

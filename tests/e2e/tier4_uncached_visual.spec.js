@@ -305,10 +305,10 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
   });
 
   // --------------------------------------------------------------------------
-  // Test 4.V5: Color Palette Verification
+  // Test 4.V5: Color Palette Verification & Fast Zero-Rebuild Recolor (Round 2)
   // --------------------------------------------------------------------------
-  test('4.V5 Palette System: Pure Architectural White palette configuration and layer colors', async ({ page }) => {
-    test.setTimeout(60000);
+  test('4.V5 Palette System: Pure Architectural White achromatic water, 5 swatches, and zero-rebuild fast recolor', async ({ page }) => {
+    test.setTimeout(90000);
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
@@ -318,24 +318,111 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
     expect(bootPalette).toBe('white');
 
     const bootColors = await page.evaluate(() => window.__map3d?.state?.colors);
-    expect(bootColors.buildings.toLowerCase()).toBe('#ffffff');
+    expect(bootColors.water.toLowerCase()).toBe('#f6f6f6');
     expect(bootColors.base.toLowerCase()).toBe('#f4f5f7');
+    expect(bootColors.greenery.toLowerCase()).toBe('#f2f2f2');
+    expect(bootColors.roads.toLowerCase()).toBe('#fafafa');
+    expect(bootColors.buildings.toLowerCase()).toBe('#ffffff');
+    expect('highlighted' in bootColors).toBe(false);
 
-    // 2. Verify white palette exists in PALETTES definition
+    // 2. Verify white palette exists in PALETTES definition with 5 keys (no legacy blue water or highlighted swatch)
     const whiteDef = await page.evaluate(() => {
       const list = (typeof PALETTES !== 'undefined' ? PALETTES : (window.__map3d?.PALETTES || []));
       const p = list.find(x => x.id === 'white');
-      return p ? { id: p.id, name: p.name, buildings: p.colors?.buildings, base: p.colors?.base } : null;
+      return p ? { id: p.id, name: p.name, colors: p.colors } : null;
     });
     expect(whiteDef).toBeTruthy();
     expect(whiteDef?.id).toBe('white');
-    expect(whiteDef?.buildings.toLowerCase()).toBe('#ffffff');
-    expect(whiteDef?.base.toLowerCase()).toBe('#f4f5f7');
+    expect(whiteDef?.colors?.water.toLowerCase()).toBe('#f6f6f6');
+    expect(whiteDef?.colors?.buildings.toLowerCase()).toBe('#ffffff');
+    expect(whiteDef?.colors?.base.toLowerCase()).toBe('#f4f5f7');
+    expect('highlighted' in (whiteDef?.colors || {})).toBe(false);
 
-    // 3. Verify palette UI rendered in paletteButtonsContainer with Pure Architectural White
+    // 3. Verify every palette button in paletteButtonsContainer renders exactly 5 swatches (no 6th highlighted swatch)
     const paletteButtons = page.locator('#paletteButtonsContainer button');
     await expect(paletteButtons.first()).toBeVisible();
     await expect(paletteButtons.first()).toContainText('Pure Architectural White');
+    const swatchCounts = await paletteButtons.evaluateAll(btns =>
+      btns.map(b => b.querySelectorAll('span').length)
+    );
+    expect(swatchCounts.length).toBeGreaterThanOrEqual(5);
+    for (const c of swatchCounts) {
+      expect(c).toBe(5);
+    }
+
+    // 4. Render cached scene under Pure Architectural White & verify WebGL pixels have zero blue water tint
+    await page.locator('#btnRender3D').click();
+    await waitForRenderComplete(page);
+
+    const achromaticCheck = await page.evaluate(() => {
+      const canvas = /** @type {HTMLCanvasElement | null} */ (document.getElementById('view3dCanvas'));
+      const gl = canvas && (canvas.getContext('webgl2') || canvas.getContext('webgl'));
+      if (!canvas || !gl) return { ok: false, maxBlueExcess: 999, avgAbsRB: 999 };
+      if (window.__map3d?.studio?.render) window.__map3d.studio.render(true);
+      const w = 160, h = 160;
+      const x0 = Math.max(0, Math.floor((canvas.width - w) / 2));
+      const y0 = Math.max(0, Math.floor((canvas.height - h) / 2));
+      const buf = new Uint8Array(w * h * 4);
+      gl.readPixels(x0, y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      let sumAbsRB = 0;
+      let blueTintedPixels = 0;
+      const total = w * h;
+      for (let i = 0; i < buf.length; i += 4) {
+        const r = buf[i], b = buf[i + 2];
+        sumAbsRB += Math.abs(r - b);
+        if (b - r > 12) blueTintedPixels++;
+      }
+      return {
+        ok: true,
+        avgAbsRB: Number((sumAbsRB / total).toFixed(2)),
+        blueTintedRatio: blueTintedPixels / total,
+      };
+    });
+    expect(achromaticCheck.ok).toBe(true);
+    expect(achromaticCheck.avgAbsRB).toBeLessThan(4.0);
+    expect(achromaticCheck.blueTintedRatio).toBeLessThan(0.01);
+
+    // 5. Rapid color picker scrub + palette switch must recolor via uniforms WITHOUT calling rebuildModel3D
+    const recolorPerf = await page.evaluate(async () => {
+      const state = window.__map3d.state;
+      const prevLayerMeshes = state.layerMeshes;
+      const overlay = document.getElementById('loadingOverlay3D');
+      let overlayBecameVisible = false;
+
+      const t0 = performance.now();
+      const waterInp = /** @type {HTMLInputElement | null} */ (document.querySelector('input[data-layer-col="water"]'));
+      const bldInp = /** @type {HTMLInputElement | null} */ (document.querySelector('input[data-layer-col="buildings"]'));
+      if (!waterInp || !bldInp) throw new Error('Missing layer color inputs');
+
+      for (let i = 0; i < 25; i++) {
+        const hex = '#' + (0x20 + i * 4).toString(16).padStart(2, '0') + '77cc';
+        waterInp.value = hex;
+        waterInp.dispatchEvent(new Event('input', { bubbles: true }));
+        bldInp.value = '#' + (0xd0 + (i % 20)).toString(16).padStart(2, '0') + 'e0f0';
+        bldInp.dispatchEvent(new Event('input', { bubbles: true }));
+        if (overlay && !overlay.classList.contains('hidden')) overlayBecameVisible = true;
+      }
+
+      // Switch to nordic_dark and back to white via real palette buttons
+      const nordicBtn = /** @type {HTMLButtonElement | null} */ (document.querySelector('#paletteButtonsContainer button[data-palette-id="nordic_dark"]'));
+      const whiteBtn = /** @type {HTMLButtonElement | null} */ (document.querySelector('#paletteButtonsContainer button[data-palette-id="white"]'));
+      if (nordicBtn) nordicBtn.click();
+      if (whiteBtn) whiteBtn.click();
+
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const elapsedMs = performance.now() - t0;
+      return {
+        sameMeshIdentity: state.layerMeshes === prevLayerMeshes,
+        overlayBecameVisible,
+        elapsedMs,
+        finalWaterColor: state.colors.water,
+      };
+    });
+
+    expect(recolorPerf.sameMeshIdentity, 'Color scrubbing & palette switching must NOT rebuild geometry').toBe(true);
+    expect(recolorPerf.overlayBecameVisible).toBe(false);
+    expect(recolorPerf.elapsedMs).toBeLessThan(1500);
+    expect(recolorPerf.finalWaterColor.toLowerCase()).toBe('#f6f6f6');
   });
 
   // --------------------------------------------------------------------------
@@ -474,5 +561,135 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
 
     // Verify WebGL Canvas pixel diversity via gl.readPixels
     await assertWebGLCanvasNotBlank(page);
+  });
+
+  // --------------------------------------------------------------------------
+  // Test 4.V8: Round 2 Tile Explode (Rozsuń) & Rotated Frame 1:1 Scale Parity
+  // --------------------------------------------------------------------------
+  test('4.V8 Round 2 Geometry Parity: 2x2 Tile Explode (Rozsuń) & +45° rotated frame preserve manifold & 1:1 scale', async ({ page }) => {
+    test.setTimeout(90000);
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForAppReady(page);
+
+    // Select 2x2 tile grid & +45° rotation via UI controls, then click Render
+    await page.locator('#tileGridSelect').selectOption('2x2');
+    await page.locator('button[data-rot-deg="45"]').click();
+    await expect(page.locator('#mapRotationLabel')).toContainText('45°');
+
+    await page.locator('#btnRender3D').click();
+    const res = await waitForRenderComplete(page);
+    expect(res.totalTriangles).toBeGreaterThan(30000);
+
+    // Verify 1:1 physical envelope regardless of 45° rotation (no 1.25x shrinkage) AND 0 overhanging triangles across 2x2 tile split planes
+    const scaleCheck = await page.evaluate(() => {
+      const st = window.__map3d.state;
+      const baseMesh = st.layerMeshes?.base || [];
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      if (Array.isArray(baseMesh)) {
+        for (let i = 0; i < baseMesh.length; i++) {
+          const tri = baseMesh[i];
+          const pts = [tri.v0, tri.v1, tri.v2];
+          for (let j = 0; j < 3; j++) {
+            const p = pts[j];
+            if (!p) continue;
+            if (p[0] < minX) minX = p[0];
+            if (p[0] > maxX) maxX = p[0];
+            if (p[1] < minY) minY = p[1];
+            if (p[1] > maxY) maxY = p[1];
+          }
+        }
+      }
+
+      // Check every printable layer triangle against 2x2 split planes (x = 0, y = 0)
+      let overhangingTris = 0;
+      const printableKeys = ['water', 'base', 'greenery', 'roads', 'buildings'];
+      for (const k of printableKeys) {
+        const arr = st.layerMeshes?.[k] || [];
+        for (let i = 0; i < arr.length; i++) {
+          const t = arr[i];
+          if (!t || !t.v0 || !t.v1 || !t.v2) continue;
+          const txMin = Math.min(t.v0[0], t.v1[0], t.v2[0]);
+          const txMax = Math.max(t.v0[0], t.v1[0], t.v2[0]);
+          const tyMin = Math.min(t.v0[1], t.v1[1], t.v2[1]);
+          const tyMax = Math.max(t.v0[1], t.v1[1], t.v2[1]);
+          if ((txMin < -0.05 && txMax > 0.05) || (tyMin < -0.05 && tyMax > 0.05)) {
+            overhangingTris++;
+          }
+        }
+      }
+
+      const sc = st.sceneData || {};
+      const mToU = sc.metersToUnits || 0;
+      const expectedMToU = sc.spanMeters ? (169.2 / sc.spanMeters) : mToU;
+      return {
+        spanX: Number((maxX - minX).toFixed(2)),
+        spanY: Number((maxY - minY).toFixed(2)),
+        overhangingTris,
+        mToUDiff: Math.abs(mToU - expectedMToU),
+        preflightText: document.getElementById('preflightStatusBadge')?.textContent || '',
+      };
+    });
+    // Full unexploded 1:1 model envelope is ~169.2 world units on both axes even at +45°
+    expect(scaleCheck.spanX).toBeGreaterThan(165);
+    expect(scaleCheck.spanX).toBeLessThan(174);
+    expect(scaleCheck.spanY).toBeGreaterThan(165);
+    expect(scaleCheck.spanY).toBeLessThan(174);
+    expect(scaleCheck.mToUDiff).toBeLessThan(1e-4);
+    expect(scaleCheck.overhangingTris, '2x2 tile grid must have 0 triangles straddling x=0 or y=0 tile split planes').toBe(0);
+    expect(scaleCheck.preflightText).toContain('Manifold ✓ (0/0)');
+
+    // Scrub #tileExplodeSlider (Rozsuń) to 65% and capture exploded 2x2 screenshot
+    const explodeSlider = page.locator('#tileExplodeSlider');
+    await explodeSlider.fill('65');
+    await explodeSlider.dispatchEvent('input');
+    await expect(page.locator('#tileExplodeValueLabel')).toHaveText('65%');
+    await page.locator('#view3dCanvas').scrollIntoViewIfNeeded();
+
+    const sExplode = await captureAndInspectScreenshot(page, null, '06_tile_explode_2x2.png', { minBytes: 20000 });
+    expect(sExplode.size).toBeGreaterThan(20000);
+
+    await assertWebGLCanvasNotBlank(page);
+    await assertWebGL3DShadingDiversity(page);
+  });
+
+  // --------------------------------------------------------------------------
+  // Test 4.V9: Immediate Palette Reload Persistence & URL Param Ordering
+  // --------------------------------------------------------------------------
+  test('4.V9 Reload & URL Hook Hygiene: immediate reload after palette click preserves preset & URL params apply before fetch', async ({ page }) => {
+    test.setTimeout(90000);
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForAppReady(page);
+
+    // 1. Scrub custom water color so activePalette becomes 'custom', save, then click Pure Architectural White and IMMEDIATELY reload (<50ms)
+    const waterInp = page.locator('input[data-layer-col="water"]');
+    await waterInp.fill('#1155aa');
+    await waterInp.dispatchEvent('input');
+    await page.waitForTimeout(260); // allow debounced custom color save to persist
+
+    const whiteBtn = page.locator('#paletteButtonsContainer button[data-palette-id="white"]');
+    await whiteBtn.click();
+    // Immediate reload without waiting 200ms — catches debounced palette save bug!
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForAppReady(page);
+
+    const palAfterReload = await page.evaluate(() => window.__map3d?.state?.activePalette);
+    expect(palAfterReload).toBe('white');
+
+    // 2. Shared URL with rot=41 & palette=nordic_dark must apply synchronous state BEFORE fetchRealGISAndRender
+    const krakow = TEST_LOCATIONS.KRAKOW;
+    await page.goto(
+      `/?lat=${krakow.center[0]}&lon=${krakow.center[1]}&span=1.2&rot=41&palette=nordic_dark&title=${encodeURIComponent(krakow.title)}`,
+      { waitUntil: 'domcontentloaded' }
+    );
+    await waitForRenderComplete(page, krakow.titleMatch);
+
+    const urlHydrated = await page.evaluate(() => ({
+      rot: window.__map3d?.state?.mapRotationDeg,
+      palette: window.__map3d?.state?.activePalette,
+    }));
+    expect(urlHydrated.rot).toBe(41);
+    expect(urlHydrated.palette).toBe('nordic_dark');
   });
 });

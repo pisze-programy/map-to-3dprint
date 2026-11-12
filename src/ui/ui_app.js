@@ -271,7 +271,13 @@ function initMap3DApp(initialScene) {
     state.bedZ = (curProf && curProf.bedZ) || 165.0;
 
     if (state.sceneData && typeof applySceneRotation === 'function') {
-      applySceneRotation(state.sceneData, state.mapRotationDeg || 0);
+      const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 500);
+      const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
+      const maxDim = Math.max(dimW, dimH) || 500;
+      const effRot = (options && typeof options.explicitSceneRotDeg === 'number' && Number.isFinite(options.explicitSceneRotDeg))
+        ? options.explicitSceneRotDeg
+        : (state.mapRotationDeg || 0);
+      applySceneRotation(state.sceneData, effRot, 84.6 * (dimW / maxDim), 84.6 * (dimH / maxDim));
     }
 
     if (studio && typeof studio.setGenerationId === 'function') {
@@ -364,14 +370,22 @@ function initMap3DApp(initialScene) {
     });
   }
 
-  function applyLoadedSceneToState(scene, isPartial = false) {
+  function applyLoadedSceneToState(scene, isPartial = false, syncMapCenter = false, explicitRotDeg = null) {
     if (!scene) return;
     scene._fetchedCropRatio = 0.88;
-    state.cropRatio = 0.88;
+    if (!isPartial) state.cropRatio = 0.88;
+    const rotToApply = (typeof explicitRotDeg === 'number' && Number.isFinite(explicitRotDeg))
+      ? explicitRotDeg
+      : (state.mapRotationDeg || 0);
     if (typeof ensureUnrotatedSceneSnapshot === 'function') ensureUnrotatedSceneSnapshot(scene);
-    if (typeof applySceneRotation === 'function') applySceneRotation(scene, state.mapRotationDeg || 0);
+    if (typeof applySceneRotation === 'function') {
+      const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 500);
+      const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
+      const maxDim = Math.max(dimW, dimH) || 500;
+      applySceneRotation(scene, rotToApply, 84.6 * (dimW / maxDim), 84.6 * (dimH / maxDim));
+    }
     state.sceneData = scene;
-    if (!isPartial && scene.center) {
+    if (!isPartial && syncMapCenter && scene.center) {
       state.mapCenterLat = scene.center[0];
       state.mapCenterLon = scene.center[1];
     }
@@ -388,7 +402,7 @@ function initMap3DApp(initialScene) {
     state.selectedBuildingId = firstLandmark ? firstLandmark.id : null;
     draw2DMap();
     if (!isPartial) {
-      rebuildModel3D();
+      rebuildModel3D({ explicitSceneRotDeg: rotToApply });
     }
   }
 
@@ -402,16 +416,27 @@ function initMap3DApp(initialScene) {
     const errBanner = document.getElementById('gisErrorBanner');
     const errText = document.getElementById('gisErrorText');
 
+    const launchCenterLat = state.mapCenterLat;
+    const launchCenterLon = state.mapCenterLon;
+    let isExplicitBboxCall = false;
+
     let south, west, north, east, title, options = {}, regionLabel = null;
+    let fetchMeta = null;
     if (typeof arg1 === 'number' && typeof arg2 === 'number' && typeof arg3 === 'number' && typeof arg4 === 'number') {
+      isExplicitBboxCall = true;
       south = arg1; west = arg2; north = arg3; east = arg4;
       state.lastFetchBbox = [south, west, north, east];
+      state.lastFetchMeta = null;
       title = arg5 || state.plaqueText || 'MAP3D';
       state.lastFetchTitle = title;
       options = (arg6 && typeof arg6 === 'object') ? arg6 : {};
     } else if (Array.isArray(arg1) && arg1.length === 4) {
+      const isRetrySameBbox = Boolean(state.lastFetchBbox && arg1 === state.lastFetchBbox && state.lastFetchMeta);
+      isExplicitBboxCall = !isRetrySameBbox;
       [south, west, north, east] = arg1;
       state.lastFetchBbox = [south, west, north, east];
+      if (isRetrySameBbox) fetchMeta = state.lastFetchMeta;
+      else state.lastFetchMeta = null;
       title = arg2 || state.plaqueText || 'MAP3D';
       state.lastFetchTitle = title;
       regionLabel = typeof arg3 === 'string' ? arg3 : null;
@@ -422,12 +447,25 @@ function initMap3DApp(initialScene) {
       west = selBox.fetchWest !== undefined ? selBox.fetchWest : selBox.west;
       north = selBox.fetchNorth !== undefined ? selBox.fetchNorth : selBox.north;
       east = selBox.fetchEast !== undefined ? selBox.fetchEast : selBox.east;
+      fetchMeta = {
+        targetSpanMeters: selBox.targetSpanMeters || state.mapSpanMeters || 1200,
+        targetWidthMm: selBox.targetWidthMm || state.bedSizeMm || 500,
+        targetHeightMm: selBox.targetHeightMm || state.totalHeightMm || 500,
+        rotationDeg: selBox.rotationDeg !== undefined ? selBox.rotationDeg : (state.mapRotationDeg || 0)
+      };
       state.lastFetchBbox = [south, west, north, east];
+      state.lastFetchMeta = fetchMeta;
       title = arg2 || state.plaqueText || 'MAP3D';
       state.lastFetchTitle = title;
       regionLabel = typeof arg3 === 'string' ? arg3 : null;
       options = (arg3 && typeof arg3 === 'object') ? arg3 : {};
     }
+    const launchSpanMeters = options.targetSpanMeters
+      || (fetchMeta && fetchMeta.targetSpanMeters)
+      || (isExplicitBboxCall ? null : (state.mapSpanMeters || 1200));
+    const launchRotDeg = options.rotationDeg !== undefined
+      ? options.rotationDeg
+      : (fetchMeta ? fetchMeta.rotationDeg : (state.mapRotationDeg || 0));
 
     if (watchdogRebuildTimer) {
       clearTimeout(watchdogRebuildTimer);
@@ -442,9 +480,13 @@ function initMap3DApp(initialScene) {
     // Reset error banner at start of fetch
     if (errBanner) errBanner.classList.add('hidden');
 
+    const approxDisplaySpanM = launchSpanMeters || Math.max(
+      Math.abs((north || 0) - (south || 0)) * 111320,
+      Math.abs((east || 0) - (west || 0)) * 111320 * Math.cos((((south || 0) + (north || 0)) * 0.5) * Math.PI / 180)
+    ) || state.mapSpanMeters || 1200;
     if (statusOverlay) statusOverlay.classList.remove('hidden');
     if (progBar) progBar.style.width = '10%';
-    if (statusText) statusText.textContent = `Pobieranie danych GIS + DEM dla ${title} (${(state.mapSpanMeters / 1000).toFixed(2)} km)...`;
+    if (statusText) statusText.textContent = `Pobieranie danych GIS + DEM dla ${title} (${(approxDisplaySpanM / 1000).toFixed(2)} km)...`;
     if (subText) subText.textContent = `Strumieniowe pobieranie sektorów Overpass API + adaptacyjny model wysokościowy AWS Terrarium`;
     if (btn) btn.disabled = true;
 
@@ -479,6 +521,13 @@ function initMap3DApp(initialScene) {
 
       const fetchOptions = {
         signal: abortCtrl.signal,
+        targetSpanMeters: options.targetSpanMeters || (fetchMeta && fetchMeta.targetSpanMeters) || null,
+        targetWidthMm: options.targetWidthMm || (fetchMeta && fetchMeta.targetWidthMm) || null,
+        targetHeightMm: options.targetHeightMm || (fetchMeta && fetchMeta.targetHeightMm) || null,
+        rotationDeg: options.rotationDeg !== undefined
+          ? options.rotationDeg
+          : (fetchMeta ? fetchMeta.rotationDeg : (state.mapRotationDeg || 0)),
+        lodSettings: options.lodSettings || state.lodSettings || null,
         onProgress: (info) => {
           const kind = (info && typeof info === 'object') ? info.progressKind : null;
           if (typeof info === 'number' || !kind || kind === 'chunk' || kind === 'subchunk' || kind === 'assemble') {
@@ -499,9 +548,10 @@ function initMap3DApp(initialScene) {
           }
         },
         onPartialScene: (partialScene, loaded, total) => {
+          if ((abortCtrl.signal.aborted && !isWatchdogTimeout) || activeGisAbortCtrl !== abortCtrl) return;
           resetWatchdog();
           if (subText) subText.textContent = `Wyrenderowano podgląd częściowy (${loaded}/${total} sektorów) — trwa dogrywanie reszty...`;
-          applyLoadedSceneToState(partialScene, true);
+          applyLoadedSceneToState(partialScene, true, false, launchRotDeg);
         }
       };
 
@@ -509,9 +559,16 @@ function initMap3DApp(initialScene) {
         ? await fetchChunkedGISInBrowser(south, west, north, east, title, fetchOptions)
         : await fetchRealGISInBrowser(south, west, north, east, title, fetchOptions);
 
+      const isUserAbortAfterFetch = abortCtrl.signal.aborted && !isWatchdogTimeout;
+      if (isUserAbortAfterFetch || activeGisAbortCtrl !== abortCtrl) return null;
+
       if (scene) {
-        scene.spanMeters = Math.round(state.mapSpanMeters || scene.spanMeters || 1200);
-        applyLoadedSceneToState(scene, false);
+        const userMoved2DWhileFetching =
+          Math.abs(state.mapCenterLat - launchCenterLat) > 1e-5 ||
+          Math.abs(state.mapCenterLon - launchCenterLon) > 1e-5;
+        scene.spanMeters = Math.round(launchSpanMeters || scene.spanMeters || 1200);
+        const effSceneRot = userMoved2DWhileFetching ? launchRotDeg : (state.mapRotationDeg || 0);
+        applyLoadedSceneToState(scene, false, isExplicitBboxCall && !userMoved2DWhileFetching, effSceneRot);
 
         if (scene._fallback) {
           if (errBanner && errText) {
@@ -522,7 +579,7 @@ function initMap3DApp(initialScene) {
           if (errBanner) errBanner.classList.add('hidden');
         }
 
-        if (typeof saveActiveConfig === 'function') {
+        if (!userMoved2DWhileFetching && typeof saveActiveConfig === 'function') {
           saveActiveConfig(state);
         }
       }
@@ -701,12 +758,13 @@ function initMap3DApp(initialScene) {
   window.__map3d = {
     state, studio, rebuildModel3D, draw2DMap, handleSelectBuilding,
     fetchRealGISAndRender, applyPrinterProfile, renderPalettesUI, renderLayersUI,
-    updateMono4PairingUI, updateStatsUI,
+    updateMono4PairingUI, updateStatsUI, updateLodTreeBadge,
     safeClosest: (typeof safeClosest === 'function' ? safeClosest : (typeof window !== 'undefined' ? window.safeClosest : null)),
     saveActiveConfig: (typeof saveActiveConfig === 'function' ? saveActiveConfig : (typeof window !== 'undefined' ? window.saveActiveConfig : null)),
     loadActiveConfig: (typeof loadActiveConfig === 'function' ? loadActiveConfig : (typeof window !== 'undefined' ? window.loadActiveConfig : null))
   };
   window.fetchRealGISAndRender = fetchRealGISAndRender;
+  window.updateLodTreeBadge = updateLodTreeBadge;
 
   window.__map3dUrlReady = applyMap3DUrlParams({
     state, studio, videoStudio,

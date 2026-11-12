@@ -193,7 +193,7 @@ function buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options = {}) {
             pushTri(meshes.base, pf00, pf11, pf10, computeFaceNormal(pf00, pf11, pf10), 1, -1, tileId);
           }
 
-          if (isExport || (tileCols === 1 && tileRows === 1)) {
+          if (isExport || (tileCols * tileRows <= 400)) {
             if (gy === gy0) {
               emitBoundaryStaircaseWall(x0, y0, v00, f00, x1, y0, v10, f10, [0, -1, 0], tileId);
               emitWaterBoundaryWall(x0, y0, v00, x1, y0, v10, [0, -1, 0], tileId);
@@ -211,7 +211,7 @@ function buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options = {}) {
               emitWaterBoundaryWall(x1, y0, v10, x1, y1, v11, [1, 0, 0], tileId);
             }
           } else {
-            // Live preview on multi-tile grids: skip internal kerf walls, emit only outer model perimeter walls
+            // Extreme synthetic grids (>400 tiles, e.g. 50x100): skip internal kerf walls in live preview
             if (tr === 0 && gy === gy0) {
               emitBoundaryStaircaseWall(x0, y0, v00, f00, x1, y0, v10, f10, [0, -1, 0], tileId);
               emitWaterBoundaryWall(x0, y0, v00, x1, y0, v10, [0, -1, 0], tileId);

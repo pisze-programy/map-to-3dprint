@@ -238,16 +238,25 @@ function buildS3DBBuildingsMesh(scene, ctx, baseInfo, state, meshes) {
       tagElevatedBottom(bShell[ti]);
     }
 
-    const cx = (item.minX + item.maxX) * 0.5;
-    const cy = (item.minY + item.maxY) * 0.5;
-    const tileId = (tileCols <= 1 && tileRows <= 1)
-      ? 0
-      : (typeof getTileIdForCentroid === 'function' ? getTileIdForCentroid(cx, cy, halfW, halfH, tileCols, tileRows) : 0);
+    const numTiles = (tileCols || 1) * (tileRows || 1);
+    if (numTiles > 1 && (ctx.isExport || numTiles <= 400) && ctx.tileBounds && typeof splitClosedShellToTileGrid3D === 'function') {
+      const pieces = splitClosedShellToTileGrid3D(bShell, ctx.tileBounds, tileCols, tileRows);
+      for (let ti = 0; ti < pieces.length; ti++) {
+        tagElevatedBottom(pieces[ti]);
+        targetList.push(pieces[ti]);
+      }
+    } else {
+      const cx = (item.minX + item.maxX) * 0.5;
+      const cy = (item.minY + item.maxY) * 0.5;
+      const tileId = (tileCols <= 1 && tileRows <= 1)
+        ? 0
+        : (typeof getTileIdForCentroid === 'function' ? getTileIdForCentroid(cx, cy, halfW, halfH, tileCols, tileRows) : 0);
 
-    for (let ti = 0; ti < bShell.length; ti++) {
-      bShell[ti].tileId = tileId;
-      tagElevatedBottom(bShell[ti]);
-      targetList.push(bShell[ti]);
+      for (let ti = 0; ti < bShell.length; ti++) {
+        bShell[ti].tileId = tileId;
+        tagElevatedBottom(bShell[ti]);
+        targetList.push(bShell[ti]);
+      }
     }
 
     buildingBounds.push({

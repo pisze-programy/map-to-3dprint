@@ -151,26 +151,22 @@ function triangulateSimplePoly(loopPts) {
   }
 
   function isInsideTri(p, a, b, c) {
-    const v0x = c[0] - a[0], v0y = c[1] - a[1];
-    const v1x = b[0] - a[0], v1y = b[1] - a[1];
-    const v2x = p[0] - a[0], v2y = p[1] - a[1];
-    const dot00 = v0x * v0x + v0y * v0y;
-    const dot01 = v0x * v1x + v0y * v1y;
-    const dot02 = v0x * v2x + v0y * v2y;
-    const dot11 = v1x * v1x + v1y * v1y;
-    const dot12 = v1x * v2x + v1y * v2y;
-    const denom = dot00 * dot11 - dot01 * dot01;
-    if (Math.abs(denom) < 1e-11) return false;
-    const inv = 1 / denom;
-    const u = (dot11 * dot02 - dot01 * dot12) * inv;
-    const v = (dot00 * dot12 - dot01 * dot02) * inv;
-    return (u > 1e-6) && (v > 1e-6) && (u + v < 1 - 1e-6);
+    const px = p[0], py = p[1];
+    if ((Math.abs(px - a[0]) < 1e-7 && Math.abs(py - a[1]) < 1e-7) ||
+        (Math.abs(px - b[0]) < 1e-7 && Math.abs(py - b[1]) < 1e-7) ||
+        (Math.abs(px - c[0]) < 1e-7 && Math.abs(py - c[1]) < 1e-7)) {
+      return false;
+    }
+    const c1 = (b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0]);
+    const c2 = (c[0] - b[0]) * (py - b[1]) - (c[1] - b[1]) * (px - b[0]);
+    const c3 = (a[0] - c[0]) * (py - c[1]) - (a[1] - c[1]) * (px - c[0]);
+    return c1 > -1e-9 && c2 > -1e-9 && c3 > -1e-9;
   }
 
   function isEar(ear) {
     const a = ear.prev.pt, b = ear.pt, c = ear.next.pt;
     const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    if (cross <= 1e-8) return false;
+    if (cross <= 1e-11) return false;
     let p = ear.next.next;
     const minX = Math.min(a[0], b[0], c[0]) - 1e-5;
     const maxX = Math.max(a[0], b[0], c[0]) + 1e-5;
@@ -208,12 +204,40 @@ function triangulateSimplePoly(loopPts) {
     guard++;
     curr = next;
     if (curr === stop) {
-      let bestCross = 1e-8, bestNode = null;
+      let bestNode = null;
+      let bestIntersects = 2;
+      let bestInside = 1e9;
+      let bestChordSq = Infinity;
       let check = curr;
       do {
         const a = check.prev.pt, b = check.pt, c = check.next.pt;
         const cr = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-        if (cr > bestCross) { bestCross = cr; bestNode = check; }
+        if (cr > 1e-12) {
+          let hasInter = 0;
+          let insideCnt = 0;
+          let e = check.next;
+          while (e !== check.prev) {
+            if (e !== check.next && e.next !== check.prev) {
+              if (segmentsIntersectProper(a, c, e.pt, e.next.pt)) {
+                hasInter = 1;
+                break;
+              }
+            }
+            if (e !== check.next) {
+              if (isInsideTri(e.pt, a, b, c)) insideCnt++;
+            }
+            e = e.next;
+          }
+          const chordSq = dxSq(a, c);
+          if (hasInter < bestIntersects ||
+              (hasInter === bestIntersects && insideCnt < bestInside) ||
+              (hasInter === bestIntersects && insideCnt === bestInside && chordSq < bestChordSq)) {
+            bestIntersects = hasInter;
+            bestInside = insideCnt;
+            bestChordSq = chordSq;
+            bestNode = check;
+          }
+        }
         check = check.next;
       } while (check !== curr);
       if (bestNode) {
@@ -232,7 +256,7 @@ function triangulateSimplePoly(loopPts) {
   if (rem === 3) {
     const a = curr.prev.pt, b = curr.pt, c = curr.next.pt;
     const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    if (Math.abs(cross) > 1e-9) {
+    if (Math.abs(cross) > 1e-12) {
       tris.push([a, b, c]);
     }
   } else if (rem > 3) {
@@ -245,7 +269,8 @@ function triangulateSimplePoly(loopPts) {
     for (let k = 1; k < remPts.length - 1; k++) {
       const a = remPts[0], b = remPts[k], c = remPts[k + 1];
       const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-      if (cross > 1e-9) tris.push([a, b, c]);
+      if (cross > 1e-12) tris.push([a, b, c]);
+      else if (cross < -1e-12) tris.push([a, c, b]);
     }
   }
   return tris;

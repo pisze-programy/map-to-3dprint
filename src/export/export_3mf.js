@@ -159,7 +159,7 @@ function exportMultiColor3MF(state) {
   const cGreenery = ((colors.greenery || '#15803d').replace('#', '')).toUpperCase();
   const cRoads = ((colors.roads || '#94a3b8').replace('#', '')).toUpperCase();
   const cBuildings = ((colors.buildings || '#cbd5e1').replace('#', '')).toUpperCase();
-  const cHighlighted = ((colors.highlighted || '#f59e0b').replace('#', '')).toUpperCase();
+  const cHighlighted = ((colors.highlighted || colors.buildings || '#cbd5e1').replace('#', '')).toUpperCase();
 
   const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="pl-PL" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
