@@ -43,7 +43,7 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
       `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];)->.brels;` +
       `(.brels;>;)->.ball;` +
       `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath|wetland|beach|shingle|shoal|mud|bare_rock)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["place"~"^(island|islet)$"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];relation["type"="multipolygon"]["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground|dog_park|marina)$"];relation["type"="multipolygon"]["highway"="pedestrian"];)->.grels;` +
-      `way(r.grels)->.gways;` +
+      `way(r.grels)(${bbox})->.gways;` +
       `(way["building"];way["building:part"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];${roadClause}way["highway"]["bridge"~"^(yes|viaduct|aqueduct|boardwalk|cantilever|covered|movable|suspension|trestle)$"];way["place"~"^(square|island|islet)$"];way["railway"];way["man_made"~"^(bridge|pier|breakwater|groyne|tower|lighthouse)$"];.gways;)->.wbox;` +
       `(relation.ball;.grels;.wbox;way.ball;${treeClause});out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
@@ -60,7 +60,7 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
       `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];)->.brels;` +
       `(.brels;>;)->.ball;` +
       `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath|wetland|beach|shingle|shoal|mud|bare_rock)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["place"~"^(island|islet)$"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];relation["type"="multipolygon"]["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground|dog_park|marina)$"];relation["type"="multipolygon"]["highway"="pedestrian"];)->.grels;` +
-      `way(r.grels)->.gways;` +
+      `way(r.grels)(${bbox})->.gways;` +
       `(${bldWayClause}way["natural"~"^(water|coastline|wood|scrub|grassland|heath|tree_row|beach|wetland|shingle|shoal|mud|bare_rock)$"];way["waterway"];way["water"];way["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];way["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground|dog_park|marina)$"];${hwyWayClause}way["highway"]["bridge"~"^(yes|viaduct|aqueduct|boardwalk|cantilever|covered|movable|suspension|trestle)$"];way["place"~"^(square|island|islet)$"];way["railway"~"^(rail|light_rail|tram|narrow_gauge)$"];way["man_made"~"^(bridge|pier|breakwater|groyne|tower|lighthouse)$"];.gways;)->.wbox;` +
       `(relation.ball;.grels;.wbox;way.ball;${treeClause});out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
@@ -73,8 +73,8 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
     return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
       `(relation["building"];relation["type"="building"];relation["man_made"="bridge"];)->.brels;` +
       `(.brels;>;)->.ball;` +
-      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|shingle|shoal)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["place"~"^(island|islet)$"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|meadow)$"];relation["type"="multipolygon"]["leisure"~"^(park|nature_reserve)$"];)->.grels;` +
-      `way(r.grels)->.gways;` +
+      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|shingle|shoal)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest|meadow)$"];relation["type"="multipolygon"]["leisure"~"^(park|nature_reserve)$"];)->.grels;` +
+      `way(r.grels)(${bbox})->.gways;` +
       `(way["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|greenhouse|house|detached|terrace|semidetached_house|bungalow|farm_auxiliary|barn)$"];way["building"]["height"];way["building"]["building:levels"~"^([3-9]|[1-9][0-9])"];way["building"]["name"];way["building:part"];way["natural"~"${natRegex}"];way["waterway"~"^(river|riverbank|canal|stream|dock)$"];way["water"];way["place"~"^(island|islet)$"];way["landuse"~"^(reservoir|basin|forest|meadow|grass)$"];way["leisure"~"^(park|nature_reserve|garden|golf_course)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|motorway_link|trunk_link|primary_link)$"];way["highway"]["bridge"~"^(yes|viaduct|suspension)$"];way["railway"~"^(rail|light_rail)$"];way["man_made"~"^(bridge|pier|breakwater|tower|lighthouse)$"];.gways;)->.wbox;` +
       `(relation.ball;.grels;.wbox;way.ball;${treeClause});out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
@@ -89,8 +89,8 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
     return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
       `(relation["building"~"^(church|cathedral|chapel|castle|palace|tower|stadium)$"];relation["building:levels"~"^(1[2-9]|[2-9][0-9])"]["building"];)->.brels;` +
       `(.brels;>;)->.ball;` +
-      `(relation["type"="multipolygon"]["natural"="water"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["place"~"^(island|islet)$"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin)$"];relation["type"="multipolygon"]["leisure"="park"];)->.grels;` +
-      `way(r.grels)->.gways;` +
+      `(relation["type"="multipolygon"]["natural"="water"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin)$"];relation["type"="multipolygon"]["leisure"="park"];)->.grels;` +
+      `way(r.grels)(${bbox})->.gways;` +
       `(way["building:levels"~"^(1[2-9]|[2-9][0-9])"]["building"];way["building"~"^(church|cathedral|chapel|castle|palace|tower|stadium)$"];way["natural"~"^(water|coastline)$"];way["waterway"~"^(river|riverbank|canal)$"];way["water"];way["place"~"^(island|islet)$"];way["landuse"~"^(reservoir|basin)$"];way["leisure"="park"];way["highway"~"^(motorway|trunk|primary|motorway_link|trunk_link)$"];.gways;)->.wbox;` +
       `(relation.ball;.grels;.wbox;way.ball;);out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
@@ -98,8 +98,8 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
   return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
     `(relation["building"]["name"];relation["building"]["height"];relation["building"~"^(church|cathedral|chapel|castle|palace|public|civic|commercial|industrial|apartments|hotel|hospital|university|train_station|tower|stadium)$"];relation["type"="building"];relation["man_made"="bridge"];)->.brels;` +
     `(.brels;>;)->.ball;` +
-    `(relation["type"="multipolygon"]["natural"~"^(water|wood)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["place"~"^(island|islet)$"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest)$"];relation["type"="multipolygon"]["leisure"~"^(park|nature_reserve)$"];)->.grels;` +
-    `way(r.grels)->.gways;` +
+    `(relation["type"="multipolygon"]["natural"~"^(water|wood)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"~"^(reservoir|basin|forest)$"];relation["type"="multipolygon"]["leisure"~"^(park|nature_reserve)$"];)->.grels;` +
+    `way(r.grels)(${bbox})->.gways;` +
     `(way["building"]["height"];way["building"]["building:levels"~"^([5-9]|[1-9][0-9])"];way["building"]["name"];way["building"~"^(church|cathedral|chapel|castle|palace|public|civic|commercial|industrial|apartments|hotel|hospital|university|train_station|tower|stadium)$"];way["natural"~"^(water|coastline|wood|scrub)$"];way["waterway"~"^(river|riverbank|canal|dock)$"];way["water"];way["place"~"^(island|islet)$"];way["landuse"~"^(reservoir|basin|forest)$"];way["leisure"~"^(park|nature_reserve)$"];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|motorway_link|trunk_link)$"];way["highway"]["bridge"~"^(yes|viaduct|suspension)$"];way["railway"="rail"];way["man_made"~"^(bridge|pier|tower|lighthouse)$"];.gways;)->.wbox;` +
     `(relation.ball;.grels;.wbox;way.ball;);out body qt;` +
     `(node(w.wbox);node.ball;);out skel qt;`;
@@ -319,7 +319,7 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, callbacks
   const lodKey = lo
     ? `t${lo.wantTrees === false ? 0 : 1}_b${Math.round(lo.minBuildingFootprintM || 0)}_r${lo.roadDetail || 'all'}`
     : 'def';
-  const cacheKey = `v8_${chunk.lodTier}_${lodKey}_${chunk.south.toFixed(4)}_${chunk.west.toFixed(4)}_${chunk.north.toFixed(4)}_${chunk.east.toFixed(4)}`;
+  const cacheKey = `v9_${chunk.lodTier}_${lodKey}_${chunk.south.toFixed(4)}_${chunk.west.toFixed(4)}_${chunk.north.toFixed(4)}_${chunk.east.toFixed(4)}`;
   if (_overpassChunkCache.has(cacheKey)) return _overpassChunkCache.get(cacheKey);
 
   const timeoutSec = chunk.depth === 0 ? 13 : 10;

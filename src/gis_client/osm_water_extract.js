@@ -282,11 +282,20 @@ function processOsmWaterMultipolygonJS(rel, tags, raw, ctx, extraFlags = null) {
 
   // Standalone place=island / place=islet multipolygons: record land ring without blocking greenery/plaza extraction
   if (isOsmStandaloneIslandTagsJS(tags)) {
+    const hasCoastlineMember = Boolean(raw.memberWayIds && raw.memberWayIds.some(wid => {
+      const mw = ctx.ways && ctx.ways.get(wid);
+      return Boolean(mw && mw.tags && mw.tags.natural === 'coastline');
+    }));
+    if ((rel.members || []).length > 120 || hasCoastlineMember) {
+      return !extraFlags || (!extraFlags.isGreen && !extraFlags.isPlaza);
+    }
     const clipped = (typeof stitchClippedMultipolygonRingsJS === 'function')
       ? stitchClippedMultipolygonRingsJS(raw.outerWays, raw.innerWays, ctx.nodesToPts, ctx.fetchHalfW, ctx.fetchHalfH, {
           isWater: false,
+          isIsland: true,
           isGreen: Boolean(extraFlags && extraFlags.isGreen),
           isPlaza: Boolean(extraFlags && extraFlags.isPlaza),
+          waterSamplePts: ctx.waterSamplePts,
           buildingSamplePts: ctx.buildingSamplePts,
           roadSamplePts: ctx.roadSamplePts,
           tol: 0.018
@@ -393,7 +402,7 @@ function finalizeOsmWaterLayerJS(ctx) {
       const h = holes[hi];
       const area = _waterRingAbsAreaJS(h);
       if (area > 1e-4) {
-        allIslandEntries.push({ ring: h, area, isShingle: shingleSet.has(hi) });
+        allIslandEntries.push({ ring: h, area, isShingle: shingleSet.has(hi), fromWaterHole: true, fromStandalone: false });
       }
     }
   }
@@ -402,7 +411,7 @@ function finalizeOsmWaterLayerJS(ctx) {
     const area = _waterRingAbsAreaJS(isl);
     if (area <= 1e-4) continue;
     if (!allIslandEntries.some(e => _waterRingsMatchSameLoopJS(e.ring, isl))) {
-      allIslandEntries.push({ ring: isl, area, isShingle: false });
+      allIslandEntries.push({ ring: isl, area, isShingle: false, fromWaterHole: false, fromStandalone: true });
     }
   }
 
@@ -414,7 +423,7 @@ function finalizeOsmWaterLayerJS(ctx) {
     if (existing) {
       existing.isShingle = true;
     } else {
-      allIslandEntries.push({ ring: sh, area, isShingle: true });
+      allIslandEntries.push({ ring: sh, area, isShingle: true, fromWaterHole: false, fromStandalone: false });
       extraShingleRings.push(sh);
     }
   }
@@ -423,6 +432,7 @@ function finalizeOsmWaterLayerJS(ctx) {
   // (e.g. marinas or overlapping river sections) so 2D evenodd rendering & 3D masks stay consistent,
   // while never carving out genuine nested ponds that are strictly smaller than the island.
   const outerAreas = waterPolys.map(wp => _waterRingAbsAreaJS(wp.outer));
+  const maxStandaloneArea = (4 * (ctx.fetchHalfW || 88.8) * (ctx.fetchHalfH || 88.8)) * 0.35;
   const extraLandRings = [];
 
   for (const entry of allIslandEntries) {
@@ -449,8 +459,27 @@ function finalizeOsmWaterLayerJS(ctx) {
         if (!wp.shingleHoleIndices.includes(matchIdx)) wp.shingleHoleIndices.push(matchIdx);
       }
     }
-    if (!attachedStrict && !entry.isShingle) {
-      extraLandRings.push(entry.ring);
+    if (!attachedStrict && !entry.isShingle && entry.fromStandalone && entry.area <= maxStandaloneArea) {
+      const largerIdxs = [];
+      for (let wi = 0; wi < waterPolys.length; wi++) {
+        if (outerAreas[wi] > entry.area * 1.15) largerIdxs.push(wi);
+      }
+      if (largerIdxs.length > 0) {
+        const probe = _waterRingProbePtJS(entry.ring);
+        const probeInLarger = largerIdxs.some(wi => _waterPointInPolyJS(probe[0], probe[1], waterPolys[wi].outer));
+        if (probeInLarger && entry.ring.length >= 3) {
+          let inUnionCount = 0;
+          for (let k = 0; k < entry.ring.length; k++) {
+            const pt = entry.ring[k];
+            if (largerIdxs.some(wi => _waterPointInPolyJS(pt[0], pt[1], waterPolys[wi].outer))) {
+              inUnionCount++;
+            }
+          }
+          if (inUnionCount / entry.ring.length >= 0.90) {
+            extraLandRings.push(entry.ring);
+          }
+        }
+      }
     }
   }
 

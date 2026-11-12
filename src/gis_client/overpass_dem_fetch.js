@@ -268,6 +268,7 @@ function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, 
   const Cx = Math.max(4.0, (opts.clipHalfW || halfW) - 0.35);
   const Cy = Math.max(4.0, (opts.clipHalfH || halfH) - 0.35);
   const isWater = Boolean(opts.isWater);
+  const isIsland = Boolean(opts.isIsland);
   const relName = String(opts.relName || '').trim().toLowerCase();
   const waterSamples = opts.waterSamplePts || [];
   const bldSamples = opts.buildingSamplePts || [];
@@ -596,17 +597,21 @@ function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, 
     }
   }
 
-  if (isWater && waterSamples.length > 0) {
+  const anyWaterHits = [0, 0];
+  if ((isWater || isIsland) && waterSamples.length > 0) {
     for (let wi = 0; wi < waterSamples.length; wi++) {
       const wp = waterSamples[wi];
       const wWeight = wp[2] || 1;
       const wName = wp[3] || '';
       const hit = evalSampleParity(wp[0], wp[1]);
       if (!hit) continue;
-      if (relName) {
-        if (wName === relName) matchedWaterHits[hit.c] += wWeight;
-      } else if (!wName && faces[hit.fi].chordTouchCount >= 2 && faces[hit.fi].area <= rectArea * 0.45) {
-        matchedWaterHits[hit.c] += wWeight;
+      anyWaterHits[hit.c] += wWeight;
+      if (isWater) {
+        if (relName) {
+          if (wName === relName) matchedWaterHits[hit.c] += wWeight;
+        } else if (!wName && faces[hit.fi].chordTouchCount >= 2 && faces[hit.fi].area <= rectArea * 0.45) {
+          matchedWaterHits[hit.c] += wWeight;
+        }
       }
     }
   }
@@ -654,6 +659,31 @@ function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, 
     // 6. Smaller-area fallback
     if (chosen < 0) {
       chosen = effArea[0] <= effArea[1] ? 0 : 1;
+    }
+  } else if (isIsland) {
+    // Standalone non-coastline place=island / place=islet multipolygons:
+    // Buildings & ground motor roads are POSITIVE evidence FOR the island face; open water centerlines are negative veto.
+    const urb0 = b0 + r0 * 0.7;
+    const urb1 = b1 + r1 * 0.7;
+    const ud0 = urb0 / Math.max(25, effArea[0]);
+    const ud1 = urb1 / Math.max(25, effArea[1]);
+    const w0 = anyWaterHits[0], w1 = anyWaterHits[1];
+    if ((urb0 + urb1) >= 2) {
+      if (urb0 >= urb1 * 2.5 + 2 && ud0 >= ud1 * 1.4) chosen = 0;
+      else if (urb1 >= urb0 * 2.5 + 2 && ud1 >= ud0 * 1.4) chosen = 1;
+    }
+    if (chosen < 0 && (w0 + w1) >= 2) {
+      if (w0 === 0 && w1 >= 2) chosen = 0;
+      else if (w1 === 0 && w0 >= 2) chosen = 1;
+    }
+    if (chosen < 0 && orphanInnerHits[0] !== orphanInnerHits[1]) {
+      chosen = orphanInnerHits[0] > orphanInnerHits[1] ? 0 : 1;
+    }
+    if (chosen < 0 && Math.min(effArea[0], effArea[1]) <= rectArea * 0.40) {
+      chosen = effArea[0] <= effArea[1] ? 0 : 1;
+    }
+    if (chosen < 0 || effArea[chosen] > rectArea * 0.45) {
+      return _buildPureLoopEntriesJS(closedLoops, Cx, Cy);
     }
   } else {
     // Green / Plaza multipolygons: dense urban building + motor-road veto
