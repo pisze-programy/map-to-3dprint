@@ -191,7 +191,7 @@ function _extractRoleChainsJS(wayNodeLists, role, nodesToPts, Cx, Cy, tol, close
           }
           if (outIdx === -1) {
             const area = Math.abs(polyAreaSignedJS(pts));
-            if (area > 0.02) closedLoops.push({ poly: pts, area, role });
+            if (area > 0.003) closedLoops.push({ poly: pts, area, role });
           } else {
             // Closed ring crosses or touches bbox boundary: rotate seam to outside vertex
             // so interior arcs clip into clean boundary-to-boundary chords.
@@ -291,7 +291,7 @@ function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, 
   const snapNearBoundary = (pt) => {
     const dx = Cx - Math.abs(pt[0]);
     const dy = Cy - Math.abs(pt[1]);
-    if (Math.min(dx, dy) > 1.6) return null;
+    if (Math.min(dx, dy) > 2.4) return null;
     if (dx <= dy) return [pt[0] >= 0 ? Cx : -Cx, Math.max(-Cy, Math.min(Cy, pt[1]))];
     return [Math.max(-Cx, Math.min(Cx, pt[0])), pt[1] >= 0 ? Cy : -Cy];
   };
@@ -809,22 +809,37 @@ function stitchCoastlineSeaPolysJS(coastWays, halfW, halfH, waterPolys) {
   const classifyClosedCoastRing = (ring) => {
     if (!ring || ring.length < 3) return;
     const sArea = polyAreaSignedJS(ring);
-    if (sArea < -0.04) {
+    if (sArea < -0.025) {
       // Clockwise -> interior on RIGHT -> sea/lagoon basin
       seaPolysOut.push(ring);
-    } else if (sArea > 0.04) {
-      // Counter-clockwise -> interior on LEFT -> dry land island inside sea
+    } else if (sArea > 0.0025) {
+      // Counter-clockwise -> interior on LEFT -> dry land island / rock islet inside sea
       landIslands.push(ring);
     }
   };
 
-  for (const ch of chains) {
+  for (const rawCh of chains) {
+    let ch = rawCh;
     if (ch.length >= 4 && Math.hypot(ch[0][0] - ch[ch.length - 1][0], ch[0][1] - ch[ch.length - 1][1]) < 0.45) {
-      // Clip closed ring if it extends wildly outside [-Cx, Cx] x [-Cy, Cy], or keep if wholly inside
-      const allInside = ch.every(p => Math.abs(p[0]) <= Cx + 0.05 && Math.abs(p[1]) <= Cy + 0.05);
-      if (allInside) {
+      // Keep closed ring intact if wholly inside [-Cx, Cx] x [-Cy, Cy]; otherwise rotate seam
+      // to an outside vertex so interior arcs clip into clean boundary-to-boundary directed chords.
+      let outIdx = -1;
+      for (let k = 0; k < ch.length; k++) {
+        if (Math.abs(ch[k][0]) > Cx + 0.05 || Math.abs(ch[k][1]) > Cy + 0.05) {
+          outIdx = k;
+          break;
+        }
+      }
+      if (outIdx === -1) {
         classifyClosedCoastRing(ch);
         continue;
+      }
+      const baseRing = Math.hypot(ch[0][0] - ch[ch.length - 1][0], ch[0][1] - ch[ch.length - 1][1]) < 0.02
+        ? ch.slice(0, -1)
+        : ch.slice();
+      if (baseRing.length >= 3) {
+        const safeOut = Math.min(outIdx, baseRing.length - 1);
+        ch = baseRing.slice(safeOut).concat(baseRing.slice(0, safeOut + 1));
       }
     }
 
@@ -992,7 +1007,15 @@ function stitchCoastlineSeaPolysJS(coastWays, halfW, halfH, waterPolys) {
   }
 
   for (const sp of seaPolysOut) {
-    const holes = landIslands.filter(isl => isl.length >= 3 && pointInPolyLocal(isl[0][0], isl[0][1], sp));
+    const holes = landIslands.filter(isl => {
+      if (!isl || isl.length < 3) return false;
+      const probe = _pickLoopProbePtJS(isl, Cx, Cy);
+      if (!pointInPolyLocal(probe[0], probe[1], sp)) return false;
+      for (let i = 0; i < isl.length; i++) {
+        if (!pointInPolyLocal(isl[i][0], isl[i][1], sp)) return false;
+      }
+      return true;
+    });
     waterPolys.push({ outer: sp, holes, name: 'Morze / Zatoka' });
   }
 }
