@@ -72,10 +72,10 @@
         <select id="printerSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none cursor-pointer min-w-0 max-w-[220px] sm:max-w-none truncate">
           <optgroup label="Żywica SLA/MSLA — Anycubic Photon Mono 4 (153.4 × 87 × 165 mm, max 2.2 L)">
             <option value="mono4_custom" selected>Photon Mono 4 • Dowolny Format cm (Auto-Siatka)</option>
-            <option value="mono4_84_1x1">Photon Mono 4 • Mały Kwadrat 84×84 mm (1 Kafel 1×1 na płasko)</option>
-            <option value="mono4_150_1x2">Photon Mono 4 • Kwadrat 150×150 mm (2 Kafle 1×2 po 150×75 mm)</option>
-            <option value="mono4_168_2x2">Photon Mono 4 • Kwadrat 168×168 mm (4 Kafle 2×2 po 84×84 mm)</option>
-            <option value="mono4_252_2x3">Photon Mono 4 • Duży 252×252 mm (6 Kafli 2×3 po 126×84 mm)</option>
+            <option value="mono4_75x84_1x1">Photon Mono 4 • 75×84 mm (1 Kafel 1×1 na płasko)</option>
+            <option value="mono4_150x168_2x2">Photon Mono 4 • 150×168 mm (4 Kafle 2×2 po 75×84 mm)</option>
+            <option value="mono4_225x252_3x3">Photon Mono 4 • 225×252 mm (9 Kafli 3×3 po 75×84 mm)</option>
+            <option value="mono4_150_1x2">Photon Mono 4 • 150×150 mm (2 Kafle 1×2 po 150×75 mm)</option>
             <option value="mono4_296_2x4">Photon Mono 4 • Format XL 296×296 mm (8 Kafli 2×4 po 148×74 mm)</option>
           </optgroup>
           <optgroup label="Wielokolorowe FDM (z marginesem stołu)">
@@ -126,12 +126,12 @@
           <div class="grid grid-cols-2 gap-1.5">
             <div class="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1">
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">Szer:</span>
-              <input id="targetWidthCmInput" type="number" min="8" max="150" step="1" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
+              <input id="targetWidthCmInput" type="number" min="7.5" max="150" step="0.5" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">cm</span>
             </div>
             <div class="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1">
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">Wys:</span>
-              <input id="targetHeightCmInput" type="number" min="8" max="150" step="1" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
+              <input id="targetHeightCmInput" type="number" min="7.5" max="150" step="0.5" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">cm</span>
             </div>
           </div>
@@ -483,6 +483,20 @@
           <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
             <div class="text-xs text-[var(--muted-foreground)]">Kafle / Bryły</div>
             <div id="statVolumes" class="text-xs font-bold font-mono mt-0.5">1×1 (6 warstw)</div>
+          </div>
+        </div>
+
+        <!-- Anycubic Photon Mono 4 Dual-Tile Pairing Schedule -->
+        <div id="mono4PairingSchedulePanel" class="hidden bg-[var(--background)] border border-[var(--border)] rounded-lg p-2 text-xs space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-[var(--foreground)] flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+              Harmonogram wsadowy Mono 4:
+            </span>
+            <span id="mono4PairingBadge" class="font-mono text-[11px] text-blue-400 font-bold">4 kafle = 2 wsady (-48% Z)</span>
+          </div>
+          <div id="mono4PairingList" class="text-[11px] font-mono text-[var(--muted-foreground)] space-y-0.5 max-h-24 overflow-y-auto">
+            <!-- Populated dynamically -->
           </div>
         </div>
 

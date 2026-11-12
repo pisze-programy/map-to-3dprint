@@ -82,12 +82,12 @@ Staged visual screenshots captured directly from the running WebGL canvas during
 |:---|:---|:---:|:---:|:---:|
 | `tests/e2e/screenshots/01_bootstrap_initial.png` | Initial boot & empty frame UI state | 179,131 bytes | 1280 × 720 | Valid PNG Header, Canvas Readable |
 | `tests/e2e/screenshots/01_bootstrap_canvas.png` | Initial clean WebGL 3D canvas surface | 20,440 bytes | 594 × 952 | Valid PNG Header, Canvas Readable |
-| `tests/e2e/screenshots/02_parameters_decoupled.png` | Decoupled 2D parameter adjustment | 166,797 bytes | 1280 × 720 | Valid PNG Header, 2D Overlay Visible |
-| `tests/e2e/screenshots/03_progressive_streaming.png` | Warsaw progressive streaming during render | 280,734 bytes | 1280 × 720 | Valid PNG Header, Progressive Layers |
-| `tests/e2e/screenshots/04_render_canvas.png` | Warsaw 3D model rendered WebGL canvas | 265,399 bytes | 594 × 952 | Valid PNG Header, Pixel Diversity > 2 |
-| `tests/e2e/screenshots/04_render_complete.png` | Complete Warsaw 3D render with UI panels | 470,990 bytes | 1280 × 720 | Valid PNG Header, Pixel Diversity > 2 |
-| `tests/e2e/screenshots/05_capetown_progressive.png` | Cape Town live progressive stream stage | 185,577 bytes | 1280 × 720 | Valid PNG Header, Live Stream Active |
-| `tests/e2e/screenshots/05_capetown_complete.png` | Cape Town complete 3D preview stage | 342,006 bytes | 1280 × 720 | Valid PNG Header, Pixel Diversity > 2 |
+| `tests/e2e/screenshots/02_parameters_decoupled.png` | Decoupled 2D parameter adjustment | 250,030 bytes | 1280 × 720 | Valid PNG Header, 2D Overlay Visible |
+| `tests/e2e/screenshots/03_progressive_streaming.png` | Warsaw progressive streaming during render | 280,735 bytes | 1280 × 720 | Valid PNG Header, Progressive Layers |
+| `tests/e2e/screenshots/04_render_canvas.png` | Warsaw 3D model rendered WebGL canvas | 265,484 bytes | 594 × 952 | Valid PNG Header, Pixel Diversity > 2 |
+| `tests/e2e/screenshots/04_render_complete.png` | Complete Warsaw 3D render with UI panels | 471,185 bytes | 1280 × 720 | Valid PNG Header, Pixel Diversity > 2 |
+| `tests/e2e/screenshots/05_capetown_progressive.png` | Cape Town live progressive stream stage | 291,640 bytes | 1280 × 720 | Valid PNG Header, Live Stream Active |
+| `tests/e2e/screenshots/05_capetown_complete.png` | Cape Town complete 3D preview stage | 348,287 bytes | 1280 × 720 | Valid PNG Header, Pixel Diversity > 2 |
 
 ---
 

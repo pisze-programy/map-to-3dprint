@@ -152,36 +152,91 @@ function triangulateCutLoopExact(loopPts) {
       if (cross > 1e-9) tris.push([a, b, c]);
     }
   }
+
+  // Post-triangulation T-junction & dropped collinear vertex repair:
+  // Ensures any boundary vertex omitted due to collinear ears is integrated into adjacent triangle edges.
+  if (tris.length > 0) {
+    const key2 = p => p[0].toFixed(5) + '_' + p[1].toFixed(5);
+    const used = new Set();
+    for (let i = 0; i < tris.length; i++) {
+      used.add(key2(tris[i][0]));
+      used.add(key2(tris[i][1]));
+      used.add(key2(tris[i][2]));
+    }
+    const missing = [];
+    for (let i = 0; i < pts.length; i++) {
+      if (!used.has(key2(pts[i]))) missing.push(pts[i]);
+    }
+    for (let m = 0; m < missing.length; m++) {
+      const p = missing[m];
+      let bestTi = -1, bestEdge = null, bestDist = Infinity;
+      for (let ti = 0; ti < tris.length; ti++) {
+        const [v0, v1, v2] = tris[ti];
+        const edges = [
+          [v0, v1, v2],
+          [v1, v2, v0],
+          [v2, v0, v1]
+        ];
+        for (let ei = 0; ei < 3; ei++) {
+          const [a, b, apex] = edges[ei];
+          const dx = b[0] - a[0], dy = b[1] - a[1];
+          const lenSq = dx * dx + dy * dy;
+          if (lenSq < 1e-10) continue;
+          const cross = (p[0] - a[0]) * dy - (p[1] - a[1]) * dx;
+          const dist = Math.abs(cross) / Math.sqrt(lenSq);
+          if (dist > 1e-3) continue;
+          const dot = (p[0] - a[0]) * dx + (p[1] - a[1]) * dy;
+          const t = dot / lenSq;
+          if (t > 1e-7 && t < 1 - 1e-7) {
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestTi = ti;
+              bestEdge = [a, b, apex];
+              if (dist < 1e-9) break;
+            }
+          }
+        }
+        if (bestDist < 1e-9) break;
+      }
+      if (bestTi >= 0 && bestEdge) {
+        const [a, b, apex] = bestEdge;
+        tris.splice(bestTi, 1, [a, p, apex], [p, b, apex]);
+      }
+    }
+  }
+
   return tris;
 }
 
 // Clips closed 2-manifold triangle mesh against an axis plane and caps the cut face with 100% manifold topology
-function clipClosedMeshByAxisPlane(tris, axis, cutVal, keepGreater) {
+function clipClosedMeshByAxisPlane(tris, axis, cutVal, keepGreater, allowPerturb = false) {
   if (!tris || tris.length === 0) return [];
 
-  // Generic-position micro-perturbation (<= 6 microns inward ONLY when cutVal grazes a vertex within < 5e-4)
-  // Prevents sub-micron sliver triangles from collapsing under 0.001mm (.toFixed(3)) STL/3MF vertex welding!
+  // Generic-position micro-perturbation (<= 6 microns inward ONLY when allowPerturb is true and cutVal grazes a vertex within < 5e-4)
+  // Refined for exact bounding envelope cuts so corner vertices from prior orthogonal cuts are not shaved into nanometer slivers.
   let effCut = cutVal;
-  const minClearForCut = (cVal) => {
-    let minD = Infinity;
-    for (let i = 0; i < tris.length; i++) {
-      const t = tris[i];
-      const d0 = Math.abs(t.v0[axis] - cVal); if (d0 < minD) minD = d0;
-      const d1 = Math.abs(t.v1[axis] - cVal); if (d1 < minD) minD = d1;
-      const d2 = Math.abs(t.v2[axis] - cVal); if (d2 < minD) minD = d2;
-      if (minD < 5e-4) return minD;
-    }
-    return minD;
-  };
-  let bestClear = minClearForCut(cutVal);
-  if (bestClear < 5e-4) {
-    for (let step = 1; step <= 8; step++) {
-      const cand = keepGreater ? (cutVal + step * 5.5e-4) : (cutVal - step * 5.5e-4);
-      const cl = minClearForCut(cand);
-      if (cl > bestClear) {
-        bestClear = cl;
-        effCut = cand;
-        if (cl >= 5e-4) break;
+  if (allowPerturb) {
+    const minClearForCut = (cVal) => {
+      let minD = Infinity;
+      for (let i = 0; i < tris.length; i++) {
+        const t = tris[i];
+        const d0 = Math.abs(t.v0[axis] - cVal); if (d0 > 1e-6 && d0 < minD) minD = d0;
+        const d1 = Math.abs(t.v1[axis] - cVal); if (d1 > 1e-6 && d1 < minD) minD = d1;
+        const d2 = Math.abs(t.v2[axis] - cVal); if (d2 > 1e-6 && d2 < minD) minD = d2;
+        if (minD < 5e-4) return minD;
+      }
+      return minD;
+    };
+    let bestClear = minClearForCut(cutVal);
+    if (bestClear > 1e-6 && bestClear < 5e-4) {
+      for (let step = 1; step <= 8; step++) {
+        const cand = keepGreater ? (cutVal + step * 5.5e-4) : (cutVal - step * 5.5e-4);
+        const cl = minClearForCut(cand);
+        if (cl > bestClear) {
+          bestClear = cl;
+          effCut = cand;
+          if (cl >= 5e-4) break;
+        }
       }
     }
   }
@@ -241,7 +296,7 @@ function clipClosedMeshByAxisPlane(tris, axis, cutVal, keepGreater) {
     }
 
     const dSeg = Math.hypot(P1[0] - P2[0], P1[1] - P2[1], P1[2] - P2[2]);
-    if (emittedAny && dSeg > 1e-8 && key(P1) !== key(P2)) {
+    if (dSeg > 1e-8 && key(P1) !== key(P2)) {
       cutSegs.push([P2, P1]);
     }
   }
@@ -390,13 +445,13 @@ function clipMeshToBox3D(shellTris, xMin, xMax, yMin, yMax, tileId = 0) {
   }
 
   let cur = shellTris;
-  cur = clipClosedMeshByAxisPlane(cur, 0, xMin, true);
+  cur = clipClosedMeshByAxisPlane(cur, 0, xMin, true, false);
   if (cur.length === 0) return [];
-  cur = clipClosedMeshByAxisPlane(cur, 0, xMax, false);
+  cur = clipClosedMeshByAxisPlane(cur, 0, xMax, false, false);
   if (cur.length === 0) return [];
-  cur = clipClosedMeshByAxisPlane(cur, 1, yMin, true);
+  cur = clipClosedMeshByAxisPlane(cur, 1, yMin, true, false);
   if (cur.length === 0) return [];
-  cur = clipClosedMeshByAxisPlane(cur, 1, yMax, false);
+  cur = clipClosedMeshByAxisPlane(cur, 1, yMax, false, false);
   if (cur.length === 0) return [];
 
   const fix = v => Math.abs(v) < 1e-9 ? 0 : v;

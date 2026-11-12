@@ -403,7 +403,6 @@ test.describe('Tier 4: Uncached Live Locations, Visual Verification & Explicit R
     const rotBtn = page.locator('button[data-rot-deg="45"]');
     await expect(rotBtn).toBeVisible();
     await rotBtn.click();
-    if (await rotBtn.count() > 0) await rotBtn.click();
 
     const s2Page = await captureAndInspectScreenshot(page, null, '02_parameters_decoupled.png', { minBytes: 15000 });
     expect(s2Page.size).toBeGreaterThan(15000);
