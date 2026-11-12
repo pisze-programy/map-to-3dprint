@@ -53,6 +53,151 @@ function isUndergroundOrSkippedBuildingJS(tags) {
   return false;
 }
 
+function _polyAreaSignedS3DB(pts) {
+  if (!pts || pts.length < 3) return 0;
+  if (typeof polyAreaSignedJS === 'function') return polyAreaSignedJS(pts);
+  let area = 0;
+  for (let i = 0, n = pts.length; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    area += a[0] * b[1] - b[0] * a[1];
+  }
+  return area * 0.5;
+}
+
+function _pointInPolyS3DB(px, py, poly) {
+  if (!poly || poly.length < 3) return false;
+  if (typeof pointInPolyLocal === 'function') return pointInPolyLocal(px, py, poly);
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1];
+    const xj = poly[j][0], yj = poly[j][1];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-12) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function _minBoundaryDistSqS3DB(px, py, outerPts, holesPts) {
+  let minDSq = Infinity;
+  const checkRing = (ring) => {
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const a = ring[i], b = ring[(i + 1) % n];
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const lenSq = dx * dx + dy * dy;
+      const t = lenSq > 1e-12 ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / lenSq)) : 0;
+      const qx = a[0] + t * dx, qy = a[1] + t * dy;
+      const dSq = (px - qx) * (px - qx) + (py - qy) * (py - qy);
+      if (dSq < minDSq) minDSq = dSq;
+    }
+  };
+  checkRing(outerPts);
+  if (holesPts) {
+    for (let h = 0; h < holesPts.length; h++) {
+      if (holesPts[h] && holesPts[h].length >= 3) checkRing(holesPts[h]);
+    }
+  }
+  return minDSq;
+}
+
+// Guaranteed solid interior point strictly inside outerPts and strictly outside all holesPts
+// (handles O-shaped courtyard rings, U/C/L-shaped wings, and concave footprints).
+function computeSolidInteriorPtJS(outerPts, holesPts) {
+  if (!outerPts || outerPts.length === 0) return [0, 0];
+  let sx = 0, sy = 0, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < outerPts.length; i++) {
+    const p = outerPts[i];
+    sx += p[0]; sy += p[1];
+    if (p[1] < minY) minY = p[1];
+    if (p[1] > maxY) maxY = p[1];
+  }
+  const cx = sx / outerPts.length, cy = sy / outerPts.length;
+  const holes = (holesPts || []).filter(h => h && h.length >= 3);
+  const inAnyHole = (px, py) => {
+    for (let h = 0; h < holes.length; h++) {
+      if (_pointInPolyS3DB(px, py, holes[h])) return true;
+    }
+    return false;
+  };
+
+  if (_pointInPolyS3DB(cx, cy, outerPts) && !inAnyHole(cx, cy) && _minBoundaryDistSqS3DB(cx, cy, outerPts, holes) > 1e-6) {
+    return [cx, cy];
+  }
+
+  // Collect candidate horizontal scanline Y-levels from sorted vertex Y intervals
+  const ys = [];
+  for (let i = 0; i < outerPts.length; i++) ys.push(outerPts[i][1]);
+  for (let h = 0; h < holes.length; h++) {
+    for (let i = 0; i < holes[h].length; i++) ys.push(holes[h][i][1]);
+  }
+  ys.sort((a, b) => a - b);
+
+  const yMids = [];
+  for (let i = 0; i < ys.length - 1; i++) {
+    if (ys[i + 1] - ys[i] > 1e-5) yMids.push((ys[i] + ys[i + 1]) * 0.5);
+  }
+  if (maxY - minY > 1e-5) {
+    for (let k = 1; k <= 7; k++) yMids.push(minY + (maxY - minY) * (k / 8));
+  }
+
+  const maxScans = 28;
+  const scanYs = yMids.length <= maxScans
+    ? yMids
+    : Array.from({ length: maxScans }, (_, idx) => yMids[Math.floor((idx * yMids.length) / maxScans)]);
+
+  let bestPt = null;
+  let bestScore = -1;
+
+  const collectHits = (ring, yScan, xs) => {
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const a = ring[i], b = ring[(i + 1) % n];
+      if ((a[1] > yScan) !== (b[1] > yScan)) {
+        xs.push(a[0] + (yScan - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+      }
+    }
+  };
+
+  for (let si = 0; si < scanYs.length; si++) {
+    const yScan = scanYs[si];
+    const xs = [];
+    collectHits(outerPts, yScan, xs);
+    for (let h = 0; h < holes.length; h++) collectHits(holes[h], yScan, xs);
+    if (xs.length < 2) continue;
+    xs.sort((a, b) => a - b);
+
+    for (let k = 0; k < xs.length - 1; k++) {
+      const w = xs[k + 1] - xs[k];
+      if (w <= 1e-5) continue;
+      const xm = (xs[k] + xs[k + 1]) * 0.5;
+      if (_pointInPolyS3DB(xm, yScan, outerPts) && !inAnyHole(xm, yScan)) {
+        const clr = Math.sqrt(_minBoundaryDistSqS3DB(xm, yScan, outerPts, holes));
+        const score = Math.min(w * 0.5, clr);
+        if (score > bestScore) {
+          bestScore = score;
+          bestPt = [xm, yScan];
+        }
+      }
+    }
+  }
+
+  if (bestPt) return bestPt;
+
+  // Fallback for ultra-thin degenerate sliver: step slightly inward from longest outer edge midpoint
+  const sign = _polyAreaSignedS3DB(outerPts) >= 0 ? 1 : -1;
+  for (let i = 0, n = outerPts.length; i < n; i++) {
+    const a = outerPts[i], b = outerPts[(i + 1) % n];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy);
+    if (len > 1e-5) {
+      const nx = (-dy / len) * sign, ny = (dx / len) * sign;
+      const px = (a[0] + b[0]) * 0.5 + nx * Math.min(1e-3, len * 0.05);
+      const py = (a[1] + b[1]) * 0.5 + ny * Math.min(1e-3, len * 0.05);
+      if (_pointInPolyS3DB(px, py, outerPts) && !inAnyHole(px, py)) return [px, py];
+    }
+  }
+  return [outerPts[0][0], outerPts[0][1]];
+}
+
 function createS3DBClientCollector(halfW, halfH, metersToUnits) {
   const candidateParents = [];
   const candidateParts = [];
@@ -67,10 +212,19 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
     }
     const cx = sx / outerPts.length, cy = sy / outerPts.length;
-    if (Math.abs(cx) > halfW + 4.0 || Math.abs(cy) > halfH + 4.0) return;
 
-    const outerArea = Math.abs(polyAreaSignedJS(outerPts));
-    const holesArea = (holesPts || []).reduce((acc, h) => acc + (h.length >= 3 ? Math.abs(polyAreaSignedJS(h)) : 0), 0);
+    const validHoles = (holesPts || []).filter(h => {
+      if (!Array.isArray(h) || h.length < 3) return false;
+      const hip = computeSolidInteriorPtJS(h, []);
+      return _pointInPolyS3DB(hip[0], hip[1], outerPts);
+    });
+    const interiorPt = computeSolidInteriorPtJS(outerPts, validHoles);
+
+    if (Math.min(Math.abs(cx), Math.abs(interiorPt[0])) > halfW + 4.0 ||
+        Math.min(Math.abs(cy), Math.abs(interiorPt[1])) > halfH + 4.0) return;
+
+    const outerArea = Math.abs(_polyAreaSignedS3DB(outerPts));
+    const holesArea = validHoles.reduce((acc, h) => acc + Math.abs(_polyAreaSignedS3DB(h)), 0);
     const netArea = Math.max(1e-4, outerArea - holesArea);
     let minH = parseFloatTagJS(tags.min_height, 0) || 0;
     const minLvl = parseFloatTagJS(tags['building:min_level'], 0) || 0;
@@ -80,14 +234,16 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       wid: osmId,
       tags: { ...tags },
       pts: outerPts,
-      holes: holesPts || [],
+      holes: validHoles,
       cx, cy,
+      interiorPt,
       bbox: [minX, minY, maxX, maxY],
       area: outerArea,
       netArea,
       minH,
       hasParts: false,
       partCount: 0,
+      groundPartCount: 0,
       partsAreaSum: 0,
       groundPartsAreaSum: 0,
       fromBuildingRel: fromBldRel,
@@ -222,28 +378,52 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
     for (const part of candidateParts) {
       let bestParent = null;
       const enclosingParents = [];
+      const [pix, piy] = part.interiorPt;
+      const [pMinX, pMinY, pMaxX, pMaxY] = part.bbox;
+
       if (part.groupId !== null && parentByGroup.has(part.groupId)) {
         const cands = parentByGroup.get(part.groupId);
-        enclosingParents.push(...cands);
-        bestParent = cands.reduce((best, p) => (
-          Math.abs(p.cx - part.cx) + Math.abs(p.cy - part.cy) < Math.abs(best.cx - part.cx) + Math.abs(best.cy - part.cy) ? p : best
-        ), cands[0]);
+        const overlappingCands = cands.filter(p => {
+          const [parMinX, parMinY, parMaxX, parMaxY] = p.bbox;
+          if (pMinX > parMaxX + 0.25 || pMaxX < parMinX - 0.25 || pMinY > parMaxY + 0.25 || pMaxY < parMinY - 0.25) return false;
+          return !p.holes.some(h => h.length >= 3 && _pointInPolyS3DB(pix, piy, h));
+        });
+        const useCands = overlappingCands.length > 0 ? overlappingCands : cands;
+        enclosingParents.push(...useCands);
+        bestParent = useCands.reduce((best, p) => (
+          Math.abs(p.interiorPt[0] - pix) + Math.abs(p.interiorPt[1] - piy) <
+          Math.abs(best.interiorPt[0] - pix) + Math.abs(best.interiorPt[1] - piy) ? p : best
+        ), useCands[0]);
       }
+
       let bestArea = Infinity;
-      const [pMinX, pMinY, pMaxX, pMaxY] = part.bbox;
       for (const parent of candidateParents) {
         const [parMinX, parMinY, parMaxX, parMaxY] = parent.bbox;
         if (pMinX > parMaxX + 0.12 || pMaxX < parMinX - 0.12 || pMinY > parMaxY + 0.12 || pMaxY < parMinY - 0.12) continue;
-        const inHole = parent.holes.some(h => pointInPolyLocal(part.cx, part.cy, h));
+        const inHole = parent.holes.some(h => h.length >= 3 && _pointInPolyS3DB(pix, piy, h));
         let enclosed = false;
-        if (!inHole && pointInPolyLocal(part.cx, part.cy, parent.pts)) {
+        if (!inHole && _pointInPolyS3DB(pix, piy, parent.pts)) {
           enclosed = true;
-        } else {
-          let inCnt = 0;
-          for (const pt of part.pts) {
-            if (pointInPolyLocal(pt[0], pt[1], parent.pts) && !parent.holes.some(h => pointInPolyLocal(pt[0], pt[1], h))) inCnt++;
+        } else if (!inHole) {
+          // Sample vertices & edge midpoints nudged slightly toward solid interiorPt so perimeter
+          // wings sharing exact boundary edges with parent outlines reliably register as enclosed.
+          let inCnt = 0, totalSamples = 0;
+          const nPts = part.pts.length;
+          for (let k = 0; k < nPts; k++) {
+            const a = part.pts[k], b = part.pts[(k + 1) % nPts];
+            const vx = a[0] + (pix - a[0]) * 1e-3, vy = a[1] + (piy - a[1]) * 1e-3;
+            totalSamples++;
+            if (_pointInPolyS3DB(vx, vy, parent.pts) && !parent.holes.some(h => h.length >= 3 && _pointInPolyS3DB(vx, vy, h))) {
+              inCnt++;
+            }
+            const mx0 = (a[0] + b[0]) * 0.5, my0 = (a[1] + b[1]) * 0.5;
+            const mx = mx0 + (pix - mx0) * 1e-3, my = my0 + (piy - my0) * 1e-3;
+            totalSamples++;
+            if (_pointInPolyS3DB(mx, my, parent.pts) && !parent.holes.some(h => h.length >= 3 && _pointInPolyS3DB(mx, my, h))) {
+              inCnt++;
+            }
           }
-          if (inCnt >= part.pts.length * 0.55) enclosed = true;
+          if (totalSamples > 0 && inCnt >= totalSamples * 0.55) enclosed = true;
         }
         if (enclosed) {
           if (!enclosingParents.includes(parent)) enclosingParents.push(parent);
@@ -258,7 +438,10 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
         ep.hasParts = true;
         ep.partCount++;
         ep.partsAreaSum += part.netArea;
-        if (part.minH <= 3.5) ep.groundPartsAreaSum += part.netArea;
+        if (part.minH <= 3.5) {
+          ep.groundPartsAreaSum += part.netArea;
+          ep.groundPartCount++;
+        }
       }
 
       if (bestParent) {
@@ -291,7 +474,9 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       if (parent.hasParts) {
         const groundCov = parent.groundPartsAreaSum / Math.max(1e-4, parent.netArea);
         const totalCov = parent.partsAreaSum / Math.max(1e-4, parent.netArea);
-        if (groundCov >= 0.30 || totalCov >= 0.35 || (parent.fromBuildingRel && totalCov >= 0.25)) suppress = true;
+        const relOutlineDefined = parent.fromBuildingRel && (groundCov >= 0.12 || totalCov >= 0.15);
+        const holelessMultiWing = parent.holes.length === 0 && parent.groundPartCount >= 2 && groundCov >= 0.16;
+        if (groundCov >= 0.28 || totalCov >= 0.34 || relOutlineDefined || holelessMultiWing) suppress = true;
       }
       if (!suppress) {
         addBuildingRecord(parent.wid, parent.tags, parent.pts, parent.holes, parent.groupId || parent.wid, false);
@@ -305,12 +490,18 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
   return { registerCandidate, addBuildingRecord, resolveAndEmitS3DBBuildings, buildings };
 }
 
+if (typeof window !== 'undefined') {
+  window.computeSolidInteriorPtJS = computeSolidInteriorPtJS;
+  window.createS3DBClientCollector = createS3DBClientCollector;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     SKIP_BUILDING_VALS_JS,
     parseFloatTagJS,
     parseRoofDirectionJS,
     isUndergroundOrSkippedBuildingJS,
+    computeSolidInteriorPtJS,
     createS3DBClientCollector
   };
 }

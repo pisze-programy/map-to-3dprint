@@ -8,6 +8,96 @@ if (typeof SKIP_BUILDING_VALS_JS === 'undefined' && typeof require !== 'undefine
   Object.assign(global, require('./s3db_client_matcher.js'));
 }
 
+function _bldPolyAreaAbsJS(pts) {
+  if (!pts || pts.length < 3) return 0;
+  if (typeof polyAreaSignedJS === 'function') return Math.abs(polyAreaSignedJS(pts));
+  let s = 0;
+  for (let i = 0, n = pts.length; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    s += a[0] * b[1] - b[0] * a[1];
+  }
+  return Math.abs(s) * 0.5;
+}
+
+function _bldPointInPolyJS(px, py, poly) {
+  if (!poly || poly.length < 3) return false;
+  if (typeof pointInPolyLocal === 'function') return pointInPolyLocal(px, py, poly);
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1];
+    const xj = poly[j][0], yj = poly[j][1];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-12) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// Pairs each inner hole ring exclusively with its minimal-area enclosing outer ring.
+// Handles multi-outer multipolygons AND islands-inside-courtyard-holes cleanly.
+function pairMultipolygonHolesForOutersJS(outerPolys, innerPolys) {
+  if (!outerPolys || outerPolys.length === 0) return [];
+  const holesPerOuter = outerPolys.map(() => []);
+  if (!innerPolys || innerPolys.length === 0) return holesPerOuter;
+
+  const outerAreas = outerPolys.map(op => _bldPolyAreaAbsJS(op));
+  const outerBboxes = outerPolys.map(op => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let i = 0; i < op.length; i++) {
+      const p = op[i];
+      if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+    }
+    return [minX, minY, maxX, maxY];
+  });
+
+  for (let hi = 0; hi < innerPolys.length; hi++) {
+    const hole = innerPolys[hi];
+    if (!hole || hole.length < 3) continue;
+    const hArea = _bldPolyAreaAbsJS(hole);
+    if (hArea < 1e-6) continue;
+
+    const probePt = (typeof computeSolidInteriorPtJS === 'function')
+      ? computeSolidInteriorPtJS(hole, [])
+      : hole[0];
+
+    let bestOuterIdx = -1;
+    let bestOuterArea = Infinity;
+
+    for (let oi = 0; oi < outerPolys.length; oi++) {
+      const oArea = outerAreas[oi];
+      if (oArea <= hArea * 1.0001 || oArea >= bestOuterArea) continue;
+      const [minX, minY, maxX, maxY] = outerBboxes[oi];
+      if (probePt[0] < minX - 0.25 || probePt[0] > maxX + 0.25 || probePt[1] < minY - 0.25 || probePt[1] > maxY + 0.25) continue;
+
+      const op = outerPolys[oi];
+      let contained = _bldPointInPolyJS(probePt[0], probePt[1], op) || _bldPointInPolyJS(hole[0][0], hole[0][1], op);
+      if (!contained) {
+        // Fallback when hole[0] shares a node or grazes a simplified outer edge: check sampled edge midpoints
+        const step = Math.max(1, Math.floor(hole.length / 8));
+        let tested = 0, insideCnt = 0;
+        for (let k = 0; k < hole.length; k += step) {
+          const pA = hole[k], pB = hole[(k + 1) % hole.length];
+          tested++;
+          if (_bldPointInPolyJS((pA[0] + pB[0]) * 0.5, (pA[1] + pB[1]) * 0.5, op)) insideCnt++;
+        }
+        if (tested > 0 && insideCnt >= Math.ceil(tested * 0.6)) contained = true;
+      }
+
+      if (contained) {
+        bestOuterArea = oArea;
+        bestOuterIdx = oi;
+      }
+    }
+
+    if (bestOuterIdx >= 0) {
+      holesPerOuter[bestOuterIdx].push(hole);
+    }
+  }
+
+  return holesPerOuter;
+}
+
 function collectOsmBuildingSampleCandidateJS(w, wt, wn, isBrWay, isTunWay, nodes, fetchHalfW, fetchHalfH, allBldCandidates) {
   if (wt.building && wn.length >= 4 && wn[0] === wn[wn.length - 1] && !isBrWay && !isTunWay) {
     const bVal = String(wt.building).toLowerCase();
@@ -89,7 +179,10 @@ function processOsmS3DBRelationsPass1BJS(ctx) {
           const st = stitchedRelPolys.get(oRid);
           if (st) {
             for (const wid of st.memberWayIds) usedWays.add(wid);
-            for (const op of st.outerPolys) s3db.registerCandidate(oRid, oTags, op, st.innerPolys, false, rel.id, true);
+            const pairedHoles = pairMultipolygonHolesForOutersJS(st.outerPolys, st.innerPolys);
+            for (let oi = 0; oi < st.outerPolys.length; oi++) {
+              s3db.registerCandidate(oRid, oTags, st.outerPolys[oi], pairedHoles[oi] || [], false, rel.id, true);
+            }
           }
         }
         for (const pWid of partWays) {
@@ -111,7 +204,10 @@ function processOsmS3DBRelationsPass1BJS(ctx) {
           const st = stitchedRelPolys.get(pRid);
           if (st) {
             for (const wid of st.memberWayIds) usedWays.add(wid);
-            for (const op of st.outerPolys) s3db.registerCandidate(pRid, pTags, op, st.innerPolys, true, rel.id, true);
+            const pairedHoles = pairMultipolygonHolesForOutersJS(st.outerPolys, st.innerPolys);
+            for (let oi = 0; oi < st.outerPolys.length; oi++) {
+              s3db.registerCandidate(pRid, pTags, st.outerPolys[oi], pairedHoles[oi] || [], true, rel.id, true);
+            }
           }
         }
       }
@@ -128,8 +224,9 @@ function processOsmBuildingMultipolygonJS(rel, tags, _raw, ctx) {
   if (!st) return true;
   for (const wid of st.memberWayIds) ctx.usedWays.add(wid);
   const isPart = Boolean(hasPart && !hasBld);
-  for (const op of st.outerPolys) {
-    ctx.s3db.registerCandidate(rel.id, tags, op, st.innerPolys, isPart, null, false);
+  const pairedHoles = pairMultipolygonHolesForOutersJS(st.outerPolys, st.innerPolys);
+  for (let oi = 0; oi < st.outerPolys.length; oi++) {
+    ctx.s3db.registerCandidate(rel.id, tags, st.outerPolys[oi], pairedHoles[oi] || [], isPart, null, false);
   }
   return true;
 }
@@ -168,6 +265,7 @@ function finalizeOsmBuildingsLayerJS(ctx) {
 }
 
 if (typeof window !== 'undefined') {
+  window.pairMultipolygonHolesForOutersJS = pairMultipolygonHolesForOutersJS;
   window.collectOsmBuildingSampleCandidateJS = collectOsmBuildingSampleCandidateJS;
   window.processOsmS3DBRelationsPass1BJS = processOsmS3DBRelationsPass1BJS;
   window.processOsmBuildingMultipolygonJS = processOsmBuildingMultipolygonJS;
@@ -177,6 +275,7 @@ if (typeof window !== 'undefined') {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    pairMultipolygonHolesForOutersJS,
     collectOsmBuildingSampleCandidateJS,
     processOsmS3DBRelationsPass1BJS,
     processOsmBuildingMultipolygonJS,
