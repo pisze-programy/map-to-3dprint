@@ -35,10 +35,11 @@ function buildTerrainAndMasks(scene, state) {
   const tileCols = Math.max(1, Math.min(50, state.tileCols || 1));
   const tileRows = Math.max(1, Math.min(100, state.tileRows || 1));
   const numTiles = tileCols * tileRows;
+  const printSpec = resolvePrintPhysicsSpec(state, scaleMm);
 
-  // Budget total terrain resolution (~180x180 crisp shoreline/DEM cells on normal grids, capped at 240x240 on 50x100 stress grids)
-  const maxAxisRes = 240;
-  const desiredAxisRes = 180;
+  // Budget total terrain resolution (higher SLA cell density on normal grids, capped at 240x240 on >100-tile stress grids)
+  const maxAxisRes = (printSpec.isResin && numTiles <= 100) ? 300 : 240;
+  const desiredAxisRes = (printSpec.isResin && numTiles <= 100) ? 220 : 180;
   const cellsPerCol = (numTiles <= 400)
     ? Math.max(1, Math.min(Math.floor(maxAxisRes / tileCols), Math.max(14, Math.round((desiredAxisRes * (totalWidthMm / maxDimMm)) / tileCols))))
     : Math.max(1, Math.min(14, Math.floor(maxAxisRes / tileCols)));
@@ -65,7 +66,9 @@ function buildTerrainAndMasks(scene, state) {
     return [(pt[0] - cropCX) * scaleToBed, (pt[1] - cropCY) * scaleToBed];
   }
 
-  const baseMaskRes = (numTiles <= 400 && maxDimMm >= 400) ? 864 : 720;
+  const baseMaskRes = (printSpec.isResin && numTiles <= 100)
+    ? (maxDimMm >= 350 ? 1280 : 1024)
+    : ((numTiles <= 400 && maxDimMm >= 400) ? 864 : 720);
   const MASK_RES_X = Math.max(256, Math.round(baseMaskRes * (totalWidthMm / maxDimMm)));
   const MASK_RES_Y = Math.max(256, Math.round(baseMaskRes * (totalHeightMm / maxDimMm)));
   const maskCanvas = (typeof document !== 'undefined' && document.createElement)
@@ -101,7 +104,7 @@ function buildTerrainAndMasks(scene, state) {
   }
 
   const maskEnv = {
-    MASK_RES_X, MASK_RES_Y, scaleMm, scaleToBed, pxPerUnit, toBed, bedToMask
+    MASK_RES_X, MASK_RES_Y, scaleMm, scaleToBed, pxPerUnit, toBed, bedToMask, printSpec
   };
 
   // 1. Water Mask & Smooth Euclidean SDF (delegated to water_masks.js)
@@ -111,7 +114,7 @@ function buildTerrainAndMasks(scene, state) {
   mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
   mctx.lineWidth = Math.max(0.85, Math.min(0.08, 0.14 / scaleMm) * pxPerUnit);
   (scene.buildings || []).forEach(b => {
-    if (b.hidden || b.btype === 'pier') return;
+    if (b.hidden || b.btype === 'pier' || b.isOutline) return;
     mctx.beginPath();
     b.outer.forEach((p, i) => {
       const bp = toBed(p);
@@ -133,7 +136,7 @@ function buildTerrainAndMasks(scene, state) {
   });
   const bldImg = safeGetImageData(mctx, 0, 0, MASK_RES_X, MASK_RES_Y).data;
   const bldMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
-  for (let i = 0; i < bldMask.length; i++) bldMask[i] = bldImg[i * 4 + 3] > 96 ? 1 : 0;
+  for (let i = 0; i < bldMask.length; i++) bldMask[i] = bldImg[i * 4 + 3] > 127 ? 1 : 0;
 
   // 3. Raw Greenery Mask (delegated to features_greenery.js)
   const rawGreenMask = buildRawGreeneryMask(scene, mctx, maskEnv);
@@ -143,14 +146,14 @@ function buildTerrainAndMasks(scene, state) {
 
   // 5. Finalize Greenery & Road/Footpath Masks
   const { greenMask, greenInnerDist, greenOuterDist } = finalizeGreeneryMask(
-    rawGreenMask, waterMask, shoreDist, bldMask, majorRoadImg, MASK_RES_X, MASK_RES_Y
+    rawGreenMask, waterMask, shoreDist, bldMask, majorRoadImg, MASK_RES_X, MASK_RES_Y, printSpec.isResin
   );
   const { majorRoadMask, parkPathOnGreenMask, parkPathOnGroundMask, roadAndBldMask } = finalizeRoadAndFootpathMasks(
     majorRoadImg, footpathImg, waterMask, shoreDist, bldMask, greenMask, greenInnerDist, greenOuterDist, MASK_RES_X, MASK_RES_Y
   );
 
   const maskCtx = {
-    totalWidthMm, totalHeightMm, maxDimMm, scaleMm, mmPerUnit, halfW, halfH,
+    totalWidthMm, totalHeightMm, maxDimMm, scaleMm, mmPerUnit, halfW, halfH, printSpec,
     tileCols, tileRows, numTiles, cellsPerCol, cellsPerRow, TERRAIN_RES_X, TERRAIN_RES_Y,
     cellStepX, cellStepY, kerfUnits, scaleToBed, cropCX, cropCY,
     MASK_RES_X, MASK_RES_Y, padW, padH, spanW, spanH, pxPerUnit,

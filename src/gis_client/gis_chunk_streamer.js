@@ -101,6 +101,8 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     targetWidthMm: options && options.targetWidthMm,
     targetHeightMm: options && options.targetHeightMm,
     rotationDeg: options && options.rotationDeg,
+    isResin: options && options.isResin !== undefined ? Boolean(options.isResin) : undefined,
+    xyPixelMm: options && options.xyPixelMm,
     lodSettings
   };
 
@@ -242,7 +244,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
             if (abortSignal && abortSignal.aborted) return;
             const partialElements = mergeAndDeduplicateElements(snapshotArrays, effectiveSpanM, lodQueryOpts);
             const partialScene = await buildSceneFromPreloadedGis(
-              south, west, north, east, `${title} (${snapLoaded}/${totalChunks})`, demNow, partialElements, 900, sceneOptions
+              south, west, north, east, `${title} (${snapLoaded}/${totalChunks})`, demNow, partialElements, 4500, sceneOptions
             );
             partialScene._isPartialPreview = true;
             if (!(abortSignal && abortSignal.aborted)) {
@@ -308,9 +310,10 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     });
   }
 
-  const maxBlds = (minBldFootprintM === 0 && effectiveSpanM <= 3800)
-    ? 4500
-    : (effectiveSpanM > 4500 ? 1550 : 2200);
+  const isResin = !(options && options.isResin === false);
+  const maxBlds = ((minBldFootprintM === 0 && effectiveSpanM <= 7500) || (isResin && effectiveSpanM <= 5500))
+    ? Infinity
+    : (effectiveSpanM > 12000 ? 2500 : 6000);
   const finalScene = await buildSceneFromPreloadedGis(south, west, north, east, title, dem, mergedElements, maxBlds, sceneOptions);
   finalScene._chunkStats = { rows, cols, loadedChunks, totalChunks, lodTier, demZoom: dem.zoom || 14 };
 

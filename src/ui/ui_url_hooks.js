@@ -52,6 +52,7 @@ function saveActiveConfig(state) {
       terrainScale: typeof state.terrainScale === 'number' ? Number(state.terrainScale.toFixed(2)) : 1.15,
       mapRotationDeg: typeof state.mapRotationDeg === 'number' ? Math.round(state.mapRotationDeg) : 0,
       hollowBase: typeof state.hollowBase === 'boolean' ? state.hollowBase : true,
+      waterCutout: Boolean(state.waterCutout),
       printerProfileId: state.printerProfileId || 'mono4_custom',
       camera: cam ? {
         yaw: typeof cam.yaw === 'number' ? Number(cam.yaw.toFixed(4)) : -0.48,
@@ -159,6 +160,9 @@ function loadActiveConfig() {
     if (typeof parsed.hollowBase === 'boolean') {
       sanitized.hollowBase = parsed.hollowBase;
     }
+    if (typeof parsed.waterCutout === 'boolean') {
+      sanitized.waterCutout = parsed.waterCutout;
+    }
     if (typeof parsed.printerProfileId === 'string' && parsed.printerProfileId.trim().length > 0) {
       sanitized.printerProfileId = parsed.printerProfileId.trim();
     }
@@ -230,6 +234,11 @@ function updateUrlQueryParams(cfg) {
     if (typeof cfg.hollowBase === 'boolean') {
       params.set('hollow', cfg.hollowBase ? '1' : '0');
     }
+    if (cfg.waterCutout) {
+      params.set('water_cutout', '1');
+    } else {
+      params.delete('water_cutout');
+    }
     if (typeof cfg.zScale === 'number') {
       params.set('z_scale', cfg.zScale.toFixed(2));
     }
@@ -284,6 +293,7 @@ async function applyMap3DUrlParams(ctx) {
     const isVideoMode = Boolean(window.MAP3D_STANDALONE_VIDEO_MODULE || params.get('mode') === 'video');
     const placeInput = document.getElementById('placeSearchInput');
     const chkHollowBase = document.getElementById('chkHollowBase');
+    const chkWaterCutout = document.getElementById('chkWaterCutout');
     const tileExplodeSlider = document.getElementById('tileExplodeSlider');
     const explodeSlider = document.getElementById('explodeSlider');
     const exportTileSelect = document.getElementById('exportTileSelect');
@@ -466,6 +476,16 @@ async function applyMap3DUrlParams(ctx) {
         needs3DRebuild = true;
       }
       if (chkHollowBase) chkHollowBase.checked = state.hollowBase;
+    }
+
+    const waterCutoutParam = params.get('water_cutout');
+    if ((waterCutoutParam === '0' || waterCutoutParam === '1' || waterCutoutParam === 'true' || waterCutoutParam === 'false') && state) {
+      const nextCutout = (waterCutoutParam === '1' || waterCutoutParam === 'true');
+      if (Boolean(state.waterCutout) !== nextCutout) {
+        state.waterCutout = nextCutout;
+        needs3DRebuild = true;
+      }
+      if (chkWaterCutout) chkWaterCutout.checked = Boolean(state.waterCutout);
     }
 
     const zScaleParam = params.get('z_scale');

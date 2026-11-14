@@ -184,7 +184,9 @@ function isOsmWaterMultipolygonJS(tags) {
     ['riverbank', 'dock', 'canal'].includes(tags.waterway) ||
     Boolean(tags.water) ||
     ['reservoir', 'basin'].includes(tags.landuse) ||
-    tags.leisure === 'marina'
+    tags.leisure === 'marina' ||
+    tags.amenity === 'fountain' ||
+    (tags.leisure === 'swimming_pool' && tags.location !== 'indoor' && tags.indoor !== 'yes')
   );
 }
 
@@ -332,12 +334,17 @@ function processOsmWaterWayJS(wid, w, tags, nids, isClosed, ctx) {
   if (!ctx._standaloneIslands) ctx._standaloneIslands = [];
   if (!ctx._shinglePolys) ctx._shinglePolys = [];
 
+  const allowMicroWater = !ctx || !ctx.effectiveSpanM || ctx.effectiveSpanM <= 5500;
   const isArealWater = (
     tags.natural === 'water' ||
     ['riverbank', 'dock'].includes(tags.waterway) ||
     Boolean(tags.water) ||
     ['reservoir', 'basin'].includes(tags.landuse) ||
-    tags.leisure === 'marina'
+    tags.leisure === 'marina' ||
+    (allowMicroWater && (
+      tags.amenity === 'fountain' ||
+      (tags.leisure === 'swimming_pool' && tags.location !== 'indoor' && tags.indoor !== 'yes')
+    ))
   );
 
   if (isArealWater && isClosed) {

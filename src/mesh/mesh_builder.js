@@ -98,134 +98,20 @@ class TimeBudgetYieldController {
  * Emits S3DB buildings in batches of ~180, uploading incrementally to WebGL.
  */
 async function buildS3DBBuildingsMeshProgressive(scene, ctx, baseInfo, state, meshes, yieldCtrl, onStageReady, onProgress) {
-  const { tileCols, tileRows, tileBounds, halfW, halfH } = ctx;
+  const { tileCols, tileRows, tileBounds, halfW, halfH, mToU, quantizeZUnits } = ctx;
   const { prepared, clusters, pickIdMap } = prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state);
   const buildingBounds = [];
 
-  // 1. Support-Aware Hierarchical Z-Tier Resolution
+  // 1. Support-Aware Hierarchical Z-Tier Resolution (shared with synchronous pipeline)
   for (const [, cluster] of clusters) {
     if (cluster.length <= 1) continue;
-    cluster.sort((a, b) => (a.zTop - b.zTop) || (b.area - a.area));
-
-    for (let i = 0; i < cluster.length; i++) {
-      const C = cluster[i];
-      if (C.skip) continue;
-      for (let j = 0; j < cluster.length; j++) {
-        if (i === j || cluster[j].skip) continue;
-        const P = cluster[j];
-        if (Math.abs(C.zTop - P.zTop) < 0.04 && C.area <= P.area * 1.01) {
-          if (isPointInsidePart2D(C.interiorPt[0], C.interiorPt[1], P, 0.03) &&
-              C.clippedOuter.every(pt => isPointInsidePart2D(pt[0], pt[1], P, 0.03))) {
-            C.skip = true;
-            break;
-          }
-        }
-        if (C.zTop < P.zTop - 0.05 && (C.scaledMinH || 0) <= 0.01 && (P.scaledMinH || 0) <= 0.01 && C.area <= P.area * 0.96) {
-          if (isPointInsidePart2D(C.interiorPt[0], C.interiorPt[1], P, 0.03) &&
-              C.clippedOuter.every(pt => isPointInsidePart2D(pt[0], pt[1], P, 0.03))) {
-            C.skip = true;
-            break;
-          }
-        }
-      }
-    }
-
-    const flattenSupportingPodium = (P) => {
-      P.roofShape = 'flat';
-      P.hasPitched = false;
-      P.zRidge = P.zEaves;
-      P.zTop = P.zEaves;
-      for (let m = 0; m < cluster.length; m++) {
-        if (cluster[m].supportRef === P) cluster[m].effBaseZ = P.zTop;
-      }
-    };
-
-    for (let i = 0; i < cluster.length; i++) {
-      const C = cluster[i];
-      if (C.skip) continue;
-      const candidates = cluster.filter((P, idx) => idx < i && !P.skip && P.zTop <= C.zTop + 0.01);
-      const directUnder = candidates.filter(P => {
-        if (C.scaledMinH !== undefined && C.scaledMinH > 0.01) {
-          const expectedZ = C.tZ + C.scaledMinH;
-          if (Math.abs(P.zTop - expectedZ) > 0.35 && P.zTop < expectedZ - 0.05) return false;
-        }
-        if (!isPointInsidePart2D(C.interiorPt[0], C.interiorPt[1], P, 0.02)) return false;
-        const samples = C.samplePts || [C.interiorPt];
-        return samples.filter(pt => isPointInsidePart2D(pt[0], pt[1], P, 0.01)).length >= Math.ceil(samples.length * 0.45);
-      });
-
-      if (directUnder.length > 0) {
-        directUnder.sort((a, b) => (b.zTop - a.zTop) || (b.area - a.area));
-        const bestP = directUnder[0];
-        C.supportRef = bestP;
-        C.effBaseZ = bestP.zTop;
-        const samples = C.samplePts || [C.interiorPt];
-        if (samples.length >= 2 && !samples.every(pt => isPointInsidePart2D(pt[0], pt[1], bestP, 0.01))) {
-          C.isLateralCantilever = true;
-        }
-        if (bestP.hasPitched) {
-          const samplesCovered = samples.every(pt => isPointInsidePart2D(pt[0], pt[1], bestP, 0.0));
-          if (C.area >= bestP.area * 0.45 || (C.isTowerOrCore && !samplesCovered)) {
-            flattenSupportingPodium(bestP);
-          } else {
-            C.effBaseZ = Math.max(bestP.zEaves, bestP.zTop);
-          }
-        }
-      } else {
-        const spanTol = Math.max(0.08, C.maxSpan * 0.06);
-        const adjUnder = candidates.filter(P => {
-          if (C.zTop < P.zTop - 0.08) return false;
-          const dz = Math.abs(C.effBaseZ - P.zTop);
-          return dz <= spanTol || (C.effBaseZ <= P.zTop && C.zTop >= P.zTop);
-        });
-
-        if (adjUnder.length > 0) {
-          adjUnder.sort((a, b) => b.zTop - a.zTop);
-          const topAdjZ = adjUnder[0].zTop;
-          const vertSupps = adjUnder.filter(P => Math.abs(P.zTop - topAdjZ) <= 0.08);
-          const samples = C.samplePts || [C.interiorPt];
-          const bestP = vertSupps[0];
-          if (isPointInsidePart2D(C.interiorPt[0], C.interiorPt[1], bestP, 0.025) &&
-              samples.every(pt => isPointInsidePart2D(pt[0], pt[1], bestP, 0.025)) &&
-              C.area <= bestP.area * 1.05) {
-            C.supportRef = bestP;
-            C.effBaseZ = topAdjZ;
-            if (bestP.hasPitched) flattenSupportingPodium(bestP);
-          } else {
-            const cores = cluster.filter(K => !K.skip && K.zTop >= C.zTop - 0.05 && K !== C);
-            if (cores.length > 0) {
-              const maxDistToCore = Math.max(...samples.map(pt =>
-                Math.min(...cores.map(K => isPointInsidePart2D(pt[0], pt[1], K, 0) ? 0 : distToPolygonBoundary2D(pt[0], pt[1], K.clippedOuter, K.clippedHoles)))
-              ));
-              if (maxDistToCore <= 0.65) C.isLateralCantilever = true;
-            }
-          }
-        }
-      }
-    }
-
-    for (let i = 0; i < cluster.length; i++) {
-      const C = cluster[i];
-      if (C.skip || C.roofShape !== 'skillion' || !C.b || C.b.roofDir !== undefined) continue;
-      const tallerAdj = cluster.filter(P => !P.skip && P !== C && P.zTop >= C.zTop - 0.02);
-      if (tallerAdj.length > 0) {
-        let bestDist = Infinity, bestCore = null;
-        for (let k = 0; k < tallerAdj.length; k++) {
-          const d = Math.hypot(C.cx - tallerAdj[k].cx, C.cy - tallerAdj[k].cy);
-          if (d < bestDist) {
-            bestDist = d;
-            bestCore = tallerAdj[k];
-          }
-        }
-        C.leanTargetPt = [bestCore.cx, bestCore.cy];
-      }
-    }
-
+    resolveS3DBClusterTiers(cluster, mToU, quantizeZUnits);
     await yieldCtrl.tick();
   }
 
   // 2. Extrude Watertight 2-Manifold LoD2 Shells in Adaptive Time-Sliced Batches
   let nextBldShellId = 1;
+  const allocShellId = () => nextBldShellId++;
   const activeItems = prepared.filter(it => !it.skip);
   const CHUNK_FLUSH_SIZE = 40;
   let chunkBuildingsTris = [];
@@ -237,91 +123,10 @@ async function buildS3DBBuildingsMeshProgressive(scene, ctx, baseInfo, state, me
     const bld = item.b;
 
     const isHl = item.clusterHighlighted || !!bld.highlighted;
-    const targetLayerId = isHl ? 5 : 4;
     const targetBatchArr = isHl ? chunkHlTris : chunkBuildingsTris;
     const targetMainList = isHl ? meshes.highlighted : meshes.buildings;
 
-    if (item.zTop <= item.effBaseZ + 0.04) {
-      item.zTop = item.effBaseZ + 0.45;
-      item.zEaves = item.zTop;
-      item.zRidge = item.zTop;
-      item.hasPitched = false;
-    } else if (item.zEaves < item.effBaseZ + 0.04) {
-      item.zEaves = item.effBaseZ + Math.min(0.25, (item.zTop - item.effBaseZ) * 0.5);
-    }
-
-    const bShell = [];
-    const shellId = nextBldShellId++;
-
-    extrudeBuildingLoD2(
-      item.clippedOuter,
-      item.clippedHoles,
-      item.effBaseZ,
-      item.zEaves,
-      item.zRidge,
-      item.hasPitched,
-      targetLayerId,
-      item.pickId,
-      bShell,
-      0,
-      item.roofShape || 'flat',
-      {
-        roofDir: bld.roofDir,
-        roofOrient: bld.roofOrient,
-        leanTargetPt: item.leanTargetPt || null
-      }
-    );
-
-    const tagElevatedBottom = (t) => {
-      if (item.effBaseZ > item.tZ + 0.05 && t.n && t.n[2] < -0.5) {
-        t.n = [0, 0, -0.49];
-      }
-    };
-
-    for (let ti = 0; ti < bShell.length; ti++) {
-      bShell[ti].shellId = shellId;
-      tagElevatedBottom(bShell[ti]);
-    }
-
-    const numTiles = (tileCols || 1) * (tileRows || 1);
-    if (numTiles > 1 && (ctx.isExport || numTiles <= 400) && ctx.tileBounds && typeof splitClosedShellToTileGrid3D === 'function') {
-      const pieces = splitClosedShellToTileGrid3D(bShell, ctx.tileBounds, tileCols, tileRows);
-      for (let ti = 0; ti < pieces.length; ti++) {
-        tagElevatedBottom(pieces[ti]);
-        targetMainList.push(pieces[ti]);
-        targetBatchArr.push(pieces[ti]);
-      }
-    } else {
-      const cx = (item.minX + item.maxX) * 0.5;
-      const cy = (item.minY + item.maxY) * 0.5;
-      const tileId = (tileCols <= 1 && tileRows <= 1)
-        ? 0
-        : (typeof getTileIdForCentroid === 'function' ? getTileIdForCentroid(cx, cy, halfW, halfH, tileCols, tileRows) : 0);
-
-      for (let ti = 0; ti < bShell.length; ti++) {
-        bShell[ti].tileId = tileId;
-        tagElevatedBottom(bShell[ti]);
-        targetMainList.push(bShell[ti]);
-        targetBatchArr.push(bShell[ti]);
-      }
-    }
-
-    buildingBounds.push({
-      building: bld,
-      shellId,
-      pickId: item.pickId,
-      groupId: item.groupId,
-      interiorPt: item.interiorPt,
-      samplePts: [item.interiorPt, item.clippedOuter[0]],
-      isCantileverSupported: !!item.isLateralCantilever,
-      minX: item.minX,
-      maxX: item.maxX,
-      minY: item.minY,
-      maxY: item.maxY,
-      minZ: item.effBaseZ,
-      maxZ: item.hasPitched ? item.zRidge : item.zEaves,
-      layerId: targetLayerId
-    });
+    buildingBounds.push(emitSingleS3DBBuildingItem(item, ctx, allocShellId, targetMainList, targetBatchArr));
 
     const isLast = (i === activeItems.length - 1);
     const shouldFlush = (chunkBuildingsTris.length + chunkHlTris.length >= 600) ||

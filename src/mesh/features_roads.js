@@ -334,15 +334,22 @@ function collectPrintedBuildingFootprints2D(scene, ctx, state) {
       const bedPoly = b.outer.map(toBed);
       bedOuterCache[i] = bedPoly;
       if (b.groupId) childGroupIds.add(b.groupId);
-      let cx = 0, cy = 0;
-      for (let k = 0; k < bedPoly.length; k++) { cx += bedPoly[k][0]; cy += bedPoly[k][1]; }
-      cx /= bedPoly.length; cy /= bedPoly.length;
-      const bx = Math.max(0, Math.min(BG - 1, Math.floor(((cx + halfW) / spanX) * BG)));
-      const by = Math.max(0, Math.min(BG - 1, Math.floor(((cy + halfH) / spanY) * BG)));
+      const holesBed = (b.holes || []).map(h => h.map(toBed)).filter(h => h.length >= 3);
+      const interiorPt = computeSolidInteriorPoint2D(bedPoly, holesBed);
+      const bx = Math.max(0, Math.min(BG - 1, Math.floor(((interiorPt[0] + halfW) / spanX) * BG)));
+      const by = Math.max(0, Math.min(BG - 1, Math.floor(((interiorPt[1] + halfH) / spanY) * BG)));
       const cell = by * BG + bx;
       let list = childBuckets[cell];
       if (!list) childBuckets[cell] = list = [];
-      list.push({ cx, cy, area: Math.abs(signedArea2D(bedPoly)) });
+      list.push({
+        idx: i,
+        cx: interiorPt[0],
+        cy: interiorPt[1],
+        minH: b.minH || 0,
+        groupId: b.groupId || null,
+        outer: bedPoly,
+        holes: holesBed
+      });
       childCount++;
     }
   }
@@ -353,10 +360,6 @@ function collectPrintedBuildingFootprints2D(scene, ctx, state) {
     if (b.hidden || b.btype === 'pier' || !b.outer || b.outer.length < 3) continue;
     if (b.isOutline) { suppressedIdx[i] = 1; continue; }
     if (!b.part && childCount > 0) {
-      if ((b.id && childGroupIds.has(b.id)) || (b.osmId && childGroupIds.has(b.osmId))) {
-        suppressedIdx[i] = 1;
-        continue;
-      }
       const bOuterBed = b.outer.map(toBed);
       bedOuterCache[i] = bOuterBed;
       let bMinX = Infinity, bMaxX = -Infinity, bMinY = Infinity, bMaxY = -Infinity;
@@ -367,30 +370,36 @@ function collectPrintedBuildingFootprints2D(scene, ctx, state) {
       }
       const bArea = Math.abs(signedArea2D(bOuterBed));
       if (bArea < 1e-4) continue;
-      const bx0 = Math.max(0, Math.min(BG - 1, Math.floor(((bMinX + halfW) / spanX) * BG)));
-      const bx1 = Math.max(0, Math.min(BG - 1, Math.floor(((bMaxX + halfW) / spanX) * BG)));
-      const by0 = Math.max(0, Math.min(BG - 1, Math.floor(((bMinY + halfH) / spanY) * BG)));
-      const by1 = Math.max(0, Math.min(BG - 1, Math.floor(((bMaxY + halfH) / spanY) * BG)));
-      let childAreaSum = 0;
-      for (let by = by0; by <= by1 && childAreaSum < bArea * 0.30; by++) {
+      const bHolesBed = (b.holes || []).map(h => h.map(toBed)).filter(h => h.length >= 3);
+      const bx0 = Math.max(0, Math.min(BG - 1, Math.floor(((bMinX - 0.25 + halfW) / spanX) * BG)));
+      const bx1 = Math.max(0, Math.min(BG - 1, Math.floor(((bMaxX + 0.25 + halfW) / spanX) * BG)));
+      const by0 = Math.max(0, Math.min(BG - 1, Math.floor(((bMinY - 0.25 + halfH) / spanY) * BG)));
+      const by1 = Math.max(0, Math.min(BG - 1, Math.floor(((bMaxY + 0.25 + halfH) / spanY) * BG)));
+      const matchedGround = [];
+      for (let by = by0; by <= by1; by++) {
         const r = by * BG;
         for (let bx = bx0; bx <= bx1; bx++) {
           const list = childBuckets[r + bx];
           if (!list) continue;
           for (let j = 0; j < list.length; j++) {
             const ce = list[j];
-            if (ce.cx < bMinX || ce.cx > bMaxX || ce.cy < bMinY || ce.cy > bMaxY) continue;
-            if (pointInPoly2D(ce.cx, ce.cy, bOuterBed)) {
-              childAreaSum += ce.area;
+            if (ce.minH > 3.5) continue;
+            if (ce.cx < bMinX - 0.25 || ce.cx > bMaxX + 0.25 || ce.cy < bMinY - 0.25 || ce.cy > bMaxY + 0.25) continue;
+            const inHole = bHolesBed.some(h => pointInPoly2D(ce.cx, ce.cy, h));
+            if (inHole) continue;
+            if ((ce.groupId && (ce.groupId === b.id || ce.groupId === b.osmId)) || pointInPoly2D(ce.cx, ce.cy, bOuterBed)) {
+              matchedGround.push(ce);
             }
           }
         }
       }
-      if (childAreaSum >= bArea * 0.30) suppressedIdx[i] = 1;
+      if (matchedGround.length > 0 && computeGroundPartsUnionCoverage2D(bOuterBed, bHolesBed, matchedGround, pointInPoly2D) >= 0.78) {
+        suppressedIdx[i] = 1;
+      }
     }
   }
 
-  const minPrintMm = 0.35;
+  const minPrintMm = resolvePrintPhysicsSpec(state, scaleMm).minFeatureMm;
   const minPrintUnits = minPrintMm / scaleMm;
   const metersPerMm = 1.0 / ((mToU || 0.14) * scaleMm);
   const lodMin = state && state.lodSettings && (
@@ -446,9 +455,11 @@ function buildAnalyticalRoadFields(scene, ctx, state, greenVisible) {
   } = ctx;
 
   const isStressGrid = ((numTiles || ((ctx.tileCols || 1) * (ctx.tileRows || 1))) > 400) && !ctx.isExport;
-  const resScale = isStressGrid ? 0.36 : 0.85;
-  const nx = Math.min(820, Math.max(256, Math.round(MASK_RES_X * resScale)));
-  const ny = Math.min(820, Math.max(256, Math.round(MASK_RES_Y * resScale)));
+  const printSpec = resolvePrintPhysicsSpec(state, scaleMm);
+  const resScale = isStressGrid ? 0.36 : (printSpec.isResin ? 1.0 : 0.85);
+  const maxRoadGrid = (printSpec.isResin && !isStressGrid) ? 1280 : 820;
+  const nx = Math.min(maxRoadGrid, Math.max(256, Math.round(MASK_RES_X * resScale)));
+  const ny = Math.min(maxRoadGrid, Math.max(256, Math.round(MASK_RES_Y * resScale)));
   const xMin = -padW + 0.5 * (spanW / nx);
   const xMax = padW - 0.5 * (spanW / nx);
   const yMin = -padH + 0.5 * (spanH / ny);
@@ -511,7 +522,9 @@ function buildAnalyticalRoadFields(scene, ctx, state, greenVisible) {
     const rtype = rd.hwy || rd.type || rd.rtype || '';
     if (isFoot) {
       if (roadDetail === 'major') continue;
-      const pathW = Math.max(Math.min(0.62, rd.width || 0.36) * scaleToBed, 0.42 / scaleMm, hCell * 1.88);
+      const pathW = printSpec.isResin
+        ? Math.max(Math.min(0.62, rd.width || 0.30) * scaleToBed, printSpec.minChannelUnits, hCell * 1.42)
+        : Math.max(Math.min(0.62, rd.width || 0.36) * scaleToBed, 0.42 / scaleMm, hCell * 1.88);
       const r = pathW * 0.5;
       let prev = toBed(rd.pts[0]);
       for (let k = 1; k < rd.pts.length; k++) {
@@ -521,7 +534,9 @@ function buildAnalyticalRoadFields(scene, ctx, state, greenVisible) {
       }
     } else {
       if (roadDetail === 'major' && isStreetSkippedAtMajorLod(rtype)) continue;
-      const streetW = Math.max((rd.width || 1.0) * 0.90 * scaleToBed, 0.48 / scaleMm, hCell * 1.96);
+      const streetW = printSpec.isResin
+        ? Math.max((rd.width || 1.0) * 0.92 * scaleToBed, Math.max(printSpec.minChannelUnits * 1.15, 0.22 / scaleMm), hCell * 1.50)
+        : Math.max((rd.width || 1.0) * 0.90 * scaleToBed, 0.48 / scaleMm, hCell * 1.96);
       const r = streetW * 0.5;
       let prev = toBed(rd.pts[0]);
       for (let k = 1; k < rd.pts.length; k++) {
@@ -534,7 +549,7 @@ function buildAnalyticalRoadFields(scene, ctx, state, greenVisible) {
 
   // 3. Exact un-stroked ground building clearance (fast bldMask lookup on >400-tile live preview; exact un-stroked footprints on normal & export builds)
   const bldInside = new Uint8Array(nGrid);
-  const epsClear = Math.max(0.070, hCell * 0.28);
+  const epsClear = printSpec.isResin ? Math.max(0.022, hCell * 0.14) : Math.max(0.070, hCell * 0.28);
   const wallPad = epsClear + hCell * 0.78;
   const maxWallDistSq = wallPad * wallPad;
   const wallMinDistSq = isStressGrid ? null : new Float32Array(nGrid).fill(maxWallDistSq);

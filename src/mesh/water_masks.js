@@ -90,7 +90,7 @@ function _maskRingInteriorPt2D(ring) {
 function _captureAlphaBinaryMask(mctx, w, h, outBuf) {
   const data = safeGetImageData(mctx, 0, 0, w, h).data;
   for (let i = 0, n = w * h; i < n; i++) {
-    outBuf[i] = data[i * 4 + 3] > 96 ? 1 : 0;
+    outBuf[i] = data[i * 4 + 3] > 127 ? 1 : 0;
   }
 }
 
@@ -244,7 +244,7 @@ function buildWaterMasksAndSDF(scene, mctx, maskEnv) {
     mctx.lineCap = 'round';
     mctx.lineJoin = 'round';
 
-    const minPrintableBedUnits = 0.42 / effScaleMm;
+    const minPrintableBedUnits = ((maskEnv.printSpec && maskEnv.printSpec.minChannelMm) || 0.42) / effScaleMm;
     let drewAnyLine = false;
 
     for (let li = 0; li < waterLines.length; li++) {
@@ -442,10 +442,10 @@ function buildWaterMasksAndSDF(scene, mctx, maskEnv) {
         let val = sum / wSum;
         // Preserve sign of true land/water mask and protect narrow islands/peninsulas from erosion
         if (!waterMask[idx]) {
-          const minLandFloor = Math.max(0.015, Math.min(0.12, rawWaterSDF[idx] * 0.55));
+          const minLandFloor = Math.max(0.004, Math.min(0.10, rawWaterSDF[idx] * 0.45));
           if (val < minLandFloor) val = minLandFloor;
-        } else if (val > -0.015) {
-          val = -0.015;
+        } else if (val > -0.004) {
+          val = -0.004;
         }
         next[idx] = val;
       }

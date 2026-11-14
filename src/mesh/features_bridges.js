@@ -53,7 +53,7 @@ function _emitRampedRibbonShell3D(leftPts, rightPts, zTopArr, zBot, layerId, out
   }
 
   const ring2d = rightPts.concat(leftPts.slice().reverse());
-  if (signedArea2D(ring2d) <= 1e-4 || !isSimplePolygon(ring2d) || hasSelfTouchingEdge2D(ring2d, 2.5e-3)) {
+  if (signedArea2D(ring2d) <= 1e-4 || !isSimplePolygon(ring2d) || hasSelfTouchingEdge2D(ring2d, 1e-4)) {
     return false;
   }
 
@@ -155,7 +155,7 @@ function _bufferBedPolylineToPolys2D(ptsInput, widthUnits) {
     }
     const cleanRibbon = cleanPolygonRing(rightPts.concat(leftPts.slice().reverse()), true);
     if (cleanRibbon.length >= 3 && Math.abs(signedArea2D(cleanRibbon)) > 1e-4 &&
-        isSimplePolygon(cleanRibbon) && !hasSelfTouchingEdge2D(cleanRibbon, 2.2e-3)) {
+        isSimplePolygon(cleanRibbon) && !hasSelfTouchingEdge2D(cleanRibbon, 1e-4)) {
       return [cleanRibbon];
     }
   }
@@ -196,20 +196,35 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
   } = ctx;
   const { waterSurfZ, getActualPrintedSurfaceMinZ } = baseInfo;
   const effPathHeight = pathHeight || (rHeight * 0.72);
-  const pierBasinZ = (zSubWater !== undefined && Number.isFinite(zSubWater))
-    ? zSubWater
-    : Math.min(waterSurfZ - 0.18, baseBottomZ - 0.35);
+  const waterCutout = Boolean(state && state.waterCutout);
+  const pierBasinZ = waterCutout
+    ? 0.0
+    : ((zSubWater !== undefined && Number.isFinite(zSubWater))
+      ? zSubWater
+      : Math.min(waterSurfZ - 0.18, baseBottomZ - 0.35));
 
   const pierSpacingUnits = Math.max(1.85, 4.6 / scaleMm);
   const emittedBridgePolys = [];
   const coveredBridgeRawPolys = [];
 
+  const printSpec = (typeof resolvePrintPhysicsSpec === 'function')
+    ? resolvePrintPhysicsSpec(state, scaleMm)
+    : null;
+  const minFootBridgeUnits = (printSpec && printSpec.isResin) ? printSpec.minChannelUnits : (0.36 / scaleMm);
+  const minMotorBridgeUnits = (printSpec && printSpec.isResin)
+    ? Math.max(printSpec.minChannelUnits * 1.15, 0.22 / scaleMm)
+    : (0.40 / scaleMm);
+
   // Exact 1:1 road/footpath width law matching features_roads.js
   const computeLandRoadWidthUnits = (rd) => {
     if (_isFootpathBridgeWay(rd)) {
-      return Math.max(Math.min(0.62, rd.width || 0.36) * scaleToBed, 0.36 / scaleMm);
+      const baseFootUnits = (printSpec && printSpec.isResin)
+        ? Math.min(0.62, rd.width || 0.30) * scaleToBed
+        : Math.min(0.62, rd.width || 0.36) * scaleToBed;
+      return Math.max(baseFootUnits, minFootBridgeUnits);
     }
-    return Math.max((rd.width || 1.0) * 0.90 * scaleToBed, 0.40 / scaleMm);
+    const widthScale = (printSpec && printSpec.isResin) ? 0.92 : 0.90;
+    return Math.max((rd.width || 1.0) * widthScale * scaleToBed, minMotorBridgeUnits);
   };
 
   // Dry-land road top offset above terrain step tZ (matching features_roads.js)
@@ -239,7 +254,8 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
   // Emits each water pier (or twin piers on wide boulevards) as independent watertight 2-manifold shells
   const emitPiersAlongSpan = (ax, ay, bx, by, deckWidth, zDeckBot, containPoly = null) => {
     const spanLen = Math.hypot(bx - ax, by - ay);
-    if (spanLen < pierSpacingUnits * 0.65 || zDeckBot - waterSurfZ <= 0.10) return;
+    const pierFloorZ = waterCutout ? 0.0 : waterSurfZ;
+    if (spanLen < pierSpacingUnits * 0.65 || zDeckBot - pierFloorZ <= 0.10) return;
     const tx = (bx - ax) / spanLen, ty = (by - ay) / spanLen;
     const nx = -ty, ny = tx;
     const numPiers = Math.max(1, Math.ceil(spanLen / pierSpacingUnits) - 1);
@@ -268,7 +284,7 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
                            corners.every(c => getActualPrintedSurfaceMinZ(c[0], c[1]) < baseBottomZ - 1e-4);
         if (allInWater) {
           const pierShell = [];
-          emitClosedPrism(corners, waterSurfZ, zDeckBot, 3, pierShell, 0, allocShellId());
+          emitClosedPrism(corners, pierFloorZ, zDeckBot, 3, pierShell, 0, allocShellId());
           appendShellClippedToTiles(pierShell, ctx, meshes.roads);
         }
       }
@@ -456,7 +472,9 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
         }
       }
       if (Number.isFinite(cMin) && Number.isFinite(cMax) && cMax > cMin) {
-        const minCorrW = 0.38 / scaleMm;
+        const minCorrW = (printSpec && printSpec.isResin)
+          ? Math.max(printSpec.minChannelUnits * 1.15, 0.22 / scaleMm)
+          : (0.38 / scaleMm);
         if (cMax - cMin < minCorrW) {
           const mid = 0.5 * (cMin + cMax);
           cMin = mid - minCorrW * 0.5;
@@ -505,7 +523,68 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
         }
       }
     }
-    if (!Number.isFinite(uWetMin) || uWetMax < uWetMin) return;
+    const uvToBed = (u, v) => [
+      obb.cx + sUx * u + cVx * v,
+      obb.cy + sUy * u + cVy * v
+    ];
+
+    const isWetBridge = Number.isFinite(uWetMin) && uWetMax >= uWetMin;
+    if (!isWetBridge) {
+      let dryPoly = rawPoly;
+      if (hasRoadCorridor) {
+        const dryHull = cleanPolygonRing([
+          uvToBed(uPolyMin, vCorrMin),
+          uvToBed(uPolyMax, vCorrMin),
+          uvToBed(uPolyMax, vCorrMax),
+          uvToBed(uPolyMin, vCorrMax)
+        ], true);
+        if (dryHull && dryHull.length >= 3) {
+          const clipped = cleanPolygonRing(clipPolyByConvex(rawPoly, dryHull), true);
+          if (clipped.length >= 3 && Math.abs(signedArea2D(clipped)) >= 0.03 && isSimplePolygon(clipped)) {
+            dryPoly = clipped;
+          }
+        }
+      }
+      if (dryPoly.length < 3 || Math.abs(signedArea2D(dryPoly)) < 0.03 ||
+          !isSimplePolygon(dryPoly) || hasSelfTouchingEdge2D(dryPoly, 1e-4)) {
+        return;
+      }
+      let zLandMin = Infinity;
+      let zRoadTopMax = -Infinity;
+      for (let i = 0; i < dryPoly.length; i++) {
+        const p0 = dryPoly[i], p1 = dryPoly[(i + 1) % dryPoly.length];
+        for (const q of [p0, [(p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5]]) {
+          const sz = getActualPrintedSurfaceMinZ(q[0], q[1]);
+          if (sz >= baseBottomZ - 1e-4) {
+            if (sz < zLandMin) zLandMin = sz;
+            const rTop = sz + evalRoadSurfaceOffset(q[0], q[1], isPureFootbridge);
+            if (rTop > zRoadTopMax) zRoadTopMax = rTop;
+          }
+        }
+      }
+      if (!Number.isFinite(zLandMin)) return;
+      if (!Number.isFinite(zRoadTopMax)) {
+        zRoadTopMax = zLandMin + (isPureFootbridge ? effPathHeight : rHeight);
+      }
+      const zDeckBot = zLandMin;
+      const microZ = ((bpIdx % 4) + 1) * 0.003;
+      const overpassClearH = Math.max(
+        brHeight * 0.85,
+        (isPureFootbridge ? effPathHeight : rHeight) + 0.35 / scaleMm
+      );
+      const zDeckTop = quantizeZUnits(Math.max(zDeckBot + overpassClearH, zRoadTopMax)) + microZ;
+      const dryHoles = (bp.holes || [])
+        .map(h => clipPolyToBox(h.map(toBed), -halfW + 0.3, -halfH + 0.3, halfW - 0.3, halfH - 0.3))
+        .filter(h => h && h.length >= 3);
+      const deckShell = [];
+      emitPolygonWithHolesSlab3D(dryPoly, dryHoles, zDeckBot, zDeckTop, 3, deckShell, 0, allocShellId());
+      if (deckShell.length > 0) {
+        appendShellClippedToTiles(deckShell, ctx, meshes.roads);
+        emittedBridgePolys.push(dryPoly);
+        coveredBridgeRawPolys.push(rawPoly);
+      }
+      return;
+    }
 
     // Trim axial dry-land excess to compact 0.48-unit overlap and taper lateral width to 1:1 road corridor
     const BANK_OVERLAP = 0.48;
@@ -513,39 +592,16 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
     const uClipMax = Math.min(uPolyMax, uWetMax + BANK_OVERLAP);
     if (uClipMax - uClipMin < 0.30) return;
 
-    const uvToBed = (u, v) => [
-      obb.cx + sUx * u + cVx * v,
-      obb.cy + sUy * u + cVy * v
-    ];
-
     let poly = rawPoly;
     let clipHull = null;
     if (hasRoadCorridor) {
-      const corrW = vCorrMax - vCorrMin;
-      const polyW = vPolyMax - vPolyMin;
-      const parapetM = polyW > corrW + 0.04 ? Math.min(0.14, corrW * 0.14) : 0.0;
-      const uMid = 0.5 * (uClipMin + uClipMax);
-      const uTapNeg = Math.min(uMid - 0.02, Math.max(uClipMin + 0.04, uWetMin));
-      const uTapPos = Math.max(uMid + 0.02, Math.min(uClipMax - 0.04, uWetMax));
-
-      const rawHull = (parapetM > 0.01 && uTapPos > uTapNeg + 0.04)
-        ? [
-            uvToBed(uClipMin, vCorrMin),
-            uvToBed(uTapNeg, vCorrMin - parapetM),
-            uvToBed(uTapPos, vCorrMin - parapetM),
-            uvToBed(uClipMax, vCorrMin),
-            uvToBed(uClipMax, vCorrMax),
-            uvToBed(uTapPos, vCorrMax + parapetM),
-            uvToBed(uTapNeg, vCorrMax + parapetM),
-            uvToBed(uClipMin, vCorrMax)
-          ]
-        : [
-            uvToBed(uClipMin, vCorrMin),
-            uvToBed(uClipMax, vCorrMin),
-            uvToBed(uClipMax, vCorrMax),
-            uvToBed(uClipMin, vCorrMax)
-          ];
-      clipHull = cleanPolygonRing(rawHull, true);
+      const parapetM = 0.0;
+      clipHull = cleanPolygonRing([
+        uvToBed(uClipMin, vCorrMin),
+        uvToBed(uClipMax, vCorrMin),
+        uvToBed(uClipMax, vCorrMax),
+        uvToBed(uClipMin, vCorrMax)
+      ], true);
     } else {
       clipHull = cleanPolygonRing([
         uvToBed(uClipMin, vPolyMin - 0.15),
@@ -607,7 +663,7 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
       });
       const adjClean = cleanPolygonRing(adjusted, true);
       if (adjClean.length >= 3 && Math.abs(signedArea2D(adjClean)) >= 0.03 &&
-          isSimplePolygon(adjClean) && !hasSelfTouchingEdge2D(adjClean, 2.2e-3)) {
+          isSimplePolygon(adjClean) && !hasSelfTouchingEdge2D(adjClean, 1e-4)) {
         poly = adjClean;
       }
     }
@@ -822,7 +878,147 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
     const brWidth = roadW;
     const brHalfW = brWidth * 0.5;
 
+    const emitLinearBridgeRun = (sub, isDryOverpass) => {
+      // Deduplicate against Stage 1 man_made=bridge polygons (and suppress parallel bridge sidewalks)
+      const testPolys = isFootpath ? coveredBridgeRawPolys : emittedBridgePolys;
+      if (testPolys.length > 0) {
+        let covered = 0;
+        const tol = isFootpath ? 0.38 : 0.42;
+        for (let k = 0; k < sub.length; k++) {
+          const p = sub[k];
+          if (testPolys.some(bpPoly => pointInPolyOrNear2D(p[0], p[1], bpPoly, tol))) covered++;
+        }
+        if (covered >= sub.length * 0.42) return 'covered';
+      }
+
+      if (!isPrintedDryPoint(sub[0][0], sub[0][1]) ||
+          !isPrintedDryPoint(sub[sub.length - 1][0], sub[sub.length - 1][1])) {
+        return 'skipped';
+      }
+
+      // Resample span stations (~0.55u spacing + abutment transition stations near both ends)
+      const cumDist = [0];
+      for (let k = 1; k < sub.length; k++) {
+        cumDist.push(cumDist[k - 1] + Math.hypot(sub[k][0] - sub[k - 1][0], sub[k][1] - sub[k - 1][1]));
+      }
+      const totalArcLen = cumDist[cumDist.length - 1];
+      if (totalArcLen < 0.55 ||
+          Math.hypot(sub[sub.length - 1][0] - sub[0][0], sub[sub.length - 1][1] - sub[0][1]) < 0.50) {
+        return 'skipped';
+      }
+
+      const spanPts = [sub[0]];
+      const spanArc = [0];
+      for (let k = 1; k < sub.length - 1; k++) {
+        const dFromPrev = Math.hypot(
+          sub[k][0] - spanPts[spanPts.length - 1][0],
+          sub[k][1] - spanPts[spanPts.length - 1][1]
+        );
+        const dToEnd = Math.hypot(
+          sub[sub.length - 1][0] - sub[k][0],
+          sub[sub.length - 1][1] - sub[k][1]
+        );
+        const nearBank = (cumDist[k] >= 0.20 && cumDist[k] <= 0.45 && spanPts.length === 1) ||
+                         (totalArcLen - cumDist[k] >= 0.20 && totalArcLen - cumDist[k] <= 0.45 && dToEnd >= 0.18);
+        if ((dFromPrev >= 0.55 && dToEnd >= 0.22) || (nearBank && dFromPrev >= 0.18 && dToEnd >= 0.18)) {
+          spanPts.push(sub[k]);
+          spanArc.push(cumDist[k]);
+        }
+      }
+      spanPts.push(sub[sub.length - 1]);
+      spanArc.push(totalArcLen);
+      if (spanPts.length < 2) return 'skipped';
+
+      const N = spanPts.length;
+      const leftPts = [];
+      const rightPts = [];
+      const minHalfRibbon = (printSpec && printSpec.isResin) ? 0.08 : 0.16;
+      for (let i = 0; i < N; i++) {
+        let nx, ny;
+        if (i === 0) {
+          const dx = spanPts[1][0] - spanPts[0][0], dy = spanPts[1][1] - spanPts[0][1], l = Math.hypot(dx, dy) || 1;
+          nx = -dy / l; ny = dx / l;
+        } else if (i === N - 1) {
+          const dx = spanPts[N - 1][0] - spanPts[N - 2][0], dy = spanPts[N - 1][1] - spanPts[N - 2][1], l = Math.hypot(dx, dy) || 1;
+          nx = -dy / l; ny = dx / l;
+        } else {
+          const d1x = spanPts[i][0] - spanPts[i - 1][0], d1y = spanPts[i][1] - spanPts[i - 1][1], l1 = Math.hypot(d1x, d1y) || 1;
+          const d2x = spanPts[i + 1][0] - spanPts[i][0], d2y = spanPts[i + 1][1] - spanPts[i][1], l2 = Math.hypot(d2x, d2y) || 1;
+          const tx = d1x / l1 + d2x / l2, ty = d1y / l1 + d2y / l2, tl = Math.hypot(tx, ty) || 1;
+          const mnx = -ty / tl, mny = tx / tl;
+          const dot = mnx * (-d1y / l1) + mny * (d1x / l1);
+          const miter = Math.min(1.55, 1.0 / Math.max(0.62, dot));
+          nx = mnx * miter; ny = mny * miter;
+        }
+        // Subtle 0.84x nose taper only at the buried dry-land tip so rounded road masks never expose square corners
+        const endFactor = (i === 0 || i === N - 1) && N >= 3 ? 0.84 : 1.0;
+        const hw = Math.max(minHalfRibbon, brHalfW * endFactor);
+        leftPts.push([spanPts[i][0] + nx * hw, spanPts[i][1] + ny * hw]);
+        rightPts.push([spanPts[i][0] - nx * hw, spanPts[i][1] - ny * hw]);
+      }
+
+      // Bank elevations & smooth bank-to-bank ramped/crowned Z profile
+      const zLand0 = Math.max(baseBottomZ, getActualPrintedSurfaceMinZ(spanPts[0][0], spanPts[0][1]));
+      const zLand1 = Math.max(baseBottomZ, getActualPrintedSurfaceMinZ(spanPts[N - 1][0], spanPts[N - 1][1]));
+      let zDryMin = Math.min(zLand0, zLand1);
+      for (let i = 1; i < N - 1; i++) {
+        const sz = getActualPrintedSurfaceMinZ(spanPts[i][0], spanPts[i][1]);
+        if (sz >= baseBottomZ - 1e-4 && sz < zDryMin) zDryMin = sz;
+      }
+
+      const zDeckBot = zDryMin;
+      const microZ = (((linSpanIdx++) % 5) + 1) * 0.003;
+      const zEnd0 = quantizeZUnits(zLand0 + evalRoadSurfaceOffset(spanPts[0][0], spanPts[0][1], isFootpath)) + microZ;
+      const zEnd1 = quantizeZUnits(zLand1 + evalRoadSurfaceOffset(spanPts[N - 1][0], spanPts[N - 1][1], isFootpath)) + microZ;
+
+      const dryOverpassClearH = Math.max(
+        brHeight * 0.85,
+        (isFootpath ? effPathHeight : rHeight) + 0.35 / scaleMm
+      );
+      const minMidZ = (isDryOverpass
+        ? (zDeckBot + dryOverpassClearH)
+        : Math.max(waterSurfZ + brHeight * 0.72, zDeckBot + (isFootpath ? effPathHeight : rHeight))
+      ) + microZ;
+      const midLinZ = 0.5 * (zEnd0 + zEnd1);
+      const reqCrown = Math.max(0.0, minMidZ - midLinZ);
+      const subtleCamber = Math.min(0.10, totalArcLen * 0.012);
+      const archCrown = Math.max(reqCrown, subtleCamber);
+
+      const zTopArr = new Array(N);
+      for (let i = 0; i < N; i++) {
+        const t = totalArcLen > 1e-5 ? (spanArc[i] / totalArcLen) : 0;
+        const zLin = zEnd0 + (zEnd1 - zEnd0) * t;
+        const crown = (i === 0 || i === N - 1) ? 0.0 : archCrown * Math.sin(Math.PI * t);
+        zTopArr[i] = Math.max(zDeckBot + 0.06, zLin + crown);
+      }
+
+      const deckShell = [];
+      const shellId = allocShellId();
+      const rampedOk = _emitRampedRibbonShell3D(leftPts, rightPts, zTopArr, zDeckBot, 3, deckShell, 0, shellId);
+      const ribbonPoly = rightPts.concat(leftPts.slice().reverse());
+      if (!rampedOk) {
+        const zFlatTop = Math.max(...zTopArr);
+        emitClosedPrism(ribbonPoly, zDeckBot, zFlatTop, 3, deckShell, 0, shellId);
+      }
+      if (deckShell.length > 0) {
+        appendShellClippedToTiles(deckShell, ctx, meshes.roads);
+        const cleanContain = cleanPolygonRing(ribbonPoly, true);
+        if (!isDryOverpass) {
+          emitPiersAlongSpan(
+            spanPts[0][0], spanPts[0][1],
+            spanPts[N - 1][0], spanPts[N - 1][1],
+            brWidth, zDeckBot,
+            cleanContain.length >= 3 ? cleanContain : null
+          );
+        }
+        return 'emitted';
+      }
+      return 'skipped';
+    };
+
     let idx = 0;
+    let emittedWetSpan = false;
+    let wetCoveredByStage1 = false;
     while (idx < dense.length) {
       if (!isWetPoint(dense[idx][0], dense[idx][1])) { idx++; continue; }
       const iW0 = idx;
@@ -867,131 +1063,26 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
         if (post.length > 0) sub = sub.concat(post);
       }
 
-      // Deduplicate against Stage 1 man_made=bridge polygons (and suppress parallel bridge sidewalks)
-      const testPolys = isFootpath ? coveredBridgeRawPolys : emittedBridgePolys;
-      if (testPolys.length > 0) {
-        let covered = 0;
-        const tol = isFootpath ? 0.38 : 0.42;
-        for (let k = 0; k < sub.length; k++) {
-          const p = sub[k];
-          if (testPolys.some(bpPoly => pointInPolyOrNear2D(p[0], p[1], bpPoly, tol))) covered++;
+      const status = emitLinearBridgeRun(sub, false);
+      if (status === 'emitted') emittedWetSpan = true;
+      else if (status === 'covered') wetCoveredByStage1 = true;
+    }
+
+    // Dry-land overpasses, railway viaducts, and highway flyovers with no water crossing
+    if (!emittedWetSpan && !wetCoveredByStage1) {
+      let dIdx = 0;
+      while (dIdx < dense.length) {
+        const p = dense[dIdx];
+        if (!isPrintedDryPoint(p[0], p[1]) || isWetPoint(p[0], p[1])) {
+          dIdx++;
+          continue;
         }
-        if (covered >= sub.length * 0.42) continue;
-      }
-
-      if (!isPrintedDryPoint(sub[0][0], sub[0][1]) ||
-          !isPrintedDryPoint(sub[sub.length - 1][0], sub[sub.length - 1][1])) {
-        continue;
-      }
-
-      // Resample span stations (~0.55u spacing + abutment transition stations near both ends)
-      const cumDist = [0];
-      for (let k = 1; k < sub.length; k++) {
-        cumDist.push(cumDist[k - 1] + Math.hypot(sub[k][0] - sub[k - 1][0], sub[k][1] - sub[k - 1][1]));
-      }
-      const totalArcLen = cumDist[cumDist.length - 1];
-      if (totalArcLen < 0.55 ||
-          Math.hypot(sub[sub.length - 1][0] - sub[0][0], sub[sub.length - 1][1] - sub[0][1]) < 0.50) {
-        continue;
-      }
-
-      const spanPts = [sub[0]];
-      const spanArc = [0];
-      for (let k = 1; k < sub.length - 1; k++) {
-        const dFromPrev = Math.hypot(
-          sub[k][0] - spanPts[spanPts.length - 1][0],
-          sub[k][1] - spanPts[spanPts.length - 1][1]
-        );
-        const dToEnd = Math.hypot(
-          sub[sub.length - 1][0] - sub[k][0],
-          sub[sub.length - 1][1] - sub[k][1]
-        );
-        const nearBank = (cumDist[k] >= 0.20 && cumDist[k] <= 0.45 && spanPts.length === 1) ||
-                         (totalArcLen - cumDist[k] >= 0.20 && totalArcLen - cumDist[k] <= 0.45 && dToEnd >= 0.18);
-        if ((dFromPrev >= 0.55 && dToEnd >= 0.22) || (nearBank && dFromPrev >= 0.18 && dToEnd >= 0.18)) {
-          spanPts.push(sub[k]);
-          spanArc.push(cumDist[k]);
+        const d0 = dIdx;
+        while (dIdx < dense.length && isPrintedDryPoint(dense[dIdx][0], dense[dIdx][1]) && !isWetPoint(dense[dIdx][0], dense[dIdx][1])) {
+          dIdx++;
         }
-      }
-      spanPts.push(sub[sub.length - 1]);
-      spanArc.push(totalArcLen);
-      if (spanPts.length < 2) continue;
-
-      const N = spanPts.length;
-      const leftPts = [];
-      const rightPts = [];
-      for (let i = 0; i < N; i++) {
-        let nx, ny;
-        if (i === 0) {
-          const dx = spanPts[1][0] - spanPts[0][0], dy = spanPts[1][1] - spanPts[0][1], l = Math.hypot(dx, dy) || 1;
-          nx = -dy / l; ny = dx / l;
-        } else if (i === N - 1) {
-          const dx = spanPts[N - 1][0] - spanPts[N - 2][0], dy = spanPts[N - 1][1] - spanPts[N - 2][1], l = Math.hypot(dx, dy) || 1;
-          nx = -dy / l; ny = dx / l;
-        } else {
-          const d1x = spanPts[i][0] - spanPts[i - 1][0], d1y = spanPts[i][1] - spanPts[i - 1][1], l1 = Math.hypot(d1x, d1y) || 1;
-          const d2x = spanPts[i + 1][0] - spanPts[i][0], d2y = spanPts[i + 1][1] - spanPts[i][1], l2 = Math.hypot(d2x, d2y) || 1;
-          const tx = d1x / l1 + d2x / l2, ty = d1y / l1 + d2y / l2, tl = Math.hypot(tx, ty) || 1;
-          const mnx = -ty / tl, mny = tx / tl;
-          const dot = mnx * (-d1y / l1) + mny * (d1x / l1);
-          const miter = Math.min(1.55, 1.0 / Math.max(0.62, dot));
-          nx = mnx * miter; ny = mny * miter;
-        }
-        // Subtle 0.84x nose taper only at the buried dry-land tip so rounded road masks never expose square corners
-        const endFactor = (i === 0 || i === N - 1) && N >= 3 ? 0.84 : 1.0;
-        const hw = Math.max(0.16, brHalfW * endFactor);
-        leftPts.push([spanPts[i][0] + nx * hw, spanPts[i][1] + ny * hw]);
-        rightPts.push([spanPts[i][0] - nx * hw, spanPts[i][1] - ny * hw]);
-      }
-
-      // Bank elevations & smooth bank-to-bank ramped/crowned Z profile
-      const zLand0 = Math.max(baseBottomZ, getActualPrintedSurfaceMinZ(spanPts[0][0], spanPts[0][1]));
-      const zLand1 = Math.max(baseBottomZ, getActualPrintedSurfaceMinZ(spanPts[N - 1][0], spanPts[N - 1][1]));
-      let zDryMin = Math.min(zLand0, zLand1);
-      for (let i = 1; i < N - 1; i++) {
-        const sz = getActualPrintedSurfaceMinZ(spanPts[i][0], spanPts[i][1]);
-        if (sz >= baseBottomZ - 1e-4 && sz < zDryMin) zDryMin = sz;
-      }
-
-      const zDeckBot = zDryMin;
-      const microZ = (((linSpanIdx++) % 5) + 1) * 0.003;
-      const zEnd0 = quantizeZUnits(zLand0 + evalRoadSurfaceOffset(spanPts[0][0], spanPts[0][1], isFootpath)) + microZ;
-      const zEnd1 = quantizeZUnits(zLand1 + evalRoadSurfaceOffset(spanPts[N - 1][0], spanPts[N - 1][1], isFootpath)) + microZ;
-
-      const minMidZ = Math.max(
-        waterSurfZ + brHeight * 0.72,
-        zDeckBot + (isFootpath ? effPathHeight : rHeight)
-      ) + microZ;
-      const midLinZ = 0.5 * (zEnd0 + zEnd1);
-      const reqCrown = Math.max(0.0, minMidZ - midLinZ);
-      const subtleCamber = Math.min(0.10, totalArcLen * 0.012);
-      const archCrown = Math.max(reqCrown, subtleCamber);
-
-      const zTopArr = new Array(N);
-      for (let i = 0; i < N; i++) {
-        const t = totalArcLen > 1e-5 ? (spanArc[i] / totalArcLen) : 0;
-        const zLin = zEnd0 + (zEnd1 - zEnd0) * t;
-        const crown = (i === 0 || i === N - 1) ? 0.0 : archCrown * Math.sin(Math.PI * t);
-        zTopArr[i] = Math.max(zDeckBot + 0.06, zLin + crown);
-      }
-
-      const deckShell = [];
-      const shellId = allocShellId();
-      const rampedOk = _emitRampedRibbonShell3D(leftPts, rightPts, zTopArr, zDeckBot, 3, deckShell, 0, shellId);
-      const ribbonPoly = rightPts.concat(leftPts.slice().reverse());
-      if (!rampedOk) {
-        const zFlatTop = Math.max(...zTopArr);
-        emitClosedPrism(ribbonPoly, zDeckBot, zFlatTop, 3, deckShell, 0, shellId);
-      }
-      if (deckShell.length > 0) {
-        appendShellClippedToTiles(deckShell, ctx, meshes.roads);
-        const cleanContain = cleanPolygonRing(ribbonPoly, true);
-        emitPiersAlongSpan(
-          spanPts[0][0], spanPts[0][1],
-          spanPts[N - 1][0], spanPts[N - 1][1],
-          brWidth, zDeckBot,
-          cleanContain.length >= 3 ? cleanContain : null
-        );
+        const sub = dense.slice(d0, dIdx);
+        if (sub.length >= 2) emitLinearBridgeRun(sub, true);
       }
     }
   });
@@ -1096,7 +1187,7 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
       clipPolyToBox(item.bedOuter, -halfW + 0.25, -halfH + 0.25, halfW - 0.25, halfH - 0.25),
       true
     );
-    if (poly.length < 3 || Math.abs(signedArea2D(poly)) < 0.015) return;
+    if (poly.length < 3 || Math.abs(signedArea2D(poly)) < 0.003) return;
 
     const obb = computeMinAreaOBB2D(poly);
     if (!obb) return;
@@ -1117,7 +1208,7 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
         clipPolyToBox(widened, -halfW + 0.25, -halfH + 0.25, halfW - 0.25, halfH - 0.25),
         true
       );
-      if (wClipped.length >= 3 && isSimplePolygon(wClipped) && !hasSelfTouchingEdge2D(wClipped, 2.2e-3)) {
+      if (wClipped.length >= 3 && isSimplePolygon(wClipped) && !hasSelfTouchingEdge2D(wClipped, 1e-4)) {
         poly = wClipped;
       }
     }
@@ -1147,7 +1238,7 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
           ];
         });
         const sClean = cleanPolygonRing(snapped, true);
-        if (sClean.length >= 3 && isSimplePolygon(sClean) && !hasSelfTouchingEdge2D(sClean, 2.2e-3)) {
+        if (sClean.length >= 3 && isSimplePolygon(sClean) && !hasSelfTouchingEdge2D(sClean, 1e-4)) {
           poly = sClean;
         }
       }

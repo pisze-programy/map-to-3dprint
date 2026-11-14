@@ -408,11 +408,11 @@ function processOsmTreeRowWayJS(wid, w, tags, nids, isClosed, ctx) {
   return false;
 }
 
-function populateParkTreesJS(wantTrees, treeNodes, greenPolys, metersToUnits, fetchHalfW, fetchHalfH, isExcludedPoint = null) {
+function populateParkTreesJS(wantTrees, treeNodes, greenPolys, metersToUnits, fetchHalfW, fetchHalfH, isExcludedPoint = null, isResin = true) {
   const trees = [];
   if (!wantTrees) return trees;
 
-  const MAX_TREES = 3200;
+  const MAX_TREES = isResin ? 6500 : 3200;
   const treeBuckets = new Map();
   const canPlaceTree = (tx, ty, minDistSq, cellSz) => {
     const bx = Math.floor(tx / cellSz), by = Math.floor(ty / cellSz);
@@ -432,7 +432,7 @@ function populateParkTreesJS(wantTrees, treeNodes, greenPolys, metersToUnits, fe
   };
 
   // Pass 1: Explicit OSM natural=tree & natural=tree_row alignments (priority over scatter)
-  const nodeMinDistU = Math.max(0.22, 3.8 * metersToUnits);
+  const nodeMinDistU = Math.max(isResin ? 0.09 : 0.22, (isResin ? 2.4 : 3.8) * metersToUnits);
   const nodeMinDistSq = nodeMinDistU * nodeMinDistU;
   const nodeCellSz = Math.max(0.42, nodeMinDistU * 1.4);
   for (const tr of (treeNodes || [])) {
@@ -448,7 +448,7 @@ function populateParkTreesJS(wantTrees, treeNodes, greenPolys, metersToUnits, fe
   const parkMinDistU = Math.max(0.38, 7.2 * metersToUnits);
   const parkMinDistSq = parkMinDistU * parkMinDistU;
   const parkCellSz = Math.max(0.58, parkMinDistU * 1.3);
-  const minParkAreaU = Math.max(0.28, 420.0 * metersToUnits * metersToUnits);
+  const minParkAreaU = Math.max(isResin ? 0.08 : 0.28, (isResin ? 180.0 : 420.0) * metersToUnits * metersToUnits);
   const greenEdgeInsetSq = (Math.max(0.16, 1.8 * metersToUnits)) ** 2;
 
   for (const gp of (greenPolys || [])) {
@@ -516,7 +516,8 @@ function finalizeOsmTreesLayerJS(ctx) {
     ctx.metersToUnits,
     ctx.fetchHalfW,
     ctx.fetchHalfH,
-    exclusionChecker
+    exclusionChecker,
+    ctx.isResin !== false
   );
 }
 

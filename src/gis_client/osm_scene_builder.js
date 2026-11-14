@@ -185,11 +185,11 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   const query = (typeof buildAdaptiveOverpassQL === 'function' && typeof selectLodTier === 'function')
     ? buildAdaptiveOverpassQL(south, west, north, east, selectLodTier(effectiveSpanM), 14, lodQueryOpts)
     : `[out:json][timeout:14][bbox:${bbox}];` +
-      `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];)->.brels;` +
+      `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];relation["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];)->.brels;` +
       `(.brels;>;)->.ball;` +
       `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"];relation["type"="multipolygon"]["leisure"];relation["type"="multipolygon"]["highway"="pedestrian"];)->.grels;` +
       `way(r.grels)(${bbox})->.gways;` +
-      `(way["building"];way["building:part"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["man_made"~"^(bridge|pier|breakwater|groyne)$"];.gways;)->.wbox;` +
+      `(way["building"];way["building:part"];way["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["man_made"~"^(bridge|pier|breakwater|groyne)$"];.gways;)->.wbox;` +
       `(relation.ball;.grels;.wbox;way.ball;node["natural"="tree"];);out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
 
@@ -342,8 +342,9 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     }
     if (outerWays.length > 0) {
       rawRelWays.set(rel.id, { outerWays, innerWays, memberWayIds });
-      const outerPolys = stitchWayRingsJS(outerWays).map(r => nodesToPts(r, 0.018)).filter(p => p.length >= 3);
-      const innerPolys = stitchWayRingsJS(innerWays).map(r => nodesToPts(r, 0.018)).filter(p => p.length >= 3);
+      const relSimpTol = effectiveSpanM <= 3500 ? 0.006 : 0.018;
+      const outerPolys = stitchWayRingsJS(outerWays).map(r => nodesToPts(r, relSimpTol)).filter(p => p.length >= 3);
+      const innerPolys = stitchWayRingsJS(innerWays).map(r => nodesToPts(r, relSimpTol)).filter(p => p.length >= 3);
       if (outerPolys.length > 0) stitchedRelPolys.set(rel.id, { outerPolys, innerPolys, memberWayIds });
     }
   }
@@ -354,6 +355,7 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     nodesToPts, project,
     fetchHalfW, fetchHalfH, halfW, halfH, metersToUnits, effectiveSpanM,
     wantTrees, minBldFootprintM, roadDetail, lodSettings,
+    isResin: !(options && options.isResin === false),
     waterSamplePts, buildingSamplePts, roadSamplePts,
     coastWays, treeNodes,
     waterPolys, waterLines, greenPolys, roads, roadPolys, bridgePolys

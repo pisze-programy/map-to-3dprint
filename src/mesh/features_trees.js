@@ -99,6 +99,9 @@ function _meshTreePreparePlacementEnv(scene, ctx, baseInfo, state, bandAssigner)
   } = ctx;
 
   const scaleMm = ctx.scaleMm || 1.89;
+  const printSpec = (ctx && ctx.printSpec) ||
+    (typeof resolvePrintPhysicsSpec === 'function' ? resolvePrintPhysicsSpec(state, scaleMm) : null);
+  const isResin = Boolean(printSpec ? printSpec.isResin : (state && state.isResin !== false));
   const scaleToBed = ctx.scaleToBed || 1.0;
   const pxPerUnit = ctx.pxPerUnit || ((ctx.MASK_RES_X && ctx.spanW) ? (ctx.MASK_RES_X / ctx.spanW) : 4.2);
   const mToU = ctx.mToU || ((scene.metersToUnits || 0.14) * scaleToBed);
@@ -113,7 +116,9 @@ function _meshTreePreparePlacementEnv(scene, ctx, baseInfo, state, bandAssigner)
   const rawStepU = (typeof ctx.stepUnits === 'number' && ctx.stepUnits > 0)
     ? ctx.stepUnits
     : ((thresholds && thresholds.length > 1) ? Math.abs(thresholds[1] - thresholds[0]) : 0.45);
-  const maxHollowSafeStepU = Math.min(rawStepU * 1.08, 0.70 / scaleMm);
+  const maxHollowSafeStepU = isResin
+    ? Math.max(rawStepU * 2.15, 1.35 / scaleMm)
+    : Math.min(rawStepU * 1.08, 0.70 / scaleMm);
 
   const getSurfZ = (baseInfo && typeof baseInfo.getActualPrintedSurfaceMinZ === 'function')
     ? baseInfo.getActualPrintedSurfaceMinZ
@@ -317,6 +322,8 @@ function _meshTreePreparePlacementEnv(scene, ctx, baseInfo, state, bandAssigner)
 
   return {
     state,
+    isResin,
+    printSpec,
     greenVisible,
     roadsVisible,
     halfW,
@@ -369,11 +376,17 @@ function _meshTreeTryEmitSingleTree(tr, idx, env, ctx, meshes, allocShellId) {
 
   const realRadiusM = 3.2 + (idx % 5) * 0.55;
   const osmH = (Number(tr[2]) > 2.0) ? Number(tr[2]) : (6.0 + (idx % 6) * 0.75);
-  const desiredR = Math.max(0.24, Math.min(0.44, Math.max(realRadiusM * env.mToU * 1.30, 0.75 / env.scaleMm)));
-  const minCompactR = Math.max(0.20, Math.min(desiredR, 0.48 / env.scaleMm));
-  const baseTreeH = Math.max(0.30, Math.min(0.64, Math.max(osmH * env.mToU * 1.15, 0.92 / env.scaleMm) * (env.state.zScale || 1.0)));
+  const desiredR = env.isResin
+    ? Math.max(0.16, Math.min(0.42, Math.max(realRadiusM * env.mToU * 1.18, 0.42 / env.scaleMm)))
+    : Math.max(0.24, Math.min(0.44, Math.max(realRadiusM * env.mToU * 1.30, 0.75 / env.scaleMm)));
+  const minCompactR = env.isResin
+    ? Math.max(0.12, Math.min(desiredR, Math.max(env.printSpec ? env.printSpec.minFeatureUnits * 1.5 : 0.12, 0.26 / env.scaleMm)))
+    : Math.max(0.20, Math.min(desiredR, 0.48 / env.scaleMm));
+  const baseTreeH = env.isResin
+    ? Math.max(0.22, Math.min(0.64, Math.max(osmH * env.mToU * 1.12, 0.55 / env.scaleMm) * (env.state.zScale || 1.0)))
+    : Math.max(0.30, Math.min(0.64, Math.max(osmH * env.mToU * 1.15, 0.92 / env.scaleMm) * (env.state.zScale || 1.0)));
 
-  const minEdgePad = Math.max(0.55, minCompactR * 1.12);
+  const minEdgePad = Math.max(env.isResin ? 0.38 : 0.55, minCompactR * 1.12);
   if (bx < -env.halfW + minEdgePad || bx > env.halfW - minEdgePad || by < -env.halfH + minEdgePad || by > env.halfH - minEdgePad) {
     return false;
   }
@@ -489,7 +502,9 @@ function _meshTreeTryEmitSingleTree(tr, idx, env, ctx, meshes, allocShellId) {
   const kCenter = env.pixelBandIdx[msCenter];
   const surfState = env.printedSurfaceState[msCenter];
   const rot = (((bx * 12.9898 + by * 78.233) % 1) + 1) % 1 * Math.PI * 2;
-  const maxStepSpanU = Math.min(env.maxHollowSafeStepU, baseTreeH * 0.85);
+  const maxStepSpanU = env.isResin
+    ? Math.min(env.maxHollowSafeStepU, baseTreeH * 1.65)
+    : Math.min(env.maxHollowSafeStepU, baseTreeH * 0.85);
   const shoreExtraU = env.shoreDist ? 0 : (0.82 / env.pxPerUnit);
 
   const candidateRadii = [maxGeomR];
@@ -513,7 +528,8 @@ function _meshTreeTryEmitSingleTree(tr, idx, env, ctx, meshes, allocShellId) {
         if (!list) continue;
         for (let j = 0; j < list.length; j++) {
           const pt = list[j];
-          if (Math.hypot(bx - pt[0], by - pt[1]) < (r + pt[2]) * 0.92) {
+          const spacingFactor = env.isResin ? 0.68 : 0.92;
+          if (Math.hypot(bx - pt[0], by - pt[1]) < (r + pt[2]) * spacingFactor) {
             collided = true;
             break;
           }

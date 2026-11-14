@@ -62,7 +62,7 @@ function isDegenerateTri3D(a, b, c) {
 function emitClosedPrism(poly2d, zBot, zTop, layerId, outTris, tileId = 0, shellId = -1) {
   if (zTop <= zBot + 1e-5) return;
   const p = cleanPolygonRing(poly2d.slice(), true);
-  if (p.length < 3 || Math.abs(signedArea2D(p)) < 1e-5 || !isSimplePolygon(p) || hasSelfTouchingEdge2D(p, 2.2e-3)) return;
+  if (p.length < 3 || Math.abs(signedArea2D(p)) < 1e-5 || !isSimplePolygon(p) || hasSelfTouchingEdge2D(p, 1e-4)) return;
   const tris = triangulateSimplePoly(p);
   if (!tris || tris.length === 0) return;
 
@@ -85,16 +85,16 @@ function emitClosedPrism(poly2d, zBot, zTop, layerId, outTris, tileId = 0, shell
 function emitPolygonWithHolesSlab3D(outerInput, holesInput, zBot, zTop, layerId, outTris, tileId = 0, shellId = -1) {
   if (zTop <= zBot + 1e-5) return;
   const outerClean = cleanPolygonRing(outerInput, true);
-  if (outerClean.length < 3 || Math.abs(signedArea2D(outerClean)) < 1e-4 || !isSimplePolygon(outerClean) || hasSelfTouchingEdge2D(outerClean, 2.2e-3)) return;
+  if (outerClean.length < 3 || Math.abs(signedArea2D(outerClean)) < 1e-4 || !isSimplePolygon(outerClean) || hasSelfTouchingEdge2D(outerClean, 1e-4)) return;
 
   const validHoles = [];
   if (holesInput && holesInput.length > 0) {
     for (let h = 0; h < holesInput.length; h++) {
       const hc = cleanPolygonRing(holesInput[h], false);
-      if (hc.length >= 3 && Math.abs(signedArea2D(hc)) > 1e-4 && isSimplePolygon(hc) && !hasSelfTouchingEdge2D(hc, 2.2e-3)) {
+      if (hc.length >= 3 && Math.abs(signedArea2D(hc)) > 2e-5 && isSimplePolygon(hc) && !hasSelfTouchingEdge2D(hc, 1e-4)) {
         if (hc.every(pt => pointInPoly2D(pt[0], pt[1], outerClean) &&
-                           distToPolygonBoundary2D(pt[0], pt[1], outerClean, validHoles) >= 2.5e-3) &&
-            outerClean.every(pt => distToPolygonBoundary2D(pt[0], pt[1], hc, []) >= 2.5e-3)) {
+                           distToPolygonBoundary2D(pt[0], pt[1], outerClean, validHoles) >= 4e-4) &&
+            outerClean.every(pt => distToPolygonBoundary2D(pt[0], pt[1], hc, []) >= 4e-4)) {
           validHoles.push(hc);
         }
       }
@@ -104,6 +104,21 @@ function emitPolygonWithHolesSlab3D(outerInput, holesInput, zBot, zTop, layerId,
   const mergedHoles = [];
   let ring = validHoles.length > 0 ? mergeHolesIntoOuterKeyhole(outerClean, validHoles, mergedHoles) : outerClean;
   let actualHoles = mergedHoles;
+  if (validHoles.length > 0 && (!isSimplePolygon(ring) || actualHoles.length < validHoles.length)) {
+    let curRing = outerClean;
+    const keptHoles = [];
+    for (let h = 0; h < validHoles.length; h++) {
+      const vh = validHoles[h];
+      const acc = [];
+      const nextRing = mergeHolesIntoOuterKeyhole(curRing, [vh], acc);
+      if (acc.length > 0 && isSimplePolygon(nextRing)) {
+        curRing = nextRing;
+        keptHoles.push(vh);
+      }
+    }
+    ring = curRing;
+    actualHoles = keptHoles;
+  }
   if (!isSimplePolygon(ring)) {
     ring = outerClean;
     actualHoles = [];

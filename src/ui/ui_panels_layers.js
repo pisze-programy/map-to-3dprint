@@ -366,6 +366,15 @@ function createUILayersStatsController(state, onRebuildNeeded) {
         : 'text-xs font-mono font-bold text-amber-400 shrink-0';
     }
 
+    const cutoutBadge = document.getElementById('waterCutoutBadge');
+    if (cutoutBadge) {
+      const isCut = Boolean(state && state.waterCutout);
+      cutoutBadge.textContent = isCut ? 'Wycięta Z=0' : 'Pełna tafla';
+      cutoutBadge.className = isCut
+        ? 'text-xs font-mono font-bold text-sky-400 shrink-0'
+        : 'text-xs font-mono font-bold text-[var(--muted-foreground)] shrink-0';
+    }
+
     const preflightBadge = document.getElementById('preflightStatusBadge');
     if (preflightBadge) {
       const isManifold = !!pm.isWatertightManifold;

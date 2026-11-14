@@ -105,10 +105,13 @@ function computeSolidInteriorPoint2D(outerPts, holesPts) {
 
 // Sanitizes courtyard holes against clippedOuter so grazing/simplified OSM inner rings
 // stay strictly interior and never trigger keyhole drop in extrudeBuildingLoD2.
-function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles) {
+function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles, scaleMm = 1.89, isResin = false) {
   if (!rawClippedHoles || rawClippedHoles.length === 0 || !clippedOuter || clippedOuter.length < 3) return [];
   const outerArea = Math.abs(signedArea2D(clippedOuter));
   if (outerArea < 1e-4) return [];
+  const effScale = Math.max(0.5, Number(scaleMm) || 1.89);
+  const minHoleArea = isResin ? Math.max(0.0012, Math.pow(0.14 / effScale, 2)) : 0.01;
+  const bndDistSqTol = isResin ? 1e-4 : 4e-4;
 
   const nearestOuterBoundaryPt = (px, py) => {
     let bestX = px, bestY = py, bestDSq = Infinity;
@@ -129,7 +132,7 @@ function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles) {
     let h = rawClippedHoles[hi];
     if (!h || h.length < 3) continue;
     let hArea = Math.abs(signedArea2D(h));
-    if (hArea < 0.01 || hArea >= outerArea * 0.985) continue;
+    if (hArea < minHoleArea || hArea >= outerArea * 0.985) continue;
 
     const hIp = computeSolidInteriorPoint2D(h, []);
     if (!pointInPoly2D(hIp[0], hIp[1], clippedOuter)) continue;
@@ -137,7 +140,7 @@ function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles) {
     let needsClamp = false;
     for (let v = 0; v < h.length; v++) {
       const pt = h[v];
-      if (!pointInPoly2D(pt[0], pt[1], clippedOuter) || nearestOuterBoundaryPt(pt[0], pt[1])[2] < 4e-4) {
+      if (!pointInPoly2D(pt[0], pt[1], clippedOuter) || nearestOuterBoundaryPt(pt[0], pt[1])[2] < bndDistSqTol) {
         needsClamp = true;
         break;
       }
@@ -147,7 +150,7 @@ function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles) {
       const clamped = h.map(pt => {
         const inside = pointInPoly2D(pt[0], pt[1], clippedOuter);
         const [bx, by, dSq] = nearestOuterBoundaryPt(pt[0], pt[1]);
-        if (inside && dSq >= 4e-4) return pt;
+        if (inside && dSq >= bndDistSqTol) return pt;
         const baseX = inside ? pt[0] : bx;
         const baseY = inside ? pt[1] : by;
         const vx = hIp[0] - baseX, vy = hIp[1] - baseY;
@@ -162,7 +165,7 @@ function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles) {
       }
       h = cleaned;
       hArea = Math.abs(signedArea2D(h));
-      if (hArea < 0.01) continue;
+      if (hArea < minHoleArea) continue;
     }
 
     candidates.push({ h, area: hArea, ip: hIp });
@@ -237,7 +240,9 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     maxDimMm, scaleMm, halfW, halfH,
     TERRAIN_RES_X, TERRAIN_RES_Y, mToU, baseBottomZ, quantizeZUnits, toBed
   } = ctx;
+  if (ctx && state) ctx.zScale = state.zScale || 1.0;
   const { cellTerracePolys, getActualPrintedSurfaceMinZ } = baseInfo;
+  const printSpec = resolvePrintPhysicsSpec(state, scaleMm);
 
   const rawBuildings = scene.buildings || [];
   const pickIdMap = new Map();
@@ -246,6 +251,7 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
   const suppressedIdx = new Set();
   const effectiveGid = new Map();
   const inheritedName = new Map();
+  const inheritedExtraHoles = new Map();
 
   const childEntries = [];
   for (let i = 0; i < rawBuildings.length; i++) {
@@ -343,17 +349,140 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       }
 
       if (matchedChildren.length > 0) {
+        const hasWheelChild = matchedChildren.some(mc => mc.b.archType === 'ferris_wheel');
+        if (b.archType === 'ferris_wheel' || hasWheelChild) {
+          b.archType = 'ferris_wheel';
+          for (let k = 0; k < matchedChildren.length; k++) suppressedIdx.add(matchedChildren[k].idx);
+          continue;
+        }
         for (let k = 0; k < matchedChildren.length; k++) {
           const mc = matchedChildren[k];
           if (!mc.b.groupId) effectiveGid.set(mc.idx, parentKey);
           if (!mc.b.name && b.name) inheritedName.set(mc.idx, b.name);
         }
-        const groundCov = groundChildAreaSum / bNetArea;
-        const totalCov = childAreaSum / bNetArea;
-        const holelessMultiWing = bHolesBed.length === 0 && groundChildCount >= 2 && groundCov >= 0.16;
-        if (groundCov >= 0.28 || totalCov >= 0.34 || holelessMultiWing) {
+        const groundParts = matchedChildren.filter(mc => mc.minH <= 3.5);
+        const groundCov = computeGroundPartsUnionCoverage2D(bOuterBed, bHolesBed, groundParts, pointInPoly2D);
+        const allCov = matchedChildren.length >= 2
+          ? computeGroundPartsUnionCoverage2D(bOuterBed, bHolesBed, matchedChildren, pointInPoly2D)
+          : groundCov;
+        if (groundCov >= 0.78 || allCov >= 0.72) {
           suppressedIdx.add(i);
+        } else {
+          const extraHoles = [];
+          for (let k = 0; k < groundParts.length; k++) {
+            const gc = groundParts[k];
+            if ((gc.b.h || 0) < (b.h || 0) - 0.5 && isPolygonStrictlyInside(gc.bedPoly, bOuterBed)) {
+              extraHoles.push(gc.bedPoly);
+            }
+          }
+          if (extraHoles.length > 0) inheritedExtraHoles.set(i, extraHoles);
         }
+      }
+    }
+  }
+
+  // 1b. Defense-in-depth spatial deduplication of ferris_wheel complexes in bed space
+  {
+    const wheelItems = [];
+    const bboxBed = pts => {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const px = pts[i][0], py = pts[i][1];
+        if (px < minX) minX = px; if (px > maxX) maxX = px;
+        if (py < minY) minY = py; if (py > maxY) maxY = py;
+      }
+      return [minX, minY, maxX, maxY];
+    };
+    const overlapsPad = (a, b, pad) =>
+      a[0] <= b[2] + pad && a[2] >= b[0] - pad && a[1] <= b[3] + pad && a[3] >= b[1] - pad;
+
+    for (let i = 0; i < rawBuildings.length; i++) {
+      const b = rawBuildings[i];
+      if (!b || b.hidden || b.btype === 'pier' || suppressedIdx.has(i) || b.archType !== 'ferris_wheel') continue;
+      const bedPts = b.outer.map(toBed);
+      const bbox = bboxBed(bedPts);
+      const obb = (typeof computeMinAreaOBB2D === 'function' && bedPts.length >= 3) ? computeMinAreaOBB2D(bedPts) : null;
+      const cx = obb ? obb.cx : (bbox[0] + bbox[2]) * 0.5;
+      const cy = obb ? obb.cy : (bbox[1] + bbox[3]) * 0.5;
+      const majorSpan = obb && obb.halfL > 0 ? obb.halfL * 2 : Math.max(1e-4, bbox[2] - bbox[0], bbox[3] - bbox[1]);
+      const minorSpan = obb && obb.halfW > 0 ? obb.halfW * 2 : Math.max(1e-4, Math.min(bbox[2] - bbox[0], bbox[3] - bbox[1]));
+      wheelItems.push({
+        idx: i, b, bbox, cx, cy, majorSpan,
+        aspect: majorSpan / Math.max(minorSpan, 1e-4),
+        gid: effectiveGid.has(i) ? effectiveGid.get(i) : b.groupId
+      });
+    }
+
+    if (wheelItems.length > 0) {
+      const nW = wheelItems.length;
+      const uf = new Int32Array(nW);
+      for (let i = 0; i < nW; i++) uf[i] = i;
+      const findW = x => { while (uf[x] !== x) { uf[x] = uf[uf[x]]; x = uf[x]; } return x; };
+      const unionW = (a, b) => { const ra = findW(a), rb = findW(b); if (ra !== rb) uf[rb] = ra; };
+      const distFloor = 85 * mToU;
+      const padMerge = 12 * mToU;
+
+      for (let i = 0; i < nW; i++) {
+        const wi = wheelItems[i];
+        for (let j = i + 1; j < nW; j++) {
+          const wj = wheelItems[j];
+          const sameGid = wi.gid !== null && wi.gid !== undefined && wi.gid === wj.gid;
+          const d = Math.hypot(wi.cx - wj.cx, wi.cy - wj.cy);
+          const dLim = Math.max(distFloor, 0.95 * Math.max(wi.majorSpan, wj.majorSpan));
+          if (sameGid || d <= dLim || overlapsPad(wi.bbox, wj.bbox, padMerge)) {
+            unionW(i, j);
+          }
+        }
+      }
+
+      const clusters = new Map();
+      for (let i = 0; i < nW; i++) {
+        const r = findW(i);
+        if (!clusters.has(r)) clusters.set(r, []);
+        clusters.get(r).push(wheelItems[i]);
+      }
+
+      const auxPad = 4 * mToU;
+      for (const comp of clusters.values()) {
+        let maxMajor = 0;
+        let maxWheelH = 0;
+        const cBbox = [Infinity, Infinity, -Infinity, -Infinity];
+        const compGids = new Set();
+        for (const w of comp) {
+          if (w.majorSpan > maxMajor) maxMajor = w.majorSpan;
+          if ((w.b.h || 0) > maxWheelH) maxWheelH = w.b.h;
+          if (w.gid !== null && w.gid !== undefined) compGids.add(w.gid);
+          cBbox[0] = Math.min(cBbox[0], w.bbox[0]);
+          cBbox[1] = Math.min(cBbox[1], w.bbox[1]);
+          cBbox[2] = Math.max(cBbox[2], w.bbox[2]);
+          cBbox[3] = Math.max(cBbox[3], w.bbox[3]);
+        }
+
+        const eligible = comp.filter(w => w.majorSpan >= 0.65 * maxMajor);
+        const pool = eligible.length > 0 ? eligible : comp;
+        pool.sort((a, b) => {
+          const sa = Math.min(a.aspect, 30) * 20 + (a.b.btype === 'observation_wheel' ? 50 : 0);
+          const sb = Math.min(b.aspect, 30) * 20 + (b.b.btype === 'observation_wheel' ? 50 : 0);
+          return sb - sa;
+        });
+        const keep = pool[0];
+        for (const w of comp) {
+          if (w !== keep) suppressedIdx.add(w.idx);
+        }
+
+        for (let j = 0; j < rawBuildings.length; j++) {
+          if (suppressedIdx.has(j)) continue;
+          const bj = rawBuildings[j];
+          if (!bj || bj.hidden || bj.btype === 'pier' || bj.archType === 'ferris_wheel') continue;
+          const gidJ = effectiveGid.has(j) ? effectiveGid.get(j) : bj.groupId;
+          const inGid = gidJ !== null && gidJ !== undefined && compGids.has(gidJ);
+          const overlaps = overlapsPad(bboxBed(bj.outer.map(toBed)), cBbox, auxPad);
+          if (inGid || (overlaps && ((bj.minH || 0) > 3.0 || (bj.h || 0) > 35.0))) {
+            if ((bj.h || 0) > maxWheelH) maxWheelH = bj.h;
+            suppressedIdx.add(j);
+          }
+        }
+        if (maxWheelH > (keep.b.h || 0)) keep.b.h = maxWheelH;
       }
     }
   }
@@ -384,13 +513,13 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     let minSpan = Math.min(maxX - minX, maxY - minY);
     let area = Math.abs(signedArea2D(clippedOuter));
 
-    const isImportant = Boolean(b.part || b.tower || b.church || b.landmark || (b.h || 0) >= 20 || b.isLandmark);
+    const isFerrisWheel = b.archType === 'ferris_wheel';
+    const isImportant = Boolean(isFerrisWheel || b.part || b.tower || b.church || b.landmark || (b.h || 0) >= 20 || b.isLandmark);
     const metersPerMm = 1.0 / (mToU * scaleMm);
 
-    // Print-Space Error (PSE) thresholds:
-    // Printable wall limit = 0.35 mm on print (~17.5 m in reality at 50 km)
-    const minPrintMm = 0.35;
-    const minPrintUnits = minPrintMm / scaleMm;
+    // Print-Space Error (PSE) thresholds from active printer physics spec
+    const minPrintMm = printSpec.minFeatureMm;
+    const minPrintUnits = printSpec.minFeatureUnits;
 
     // Scale-adaptive or user-configured minimum building footprint in meters
     const lodMin = state.lodSettings && (
@@ -415,9 +544,9 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       if (area < 0.002) continue;
     }
 
-    // 2. Minimum-span dilation: ONLY applied to landmarks/towers/churches!
+    // 2. Minimum-span dilation: ONLY applied to non-wheel landmarks/towers/churches!
     // Non-landmarks are NEVER dilated to prevent inflating suburbs into solid blocks at 1:50,000 scale!
-    if (isImportant && (minSpan * scaleMm < 0.48)) {
+    if (isImportant && !isFerrisWheel && (minSpan * scaleMm < 0.48)) {
       clippedOuter = cleanPolygonRing(
         clipPolyToBox(dilatePolygonMinSpan2D(clippedOuter, 0.48 / scaleMm), -halfW + 0.38, -halfH + 0.38, halfW - 0.38, halfH - 0.38),
         true
@@ -431,12 +560,13 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       }
       minSpan = Math.min(maxX - minX, maxY - minY);
       area = Math.abs(signedArea2D(clippedOuter));
-      if (minSpan < Math.min(0.18, 0.35 / scaleMm) || area < Math.min(0.004, 0.10 / (scaleMm * scaleMm))) continue;
+      const minClampedArea = printSpec.isResin ? Math.min(0.0012, 0.015 / (scaleMm * scaleMm)) : Math.min(0.004, 0.10 / (scaleMm * scaleMm));
+      if (minSpan < Math.min(0.18, minPrintMm / scaleMm) || area < minClampedArea) continue;
     }
 
-    // Douglas-Peucker tolerance: ~0.10 mm on print (~5 m at 50 km)
-    const dpTolMm = 0.10;
-    const dpTolUnits = dpTolMm / scaleMm;
+    // Douglas-Peucker tolerance from active printer physics spec
+    const dpTolMm = printSpec.dpSimplifyMm;
+    const dpTolUnits = printSpec.dpSimplifyUnits;
 
     if (clippedOuter.length > 5 && dpTolUnits > 0.005 && (!b.holes || b.holes.length === 0) && typeof simplifyClosedRingDP2D === 'function') {
       const simplified = simplifyClosedRingDP2D(clippedOuter, dpTolUnits);
@@ -451,7 +581,10 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     const rawClippedHoles = (b.holes || [])
       .map(h => cleanPolygonRing(clipPolyToBox(h.map(toBed), -halfW + 0.38, -halfH + 0.38, halfW - 0.38, halfH - 0.38), false))
       .filter(h => h.length >= 3);
-    const clippedHoles = sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles);
+    const extraBedHoles = (inheritedExtraHoles.get(i) || [])
+      .map(h => cleanPolygonRing(clipPolyToBox(h, -halfW + 0.38, -halfH + 0.38, halfW - 0.38, halfH - 0.38), false))
+      .filter(h => h.length >= 3);
+    const clippedHoles = sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles.concat(extraBedHoles), scaleMm, printSpec.isResin);
 
     const interiorPt = computeSolidInteriorPoint2D(clippedOuter, clippedHoles);
     const maxSpan = Math.max(maxX - minX, maxY - minY);
@@ -459,6 +592,7 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     prepared.push({
       rawIdx: i,
       b,
+      archType: b.archType || null,
       displayName: b.name || inheritedName.get(i) || '',
       clippedOuter,
       clippedHoles,
@@ -470,7 +604,7 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       cx: interiorPt[0],
       cy: interiorPt[1],
       groupId: effectiveGid.get(i) || b.groupId || b.osmId || b.id,
-      scaledMinH: b.minH || 0,
+      scaledMinH: isFerrisWheel ? 0 : (b.minH || 0),
       skip: false
     });
   }
@@ -496,7 +630,8 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       if (A.maxX <= B.minX + 0.015 || A.minX >= B.maxX - 0.015 || A.maxY <= B.minY + 0.015 || A.minY >= B.maxY - 0.015) continue;
       const aInB = isPointInsidePart2D(A.interiorPt[0], A.interiorPt[1], B, 0) && A.area <= B.area * 0.94;
       const bInA = isPointInsidePart2D(B.interiorPt[0], B.interiorPt[1], A, 0) && B.area <= A.area * 0.94;
-      if (aInB || bInA || ((A.b.part || B.b.part) && polygonsOverlap2D(A, B))) {
+      const involvesPartOrElevated = Boolean(A.b.part || B.b.part || A.scaledMinH > 0.05 || B.scaledMinH > 0.05);
+      if (aInB || bInA || (involvesPartOrElevated && polygonsOverlap2D(A, B))) {
         union(i, j);
       }
     }
@@ -660,8 +795,8 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     }
     const roofPrintMm = roofHMm * scaleMm;
     const minSpanPrintMm = item.minSpan * scaleMm;
-    // If physical roof pitch < 0.15 mm on print, or building print span < 0.8 mm, fall back to flat LoD1
-    const hasPitched = (roofShape !== 'flat' && roofPrintMm >= 0.15 && minSpanPrintMm >= 0.80);
+    // Lower pitched-roof threshold on SLA resin (50um Z / 35um XY) so rowhouses retain LoD2 roofs
+    const hasPitched = (roofShape !== 'flat' && roofPrintMm >= (printSpec.isResin ? 0.10 : 0.15) && minSpanPrintMm >= (printSpec.isResin ? 0.35 : 0.80));
     if (!hasPitched) {
       roofShape = 'flat';
       roofHMm = 0;

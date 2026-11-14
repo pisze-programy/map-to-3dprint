@@ -553,28 +553,36 @@ function buildRawGreeneryMask(scene, mctx, maskEnv) {
   return rawGreenMask;
 }
 
-function finalizeGreeneryMask(rawGreenMask, waterMask, shoreDist, bldMask, majorRoadImg, MASK_RES_X, MASK_RES_Y) {
+function finalizeGreeneryMask(rawGreenMask, waterMask, shoreDist, bldMask, majorRoadImg, MASK_RES_X, MASK_RES_Y, isResin = false) {
   const greenMask = new Uint8Array(MASK_RES_X * MASK_RES_Y);
   const nx = MASK_RES_X, ny = MASK_RES_Y;
+  const minShorePx = isResin ? 0.70 : 1.15;
+  const maxRoadAlpha = isResin ? 127 : 96;
   for (let y = 0; y < ny; y++) {
     const r = y * nx;
     for (let x = 0; x < nx; x++) {
       const i = r + x;
       const rg = rawGreenMask[i];
       if (!rg) continue;
-      const clearOfWater = !waterMask[i] && shoreDist[i] >= 1.15;
-      const clearRoadHalo = majorRoadImg[i * 4 + 3] <= 96;
+      const clearOfWater = !waterMask[i] && shoreDist[i] >= minShorePx;
+      const clearRoadHalo = majorRoadImg[i * 4 + 3] <= maxRoadAlpha;
       if (!clearOfWater || bldMask[i] || !clearRoadHalo) continue;
       if (rg === 2) {
         if (x <= 0 || x >= nx - 1 || y <= 0 || y >= ny - 1) continue;
         let nearObs = false;
-        for (let dy = -1; dy <= 1 && !nearObs; dy++) {
-          const nr = (y + dy) * nx + x;
-          for (let dx = -1; dx <= 1; dx++) {
-            const ni = nr + dx;
-            if (bldMask[ni] || waterMask[ni] || majorRoadImg[ni * 4 + 3] > 96) {
-              nearObs = true;
-              break;
+        if (isResin) {
+          if (waterMask[i - 1] || waterMask[i + 1] || waterMask[i - nx] || waterMask[i + nx]) {
+            nearObs = true;
+          }
+        } else {
+          for (let dy = -1; dy <= 1 && !nearObs; dy++) {
+            const nr = (y + dy) * nx + x;
+            for (let dx = -1; dx <= 1; dx++) {
+              const ni = nr + dx;
+              if (bldMask[ni] || waterMask[ni] || majorRoadImg[ni * 4 + 3] > 96) {
+                nearObs = true;
+                break;
+              }
             }
           }
         }
@@ -671,7 +679,9 @@ function _buildContinuousGreeneryFieldAndSupport(ctx, bandAssigner) {
           bldMask[srcIdx + nx - 1] || bldMask[srcIdx + nx + 1]
         );
         if (adjBld) {
-          field[idx] = conv[idx];
+          const bldTarget = 0.64;
+          const bldBoost = Math.max(0.0, bldTarget - max3);
+          field[idx] = bldBoost > 0.0 ? Math.min(bldTarget, conv[idx] + bldBoost) : conv[idx];
         } else {
           const adjRoad = majorRoadMask && (
             majorRoadMask[srcIdx - 1] || majorRoadMask[srcIdx + 1] ||
@@ -1383,6 +1393,14 @@ function _emitSingleGreeneryPolygon(poly, ctx, baseInfo, maxBandK, meshes, alloc
   }
 }
 
+function _resolveGreenMinAreaUnits(ctx, state, scaleMm) {
+  const printSpec = (ctx && ctx.printSpec) ||
+    (typeof resolvePrintPhysicsSpec === 'function' ? resolvePrintPhysicsSpec(state, scaleMm) : null);
+  return (printSpec && printSpec.isResin)
+    ? Math.min(0.008, Math.max(printSpec.minFeatureUnits * printSpec.minFeatureUnits, 0.015 / (scaleMm * scaleMm)))
+    : Math.min(0.016, 0.050 / (scaleMm * scaleMm));
+}
+
 function emitGreeneryLayerSync(scene, ctx, baseInfo, state, meshes, allocShellId, bandAssigner) {
   const lv = state.layerVisible || state.layers;
   const greenVisible = !lv || lv.greenery !== false;
@@ -1390,7 +1408,7 @@ function emitGreeneryLayerSync(scene, ctx, baseInfo, state, meshes, allocShellId
 
   const { MASK_RES_X, MASK_RES_Y } = ctx;
   const scaleMm = ctx.scaleMm || 1.89;
-  const greenMinArea = Math.min(0.016, 0.050 / (scaleMm * scaleMm));
+  const greenMinArea = _resolveGreenMinAreaUnits(ctx, state, scaleMm);
   const greenIso = 0.47;
   const { xMinMS, xMaxMS, yMinMS, yMaxMS, maxBandK } = bandAssigner;
 
@@ -1418,7 +1436,7 @@ async function emitGreeneryLayerAsync(scene, ctx, baseInfo, state, meshes, alloc
 
   const { MASK_RES_X, MASK_RES_Y } = ctx;
   const scaleMm = ctx.scaleMm || 1.89;
-  const greenMinArea = Math.min(0.016, 0.050 / (scaleMm * scaleMm));
+  const greenMinArea = _resolveGreenMinAreaUnits(ctx, state, scaleMm);
   const greenIso = 0.47;
   const { xMinMS, xMaxMS, yMinMS, yMaxMS, maxBandK, totalBands } = bandAssigner;
 

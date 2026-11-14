@@ -132,8 +132,19 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
 
     let rwm = 6.2;
     if (isPath) {
-      if (!isBridge && ['sidewalk', 'crossing', 'access_aisle', 'island'].includes(tags.footway)) return true;
-      if (!isBridge && ['sidewalk', 'crossing'].includes(tags.cycleway)) return true;
+      const spanM = (ctx && ctx.effectiveSpanM) ? ctx.effectiveSpanM : 1200;
+      const minBldM = (ctx && typeof ctx.minBldFootprintM === 'number') ? ctx.minBldFootprintM : 0;
+      const keepCrossingOrIsland = spanM <= 4200;
+      const keepSidewalk = spanM <= 1650 && minBldM <= 0;
+      if (!isBridge && tags.footway) {
+        if (tags.footway === 'access_aisle') return true;
+        if (tags.footway === 'sidewalk' && !keepSidewalk) return true;
+        if ((tags.footway === 'crossing' || tags.footway === 'island') && !keepCrossingOrIsland) return true;
+      }
+      if (!isBridge && tags.cycleway) {
+        if (tags.cycleway === 'sidewalk' && !keepSidewalk) return true;
+        if (tags.cycleway === 'crossing' && !keepCrossingOrIsland) return true;
+      }
       rwm = hwy === 'track' ? 2.8 : 2.2;
     } else if (hwy === 'pedestrian') {
       rwm = 5.2;

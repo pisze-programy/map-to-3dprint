@@ -121,7 +121,9 @@ const PRINT_PROFILES = {
     bedX: 153.4, bedY: 87.0, bedZ: 165.0,
     totalWidthMm: 75, totalHeightMm: 84,
     cols: 1, rows: 1,
-    isResin: true
+    isResin: true,
+    xyPixelMm: 0.035,
+    layerHeightMm: 0.05
   },
   mono4_150x168_2x2: {
     id: 'mono4_150x168_2x2',
@@ -130,7 +132,9 @@ const PRINT_PROFILES = {
     bedX: 153.4, bedY: 87.0, bedZ: 165.0,
     totalWidthMm: 150, totalHeightMm: 168,
     cols: 2, rows: 2,
-    isResin: true
+    isResin: true,
+    xyPixelMm: 0.035,
+    layerHeightMm: 0.05
   },
   mono4_225x252_3x3: {
     id: 'mono4_225x252_3x3',
@@ -139,7 +143,9 @@ const PRINT_PROFILES = {
     bedX: 153.4, bedY: 87.0, bedZ: 165.0,
     totalWidthMm: 225, totalHeightMm: 252,
     cols: 3, rows: 3,
-    isResin: true
+    isResin: true,
+    xyPixelMm: 0.035,
+    layerHeightMm: 0.05
   },
   mono4_150_1x2: {
     id: 'mono4_150_1x2',
@@ -148,7 +154,9 @@ const PRINT_PROFILES = {
     bedX: 153.4, bedY: 87.0, bedZ: 165.0,
     totalWidthMm: 150, totalHeightMm: 150,
     cols: 1, rows: 2,
-    isResin: true
+    isResin: true,
+    xyPixelMm: 0.035,
+    layerHeightMm: 0.05
   },
   mono4_296_2x4: {
     id: 'mono4_296_2x4',
@@ -157,7 +165,9 @@ const PRINT_PROFILES = {
     bedX: 153.4, bedY: 87.0, bedZ: 165.0,
     totalWidthMm: 296, totalHeightMm: 296,
     cols: 2, rows: 4,
-    isResin: true
+    isResin: true,
+    xyPixelMm: 0.035,
+    layerHeightMm: 0.05
   },
   mono4_custom: {
     id: 'mono4_custom',
@@ -167,6 +177,8 @@ const PRINT_PROFILES = {
     totalWidthMm: 500, totalHeightMm: 500,
     cols: 4, rows: 6,
     isResin: true,
+    xyPixelMm: 0.035,
+    layerHeightMm: 0.05,
     isCustomMono4: true
   },
   fdm_330_1x1: {
@@ -176,7 +188,9 @@ const PRINT_PROFILES = {
     bedX: 360.0, bedY: 360.0, bedZ: 360.0,
     totalWidthMm: 320, totalHeightMm: 320,
     cols: 1, rows: 1,
-    isResin: false
+    isResin: false,
+    xyPixelMm: 0.40,
+    layerHeightMm: 0.20
   },
   fdm_256_1x1: {
     id: 'fdm_256_1x1',
@@ -186,6 +200,8 @@ const PRINT_PROFILES = {
     totalWidthMm: 220, totalHeightMm: 220,
     cols: 1, rows: 1,
     isResin: false,
+    xyPixelMm: 0.40,
+    layerHeightMm: 0.20,
     hasAmsTower: true
   },
   fdm_350_1x1: {
@@ -195,7 +211,9 @@ const PRINT_PROFILES = {
     bedX: 350.0, bedY: 350.0, bedZ: 350.0,
     totalWidthMm: 340, totalHeightMm: 340,
     cols: 1, rows: 1,
-    isResin: false
+    isResin: false,
+    xyPixelMm: 0.40,
+    layerHeightMm: 0.20
   },
   fdm_500_2x2: {
     id: 'fdm_500_2x2',
@@ -205,6 +223,8 @@ const PRINT_PROFILES = {
     totalWidthMm: 440, totalHeightMm: 440,
     cols: 2, rows: 2,
     isResin: false,
+    xyPixelMm: 0.40,
+    layerHeightMm: 0.20,
     hasAmsTower: true
   }
 };

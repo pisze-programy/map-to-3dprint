@@ -625,9 +625,152 @@ function computeReliefChimneyPolygon(outerRing, holeRings = [], insetDist = 2.0)
   return chimCW;
 }
 
+/**
+ * Estimates the exact 2D footprint fraction of an outer polygon (minus holes) covered by
+ * the union of ground-level S3DB building parts via an interior grid + inward edge sampling.
+ * Replaces naive area-ratio summing when multiple multi-story parts overlap or sit inside wings.
+ */
+function computeGroundPartsUnionCoverage2D(outerPts, holesPts, groundParts, pointInPolyFn) {
+  if (!Array.isArray(outerPts) || outerPts.length < 3 || !Array.isArray(groundParts) || groundParts.length === 0) {
+    return 0;
+  }
+  const pip = typeof pointInPolyFn === 'function' ? pointInPolyFn : pointInPoly2D;
+  let oMinX = Infinity, oMaxX = -Infinity, oMinY = Infinity, oMaxY = -Infinity;
+  for (let i = 0; i < outerPts.length; i++) {
+    const p = outerPts[i];
+    if (p[0] < oMinX) oMinX = p[0]; if (p[0] > oMaxX) oMaxX = p[0];
+    if (p[1] < oMinY) oMinY = p[1]; if (p[1] > oMaxY) oMaxY = p[1];
+  }
+  const spanX = oMaxX - oMinX, spanY = oMaxY - oMinY;
+  if (spanX <= 1e-6 || spanY <= 1e-6) return 0;
+
+  const hBboxes = [];
+  if (Array.isArray(holesPts)) {
+    for (let h = 0; h < holesPts.length; h++) {
+      const hr = holesPts[h];
+      if (!hr || hr.length < 3) continue;
+      let hx0 = Infinity, hx1 = -Infinity, hy0 = Infinity, hy1 = -Infinity;
+      for (let j = 0; j < hr.length; j++) {
+        if (hr[j][0] < hx0) hx0 = hr[j][0]; if (hr[j][0] > hx1) hx1 = hr[j][0];
+        if (hr[j][1] < hy0) hy0 = hr[j][1]; if (hr[j][1] > hy1) hy1 = hr[j][1];
+      }
+      hBboxes.push([hr, hx0, hx1, hy0, hy1]);
+    }
+  }
+
+  const gpData = [];
+  for (let k = 0; k < groundParts.length; k++) {
+    const gp = groundParts[k];
+    const gOuter = (gp && (gp.outer || gp.bedPoly)) || gp;
+    if (!Array.isArray(gOuter) || gOuter.length < 3) continue;
+    const gHoles = (gp && (gp.holes || gp.bedHoles)) || null;
+    let gx0 = Infinity, gx1 = -Infinity, gy0 = Infinity, gy1 = -Infinity;
+    for (let j = 0; j < gOuter.length; j++) {
+      if (gOuter[j][0] < gx0) gx0 = gOuter[j][0]; if (gOuter[j][0] > gx1) gx1 = gOuter[j][0];
+      if (gOuter[j][1] < gy0) gy0 = gOuter[j][1]; if (gOuter[j][1] > gy1) gy1 = gOuter[j][1];
+    }
+    gpData.push({ outer: gOuter, holes: gHoles, minX: gx0, maxX: gx1, minY: gy0, maxY: gy1 });
+  }
+  if (gpData.length === 0) return 0;
+
+  const inParentFn = (px, py) => {
+    if (!pip(px, py, outerPts)) return false;
+    for (let h = 0; h < hBboxes.length; h++) {
+      const hb = hBboxes[h];
+      if (px >= hb[1] && px <= hb[2] && py >= hb[3] && py <= hb[4] && pip(px, py, hb[0])) return false;
+    }
+    return true;
+  };
+  const inAnyPartFn = (px, py) => {
+    for (let k = 0; k < gpData.length; k++) {
+      const gp = gpData[k];
+      if (px < gp.minX || px > gp.maxX || py < gp.minY || py > gp.maxY) continue;
+      if (!pip(px, py, gp.outer)) continue;
+      let inHole = false;
+      if (gp.holes) {
+        for (let h = 0; h < gp.holes.length; h++) {
+          if (gp.holes[h] && gp.holes[h].length >= 3 && pip(px, py, gp.holes[h])) {
+            inHole = true;
+            break;
+          }
+        }
+      }
+      if (!inHole) return true;
+    }
+    return false;
+  };
+
+  let inParent = 0, covered = 0;
+  const GRID = 14;
+  for (let iy = 0; iy < GRID; iy++) {
+    const py = oMinY + ((iy + 0.5) / GRID) * spanY;
+    for (let ix = 0; ix < GRID; ix++) {
+      const px = oMinX + ((ix + 0.5) / GRID) * spanX;
+      if (!inParentFn(px, py)) continue;
+      inParent++;
+      if (inAnyPartFn(px, py)) covered++;
+    }
+  }
+
+  // Edge-nudged samples catch thin O/U/L wings (e.g. courtyard palazzi)
+  const nudgeStep = Math.max(1e-4, Math.min(spanX, spanY) * 0.04);
+  const edgeStride = Math.max(1, Math.floor(outerPts.length / 48));
+  for (let i = 0; i < outerPts.length; i += edgeStride) {
+    const a = outerPts[i];
+    const b = outerPts[(i + 1) % outerPts.length];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-5) continue;
+    const mx = (a[0] + b[0]) * 0.5, my = (a[1] + b[1]) * 0.5;
+    const nx = -dy / len, ny = dx / len;
+    for (let s = -1; s <= 1; s += 2) {
+      const px = mx + nx * nudgeStep * s;
+      const py = my + ny * nudgeStep * s;
+      if (inParentFn(px, py)) {
+        inParent++;
+        if (inAnyPartFn(px, py)) covered++;
+        break;
+      }
+    }
+  }
+
+  return inParent > 0 ? (covered / inParent) : 0;
+}
+
+/**
+ * Resolves physical printability tolerances (mm and bed units) from printer profile state.
+ * SLA resin profiles (Anycubic Photon Mono 4: 35 um XY, 50 um Z) unlock sub-millimeter
+ * details, whereas FDM profiles preserve 0.35-0.42 mm extrusion nozzle clearances.
+ */
+function resolvePrintPhysicsSpec(state, scaleMm) {
+  const isResin = Boolean(state && state.isResin);
+  const effScale = Math.max(0.25, Number(scaleMm) || (320 / 169.2));
+  const rawPx = (state && Number(state.xyPixelMm) > 0) ? Number(state.xyPixelMm) : 0;
+  const xyPixelMm = (rawPx > 0 && ((isResin && rawPx < 0.2) || (!isResin && rawPx >= 0.2)))
+    ? rawPx
+    : (isResin ? 0.035 : 0.40);
+  const layerHeightMm = (state && Number(state.layerHeightMm) > 0) ? Number(state.layerHeightMm) : (isResin ? 0.05 : 0.20);
+  const minFeatureMm = isResin ? Math.max(0.12, xyPixelMm * 3.5) : 0.35;
+  const minChannelMm = isResin ? Math.max(0.14, xyPixelMm * 4.0) : 0.42;
+  const dpSimplifyMm = isResin ? Math.max(0.025, xyPixelMm * 0.7) : 0.10;
+  return {
+    isResin,
+    xyPixelMm,
+    layerHeightMm,
+    minFeatureMm,
+    minChannelMm,
+    dpSimplifyMm,
+    minFeatureUnits: minFeatureMm / effScale,
+    minChannelUnits: minChannelMm / effScale,
+    dpSimplifyUnits: dpSimplifyMm / effScale
+  };
+}
+
 if (typeof window !== 'undefined') {
   window.isPolygonStrictlyInside = isPolygonStrictlyInside;
   window.computeReliefChimneyPolygon = computeReliefChimneyPolygon;
+  window.computeGroundPartsUnionCoverage2D = computeGroundPartsUnionCoverage2D;
+  window.resolvePrintPhysicsSpec = resolvePrintPhysicsSpec;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -636,6 +779,8 @@ if (typeof module !== 'undefined' && module.exports) {
     cleanPolygonRing, triangulateSimplePoly, earcutPolygon2D, mergeHolesIntoOuterKeyhole,
     clipPolyToBox, clipPolyByConvex, insetPolygonCentroid, dilatePolygonMinSpan2D,
     isPolygonStrictlyInside,
-    computeReliefChimneyPolygon
+    computeReliefChimneyPolygon,
+    computeGroundPartsUnionCoverage2D,
+    resolvePrintPhysicsSpec
   };
 }

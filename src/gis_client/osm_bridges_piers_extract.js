@@ -33,6 +33,24 @@ function _pointInRingExtract2D(px, py, ring) {
   return inside;
 }
 
+function _ringInsideOuterExtract2D(innerRing, outerRing) {
+  if (!innerRing || innerRing.length < 3 || !outerRing || outerRing.length < 3) return false;
+  if (_pointInRingExtract2D(innerRing[0][0], innerRing[0][1], outerRing)) return true;
+  let cx = 0, cy = 0;
+  for (let i = 0; i < innerRing.length; i++) {
+    cx += innerRing[i][0];
+    cy += innerRing[i][1];
+  }
+  cx /= innerRing.length;
+  cy /= innerRing.length;
+  if (_pointInRingExtract2D(cx, cy, outerRing)) return true;
+  for (let i = 0; i < innerRing.length; i++) {
+    const p0 = innerRing[i], p1 = innerRing[(i + 1) % innerRing.length];
+    if (_pointInRingExtract2D((p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5, outerRing)) return true;
+  }
+  return false;
+}
+
 function _signedRingAreaExtract2D(ring) {
   let s = 0;
   for (let i = 0, n = ring.length; i < n; i++) {
@@ -193,7 +211,7 @@ function processOsmBridgeMultipolygonJS(rel, tags, raw, ctx) {
     for (const op of st.outerPolys) {
       if (!op || op.length < 3) continue;
       const opHoles = (st.innerPolys || []).filter(
-        h => h && h.length >= 3 && _pointInRingExtract2D(h[0][0], h[0][1], op)
+        h => h && h.length >= 3 && _ringInsideOuterExtract2D(h, op)
       );
       const rec = {
         outer: op,
@@ -214,7 +232,7 @@ function processOsmBridgeMultipolygonJS(rel, tags, raw, ctx) {
   for (const op of st.outerPolys) {
     if (!op || op.length < 3) continue;
     const opHoles = (st.innerPolys || []).filter(
-      h => h && h.length >= 3 && _pointInRingExtract2D(h[0][0], h[0][1], op)
+      h => h && h.length >= 3 && _ringInsideOuterExtract2D(h, op)
     );
     ctx.bridgePolys.push({ outer: op, holes: opHoles, name: tags.name || 'Most', layer: layerVal });
   }
@@ -227,7 +245,7 @@ function processOsmBridgeOrPierWayJS(wid, w, tags, nids, isClosed, ctx) {
     if (['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.indoor === 'yes') return true;
     const rawLayer = parseFloatTagJS(tags.layer, 1);
     if (rawLayer !== null && rawLayer < 0) return true;
-    const pts = ctx.nodesToPts(nids, 0.02);
+    const pts = ctx.nodesToPts(nids, 0.005);
     if (pts.length >= 3) {
       const layerVal = Math.max(1, Math.trunc(rawLayer || 1));
       ctx.bridgePolys.push({ outer: pts, holes: [], name: tags.name || 'Most', layer: layerVal });
@@ -244,7 +262,7 @@ function processOsmBridgeOrPierWayJS(wid, w, tags, nids, isClosed, ctx) {
     const isPierArea = isClosed && tags.area !== 'no' && (tags.area === 'yes' || !tags.highway);
 
     if (isPierArea) {
-      const pts = ctx.nodesToPts(nids, 0.02);
+      const pts = ctx.nodesToPts(nids, 0.005);
       if (pts.length >= 3) {
         const rec = {
           outer: pts,
@@ -273,7 +291,7 @@ function processOsmBridgeOrPierWayJS(wid, w, tags, nids, isClosed, ctx) {
     if (explicitW !== null && explicitW >= 1.0 && explicitW <= 30.0) rwm = explicitW;
     const wUnits = Math.max(0.30, rwm * (ctx.metersToUnits || 0.14));
 
-    const pts = ctx.nodesToPts(nids, 0.02);
+    const pts = ctx.nodesToPts(nids, 0.005);
     if (pts.length >= 2) {
       if (!ctx.pierLines) ctx.pierLines = [];
       ctx.pierLines.push({

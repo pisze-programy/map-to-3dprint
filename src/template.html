@@ -458,6 +458,15 @@
           <span id="hollowSavingsBadge" class="text-xs font-mono font-bold text-amber-400 shrink-0">Pełna FDM</span>
         </label>
 
+        <!-- Water Cutout Backing Board Toggle (Expose Mounting Board Under Water) -->
+        <label class="flex items-center justify-between gap-2 bg-sky-500/10 border border-sky-500/30 rounded-lg px-2.5 py-1.5 cursor-pointer" title="Wycina otwartą wodę całkowicie do Z=0, aby ląd i budynki nakleić na czarną lub drewnianą płytę bazową">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <input id="chkWaterCutout" type="checkbox" class="rounded accent-sky-500 shrink-0" />
+            <span class="text-xs font-semibold text-[var(--foreground)] truncate">Wytnij wodę na wylot (Pod czarny / drewniany podkład)</span>
+          </div>
+          <span id="waterCutoutBadge" class="text-xs font-mono font-bold text-[var(--muted-foreground)] shrink-0">Pełna tafla</span>
+        </label>
+
         <!-- Kerf and Modular Frame Export Toggles -->
         <div class="grid grid-cols-2 gap-1.5 items-center bg-[var(--background)] border border-[var(--border)] rounded-lg p-1.5">
           <label class="flex items-center gap-1.5 cursor-pointer min-w-0" title="Dodaje modularne segmenty ramki 3D do paczki ZIP">

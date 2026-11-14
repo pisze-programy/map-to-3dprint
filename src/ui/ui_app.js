@@ -43,6 +43,9 @@ function initMap3DApp(initialScene) {
   const initHollow = (urlParams && (urlParams.get('hollow') === '0' || urlParams.get('hollow') === '1'))
     ? (urlParams.get('hollow') === '1')
     : ((savedConfig && typeof savedConfig.hollowBase === 'boolean') ? savedConfig.hollowBase : true);
+  const initWaterCutout = (urlParams && (urlParams.get('water_cutout') === '0' || urlParams.get('water_cutout') === '1' || urlParams.get('water_cutout') === 'true' || urlParams.get('water_cutout') === 'false'))
+    ? (urlParams.get('water_cutout') === '1' || urlParams.get('water_cutout') === 'true')
+    : ((savedConfig && typeof savedConfig.waterCutout === 'boolean') ? savedConfig.waterCutout : false);
   const initPrinter = (urlParams && urlParams.get('printer')) || (savedConfig && savedConfig.printerProfileId) || 'mono4_custom';
 
   const initLodMinBld = (urlParams && (urlParams.get('lod_min_bld') !== null || urlParams.get('lod_bld') !== null))
@@ -91,9 +94,11 @@ function initMap3DApp(initialScene) {
     tileCols: initCols,
     tileRows: initRows,
     tileExplode: 0.0,
-    isResin: true,
-    layerHeightMm: 0.05,
+    isResin: initProf ? Boolean(initProf.isResin) : true,
+    xyPixelMm: (initProf && initProf.xyPixelMm) || (initProf && initProf.isResin === false ? 0.40 : 0.035),
+    layerHeightMm: (initProf && initProf.layerHeightMm) || (initProf && initProf.isResin === false ? 0.20 : 0.05),
     hollowBase: initHollow,
+    waterCutout: initWaterCutout,
     hollowWallMm: 1.8,
     exportTileFilter: 'all',
     printMetrics: null,
@@ -527,6 +532,8 @@ function initMap3DApp(initialScene) {
         rotationDeg: options.rotationDeg !== undefined
           ? options.rotationDeg
           : (fetchMeta ? fetchMeta.rotationDeg : (state.mapRotationDeg || 0)),
+        isResin: Boolean(state.isResin),
+        xyPixelMm: state.xyPixelMm,
         lodSettings: options.lodSettings || state.lodSettings || null,
         onProgress: (info) => {
           const kind = (info && typeof info === 'object') ? info.progressKind : null;
@@ -710,6 +717,8 @@ function initMap3DApp(initialScene) {
   if (mapRotSlider) mapRotSlider.value = state.mapRotationDeg;
   const chkHollow = document.getElementById('chkHollowBase');
   if (chkHollow) chkHollow.checked = state.hollowBase;
+  const chkWaterCutout = document.getElementById('chkWaterCutout');
+  if (chkWaterCutout) chkWaterCutout.checked = Boolean(state.waterCutout);
   const pSel = document.getElementById('printerSelect');
   if (pSel) pSel.value = state.printerProfileId;
   const gridSel = document.getElementById('tileGridSelect');

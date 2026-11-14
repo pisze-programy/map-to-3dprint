@@ -189,7 +189,10 @@ function processOsmS3DBRelationsPass1BJS(ctx) {
           usedWays.add(pWid);
           const wObj = ways.get(pWid);
           const wTags = { ...(wObj.tags || {}) };
-          if (!wTags.name && parentName) wTags.name = parentName;
+          if (!wTags.name && parentName) {
+            wTags.name = parentName;
+            wTags._nameInherited = true;
+          }
           const wNids = wObj.nodes || [];
           if (wNids.length >= 4 && wNids[0] === wNids[wNids.length - 1]) {
             const pts = nodesToPts(wNids, 0.015);
@@ -200,7 +203,10 @@ function processOsmS3DBRelationsPass1BJS(ctx) {
           consumedRels.add(pRid);
           const pRel = relById.get(pRid);
           const pTags = { ...(pRel.tags || {}) };
-          if (!pTags.name && parentName) pTags.name = parentName;
+          if (!pTags.name && parentName) {
+            pTags.name = parentName;
+            pTags._nameInherited = true;
+          }
           const st = stitchedRelPolys.get(pRid);
           if (st) {
             for (const wid of st.memberWayIds) usedWays.add(wid);
@@ -218,7 +224,8 @@ function processOsmS3DBRelationsPass1BJS(ctx) {
 function processOsmBuildingMultipolygonJS(rel, tags, _raw, ctx) {
   const hasBld = tags.building && !SKIP_BUILDING_VALS_JS.has(String(tags.building).toLowerCase());
   const hasPart = tags['building:part'] && !SKIP_BUILDING_VALS_JS.has(String(tags['building:part']).toLowerCase());
-  if (!hasBld && !hasPart) return false;
+  const isWheel = typeof isObservationWheelTagsJS === 'function' && isObservationWheelTagsJS(tags) && !tags.highway && !tags.waterway && !tags.natural;
+  if (!hasBld && !hasPart && !isWheel) return false;
 
   const st = ctx.stitchedRelPolys.get(rel.id);
   if (!st) return true;
@@ -234,7 +241,8 @@ function processOsmBuildingMultipolygonJS(rel, tags, _raw, ctx) {
 function processOsmBuildingWayJS(wid, w, tags, nids, isClosed, ctx) {
   const hasBld = tags.building && !SKIP_BUILDING_VALS_JS.has(String(tags.building).toLowerCase());
   const hasPart = tags['building:part'] && !SKIP_BUILDING_VALS_JS.has(String(tags['building:part']).toLowerCase());
-  if ((hasBld || hasPart) && isClosed) {
+  const isWheel = typeof isObservationWheelTagsJS === 'function' && isObservationWheelTagsJS(tags) && !tags.highway && !tags.waterway && !tags.natural;
+  if ((hasBld || hasPart || isWheel) && isClosed) {
     if (!ctx.usedWays.has(wid)) {
       const pts = ctx.nodesToPts(nids, 0.015);
       if (pts.length >= 3) {

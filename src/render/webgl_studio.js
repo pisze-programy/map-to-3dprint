@@ -194,6 +194,25 @@ function createWebGLStudio(canvas3d, state) {
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
   })();
 
+  const boardBuf = gl.createBuffer();
+  let lastBoardKey = '';
+  function syncBoardBuffer(bw, bh) {
+    const key = `${bw.toFixed(3)}x${bh.toFixed(3)}`;
+    if (key === lastBoardKey) return;
+    lastBoardKey = key;
+    const Z = -0.025;
+    const verts = new Float32Array([
+      -bw, -bh, Z, 0, 0, 1, 8, -1, -1,
+       bw, -bh, Z, 0, 0, 1, 8, -1, -1,
+       bw,  bh, Z, 0, 0, 1, 8, -1, -1,
+      -bw, -bh, Z, 0, 0, 1, 8, -1, -1,
+       bw,  bh, Z, 0, 0, 1, 8, -1, -1,
+      -bw,  bh, Z, 0, 0, 1, 8, -1, -1
+    ]);
+    gl.bindBuffer(gl.ARRAY_BUFFER, boardBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+  }
+
   function uploadMeshes(layerMeshes) {
     const keys = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted', 'frame'];
     keys.forEach(key => {
@@ -294,7 +313,7 @@ function createWebGLStudio(canvas3d, state) {
     const selKey = Array.from(selPickIds).join(',');
     const visKey = Object.values(state.layerVisible || {}).map(v => v ? '1' : '0').join('');
     const colKey = Object.values(state.colors || {}).join(',');
-    const sig = `${meshUploadVersion}|${w}x${h}|${camera.yaw.toFixed(4)},${camera.pitch.toFixed(4)},${camera.distance.toFixed(2)},${camera.target[0].toFixed(2)},${camera.target[1].toFixed(2)},${camera.target[2].toFixed(2)}|${state.sunAngleDeg}|${state.explodeFactor}|${state.tileCols}x${state.tileRows}|${state.tileExplode}|${state.exportTileFilter}|${state.showFrame}|${state.studioBg}|${state.showLayerLines}|${state.frameStyle}|${state.hoveredBuildingId}|${state.userClickedBuilding}|${selKey}|${visKey}|${colKey}|${halfW.toFixed(1)}x${halfH.toFixed(1)}`;
+    const sig = `${meshUploadVersion}|${w}x${h}|${camera.yaw.toFixed(4)},${camera.pitch.toFixed(4)},${camera.distance.toFixed(2)},${camera.target[0].toFixed(2)},${camera.target[1].toFixed(2)},${camera.target[2].toFixed(2)}|${state.sunAngleDeg}|${state.explodeFactor}|${state.tileCols}x${state.tileRows}|${state.tileExplode}|${state.exportTileFilter}|${state.showFrame}|${state.studioBg}|${state.showLayerLines}|${state.frameStyle}|${Boolean(state.waterCutout)}|${state.hoveredBuildingId}|${state.userClickedBuilding}|${selKey}|${visKey}|${colKey}|${halfW.toFixed(1)}x${halfH.toFixed(1)}`;
     if (!force && sig === lastRenderSig) return;
     lastRenderSig = sig;
 
@@ -422,6 +441,12 @@ function createWebGLStudio(canvas3d, state) {
       state.frameStyle === 'walnut' ? [0.36, 0.24, 0.16] : [0.95, 0.95, 0.96];
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorFrame'), frameCol);
 
+    const boardCol =
+      state.frameStyle === 'oak' ? [0.62, 0.45, 0.28] :
+      state.frameStyle === 'walnut' ? [0.26, 0.17, 0.11] : [0.10, 0.11, 0.13];
+    const uBoardLoc = gl.getUniformLocation(mainProg, 'uColorBoard');
+    if (uBoardLoc) gl.uniform3fv(uBoardLoc, boardCol);
+
     selectedIdsBuffer.fill(-999.0);
     let idx = 0;
     selPickIds.forEach(pid => {
@@ -446,6 +471,17 @@ function createWebGLStudio(canvas3d, state) {
 
     if (state.explodeFactor < 0.05 && camera.pitch > 0.05) {
       gl.bindBuffer(gl.ARRAY_BUFFER, floorBuf);
+      gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, stride, 0);
+      gl.vertexAttribPointer(locNorm, 3, gl.FLOAT, false, stride, 12);
+      gl.vertexAttribPointer(locLayer, 1, gl.FLOAT, false, stride, 24);
+      gl.vertexAttribPointer(locBld, 1, gl.FLOAT, false, stride, 28);
+      if (locTile >= 0) gl.vertexAttribPointer(locTile, 1, gl.FLOAT, false, stride, 32);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    if (Boolean(state.waterCutout) && state.explodeFactor < 0.08 && tExplode <= 0.03 && eye[2] >= 0.0) {
+      syncBoardBuffer(halfW + 0.25, halfH + 0.25);
+      gl.bindBuffer(gl.ARRAY_BUFFER, boardBuf);
       gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(locNorm, 3, gl.FLOAT, false, stride, 12);
       gl.vertexAttribPointer(locLayer, 1, gl.FLOAT, false, stride, 24);

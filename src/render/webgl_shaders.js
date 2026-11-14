@@ -177,6 +177,7 @@ const WEBGL_MAIN_FS = `
   uniform vec3 uColorBuildings;
   uniform vec3 uColorHighlighted;
   uniform vec3 uColorFrame;
+  uniform vec3 uColorBoard;
   uniform vec3 uSunDir;
   uniform vec3 uEyePos;
   uniform float uShowLayerLines;
@@ -271,6 +272,8 @@ const WEBGL_MAIN_FS = `
       if (miterDist < 0.40) {
         baseCol *= 0.68;
       }
+    } else if (lid == 8) {
+      baseCol = uColorBoard;
     }
 
     if (vIsSelected > 0.5) {

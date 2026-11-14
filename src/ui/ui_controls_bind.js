@@ -436,6 +436,15 @@ function bindStudioPanelControls(ctx) {
       if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
     });
   }
+  const chkWaterCutout = document.getElementById('chkWaterCutout');
+  if (chkWaterCutout) {
+    chkWaterCutout.addEventListener('change', e => {
+      state.waterCutout = Boolean(e.target.checked);
+      updateStatsUI();
+      rebuildModel3D();
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+    });
+  }
   const exportTileSelect = document.getElementById('exportTileSelect');
   if (exportTileSelect) exportTileSelect.addEventListener('change', e => { state.exportTileFilter = e.target.value; draw2DMap(); });
 

@@ -589,11 +589,252 @@ function extrudeBuildingLoD2(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
   }
 }
 
+/**
+ * Emits a strictly watertight, positive-volume closed convex hexahedron given 8 vertices:
+ * bottom loop [b00, b10, b11, b01], top loop [t00, t10, t11, t01].
+ * Automatically ensures right-handed outward normals.
+ */
+function emitOrientedHexahedron3D(verts8, layerId, bId, shellId, tileId, outTris) {
+  let [b00, b10, b11, b01, t00, t10, t11, t01] = verts8;
+  const rx = b10[0] - b00[0], ry = b10[1] - b00[1], rz = b10[2] - b00[2];
+  const sx = b01[0] - b00[0], sy = b01[1] - b00[1], sz = b01[2] - b00[2];
+  const tx = t00[0] - b00[0], ty = t00[1] - b00[1], tz = t00[2] - b00[2];
+  const det = rx * (sy * tz - sz * ty) - ry * (sx * tz - sz * tx) + rz * (sx * ty - sy * tx);
+  if (Math.abs(det) < 1e-10) return;
+  if (det < 0) {
+    [b10, b01] = [b01, b10];
+    [t10, t01] = [t01, t10];
+  }
+  const emitFace = (p0, p1, p2, p3) => {
+    const n = computeFaceNormal(p0, p1, p2);
+    pushQuad(outTris, p0, p1, p2, p3, n, layerId, bId, tileId);
+    const len = outTris.length;
+    outTris[len - 2].shellId = shellId;
+    outTris[len - 1].shellId = shellId;
+  };
+  emitFace(b00, b01, b11, b10); // bottom (-t)
+  emitFace(t00, t10, t11, t01); // top (+t)
+  emitFace(b00, b10, t10, t00); // front (-s)
+  emitFace(b10, b11, t11, t10); // right (+r)
+  emitFace(b11, b01, t01, t11); // back (+s)
+  emitFace(b01, b00, t00, t01); // left (-r)
+}
+
+/**
+ * Procedurally constructs a watertight 2-manifold 3D Ferris / Observation Wheel
+ * (Ain Dubai, London Eye, Singapore Flyer, Wiener Riesenrad) oriented along the
+ * footprint's major OBB axis and seated flush on the terrain bed.
+ * Returns an array of independent sub-shells `[{ shellId, tris }]` so multi-tile
+ * clipping keeps every component strictly manifold.
+ */
+function emitFerrisWheel3D(item, ctx, targetLayerId, allocShellId) {
+  const poly = item.clippedOuter;
+  const obb = (typeof computeMinAreaOBB2D === 'function' ? computeMinAreaOBB2D(poly) : null) || {
+    cx: item.cx, cy: item.cy, ux: 1, uy: 0, vx: 0, vy: 1,
+    halfL: Math.max(1.0, (item.maxX - item.minX) * 0.5),
+    halfW: Math.max(0.5, (item.maxY - item.minY) * 0.5)
+  };
+  let { cx, cy, ux, uy, vx, vy, halfL } = obb;
+  if (ux * vy - uy * vx < 0) {
+    vx = -vx;
+    vy = -vy;
+  }
+
+  const scaleMm = Math.max(0.35, (ctx && ctx.scaleMm) || 1.0);
+  const mmToU = mm => mm / scaleMm;
+  const zScale = Math.max(0.6, (ctx && ctx.zScale) || 1.0);
+  const zBase = item.effBaseZ;
+  const rawTotalH = Math.max(mmToU(8.0), item.zTop - zBase);
+  const unscaledTotalH = rawTotalH / zScale;
+
+  // Decouple rim proportions from OBB halfW and compute circular radius fit inside both halfL and scene height
+  const rEst = Math.max(mmToU(3.5), Math.min(halfL * 0.96, unscaledTotalH * 0.46, (rawTotalH - mmToU(1.2)) * 0.46));
+  const clearance = Math.max(mmToU(0.65), rEst * 0.09);
+  const rCapPodRaw = Math.min(rEst * 0.032, Math.max(mmToU(0.28), rEst * 0.025));
+  const R = Math.max(
+    mmToU(3.5),
+    Math.min(halfL * 0.96, unscaledTotalH * 0.46, (rawTotalH - clearance - rCapPodRaw * 1.4) * 0.5)
+  );
+  const zHub = zBase + clearance + R;
+
+  // Sleek architectural rim, hub, spokes, A-frame legs, flush capsules & compact base pad
+  const tRim = Math.min(R * 0.10, Math.max(mmToU(0.65), R * 0.050));
+  const wRim = Math.min(R * 0.11, Math.max(mmToU(0.70), R * 0.056));
+  const rCapPod = Math.min(R * 0.032, Math.max(mmToU(0.28), tRim * 0.45));
+  const capHalfAx = Math.min(wRim * 0.46, Math.max(mmToU(0.28), wRim * 0.44));
+
+  const legThick = Math.min(R * 0.052, Math.max(mmToU(0.56), R * 0.040));
+  const legVOffset = wRim * 0.5 + legThick * 0.62;
+  const legSpreadV = Math.max(wRim * 0.85, legVOffset + legThick * 0.58);
+  const legSpreadU = Math.min(halfL * 0.52, R * 0.34);
+
+  const plinthH = Math.min(R * 0.036, Math.max(mmToU(0.45), R * 0.024));
+  const plinthU = Math.min(Math.max(legSpreadU + legThick * 0.9, mmToU(1.4)), R * 0.46);
+  const plinthV = Math.min(Math.max(legSpreadV + legThick * 0.4, mmToU(1.2)), R * 0.20);
+
+  const layerId = targetLayerId;
+  const bId = item.pickId;
+  const fix = n => (Math.abs(n) < 1e-8 ? 0 : n);
+  const toWorld = (u, v, z) => [fix(cx + ux * u + vx * v), fix(cy + uy * u + vy * v), fix(z)];
+  const subShells = [];
+  const nextShell = () => (typeof allocShellId === 'function' ? allocShellId() : -1);
+
+  const emitBoxUVZ = (u0, u1, v0, v1, z0, z1) => {
+    const sid = nextShell();
+    const tris = [];
+    emitOrientedHexahedron3D([
+      toWorld(u0, v0, z0), toWorld(u1, v0, z0), toWorld(u1, v1, z0), toWorld(u0, v1, z0),
+      toWorld(u0, v0, z1), toWorld(u1, v0, z1), toWorld(u1, v1, z1), toWorld(u0, v1, z1)
+    ], layerId, bId, sid, 0, tris);
+    if (tris.length > 0) subShells.push({ shellId: sid, tris });
+  };
+
+  // Watertight capped cylinder oriented along axle direction v in right-handed (u, v, z) space
+  const emitCylinderAlongV = (uCtr, zCtr, radius, v0, v1, segs) => {
+    const sid = nextShell();
+    const tris = [];
+    const ring0 = [];
+    const ring1 = [];
+    for (let i = 0; i < segs; i++) {
+      const th = (2 * Math.PI * i) / segs;
+      const du = radius * Math.cos(th);
+      const dz = radius * Math.sin(th);
+      ring0.push(toWorld(uCtr + du, v0, zCtr + dz));
+      ring1.push(toWorld(uCtr + du, v1, zCtr + dz));
+    }
+    const c0 = toWorld(uCtr, v0, zCtr);
+    const c1 = toWorld(uCtr, v1, zCtr);
+    const stampLast = count => {
+      for (let k = tris.length - count; k < tris.length; k++) tris[k].shellId = sid;
+    };
+    for (let i = 0; i < segs; i++) {
+      const j = (i + 1) % segs;
+      const nSide = computeFaceNormal(ring1[i], ring1[j], ring0[j]);
+      pushQuad(tris, ring1[i], ring1[j], ring0[j], ring0[i], nSide, layerId, bId, 0);
+      stampLast(2);
+      const nCap0 = computeFaceNormal(c0, ring0[i], ring0[j]);
+      pushTri(tris, c0, ring0[i], ring0[j], nCap0, layerId, bId, 0);
+      stampLast(1);
+      const nCap1 = computeFaceNormal(c1, ring1[j], ring1[i]);
+      pushTri(tris, c1, ring1[j], ring1[i], nCap1, layerId, bId, 0);
+      stampLast(1);
+    }
+    if (tris.length > 0) subShells.push({ shellId: sid, tris });
+  };
+
+  // 1. Compact Grounded Base Pad (low-profile anchor on terrain)
+  emitBoxUVZ(-plinthU, plinthU, -plinthV, plinthV, zBase, zBase + plinthH);
+
+  // 2. Cylindrical Horizontal Central Axle Hub
+  const rHub = Math.min(R * 0.088, Math.max(mmToU(0.52), tRim * 0.92));
+  const wAxle = Math.max(legVOffset + legThick * 0.62, wRim * 0.72);
+  emitCylinderAlongV(0, zHub, rHub, -wAxle, wAxle, 16);
+
+  // 3. Four Sleek Inclined A-Frame Support Legs (embedded into base pad and hub)
+  const legZ0 = zBase + plinthH * 0.35;
+  const legZ1 = zHub + rHub * 0.42;
+  for (const sV of [-1, 1]) {
+    for (const sU of [-1, 1]) {
+      const sid = nextShell();
+      const tris = [];
+      const uBot = sU * legSpreadU;
+      const vCtr = sV * legVOffset;
+      const halfLU = legThick * 0.56;
+      const halfLV = legThick * 0.50;
+      emitOrientedHexahedron3D([
+        toWorld(uBot - halfLU, vCtr - halfLV, legZ0),
+        toWorld(uBot + halfLU, vCtr - halfLV, legZ0),
+        toWorld(uBot + halfLU, vCtr + halfLV, legZ0),
+        toWorld(uBot - halfLU, vCtr + halfLV, legZ0),
+        toWorld(-halfLU * 0.80, vCtr - halfLV, legZ1),
+        toWorld(halfLU * 0.80, vCtr - halfLV, legZ1),
+        toWorld(halfLU * 0.80, vCtr + halfLV, legZ1),
+        toWorld(-halfLU * 0.80, vCtr + halfLV, legZ1)
+      ], layerId, bId, sid, 0, tris);
+      if (tris.length > 0) subShells.push({ shellId: sid, tris });
+    }
+  }
+
+  // 4. Hollow 48-Segment Genus-1 Tubular Rim Ring
+  {
+    const rimSid = nextShell();
+    const rimTris = [];
+    const N = 48;
+    const Ri = R - tRim;
+    const hw = wRim * 0.5;
+    const outNeg = [], outPos = [], inNeg = [], inPos = [];
+    for (let i = 0; i < N; i++) {
+      const th = (2 * Math.PI * i) / N;
+      const ct = Math.cos(th), st = Math.sin(th);
+      outNeg.push(toWorld(R * ct, -hw, zHub + R * st));
+      outPos.push(toWorld(R * ct, hw, zHub + R * st));
+      inNeg.push(toWorld(Ri * ct, -hw, zHub + Ri * st));
+      inPos.push(toWorld(Ri * ct, hw, zHub + Ri * st));
+    }
+    const pushRimQ = (a, b, c, d) => {
+      const n = computeFaceNormal(a, b, c);
+      pushQuad(rimTris, a, b, c, d, n, layerId, bId, 0);
+      const len = rimTris.length;
+      rimTris[len - 2].shellId = rimSid;
+      rimTris[len - 1].shellId = rimSid;
+    };
+    for (let i = 0; i < N; i++) {
+      const j = (i + 1) % N;
+      pushRimQ(outPos[i], outPos[j], outNeg[j], outNeg[i]); // Outer cylinder (+radial)
+      pushRimQ(inNeg[i], inNeg[j], inPos[j], inPos[i]);     // Inner bore (-radial)
+      pushRimQ(inPos[i], inPos[j], outPos[j], outPos[i]);  // +v annular ring
+      pushRimQ(outNeg[i], outNeg[j], inNeg[j], inNeg[i]);  // -v annular ring
+    }
+    if (rimTris.length > 0) subShells.push({ shellId: rimSid, tris: rimTris });
+  }
+
+  // 5. Slender Radial Spokes from Cylindrical Hub to Inner Rim
+  const nSpokes = R >= mmToU(5.5) ? 16 : 12;
+  const spHalfW = Math.min(R * 0.016, Math.max(mmToU(0.24), R * 0.011));
+  const spHalfV = Math.min(wRim * 0.32, Math.max(mmToU(0.24), wRim * 0.24));
+  const rSp0 = rHub * 0.55;
+  const rSp1 = R - tRim * 0.45;
+  for (let k = 0; k < nSpokes; k++) {
+    const th = (2 * Math.PI * k) / nSpokes;
+    const ct = Math.cos(th), st = Math.sin(th);
+    const tu = -st * spHalfW, tz = ct * spHalfW;
+    const sid = nextShell();
+    const tris = [];
+    const u0 = rSp0 * ct, z0 = zHub + rSp0 * st;
+    const u1 = rSp1 * ct, z1 = zHub + rSp1 * st;
+    emitOrientedHexahedron3D([
+      toWorld(u0 - tu, -spHalfV, z0 - tz),
+      toWorld(u1 - tu, -spHalfV, z1 - tz),
+      toWorld(u1 + tu, -spHalfV, z1 + tz),
+      toWorld(u0 + tu, -spHalfV, z0 + tz),
+      toWorld(u0 - tu, spHalfV, z0 - tz),
+      toWorld(u1 - tu, spHalfV, z1 - tz),
+      toWorld(u1 + tu, spHalfV, z1 + tz),
+      toWorld(u0 + tu, spHalfV, z0 + tz)
+    ], layerId, bId, sid, 0, tris);
+    if (tris.length > 0) subShells.push({ shellId: sid, tris });
+  }
+
+  // 6. Flush Cylindrical Observation Capsules Around the Outer Rim
+  const nCaps = R >= mmToU(5.5) ? 24 : 16;
+  const rCapCenter = R + rCapPod * 0.35;
+  for (let c = 0; c < nCaps; c++) {
+    const th = (2 * Math.PI * c) / nCaps + (Math.PI / nCaps);
+    const uCap = rCapCenter * Math.cos(th);
+    const zCap = zHub + rCapCenter * Math.sin(th);
+    emitCylinderAlongV(uCap, zCap, rCapPod, -capHalfAx, capHalfAx, 8);
+  }
+
+  return subShells;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     minTriAltitude2D,
     subdivideInteriorRoofEdges,
     optimizeRoofTrisRidgeAligned,
-    extrudeBuildingLoD2
+    extrudeBuildingLoD2,
+    emitOrientedHexahedron3D,
+    emitFerrisWheel3D
   };
 }

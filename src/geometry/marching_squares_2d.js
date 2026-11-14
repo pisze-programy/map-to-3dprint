@@ -158,6 +158,43 @@ function smoothClosedRingTaubin2D(pts, passes = 3, maxDisp = 0.5, pinBox = null)
     );
     ptCap[i] = dSeam < 1e-5 ? 0.0 : maxDisp * Math.min(1.0, dSeam / rampDist);
   }
+  if (n >= 8) {
+    const kStep = Math.min(3, Math.floor(n / 4));
+    const isMacroCorner = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const pPrev1 = pts[(i + n - 1) % n];
+      const pCurr = pts[i];
+      const pNext1 = pts[(i + 1) % n];
+      const v1PrevX = pCurr[0] - pPrev1[0];
+      const v1PrevY = pCurr[1] - pPrev1[1];
+      const v1NextX = pNext1[0] - pCurr[0];
+      const v1NextY = pNext1[1] - pCurr[1];
+      const cross1 = v1PrevX * v1NextY - v1PrevY * v1NextX;
+
+      const pPrevK = pts[(i + n - kStep) % n];
+      const pNextK = pts[(i + kStep) % n];
+      const v3PrevX = pCurr[0] - pPrevK[0];
+      const v3PrevY = pCurr[1] - pPrevK[1];
+      const v3NextX = pNextK[0] - pCurr[0];
+      const v3NextY = pNextK[1] - pCurr[1];
+      const l3Prev = Math.hypot(v3PrevX, v3PrevY);
+      const l3Next = Math.hypot(v3NextX, v3NextY);
+      if (l3Prev > 1e-5 && l3Next > 1e-5) {
+        const cosTheta = (v3PrevX * v3NextX + v3PrevY * v3NextY) / (l3Prev * l3Next);
+        const cross3 = v3PrevX * v3NextY - v3PrevY * v3NextX;
+        if (cosTheta < 0.38 && cross3 * cross1 >= 0) {
+          isMacroCorner[i] = 1;
+        }
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (ptCap[i] <= 0.0) continue;
+      const cornerFactor = isMacroCorner[i]
+        ? 0.12
+        : ((isMacroCorner[(i + n - 1) % n] || isMacroCorner[(i + 1) % n]) ? 0.35 : 1.0);
+      ptCap[i] *= cornerFactor;
+    }
+  }
   const stepRing = (src, weight) => {
     const dst = new Array(n);
     for (let i = 0; i < n; i++) {

@@ -163,11 +163,14 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
   const p80Span = Math.max(0, p90 - p10);
   const realElevDelta = Math.max(4.0, maxElev - minElev);
   const tScale = state.terrainScale || 1.0;
+  const mToU = (scene.metersToUnits || 0.13) * scaleToBed;
+  const printSpec = resolvePrintPhysicsSpec(state, scaleMm);
+  const rawReliefMm = realElevDelta * mToU * tScale * scaleMm;
 
-  const isTopographicRelief = (p80Span > 38.0) || (realElevDelta > 135.0) || (tScale > 1.25);
+  const isTopographicRelief = (p80Span > 38.0) || (realElevDelta > 135.0) || (tScale > 1.25) ||
+    (printSpec.isResin && realElevDelta >= 12.0 && (p80Span >= 7.5 || realElevDelta >= 26.0) && rawReliefMm >= 0.40);
   const isAlpineRelief = (p80Span > 75.0) || (realElevDelta > 145.0);
 
-  const mToU = (scene.metersToUnits || 0.13) * scaleToBed;
   const hollowBase = !!state.hollowBase;
   const layerHeightMm = state.layerHeightMm || (state.isResin ? 0.05 : 0.20);
   const quantizeZUnits = (uVal) => {
@@ -191,11 +194,12 @@ function buildTerrainDemGridAndTiles(scene, maskCtx, state) {
       ? Math.max(3.6, Math.min(14.0, realElevDelta * mToU * 2.1 * tScale))
       : Math.max(1.2, Math.min(4.8, realElevDelta * mToU * 0.95 * tScale));
   const elevSpan = Math.max(10.0, realElevDelta);
+  const targetStepUnits = printSpec.isResin ? Math.max(0.18, 0.25 / scaleMm) : 0.42;
   const numContourSteps = !isTopographicRelief
     ? 1
     : isAlpineRelief
-      ? Math.max(8, Math.min(18, Math.round(maxReliefUnits / 0.42)))
-      : Math.max(3, Math.min(8, Math.round(maxReliefUnits / 0.42)));
+      ? Math.max(8, Math.min(printSpec.isResin ? 24 : 18, Math.round(maxReliefUnits / targetStepUnits)))
+      : Math.max(3, Math.min(printSpec.isResin ? 14 : 8, Math.round(maxReliefUnits / targetStepUnits)));
   const stepUnits = maxReliefUnits > 0 ? Math.max(layerHeightMm / mmPerUnit, quantizeZUnits(maxReliefUnits / numContourSteps)) : quantizeZUnits(0.42);
   const contourStepM = elevSpan / Math.max(1, numContourSteps);
 

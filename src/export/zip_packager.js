@@ -33,22 +33,27 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   const tileEntries = [];
 
   let fileIdx = 1;
+  const waterCutout = Boolean(state && state.waterCutout);
   for (let tr = tileRows - 1; tr >= 0; tr--) {
     const northRow = tileRows - tr;
     for (let tc = 0; tc < tileCols; tc++) {
       const tid = tr * tileCols + tc;
       const stlBytes = buildBinarySTLBytes(state, layerFilter, tid);
+      const isEmptyCutoutTile = waterCutout && numTiles > 1 && stlBytes.byteLength <= 84;
       const tVolMl = (pm.tileVolumesMl && pm.tileVolumesMl[tid] !== undefined)
         ? pm.tileVolumesMl[tid].toFixed(1)
-        : ((pm.totalVolumeMl || 40) / numTiles).toFixed(1);
+        : (isEmptyCutoutTile ? '0.0' : ((pm.totalVolumeMl || 40) / numTiles).toFixed(1));
       const tGrams = Math.round(parseFloat(tVolMl) * 1.12);
       const tZ = (pm.tileMaxZMm && pm.tileMaxZMm[tid] !== undefined)
         ? pm.tileMaxZMm[tid]
-        : (pm.maxZMm || 20);
+        : (isEmptyCutoutTile ? 0.0 : (pm.maxZMm || 20));
       const fileName = `Kafel_${String(fileIdx++).padStart(2, '0')}_R${northRow}C${tc + 1}_${Math.round(tileW)}x${Math.round(tileH)}mm.stl`;
-      zipFiles.push({ name: fileName, content: stlBytes });
+      if (!isEmptyCutoutTile) {
+        zipFiles.push({ name: fileName, content: stlBytes });
+      }
       tileEntries.push({
         fileName,
+        skippedEmptyWater: isEmptyCutoutTile,
         id: tid,
         r: northRow,
         c: tc + 1,
@@ -135,6 +140,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
     `Wymiar pojedynczego kafla:   ${tileW.toFixed(1)} x ${tileH.toFixed(1)} mm`,
     `Auto-rotacja dla Mono 4:     ${isAutoRotated ? `TAK (+90° XY: wymiar na stole ${tileH.toFixed(1)} x ${tileW.toFixed(1)} mm <= 153.4 x 87.0 mm)` : `NIE (mieści się w układzie standardowym <= 153.4 x 87.0 mm)`}`,
     `Odchudzona baza (Hollow):    ${state && state.hollowBase ? `TAK (Ścianka ${state.hollowWallMm || 1.8} mm + kanały drenażowe SLA, oszczędność ~${pm.hollowSavingsPct || 45}%)` : 'NIE (Pełna baza z=0 pod lity wydruk FDM/SLA)'}`,
+    `Wycięcie wody (Cutout):      ${waterCutout ? 'TAK (Woda wycięta do Z=0 pod czarny/drewniany podkład)' : 'NIE (Pełna tafla wody 3D)'}`,
     `Objętość żywicy całkowita:   ~${(pm.totalVolumeMl || 0).toFixed(1)} ml (~${pm.resinGrams || 0} g żywicy / ~${pm.plaGrams || 0} g PLA)`,
     `Tolerancja montażowa (Kerf): ${kerfMm.toFixed(2)} mm (fabryczny luz kompensujący rozszerzalność światła UV)`,
     `Ramka dekoracyjna 3D:        ${frameEntries.length > 0 ? `DOŁĄCZONA (${frameEntries.length} segmentów)` : 'WYŁĄCZONA Z PACZKI (wyłącznie podgląd 3D Studio)'}`,
@@ -156,7 +162,11 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   ];
 
   tileEntries.forEach(e => {
-    reportLines.push(`  - ${e.fileName.padEnd(38, ' ')} | Kafel [R${e.r}C${e.c}] | Wymiar: ${e.w} x ${e.h} mm (Z: ${e.maxZ.toFixed(1)} mm) | Żywica: ~${e.volMl} ml (~${e.grams} g)`);
+    if (e.skippedEmptyWater) {
+      reportLines.push(`  - ${e.fileName.padEnd(38, ' ')} | Kafel [R${e.r}C${e.c}] | [POMINIĘTO — 100% wycięta woda (pusta tafla na podkład)]`);
+    } else {
+      reportLines.push(`  - ${e.fileName.padEnd(38, ' ')} | Kafel [R${e.r}C${e.c}] | Wymiar: ${e.w} x ${e.h} mm (Z: ${e.maxZ.toFixed(1)} mm) | Żywica: ~${e.volMl} ml (~${e.grams} g)`);
+    }
   });
 
   if (frameEntries.length > 0) {
@@ -176,8 +186,9 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
     }
   };
   const pairingFn = getPairingSchedFn();
-  if (isResin && numTiles > 1 && typeof pairingFn === 'function') {
-    const sched = pairingFn(tileEntries, tileW, tileH);
+  const printableTileEntries = tileEntries.filter(e => !e.skippedEmptyWater);
+  if (isResin && printableTileEntries.length > 1 && typeof pairingFn === 'function') {
+    const sched = pairingFn(printableTileEntries, tileW, tileH);
     reportLines.push(
       ``,
       `HARMONOGRAM DRUKU WSADOWEGO (PHOTON MONO 4 DUAL-TILE PAIRING):`,
