@@ -228,9 +228,17 @@ function initVideoStudioModule(bridge) {
 
   // Playback RAF Loop & Interactive Orbit
   let lastRafTs = 0;
+  let rafId = 0;
+  function schedulePlaybackTick() {
+    if (!rafId && vState.isActiveModule && typeof requestAnimationFrame === 'function') {
+      rafId = requestAnimationFrame(tickPlayback);
+    }
+  }
   function tickPlayback(now) {
-    requestAnimationFrame(tickPlayback);
-    if (!vState.isActiveModule || vState.isRecording) { lastRafTs = now; return; }
+    rafId = 0;
+    if (!vState.isActiveModule) { lastRafTs = 0; return; }
+    schedulePlaybackTick();
+    if (vState.isRecording) { lastRafTs = now; return; }
     if (!lastRafTs) lastRafTs = now;
     const dt = Math.min(0.1, (now - lastRafTs) / 1000);
     lastRafTs = now;
@@ -243,7 +251,6 @@ function initVideoStudioModule(bridge) {
       renderCurrentPreviewFrame();
     }
   }
-  requestAnimationFrame(tickPlayback);
 
   let draggingCanvas = false, lastMouse = [0, 0];
   previewCanvas.addEventListener('mousedown', e => { draggingCanvas = true; lastMouse = [e.clientX, e.clientY]; });
@@ -341,9 +348,17 @@ function initVideoStudioModule(bridge) {
     vState.isPlaying = true;
     syncPlayButtonUI();
     renderCurrentPreviewFrame();
+    schedulePlaybackTick();
   }
 
-  function deactivateModule() { vState.isActiveModule = false; }
+  function deactivateModule() {
+    vState.isActiveModule = false;
+    lastRafTs = 0;
+    if (rafId && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(rafId);
+    }
+    rafId = 0;
+  }
 
   mapGisCtrl.renderPresetButtons();
   controlsCtrl.renderElementTogglesUI();
