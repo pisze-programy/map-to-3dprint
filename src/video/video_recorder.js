@@ -102,3 +102,10 @@ function recordCanvasVideoBlob(compositeCanvas, renderFrameAt, animCfg, onProgre
     requestAnimationFrame(stepRecordFrame);
   });
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    getSupportedVideoMime,
+    recordCanvasVideoBlob
+  };
+}

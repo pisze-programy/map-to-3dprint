@@ -162,7 +162,7 @@ const VIDEO_SHADOW_FS = `
       if (abs(vRawPos.x) > uHalfW + 0.35 || abs(vRawPos.y) > uHalfH + 0.35) {
         discard;
       }
-      if ((uTileCols > 1.0 || uTileRows > 1.0) && vSubId >= 0.0) {
+      if ((uTileCols > 1.0 || uTileRows > 1.0) && vSubId >= 0.0 && uTileExplode > 0.001) {
         float tid = floor(vSubId + 0.5);
         float tc = mod(tid, uTileCols);
         float tr = floor(tid / uTileCols);

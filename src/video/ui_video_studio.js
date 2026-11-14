@@ -27,8 +27,8 @@ function initVideoStudioModule(bridge) {
     aspectPreset: '16x9_720',
 
     sceneData: initialScene,
-    mapCenterLat: initialScene ? initialScene.center[0] : 48.1338,
-    mapCenterLon: initialScene ? initialScene.center[1] : 11.5855,
+    mapCenterLat: (initialScene && Array.isArray(initialScene.center)) ? initialScene.center[0] : ((initialScene && initialScene.lat) || 48.1338),
+    mapCenterLon: (initialScene && Array.isArray(initialScene.center)) ? initialScene.center[1] : ((initialScene && initialScene.lon) || 11.5855),
     mapZoom: 15,
     cropRatio: (initialScene && initialScene._fetchedCropRatio) || 0.88,
     cropCenterX: 0,
@@ -361,4 +361,8 @@ function initVideoStudioModule(bridge) {
     engine,
     vState
   };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { initVideoStudioModule };
 }

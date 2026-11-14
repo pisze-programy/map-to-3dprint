@@ -267,6 +267,8 @@ function createVideoOrderDemoController(vState, engine, previewCanvas, hooks, br
       totalTriangles: totalTriCount || res.totalTriangles || 0,
       widthCm,
       heightCm,
+      bedSizeMm: buildState.bedSizeMm,
+      totalHeightMm: buildState.totalHeightMm,
       paletteId: overrides.paletteId || vState.paletteId,
       colors: overrides.colors ? { ...overrides.colors } : { ...vState.colors },
       frameStyle: overrides.frameStyle || vState.frameStyle,
@@ -339,7 +341,9 @@ function createVideoOrderDemoController(vState, engine, previewCanvas, hooks, br
         const progRes = await rebuildModel3DProgressive(scene, buildState, {
           timeBudgetMs: 14,
           onProgress: (pct, msg) => {
-            const loadingTxt = document.getElementById('vidLoadingText');
+            const loadingTxt = (typeof document !== 'undefined' && document.getElementById)
+              ? document.getElementById('vidLoadingText')
+              : null;
             if (loadingTxt && msg) loadingTxt.textContent = msg;
           }
         });

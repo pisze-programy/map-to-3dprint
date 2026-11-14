@@ -64,7 +64,9 @@ const VIDEO_FILES_IN_ORDER = [
   'src/video/video_recorder.js',
   'src/video/video_gl_engine.js',
   'src/video/ui_video_map_gis.js',
-  'src/video/ui_video_order_demo.js'
+  'src/video/ui_video_order_demo.js',
+  'src/video/ui_video_controls.js',
+  'src/video/ui_video_studio.js'
 ];
 
 const videoMods = {};
@@ -291,7 +293,7 @@ function makeMockVideoState(scene, overrides = {}) {
 }
 
 (async function main() {
-  console.log('\n[1/6] Exact 1:1 Triangle Counts & Z-Bounds Parity (Configurator vs Video Studio)');
+  console.log('\n[1/10] Exact 1:1 Triangle Counts & Z-Bounds Parity (Configurator vs Video Studio)');
   {
     const rotSceneA = makeFullSyntheticCityScene();
     if (typeof applySceneRotation === 'function') {
@@ -394,7 +396,7 @@ function makeMockVideoState(scene, overrides = {}) {
     );
   }
 
-  console.log('\n[2/6] Fast-Path Reuse & Strict Non-Mutation of Shared Main Configurator Meshes');
+  console.log('\n[2/10] Fast-Path Reuse & Strict Non-Mutation of Shared Main Configurator Meshes');
   {
     const sharedRotScene = makeFullSyntheticCityScene();
     applySceneRotation(sharedRotScene, 18, 84.6, 84.6);
@@ -504,7 +506,7 @@ function makeMockVideoState(scene, overrides = {}) {
     check(orderCtrl.canFastBuildCurrentSlot() === false, 'canFastBuildCurrentSlot() invalidates when waterCutout changes');
   }
 
-  console.log('\n[3/6] Video Shaders GLSL Consistency & Varying Budget Verification');
+  console.log('\n[3/10] Video Shaders GLSL Consistency & Varying Budget Verification');
   {
     const mainFS = buildVideoMainFS(true);
     const varyingMatches = VIDEO_MAIN_VS.match(/\bvarying\b/g) || [];
@@ -515,13 +517,15 @@ function makeMockVideoState(scene, overrides = {}) {
 
     check(mainFS.includes('uColorTrees') && mainFS.includes('0.04') && mainFS.includes('0.98'), 'Main FS shades 3D tree crowns via uColorTrees when 0.04 < vNorm.z < 0.98');
     check(mainFS.includes('vRawPos') && mainFS.includes('uTileCols') && mainFS.includes('uTileRows'), 'Main FS uses vRawPos + uTileCols/uTileRows for per-tile clipping');
+    check(mainFS.includes('vSubId >= 0.0 && uTileExplode > 0.001'), 'Main FS gates per-tile discard with uTileExplode > 0.001');
     check(!mainFS.includes('34.0'), 'Main FS removed hardcoded 34.0 tile clip magic number');
 
     check(VIDEO_SHADOW_FS.includes('vRawPos') && VIDEO_SHADOW_FS.includes('uTileCols') && VIDEO_SHADOW_FS.includes('uTileRows'), 'Shadow FS performs identical per-tile clipping via vRawPos');
+    check(VIDEO_SHADOW_FS.includes('vSubId >= 0.0 && uTileExplode > 0.001'), 'Shadow FS gates per-tile discard with uTileExplode > 0.001');
     check(VIDEO_SHADOW_FS.includes('lid == 11'), 'Shadow FS discards non-casting glass/boardOnly layerId 11');
   }
 
-  console.log('\n[4/6] Video Frame Builder: Water Cutout Obsidian/Walnut Backing & BoardOnly Geometry');
+  console.log('\n[4/10] Video Frame Builder: Water Cutout Obsidian/Walnut Backing & BoardOnly Geometry');
   {
     const slotCfgCutout = {
       halfW: 100,
@@ -552,7 +556,7 @@ function makeMockVideoState(scene, overrides = {}) {
     check(maxBackingOffZ <= -0.035 && maxBackingOffZ < -0.025, 'waterCutout=false keeps backing board below recessed slab base', `maxBackingZ=${maxBackingOffZ}`);
   }
 
-  console.log('\n[5/6] computeLayerGroundZMap Hillside Shell Anchoring (Negative & Positive shellIds)');
+  console.log('\n[5/10] computeLayerGroundZMap Hillside Shell Anchoring (Negative & Positive shellIds)');
   {
     const mkTri = (z0, z1, extra = {}) => ({
       v0: [0, 0, z0],
@@ -599,7 +603,7 @@ function makeMockVideoState(scene, overrides = {}) {
     check(Math.abs(zMap.maxSceneZ - 48.0) < 1e-6, 'maxSceneZ computed accurately across all layers', `maxSceneZ=${zMap.maxSceneZ}`);
   }
 
-  console.log('\n[6/6] 2D Whip-Pan CAD Scaling, Uncapped Buildings & Continuous Timeline');
+  console.log('\n[6/10] 2D Whip-Pan CAD Scaling, Uncapped Buildings & Continuous Timeline');
   {
     const manyBuildings = [];
     for (let i = 0; i < 2800; i++) {
@@ -643,6 +647,712 @@ function makeMockVideoState(scene, overrides = {}) {
       }
     }
     check(allFinite, 'evaluateVideoTimeline returns finite state across tNorm in [0..1]');
+  }
+
+  console.log('\n[7/10] Real Cached Cities 1:1 Mesh & Progressive Parity (DUBAI, SINGAPORE, INNSBRUCK)');
+  const builtRealSlots = {};
+  {
+    const cityConfigs = [
+      {
+        key: 'dubai',
+        file: 'cache/scene_v5_25.1865_55.2660_25.1981_55.2788.json',
+        waterCutout: false,
+        mapRotationDeg: 15,
+        tileCols: 2,
+        tileRows: 2
+      },
+      {
+        key: 'singapore',
+        file: 'cache/scene_v5_1.2810_103.8487_1.2926_103.8603.json',
+        waterCutout: true,
+        mapRotationDeg: 0,
+        tileCols: 2,
+        tileRows: 2
+      },
+      {
+        key: 'innsbruck',
+        file: 'cache/scene_v5_47.2627_11.3847_47.2743_11.4019.json',
+        waterCutout: false,
+        mapRotationDeg: 15,
+        tileCols: 2,
+        tileRows: 2
+      }
+    ];
+
+    for (const cfg of cityConfigs) {
+      const fullFile = path.join(ROOT, cfg.file);
+      if (!fs.existsSync(fullFile)) {
+        console.log(`  [SKIP] Cached scene missing: ${cfg.file}`);
+        continue;
+      }
+      const rawJson = fs.readFileSync(fullFile, 'utf8');
+      const refScene = JSON.parse(rawJson);
+      const syncScene = JSON.parse(rawJson);
+      const asyncScene = JSON.parse(rawJson);
+
+      if (typeof applySceneRotation === 'function') {
+        applySceneRotation(refScene, cfg.mapRotationDeg, 84.6, 84.6);
+      }
+
+      const commonSt = {
+        isResin: true,
+        printerPreset: 'mono4_custom',
+        xyPixelMm: 0.05,
+        layerHeightMm: 0.05,
+        bedSizeMm: 256,
+        bedSizeXMm: 256,
+        bedSizeYMm: 256,
+        bedZ: 200,
+        tileCols: cfg.tileCols,
+        tileRows: cfg.tileRows,
+        totalHeightMm: 256,
+        hollowBase: true,
+        hollowWallMm: 1.8,
+        waterCutout: cfg.waterCutout,
+        mapRotationDeg: cfg.mapRotationDeg,
+        zScale: 1.25,
+        terrainScale: 1.15,
+        cropRatio: refScene._fetchedCropRatio || 0.88,
+        cropCenterX: 0,
+        cropCenterY: 0,
+        kerfMm: 0.08,
+        layerVisible: { water: true, base: true, greenery: true, trees: true, roads: true, buildings: true, highlighted: true },
+        lodSettings: { minBuildingFootprintM: 0, enableTrees: true, treeMaxSpanKm: 4.0, roadDetail: 'all' }
+      };
+
+      const refRes = buildComplete3DModel(refScene, commonSt, { isExport: false });
+
+      const vStSync = makeMockVideoState(syncScene, {
+        bedSizeMm: 256,
+        totalHeightMm: 256,
+        targetWidthCm: 25.6,
+        targetHeightCm: 25.6,
+        tileCols: cfg.tileCols,
+        tileRows: cfg.tileRows,
+        waterCutout: cfg.waterCutout,
+        mapRotationDeg: cfg.mapRotationDeg,
+        cropRatio: syncScene._fetchedCropRatio || 0.88,
+        highlightedBuildingIds: []
+      });
+      const ctrlSync = createVideoOrderDemoController(vStSync, { rebuild: () => {} }, { width: 640, height: 480 }, {}, null);
+      const syncSlot = ctrlSync.buildSlotDescriptorFromCurrent();
+
+      const vStAsync = makeMockVideoState(asyncScene, {
+        bedSizeMm: 256,
+        totalHeightMm: 256,
+        targetWidthCm: 25.6,
+        targetHeightCm: 25.6,
+        tileCols: cfg.tileCols,
+        tileRows: cfg.tileRows,
+        waterCutout: cfg.waterCutout,
+        mapRotationDeg: cfg.mapRotationDeg,
+        cropRatio: asyncScene._fetchedCropRatio || 0.88,
+        highlightedBuildingIds: []
+      });
+      const ctrlAsync = createVideoOrderDemoController(vStAsync, { rebuild: () => {} }, { width: 640, height: 480 }, {}, null);
+      const asyncSlot = await ctrlAsync.buildSlotDescriptorAsync();
+
+      const refGreen = refRes.meshes.greenery.length;
+      const syncGreen = syncSlot.meshes.greenery.length + syncSlot.meshes.trees.length;
+      const asyncGreen = asyncSlot.meshes.greenery.length + asyncSlot.meshes.trees.length;
+
+      const refBld = refRes.meshes.buildings.length + refRes.meshes.highlighted.length;
+      const syncBld = syncSlot.meshes.buildings.length + syncSlot.meshes.highlighted.length;
+      const asyncBld = asyncSlot.meshes.buildings.length + asyncSlot.meshes.highlighted.length;
+
+      const countParity =
+        refRes.meshes.water.length === syncSlot.meshes.water.length &&
+        refRes.meshes.water.length === asyncSlot.meshes.water.length &&
+        (!cfg.waterCutout || refRes.meshes.water.length === 0) &&
+        refRes.meshes.base.length === syncSlot.meshes.base.length &&
+        refRes.meshes.base.length === asyncSlot.meshes.base.length &&
+        refRes.meshes.roads.length === syncSlot.meshes.roads.length &&
+        refRes.meshes.roads.length === asyncSlot.meshes.roads.length &&
+        refGreen === syncGreen && refGreen === asyncGreen &&
+        refBld === syncBld && refBld === asyncBld && refBld > 0;
+
+      const rb = getTriBounds([...refRes.meshes.buildings, ...refRes.meshes.highlighted]);
+      const sb = getTriBounds([...syncSlot.meshes.buildings, ...syncSlot.meshes.highlighted]);
+      const ab = getTriBounds([...asyncSlot.meshes.buildings, ...asyncSlot.meshes.highlighted]);
+      const boundsParity =
+        Math.abs(rb.minZ - sb.minZ) < 1e-6 && Math.abs(rb.maxZ - sb.maxZ) < 1e-6 &&
+        Math.abs(rb.minZ - ab.minZ) < 1e-6 && Math.abs(rb.maxZ - ab.maxZ) < 1e-6 &&
+        Math.abs(rb.minX - sb.minX) < 1e-6 && Math.abs(rb.maxX - sb.maxX) < 1e-6;
+
+      check(
+        countParity && boundsParity,
+        `${cfg.key.toUpperCase()} 1:1 parity across Main3D / VideoSync / VideoAsync (wc=${cfg.waterCutout}, rot=${cfg.mapRotationDeg}°)`,
+        `bld=${refBld}/${syncBld}/${asyncBld}, Z=[${rb.minZ.toFixed(2)}..${rb.maxZ.toFixed(2)}], trees=${syncSlot.meshes.trees.length}`
+      );
+      builtRealSlots[cfg.key] = syncSlot;
+    }
+  }
+
+  function createInstrumentedMockEnv() {
+    const createMock2DCtx = () => ({
+      fillStyle: '#000',
+      strokeStyle: '#000',
+      font: '12px sans-serif',
+      textAlign: 'left',
+      textBaseline: 'top',
+      globalAlpha: 1,
+      lineWidth: 1,
+      lineCap: 'butt',
+      lineJoin: 'miter',
+      shadowColor: 'transparent',
+      shadowBlur: 0,
+      save() {},
+      restore() {},
+      translate() {},
+      rotate() {},
+      scale() {},
+      setTransform() {},
+      beginPath() {},
+      closePath() {},
+      moveTo() {},
+      lineTo() {},
+      rect() {},
+      roundRect() {},
+      arc() {},
+      clip() {},
+      fill() {},
+      stroke() {},
+      fillRect() {},
+      strokeRect() {},
+      clearRect() {},
+      fillText() {},
+      strokeText() {},
+      drawImage() {},
+      setLineDash() {},
+      measureText: (txt) => ({ width: String(txt || '').length * 7 }),
+      createLinearGradient: () => ({ addColorStop() {} }),
+      createRadialGradient: () => ({ addColorStop() {} }),
+      getImageData: (_x, _y, w, h) => ({ data: new Uint8ClampedArray((w || 1) * (h || 1) * 4) })
+    });
+
+    let nextId = 1;
+    const programs = [];
+    const shaders = [];
+    const uniformQueries = new Map();
+    const attribQueries = new Map();
+    const uniformValues = new Map();
+    let frameDraws = [];
+    let currentProg = null;
+    let boundArrayBuf = null;
+    const bufRecords = new Map();
+    const uploadedOrder = [];
+
+    const gl = {
+      VERTEX_SHADER: 0x8B31,
+      FRAGMENT_SHADER: 0x8B30,
+      COMPILE_STATUS: 0x8B81,
+      LINK_STATUS: 0x8B82,
+      ARRAY_BUFFER: 0x8892,
+      STATIC_DRAW: 0x88E4,
+      TRIANGLES: 0x0004,
+      TEXTURE_2D: 0x0DE1,
+      RGBA: 0x1908,
+      UNSIGNED_BYTE: 0x1401,
+      NEAREST: 0x2600,
+      LINEAR: 0x2601,
+      CLAMP_TO_EDGE: 0x812F,
+      TEXTURE_MIN_FILTER: 0x2801,
+      TEXTURE_MAG_FILTER: 0x2800,
+      TEXTURE_WRAP_S: 0x2802,
+      TEXTURE_WRAP_T: 0x2803,
+      FRAMEBUFFER: 0x8D40,
+      COLOR_ATTACHMENT0: 0x8CE0,
+      DEPTH_ATTACHMENT: 0x8D00,
+      RENDERBUFFER: 0x8D41,
+      DEPTH_COMPONENT16: 0x81A5,
+      COLOR_BUFFER_BIT: 0x4000,
+      DEPTH_BUFFER_BIT: 0x0100,
+      DEPTH_TEST: 0x0B71,
+      LEQUAL: 0x0203,
+      BLEND: 0x0BE2,
+      SRC_ALPHA: 0x0302,
+      ONE_MINUS_SRC_ALPHA: 0x0303,
+      FLOAT: 0x1406,
+      TEXTURE0: 0x84C0,
+      TEXTURE1: 0x84C1,
+      UNPACK_FLIP_Y_WEBGL: 0x9240,
+      createShader(type) {
+        const s = { id: nextId++, type, src: '' };
+        shaders.push(s);
+        return s;
+      },
+      shaderSource(s, src) { s.src = String(src || ''); },
+      compileShader() {},
+      getShaderParameter() { return true; },
+      getShaderInfoLog() { return ''; },
+      createProgram() {
+        const p = { id: nextId++, label: '', vsSrc: '', fsSrc: '', src: '', attribs: new Map() };
+        programs.push(p);
+        uniformQueries.set(p.id, new Set());
+        attribQueries.set(p.id, new Set());
+        uniformValues.set(p.id, new Map());
+        return p;
+      },
+      attachShader(p, s) {
+        if (s.type === gl.VERTEX_SHADER) p.vsSrc = s.src;
+        else p.fsSrc = s.src;
+        p.src = p.vsSrc + '\n' + p.fsSrc;
+        p.label = p.vsSrc.includes('uLightMatrix') && !p.vsSrc.includes('uProj') ? 'shadow' : 'main';
+      },
+      linkProgram() {},
+      getProgramParameter() { return true; },
+      getProgramInfoLog() { return ''; },
+      getExtension() { return {}; },
+      createTexture() { return { id: nextId++ }; },
+      bindTexture() {},
+      texImage2D() {},
+      texParameteri() {},
+      pixelStorei() {},
+      createRenderbuffer() { return { id: nextId++ }; },
+      bindRenderbuffer() {},
+      renderbufferStorage() {},
+      createFramebuffer() { return { id: nextId++ }; },
+      bindFramebuffer() {},
+      framebufferTexture2D() {},
+      framebufferRenderbuffer() {},
+      createBuffer() {
+        const b = { id: nextId++, data: null, lid: -1, subId: 0 };
+        bufRecords.set(b.id, b);
+        uploadedOrder.push(b);
+        return b;
+      },
+      bindBuffer(target, b) {
+        if (target === gl.ARRAY_BUFFER) boundArrayBuf = b;
+      },
+      bufferData(target, data) {
+        if (target === gl.ARRAY_BUFFER && boundArrayBuf && data) {
+          const copy = new Float32Array(data.length);
+          copy.set(data);
+          boundArrayBuf.data = copy;
+          boundArrayBuf.lid = copy.length >= 13 ? Math.round(copy[9]) : -1;
+          boundArrayBuf.subId = copy.length >= 13 ? Math.round(copy[11]) : 0;
+        }
+      },
+      deleteBuffer(b) { if (b) bufRecords.delete(b.id); },
+      deleteTexture() {},
+      viewport() {},
+      clearColor() {},
+      clear() {},
+      enable() {},
+      disable() {},
+      depthFunc() {},
+      depthMask() {},
+      blendFunc() {},
+      useProgram(p) { currentProg = p; },
+      getUniformLocation(p, name) {
+        if (p && uniformQueries.has(p.id)) uniformQueries.get(p.id).add(name);
+        return { prog: p, name };
+      },
+      getAttribLocation(p, name) {
+        if (p && attribQueries.has(p.id)) attribQueries.get(p.id).add(name);
+        if (p && !p.attribs.has(name)) p.attribs.set(name, p.attribs.size);
+        return p ? p.attribs.get(name) : -1;
+      },
+      enableVertexAttribArray() {},
+      vertexAttribPointer() {},
+      uniform1f(loc, v) { if (loc && loc.prog) uniformValues.get(loc.prog.id).set(loc.name, v); },
+      uniform1i(loc, v) { if (loc && loc.prog) uniformValues.get(loc.prog.id).set(loc.name, v); },
+      uniform3f(loc, a, b, c) { if (loc && loc.prog) uniformValues.get(loc.prog.id).set(loc.name, [a, b, c]); },
+      uniform3fv(loc, v) { if (loc && loc.prog) uniformValues.get(loc.prog.id).set(loc.name, Array.from(v)); },
+      uniform4f(loc, a, b, c, d) { if (loc && loc.prog) uniformValues.get(loc.prog.id).set(loc.name, [a, b, c, d]); },
+      uniformMatrix4fv(loc, _t, v) { if (loc && loc.prog) uniformValues.get(loc.prog.id).set(loc.name, Float32Array.from(v)); },
+      activeTexture() {},
+      drawArrays(_mode, _first, count) {
+        frameDraws.push({
+          progLabel: currentProg ? currentProg.label : 'unknown',
+          count,
+          tris: Math.round(count / 3),
+          lid: boundArrayBuf ? boundArrayBuf.lid : -1,
+          subId: boundArrayBuf ? boundArrayBuf.subId : 0,
+          buf: boundArrayBuf
+        });
+      }
+    };
+
+    const makeCanvas = (w = 1280, h = 720) => ({
+      width: w,
+      height: h,
+      style: {},
+      classList: { contains: () => false, add() {}, remove() {}, toggle() {} },
+      addEventListener() {},
+      getBoundingClientRect: () => ({ width: w, height: h, left: 0, top: 0 }),
+      getContext(kind) {
+        if (kind === 'webgl' || kind === 'experimental-webgl') return gl;
+        return createMock2DCtx();
+      }
+    });
+
+    return {
+      gl,
+      programs,
+      uniformQueries,
+      attribQueries,
+      uniformValues,
+      uploadedOrder,
+      getDraws: () => frameDraws,
+      resetDraws: () => { frameDraws = []; },
+      makeCanvas,
+      createMock2DCtx
+    };
+  }
+
+  function mulMat4Vec4(m, v) {
+    return [
+      m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12] * v[3],
+      m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13] * v[3],
+      m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14] * v[3],
+      m[3] * v[0] + m[7] * v[1] + m[11] * v[2] + m[15] * v[3]
+    ];
+  }
+
+  console.log('\n[8/10] Headless WebGL 1.0 + Canvas2D Effect Audit (London Eye, Close Zoom, Dubai zslicer, Innsbruck GroundZ)');
+  {
+    const prevDoc = global.document;
+    const mockEnv = createInstrumentedMockEnv();
+    global.document = {
+      createElement: (tag) => (tag === 'canvas' ? mockEnv.makeCanvas() : { style: {}, classList: { add() {}, remove() {}, contains: () => false }, addEventListener() {} }),
+      getElementById: () => null,
+      querySelectorAll: () => []
+    };
+    try {
+      const compositeCanvas = mockEnv.makeCanvas(1280, 720);
+      const engine = createVideoPreviewEngine(compositeCanvas);
+      const mainProg = mockEnv.programs.find(p => p.label === 'main') || mockEnv.programs[1];
+      const shadowProg = mockEnv.programs.find(p => p.label === 'shadow') || mockEnv.programs[0];
+
+      // Build London Eye + waterCutout slot
+      const londonScene = makeFullSyntheticCityScene();
+      const vLondon = makeMockVideoState(londonScene, {
+        bedSizeMm: 256,
+        totalHeightMm: 256,
+        targetWidthCm: 25.6,
+        targetHeightCm: 25.6,
+        mapRotationDeg: 0,
+        waterCutout: true,
+        backingStyle: 'obsidian',
+        showFrameProduct: true
+      });
+      const ctrlLondon = createVideoOrderDemoController(vLondon, engine, compositeCanvas, {}, null);
+      const londonSlot = ctrlLondon.buildSlotDescriptorFromCurrent();
+      engine.uploadOrderSlots([londonSlot]);
+
+      const animLondon = {
+        storyboard: 'hero',
+        waveMode: 'none',
+        styleTransition: 'wire_to_studio',
+        easing: 'cubic',
+        frameAnimMode: 'z_drop',
+        bgTheme: 'dark_to_white',
+        showTelemetry: true,
+        showWhipPan: true,
+        showOrderHud: true,
+        showFrameProduct: true,
+        sunAngleDeg: 132
+      };
+      mockEnv.resetDraws();
+      engine.renderFrameAt(0.92, animLondon, 1280, 720);
+      const framedDraws = mockEnv.getDraws().slice();
+
+      // Verify every queried uniform & attrib exists in compiled shader source
+      let allUniformsExist = true;
+      let missingUniforms = [];
+      for (const prog of [shadowProg, mainProg]) {
+        const uSet = mockEnv.uniformQueries.get(prog.id) || new Set();
+        const aSet = mockEnv.attribQueries.get(prog.id) || new Set();
+        for (const name of [...uSet, ...aSet]) {
+          if (!(new RegExp(`\\b${name}\\b`).test(prog.src))) {
+            allUniformsExist = false;
+            missingUniforms.push(`${prog.label}:${name}`);
+          }
+        }
+      }
+      check(allUniformsExist, 'All queried WebGL uniforms & attributes exist in compiled GLSL shaders', missingUniforms.join(','));
+
+      // Check water draws === 0 and backing top Z === -0.025 when waterCutout=true
+      const waterDrawsFramed = framedDraws.filter(d => d.lid === 0);
+      const backingDraw = framedDraws.find(d => d.progLabel === 'main' && d.lid === 8 && d.subId === 0);
+      let gpuBackingMaxZ = -Infinity;
+      if (backingDraw && backingDraw.buf && backingDraw.buf.data) {
+        const d = backingDraw.buf.data;
+        for (let i = 0; i < d.length; i += 13) gpuBackingMaxZ = Math.max(gpuBackingMaxZ, d[i + 2]);
+      }
+      check(waterDrawsFramed.length === 0, 'waterCutout=true executes 0 WebGL drawArrays calls on water buffer (shadow & main)');
+      check(Boolean(backingDraw) && Math.abs(gpuBackingMaxZ - (-0.025)) < 1e-5, 'Framed waterCutout draws obsidian backing in WebGL with top Z=-0.025', `gpuMaxZ=${gpuBackingMaxZ}`);
+
+      // Verify wheel buildings buffer has 0 NaNs and slim axial thickness along its minor axis
+      const bldBuf = mockEnv.uploadedOrder.find(b => b.data && b.data.length > 0 && b.lid === 4);
+      let bldNaN = 0;
+      let wheelMinX = Infinity, wheelMaxX = -Infinity;
+      let wheelMinY = Infinity, wheelMaxY = -Infinity;
+      let wheelMaxZ = -Infinity, wheelMinZ = Infinity;
+      if (bldBuf) {
+        const d = bldBuf.data;
+        for (let i = 0; i < d.length; i++) if (!Number.isFinite(d[i])) bldNaN++;
+        for (let i = 0; i < d.length; i += 13) {
+          const x = d[i], y = d[i + 1], z = d[i + 2];
+          if (x >= -42 && x <= -5 && y >= -42 && y <= 5 && z > 8) {
+            if (x < wheelMinX) wheelMinX = x;
+            if (x > wheelMaxX) wheelMaxX = x;
+            if (y < wheelMinY) wheelMinY = y;
+            if (y > wheelMaxY) wheelMaxY = y;
+            if (z < wheelMinZ) wheelMinZ = z;
+            if (z > wheelMaxZ) wheelMaxZ = z;
+          }
+        }
+      }
+      const wheelAxialMin = Math.min(wheelMaxX - wheelMinX, wheelMaxY - wheelMinY);
+      const wheelHeight = wheelMaxZ - wheelMinZ;
+      check(
+        bldNaN === 0 && Number.isFinite(wheelHeight) && wheelHeight > 5 && wheelAxialMin < wheelHeight * 0.5,
+        'Packed GPU London Eye buffer has 0 NaNs & slim open-wheel axial ratio',
+        `axialMin=${wheelAxialMin.toFixed(2)}, height=${wheelHeight.toFixed(2)}`
+      );
+
+      // Render unframed waterCutout=true -> boardOnly (lid == 11) must draw
+      mockEnv.resetDraws();
+      engine.renderFrameAt(0.92, { ...animLondon, showFrameProduct: false }, 1280, 720);
+      const unframedDraws = mockEnv.getDraws().slice();
+      const boardOnlyMainDraw = unframedDraws.find(d => d.progLabel === 'main' && d.lid === 11);
+      check(Boolean(boardOnlyMainDraw) && unframedDraws.every(d => d.lid !== 0), 'Unframed waterCutout draws boardOnly (lid=11) with 0 water draws');
+
+      // Close Zoom Near-Plane Safety (zoomMult = 0.14) + non-NaN projection matrix check
+      engine.userOrbitOffset.zoomMult = 0.14;
+      mockEnv.resetDraws();
+      engine.renderFrameAt(0.92, animLondon, 1280, 720);
+      const mainUnifClose = mockEnv.uniformValues.get(mainProg.id);
+      const uProj = mainUnifClose.get('uProj');
+      const uView = mainUnifClose.get('uView');
+      const projFinite = Boolean(uProj && uView) && Array.from(uProj).every(Number.isFinite) && Array.from(uView).every(Number.isFinite);
+      const testPts = [[0, -2, 2.5], [0, -12, 10], [-14, -8, 12], [12, -10, 6]];
+      let closeClipOk = projFinite;
+      if (closeClipOk) {
+        for (const pt of testPts) {
+          const viewV = mulMat4Vec4(uView, [pt[0], pt[1], pt[2], 1]);
+          const clipV = mulMat4Vec4(uProj, viewV);
+          if (!(clipV[3] > 0 && clipV[2] > -clipV[3] && clipV[2] < clipV[3])) {
+            closeClipOk = false;
+          }
+        }
+      }
+      engine.resetUserOrbit();
+      check(closeClipOk, 'Close zoom (zoomMult=0.14) emits finite uProj/uView & keeps landmarks inside near/far clip frustum');
+
+      // Dubai Burj Khalifa zslicer effect at t=0.45 and t=0.95
+      if (builtRealSlots.dubai) {
+        mockEnv.uploadedOrder.length = 0;
+        engine.uploadOrderSlots([builtRealSlots.dubai]);
+        const dubaiAnim = { ...animLondon, waveMode: 'zslicer' };
+
+        const dubaiBldBufs = mockEnv.uploadedOrder.filter(b => b.data && b.data.length > 0 && (b.lid === 4 || b.lid === 5));
+        let dubaiMaxRawZ = 0;
+        for (const bb of dubaiBldBufs) {
+          for (let i = 2; i < bb.data.length; i += 13) if (bb.data[i] > dubaiMaxRawZ) dubaiMaxRawZ = bb.data[i];
+        }
+
+        engine.renderFrameAt(0.45, dubaiAnim, 1280, 720);
+        const u45 = mockEnv.uniformValues.get(mainProg.id);
+        const uWaveMode45 = u45.get('uWaveMode');
+        const uMaxZ45 = u45.get('uMaxSceneZ');
+        const uProg45 = u45.get('uWaveProgress');
+        const printZ45 = uProg45 * Math.max(18.0, uMaxZ45 * 1.04);
+
+        engine.renderFrameAt(0.95, dubaiAnim, 1280, 720);
+        const u95 = mockEnv.uniformValues.get(mainProg.id);
+        const uMaxZ95 = u95.get('uMaxSceneZ');
+        const uProg95 = u95.get('uWaveProgress');
+        const printZ95 = uProg95 * Math.max(18.0, uMaxZ95 * 1.04);
+
+        check(
+          uWaveMode45 === 3 && uMaxZ45 > 50 && printZ45 < dubaiMaxRawZ && printZ95 >= dubaiMaxRawZ,
+          'Dubai Burj Khalifa zslicer uses true uMaxSceneZ (>50, no Z=36 cap) and prints full spire at t=0.95',
+          `dubaiMaxZ=${dubaiMaxRawZ.toFixed(2)}, printZ45=${printZ45.toFixed(2)}, printZ95=${printZ95.toFixed(2)}`
+        );
+      }
+
+      // Innsbruck Alpine Hillside GPU aMeta.y (groundZ) inspection
+      if (builtRealSlots.innsbruck) {
+        mockEnv.uploadedOrder.length = 0;
+        engine.uploadOrderSlots([builtRealSlots.innsbruck]);
+        const alpineBufs = mockEnv.uploadedOrder.filter(b => b.data && b.data.length > 0 && (b.lid === 2 || b.lid === 3 || b.lid === 4));
+        let nonFiniteVerts = 0;
+        let maxPackedGroundZ = 0;
+        for (const ab of alpineBufs) {
+          for (let i = 0; i < ab.data.length; i++) if (!Number.isFinite(ab.data[i])) nonFiniteVerts++;
+          for (let i = 10; i < ab.data.length; i += 13) if (ab.data[i] > maxPackedGroundZ) maxPackedGroundZ = ab.data[i];
+        }
+        check(
+          nonFiniteVerts === 0 && maxPackedGroundZ > 3.0,
+          'Innsbruck alpine GPU buffers have 0 NaNs and track hillside groundZ > 3.0',
+          `maxPackedGroundZ=${maxPackedGroundZ.toFixed(2)}`
+        );
+      }
+    } finally {
+      global.document = prevDoc;
+    }
+  }
+
+  console.log('\n[9/10] Full initVideoStudioModule(bridge) Lifecycle & DOM ID Integrity Audit');
+  {
+    const viewHtml = fs.readFileSync(path.join(ROOT, 'src/video/video_studio_view.html'), 'utf8');
+    const indexHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    const allViewIds = new Set([...viewHtml.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
+    const allIndexIds = new Set([...indexHtml.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
+
+    const missingDomIds = [];
+    for (const rel of fs.readdirSync(path.join(ROOT, 'src/video')).filter(f => f.endsWith('.js'))) {
+      const src = fs.readFileSync(path.join(ROOT, 'src/video', rel), 'utf8');
+      for (const m of src.matchAll(/getElementById\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+        const id = m[1];
+        if (!allViewIds.has(id) && !allIndexIds.has(id)) {
+          missingDomIds.push(`${rel}:#${id}`);
+        }
+      }
+    }
+    check(missingDomIds.length === 0, 'Every getElementById(...) in src/video/*.js exists in video_studio_view.html / index.html', missingDomIds.join(','));
+
+    // Lifecycle check with headless DOM stub + mockBridge
+    const prevDoc = global.document;
+    const prevWin = global.window;
+    const prevInitScene = global.INITIAL_REAL_SCENE;
+    const prevImage = global.Image;
+    const mockEnv = createInstrumentedMockEnv();
+    const domMap = new Map();
+    const makeDomNode = (id, tag = 'div') => {
+      if (id === 'videoPreviewCanvas') return mockEnv.makeCanvas(1280, 720);
+      if (id === 'vidMap2dCanvas') return mockEnv.makeCanvas(320, 240);
+      const classes = new Set(id === 'vidLoadingOverlay' ? ['hidden'] : []);
+      return {
+        id,
+        tagName: tag.toUpperCase(),
+        value: '',
+        checked: false,
+        textContent: '',
+        innerHTML: '',
+        style: {},
+        dataset: {},
+        className: '',
+        classList: {
+          add: (...c) => c.forEach(k => classes.add(k)),
+          remove: (...c) => c.forEach(k => classes.delete(k)),
+          toggle: (k, f) => (f === undefined ? (classes.has(k) ? classes.delete(k) : classes.add(k)) : (f ? classes.add(k) : classes.delete(k))),
+          contains: (k) => classes.has(k)
+        },
+        addEventListener() {},
+        removeEventListener() {},
+        appendChild: (c) => c,
+        querySelectorAll: () => [],
+        getContext: () => mockEnv.createMock2DCtx()
+      };
+    };
+    for (const id of allViewIds) domMap.set(id, makeDomNode(id));
+
+    global.INITIAL_REAL_SCENE = null;
+    global.Image = function MockImage() { this.crossOrigin = ''; this.src = ''; };
+    global.window = { addEventListener() {}, removeEventListener() {} };
+    global.document = {
+      activeElement: null,
+      getElementById: (id) => domMap.get(id) || null,
+      createElement: (tag) => (tag === 'canvas' ? mockEnv.makeCanvas() : makeDomNode('', tag)),
+      querySelector: () => null,
+      querySelectorAll: () => []
+    };
+
+    try {
+      const bridgeScene = makeFullSyntheticCityScene();
+      applySceneRotation(bridgeScene, 24, 84.6, 84.6);
+      const bridgeSt = {
+        sceneData: bridgeScene,
+        mapCenterLat: 51.5033,
+        mapCenterLon: -0.1195,
+        mapZoom: 15,
+        mapSpanMeters: 1200,
+        cropRatio: 0.88,
+        cropCenterX: 0,
+        cropCenterY: 0,
+        zScale: 1.25,
+        terrainScale: 1.15,
+        bedSizeMm: 256,
+        totalHeightMm: 256,
+        tileCols: 2,
+        tileRows: 2,
+        isResin: true,
+        xyPixelMm: 0.05,
+        layerHeightMm: 0.05,
+        bedZ: 200,
+        printerProfileId: 'mono4_custom',
+        hollowBase: true,
+        waterCutout: true,
+        mapRotationDeg: 24,
+        activePalette: 'alpine_relief',
+        colors: { ...(PALETTES.find(p => p.id === 'alpine_relief') || PALETTES[0]).colors },
+        frameStyle: 'black',
+        plaqueText: 'LONDON EYE',
+        lodSettings: { enableTrees: true, treeMaxSpanKm: 4.0, minBuildingFootprintM: 0, roadDetail: 'all' },
+        layerVisible: { water: true, base: true, greenery: true, trees: true, roads: true, buildings: true, highlighted: true }
+      };
+      const builtMain = buildComplete3DModel(bridgeScene, bridgeSt, { isExport: false });
+      bridgeSt.layerMeshes = builtMain.meshes;
+      bridgeSt.pickIdMap = builtMain.pickIdMap;
+      const bldNamesBefore = bridgeScene.buildings.map(b => Boolean(b.highlighted));
+
+      const studio = initVideoStudioModule({
+        getState: () => bridgeSt,
+        getSceneData: () => bridgeScene
+      });
+      studio.activateModule(true);
+      studio.deactivateModule();
+
+      const syncedOk = Boolean(studio) &&
+        studio.vState.waterCutout === true &&
+        studio.vState.backingStyle === 'obsidian' &&
+        studio.vState.mapRotationDeg === 24 &&
+        studio.vState.bedSizeMm === 256 &&
+        domMap.get('chkVidWaterCutout').checked === true &&
+        bridgeScene.buildings.every((b, idx) => Boolean(b.highlighted) === bldNamesBefore[idx]);
+
+      check(
+        syncedOk,
+        'initVideoStudioModule + activateModule(true) syncs waterCutout, obsidian backing, rotation, DOM checkboxes without mutating shared scene'
+      );
+    } finally {
+      global.document = prevDoc;
+      global.window = prevWin;
+      global.INITIAL_REAL_SCENE = prevInitScene;
+      global.Image = prevImage;
+    }
+  }
+
+  console.log('\n[10/10] Production HTML Bundle Script Syntax & Video Marker Integrity');
+  {
+    for (const htmlRel of ['index.html', 'video_studio.html']) {
+      const html = fs.readFileSync(path.join(ROOT, htmlRel), 'utf8');
+      const inlineScripts = [];
+      for (const m of html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) {
+        if (m[1] && m[1].trim().length > 0) inlineScripts.push(m[1]);
+      }
+      let compiled = 0;
+      let syntaxErr = null;
+      for (let i = 0; i < inlineScripts.length; i++) {
+        try {
+          new vm.Script(inlineScripts[i], { filename: `${htmlRel}#script_${i}` });
+          compiled++;
+        } catch (err) {
+          syntaxErr = err.message;
+          break;
+        }
+      }
+      const hasCanvas = html.includes('id="videoPreviewCanvas"') && html.includes('id="chkVidWaterCutout"');
+      check(
+        compiled >= 1 && !syntaxErr && hasCanvas,
+        `${htmlRel} inline <script> bundle parses with 0 JS syntax errors & contains Video Studio DOM`,
+        syntaxErr || `scripts=${compiled}`
+      );
+    }
   }
 
   console.log(`\n================================================================`);

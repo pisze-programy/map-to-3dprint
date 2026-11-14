@@ -137,8 +137,8 @@ function createVideoPreviewEngine(compositeCanvas) {
     primaryCad2D = extracted.cad2D;
 
     list.forEach((item) => {
-      const dimW = (item.widthCm || 30) * 10;
-      const dimH = (item.heightCm || 30) * 10;
+      const dimW = Number(item.bedSizeMm) || ((item.widthCm || 30) * 10);
+      const dimH = Number(item.totalHeightMm) || ((item.heightCm || 30) * 10);
       const maxDim = Math.max(dimW, dimH) || 300;
       const halfW = 84.6 * (dimW / maxDim);
       const halfH = 84.6 * (dimH / maxDim);
@@ -323,8 +323,10 @@ function createVideoPreviewEngine(compositeCanvas) {
     const explodeSpan = (animState.tileExplode * 16.0) + (animState.explodeZ * 67.5);
     const clipPlanes = (typeof computeCameraClipPlanes === 'function')
       ? computeCameraClipPlanes(dist, explodeSpan)
-      : { near: Math.max(1.5, dist * 0.04), far: Math.max(1800.0, dist * 5.0 + 350.0) };
-    gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uProj'), false, mat4Perspective((34 * Math.PI) / 180.0, (width / height) || 1, clipPlanes.near, clipPlanes.far));
+      : { zNear: Math.max(1.5, dist * 0.04), zFar: Math.max(1800.0, dist * 5.0 + 350.0) };
+    const nearClip = clipPlanes.zNear !== undefined ? clipPlanes.zNear : clipPlanes.near;
+    const farClip = clipPlanes.zFar !== undefined ? clipPlanes.zFar : clipPlanes.far;
+    gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uProj'), false, mat4Perspective((34 * Math.PI) / 180.0, (width / height) || 1, nearClip, farClip));
     gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uView'), false, mat4LookAt(eye, target, [0, 0, 1]));
     gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uLightMatrix'), false, lightMatrix);
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uEyePos'), eye);
