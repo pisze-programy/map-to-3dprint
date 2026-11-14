@@ -4,7 +4,7 @@
 // 2D Compositor Overlays (UTM GIS Telemetry, Whip-Pan Motion Blur & Packshot HUD).
 // ============================================================================
 
-function extractVideoTelemetryAndCad2D(scene) {
+function extractVideoTelemetryAndCad2D(scene, cropRatio = 0.88) {
   if (!scene) {
     return { telemetryRows: [], cad2D: null };
   }
@@ -17,7 +17,12 @@ function extractVideoTelemetryAndCad2D(scene) {
   const baseNorth = (lat >= 0 ? 0 : 10000000) + lat * 110574;
   const invM = 1.0 / (scene.metersToUnits || 0.13);
 
-  const blds = (scene.buildings || []).slice(0, 150);
+  const baseCrop = scene._fetchedCropRatio || 1.0;
+  const effectiveCrop = Math.min(1.0, Math.max(0.35, (Number(cropRatio) || 0.88) / baseCrop));
+  const scaleToBed = 1.0 / effectiveCrop;
+  const scalePts = (arr) => (arr || []).map(pt => [pt[0] * scaleToBed, pt[1] * scaleToBed]);
+
+  const blds = (scene.buildings || []).filter(b => !b.hidden && !b.isOutline).slice(0, 150);
   const telemetryRows = [];
   for (let i = 0; i < 135; i++) {
     const b = blds[i % Math.max(1, blds.length)];
@@ -29,17 +34,17 @@ function extractVideoTelemetryAndCad2D(scene) {
     telemetryRows.push(`${slug}_${idNum}  ${east}  ${north}  ${h.padStart(5, ' ')}`);
   }
 
-  const roads = (scene.roads || []).map(r => ({ pts: r.pts || [], w: r.width || 1.5 }));
-  const bldOuters = (scene.buildings || []).filter(b => !b.hidden).slice(0, 2600).map(b => ({
-    pts: b.outer || [],
+  const roads = (scene.roads || []).map(r => ({ pts: scalePts(r.pts), w: r.width || 1.5 }));
+  const bldOuters = (scene.buildings || []).filter(b => !b.hidden && !b.isOutline).map(b => ({
+    pts: scalePts(b.outer),
     hl: !!b.highlighted,
     h: b.h || 10
   }));
-  const waters = (scene.waterPolys || []).map(w => w.outer || []);
+  const waters = (scene.waterPolys || []).map(w => scalePts(w.outer));
 
   return {
     telemetryRows,
-    cad2D: { roads, bldOuters, waters }
+    cad2D: { roads, bldOuters, waters, scaleToBed }
   };
 }
 
@@ -278,10 +283,15 @@ function drawVideoTelemetryOverlay(ctx, w, h, alpha, scroll, telemetryRows) {
 function drawVideo2DCadWhipPanOverlay(ctx, w, h, animState, cad2D, slot0Cfg) {
   if (animState.cad2dAlpha <= 0.01 || !cad2D || !slot0Cfg) return;
   const tanHalfFov = Math.tan((17 * Math.PI) / 180.0);
-  const pxPerUnit = (h * 0.5) / (268.0 * tanHalfFov);
+  const camDist = Number(animState.camDist) > 0
+    ? Number(animState.camDist)
+    : (268.0 + Math.max(0, (Number(animState.slotMaxZ) || 22.0) - 22.0) * 0.25);
+  const pxPerUnit = (h * 0.5) / (camDist * tanHalfFov);
 
-  const cropHalfPxW = slot0Cfg.halfW * pxPerUnit;
-  const cropHalfPxH = slot0Cfg.halfH * pxPerUnit;
+  const halfW = slot0Cfg.halfW || 84.6;
+  const halfH = slot0Cfg.halfH || 84.6;
+  const cropHalfPxW = halfW * pxPerUnit;
+  const cropHalfPxH = halfH * pxPerUnit;
   const cx = w * 0.5;
   const cy = h * 0.5;
 
@@ -296,13 +306,14 @@ function drawVideo2DCadWhipPanOverlay(ctx, w, h, animState, cad2D, slot0Cfg) {
   const renderMapAtOffset = (ox, oy, sampleAlpha) => {
     ctx.save();
     ctx.globalAlpha = animState.cad2dAlpha * sampleAlpha;
-    const tileSpan = 169.2;
+    const tileSpanX = halfW * 2.0;
+    const tileSpanY = halfH * 2.0;
     for (let ty = -1; ty <= 1; ty++) {
       for (let tx = -1; tx <= 1; tx++) {
         const isCenterTile = (tx === 0 && ty === 0);
         if (!isCenterTile && animState.cad2dExteriorAlpha <= 0.02) continue;
-        const baseShiftX = ox + tx * tileSpan;
-        const baseShiftY = oy + ty * tileSpan;
+        const baseShiftX = ox + tx * tileSpanX;
+        const baseShiftY = oy + ty * tileSpanY;
         const flipX = (Math.abs(tx) % 2 === 1) ? -1 : 1;
         const flipY = (Math.abs(ty) % 2 === 1) ? -1 : 1;
 
@@ -412,4 +423,14 @@ function drawVideoOrderPackshotHud(ctx, w, h, animState, animCfg, gpuSlots) {
   ctx.fillText(specLine, bx + 18, by + Math.round(boxH * 0.78));
 
   ctx.restore();
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    extractVideoTelemetryAndCad2D,
+    evaluateVideoTimeline,
+    drawVideoTelemetryOverlay,
+    drawVideo2DCadWhipPanOverlay,
+    drawVideoOrderPackshotHud
+  };
 }

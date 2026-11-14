@@ -115,3 +115,16 @@ function packMeshForVideoGL(tris, defaultGroundZ = 0.22) {
   }
   return out;
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    clamp01,
+    smoothRange,
+    easeInOutCubic,
+    easeOutQuint,
+    easeInOutQuint,
+    easeOutBack,
+    applyVideoEasing,
+    packMeshForVideoGL
+  };
+}

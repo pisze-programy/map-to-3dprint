@@ -21,6 +21,9 @@ const VIDEO_VERTEX_TRANSFORM_GLSL = `
   uniform float uFrameAssemble;
   uniform float uFrameAnimMode;
   uniform float uGlassDrop;
+  uniform float uMaxSceneZ;
+  uniform float uHalfW;
+  uniform float uHalfH;
 
   float getLayerExtrudeFactor(int lid) {
     if (lid == 0) return uLayerExtrude0;
@@ -44,21 +47,24 @@ const VIDEO_VERTEX_TRANSFORM_GLSL = `
     if (lid >= 0 && lid <= 5) {
       float baseExt = getLayerExtrudeFactor(lid);
       float waveExt = 1.0;
+      float hw = max(1.0, uHalfW);
+      float hh = max(1.0, uHalfH);
       if (uWaveMode > 0.5 && uWaveMode < 1.5) {
-        // 1: Diagonal Laser Scan Wave across (x - y)
-        float coord = clamp((rawPos.x - rawPos.y + 175.0) / 350.0, 0.0, 1.0);
+        // 1: Diagonal Laser Scan Wave normalized across (x/halfW - y/halfH)
+        float coord = clamp((rawPos.x / hw - rawPos.y / hh + 2.0) * 0.25, 0.0, 1.0);
         float diff = uWaveProgress * 1.28 - coord;
         waveExt = smoothstep(-0.02, 0.16, diff);
         outWaveFront = exp(-pow((diff - 0.04) / 0.035, 2.0));
       } else if (uWaveMode >= 1.5 && uWaveMode < 2.5) {
-        // 2: Radial Ripple from Center Landmark
-        float rNorm = clamp(length(rawPos.xy) / 125.0, 0.0, 1.0);
+        // 2: Radial Ripple from Center Landmark normalized for any aspect ratio
+        float rNorm = clamp(length(vec2(rawPos.x / hw, rawPos.y / hh)) / 1.4142, 0.0, 1.0);
         float diff = uWaveProgress * 1.28 - rNorm;
         waveExt = smoothstep(-0.02, 0.18, diff);
         outWaveFront = exp(-pow((diff - 0.04) / 0.038, 2.0));
       } else if (uWaveMode >= 2.5) {
-        // 3: Vertical Z-Slicer Print Head
-        float maxPrintZ = uWaveProgress * 36.0;
+        // 3: Vertical Z-Slicer Print Head scaled to true model height
+        float topMaxZ = max(18.0, uMaxSceneZ * 1.04);
+        float maxPrintZ = uWaveProgress * topMaxZ;
         waveExt = clamp(uWaveProgress * 1.35, 0.0, 1.0);
         float topClamp = max(groundZ, min(rawPos.z, maxPrintZ));
         p.z = mix(groundZ, topClamp, baseExt);
@@ -114,13 +120,17 @@ const VIDEO_SHADOW_VS = `
   ${VIDEO_VERTEX_TRANSFORM_GLSL}
   varying float vDepth;
   varying vec3 vLocalPos;
+  varying vec3 vRawPos;
   varying float vLayerId;
+  varying float vSubId;
   void main() {
     float wf = 0.0;
     float le = 1.0;
     vec3 worldPos = computeAnimatedVertex(aPos, aMeta, wf, le);
     vLocalPos = worldPos - uModelOffset;
+    vRawPos = aPos;
     vLayerId = aMeta.x;
+    vSubId = aMeta.z;
     vec4 clip = uLightMatrix * vec4(worldPos, 1.0);
     vDepth = clip.z * 0.5 + 0.5;
     gl_Position = clip;
@@ -131,9 +141,13 @@ const VIDEO_SHADOW_FS = `
   precision highp float;
   varying float vDepth;
   varying vec3 vLocalPos;
+  varying vec3 vRawPos;
   varying float vLayerId;
+  varying float vSubId;
   uniform float uHalfW;
   uniform float uHalfH;
+  uniform float uTileCols;
+  uniform float uTileRows;
   uniform float uTileExplode;
   vec4 packDepth(const in float depth) {
     const vec4 bitShift = vec4(256.0*256.0*256.0, 256.0*256.0, 256.0, 1.0);
@@ -144,12 +158,24 @@ const VIDEO_SHADOW_FS = `
   }
   void main() {
     int lid = int(vLayerId + 0.5);
-    float limX = uHalfW + 0.3 + uTileExplode * 34.0;
-    float limY = uHalfH + 0.3 + uTileExplode * 34.0;
-    if (lid <= 5 && (abs(vLocalPos.x) > limX || abs(vLocalPos.y) > limY)) {
-      discard;
+    if (lid <= 5) {
+      if (abs(vRawPos.x) > uHalfW + 0.35 || abs(vRawPos.y) > uHalfH + 0.35) {
+        discard;
+      }
+      if ((uTileCols > 1.0 || uTileRows > 1.0) && vSubId >= 0.0) {
+        float tid = floor(vSubId + 0.5);
+        float tc = mod(tid, uTileCols);
+        float tr = floor(tid / uTileCols);
+        float stepX = (2.0 * uHalfW) / uTileCols;
+        float stepY = (2.0 * uHalfH) / uTileRows;
+        float tol = uTileExplode > 0.001 ? 0.02 : 0.08;
+        if (vRawPos.x < -uHalfW + tc * stepX - tol || vRawPos.x > -uHalfW + (tc + 1.0) * stepX + tol ||
+            vRawPos.y < -uHalfH + tr * stepY - tol || vRawPos.y > -uHalfH + (tr + 1.0) * stepY + tol) {
+          discard;
+        }
+      }
     }
-    if (lid == 7 || lid == 9 || lid == 10) {
+    if (lid == 7 || lid == 9 || lid == 10 || lid == 11) {
       discard;
     }
     gl_FragColor = packDepth(clamp(vDepth, 0.0, 1.0));
@@ -202,3 +228,12 @@ const VIDEO_MAIN_VS = `
     gl_Position = clipPos;
   }
 `;
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    VIDEO_VERTEX_TRANSFORM_GLSL,
+    VIDEO_SHADOW_VS,
+    VIDEO_SHADOW_FS,
+    VIDEO_MAIN_VS
+  };
+}

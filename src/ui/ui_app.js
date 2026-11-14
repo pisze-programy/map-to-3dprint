@@ -756,8 +756,27 @@ function initMap3DApp(initialScene) {
         : 'px-2.5 py-1 rounded-md text-[var(--foreground)] hover:bg-blue-500/15 font-semibold text-xs transition flex items-center gap-1';
     }
     if (videoStudio) {
-      if (isVideo) videoStudio.activateModule(!skipSync);
-      else { videoStudio.deactivateModule(); draw2DMap(); studio.render(true); }
+      if (isVideo) {
+        videoStudio.activateModule(!skipSync);
+      } else {
+        videoStudio.deactivateModule();
+        let needsRotRebuild = false;
+        if (state.sceneData && typeof applySceneRotation === 'function') {
+          const targetRot = (typeof normalizeRotationDeg === 'function')
+            ? normalizeRotationDeg(state.mapRotationDeg || 0)
+            : (Number(state.mapRotationDeg) || 0);
+          if (state.sceneData._appliedRotationDeg !== targetRot) {
+            const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 500);
+            const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
+            const maxDim = Math.max(dimW, dimH) || 500;
+            applySceneRotation(state.sceneData, targetRot, 84.6 * (dimW / maxDim), 84.6 * (dimH / maxDim));
+            needsRotRebuild = true;
+          }
+        }
+        draw2DMap();
+        if (needsRotRebuild) rebuildModel3D();
+        else studio.render(true);
+      }
     }
   }
 
@@ -765,7 +784,7 @@ function initMap3DApp(initialScene) {
   if (btnTabVideo) btnTabVideo.addEventListener('click', () => switchToModule('video'));
 
   window.__map3d = {
-    state, studio, rebuildModel3D, draw2DMap, handleSelectBuilding,
+    state, studio, videoStudio, rebuildModel3D, draw2DMap, handleSelectBuilding,
     fetchRealGISAndRender, applyPrinterProfile, renderPalettesUI, renderLayersUI,
     updateMono4PairingUI, updateStatsUI, updateLodTreeBadge,
     safeClosest: (typeof safeClosest === 'function' ? safeClosest : (typeof window !== 'undefined' ? window.safeClosest : null)),

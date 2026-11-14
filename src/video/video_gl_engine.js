@@ -4,6 +4,59 @@
 // Framed Product Pass) & Hybrid 2D Composite Frame Coordinator.
 // ============================================================================
 
+function computeLayerGroundZMap(meshes) {
+  const src = meshes || {};
+  const allKeys = ['water', 'base', 'greenery', 'trees', 'roads', 'buildings', 'highlighted'];
+  const shellMinZ = new Map();
+  const bldMinZ = new Map();
+  let maxSceneZ = 18.0;
+  let baseTopZ = 0.0;
+
+  for (let ki = 0; ki < allKeys.length; ki++) {
+    const k = allKeys[ki];
+    const arr = src[k] || [];
+    for (let i = 0; i < arr.length; i++) {
+      const t = arr[i];
+      if (!t || !t.v0 || !t.v1 || !t.v2) continue;
+      const topZ = Math.max(t.v0[2], t.v1[2], t.v2[2]);
+      const minZ = Math.min(t.v0[2], t.v1[2], t.v2[2]);
+      if (topZ > maxSceneZ) maxSceneZ = topZ;
+      if (k === 'base' && topZ > baseTopZ) baseTopZ = topZ;
+      if (t.shellId !== undefined && t.shellId !== -1) {
+        const prevS = shellMinZ.get(t.shellId);
+        if (prevS === undefined || minZ < prevS) shellMinZ.set(t.shellId, minZ);
+      }
+      if ((k === 'buildings' || k === 'highlighted') && t.buildingId !== undefined && t.buildingId >= 0) {
+        const prevB = bldMinZ.get(t.buildingId);
+        if (prevB === undefined || minZ < prevB) bldMinZ.set(t.buildingId, minZ);
+      }
+    }
+  }
+
+  function resolveTriGroundZ(t, layerKey, fallbackZ) {
+    if (layerKey === 'base') return 0.0;
+    if (t && t.shellId !== undefined && t.shellId !== -1 && shellMinZ.has(t.shellId)) {
+      return shellMinZ.get(t.shellId);
+    }
+    if (t && t.buildingId !== undefined && t.buildingId >= 0 && bldMinZ.has(t.buildingId)) {
+      return bldMinZ.get(t.buildingId);
+    }
+    return fallbackZ;
+  }
+
+  function tagLayerWithGroundZ(arr, layerKey, fallbackZ) {
+    const list = arr || [];
+    const out = new Array(list.length);
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      out[i] = Object.assign({}, t, { groundZ: resolveTriGroundZ(t, layerKey, fallbackZ) });
+    }
+    return out;
+  }
+
+  return { maxSceneZ, baseTopZ, shellMinZ, bldMinZ, resolveTriGroundZ, tagLayerWithGroundZ };
+}
+
 function createVideoPreviewEngine(compositeCanvas) {
   const ctxOut = compositeCanvas.getContext('2d', { alpha: false });
 
@@ -78,7 +131,8 @@ function createVideoPreviewEngine(compositeCanvas) {
     const list = (slotsInput && slotsInput.length > 0) ? slotsInput.slice(0, 3) : [];
     if (list.length === 0) return;
 
-    const extracted = extractVideoTelemetryAndCad2D(list[0].sceneData);
+    const firstCrop = list[0].cropRatio || (list[0].sceneData && list[0].sceneData._fetchedCropRatio) || 0.88;
+    const extracted = extractVideoTelemetryAndCad2D(list[0].sceneData, firstCrop);
     primaryTelemetryRows = extracted.telemetryRows;
     primaryCad2D = extracted.cad2D;
 
@@ -89,13 +143,18 @@ function createVideoPreviewEngine(compositeCanvas) {
       const halfW = 84.6 * (dimW / maxDim);
       const halfH = 84.6 * (dimH / maxDim);
       const meshes = item.meshes || {};
-      const elemVis = item.elementVisible || {
-        water: true, base: true, greenery: true, roads: true, buildings: true, highlighted: true
+      const elemVis = {
+        trees: true,
+        ...(item.elementVisible || {
+          water: true, base: true, greenery: true, trees: true, roads: true, buildings: true, highlighted: true
+        })
       };
 
       const slotCfg = {
         halfW,
         halfH,
+        widthCm: item.widthCm || 30,
+        heightCm: item.heightCm || 30,
         frameStyle: item.frameStyle || 'black',
         matStyle: item.matStyle || 'none',
         backingStyle: item.backingStyle || 'obsidian',
@@ -108,41 +167,27 @@ function createVideoPreviewEngine(compositeCanvas) {
         colors: item.colors || PALETTES[0].colors,
         elementVisible: { ...elemVis },
         ghostHiddenLayers: !!item.ghostHiddenLayers,
+        waterCutout: Boolean(item.waterCutout),
+        userClickedHighlight: Boolean(item.userClickedHighlight),
         tileCols: item.tileCols || 1,
         tileRows: item.tileRows || 1
       };
 
       const prod = buildVideoProductFrameBuffers(slotCfg, !!elemVis.base);
-
-      const bldMinZ = new Map();
-      let maxSceneZ = 18.0;
-      ['base', 'buildings', 'highlighted'].forEach(k => {
-        if (!elemVis[k]) return;
-        (meshes[k] || []).forEach(t => {
-          const topZ = Math.max(t.v0[2], t.v1[2], t.v2[2]);
-          if (topZ > maxSceneZ) maxSceneZ = topZ;
-          if (k === 'buildings' || k === 'highlighted') {
-            const bid = t.buildingId || 0;
-            const mz = Math.min(t.v0[2], t.v1[2], t.v2[2]);
-            const prev = bldMinZ.get(bid);
-            if (prev === undefined || mz < prev) bldMinZ.set(bid, mz);
-          }
-        });
-      });
-
-      const tagBldGround = (arr) => (arr || []).map(t => {
-        const gZ = elemVis.base ? (bldMinZ.get(t.buildingId || 0) || 2.45) : 2.40;
-        return Object.assign({}, t, { groundZ: gZ });
-      });
+      const gInfo = computeLayerGroundZMap(meshes);
+      const maxSceneZ = gInfo.maxSceneZ;
+      const fallbackTop = elemVis.base ? Math.min(Math.max(gInfo.baseTopZ || 1.8, 0.5), 2.45) : 0.5;
 
       const buffers = {
-        water:       makeGpuBuffer(meshes.water || [], 0.15),
-        base:        makeGpuBuffer(meshes.base || [], 0.20),
-        greenery:    makeGpuBuffer(meshes.greenery || [], elemVis.base ? 2.48 : 2.40),
-        roads:       makeGpuBuffer(meshes.roads || [], elemVis.base ? 2.50 : 2.40),
-        buildings:   makeGpuBuffer(tagBldGround(meshes.buildings), 2.45),
-        highlighted: makeGpuBuffer(tagBldGround(meshes.highlighted), 2.45),
+        water:       makeGpuBuffer(gInfo.tagLayerWithGroundZ(meshes.water, 'water', 0.0), 0.0),
+        base:        makeGpuBuffer(gInfo.tagLayerWithGroundZ(meshes.base, 'base', 0.0), 0.0),
+        greenery:    makeGpuBuffer(gInfo.tagLayerWithGroundZ(meshes.greenery, 'greenery', fallbackTop), fallbackTop),
+        trees:       makeGpuBuffer(gInfo.tagLayerWithGroundZ(meshes.trees, 'trees', fallbackTop), fallbackTop),
+        roads:       makeGpuBuffer(gInfo.tagLayerWithGroundZ(meshes.roads, 'roads', fallbackTop), fallbackTop),
+        buildings:   makeGpuBuffer(gInfo.tagLayerWithGroundZ(meshes.buildings, 'buildings', fallbackTop), fallbackTop),
+        highlighted: makeGpuBuffer(gInfo.tagLayerWithGroundZ(meshes.highlighted, 'highlighted', fallbackTop), fallbackTop),
         backing:     makeGpuBuffer(prod.backingTris, -2.15),
+        boardOnly:   makeGpuBuffer(prod.boardOnlyTris || [], -2.15),
         matboard:    makeGpuBuffer(prod.matTris, 0.0),
         frame:       makeGpuBuffer(prod.frameTris, -2.42),
         plaque:      makeGpuBuffer(prod.plaqueTris, 3.60),
@@ -161,6 +206,9 @@ function createVideoPreviewEngine(compositeCanvas) {
       });
     });
   }
+
+  let lastComputedCamDist = 268.0;
+  let lastComputedSlotMaxZ = 22.0;
 
   function renderWebGLPass(animState, animCfg, width, height) {
     if (glCanvas.width !== width || glCanvas.height !== height) {
@@ -181,6 +229,8 @@ function createVideoPreviewEngine(compositeCanvas) {
     const tallExtra = maxZ > 42 ? Math.min(58, (maxZ - 42) * 0.55) : 0;
     const tiltFactor = Math.max(0, Math.cos(pitch));
     const dist = (animState.camDist + tallExtra * tiltFactor * 0.95) * setDistMult * userOrbitOffset.zoomMult;
+    lastComputedCamDist = dist;
+    lastComputedSlotMaxZ = gpuSlots[0] ? (gpuSlots[0].maxSceneZ || 22.0) : maxZ;
 
     const cp = Math.cos(pitch), sp = Math.sin(pitch);
     const cy = Math.cos(yaw), sy = Math.sin(yaw);
@@ -195,13 +245,14 @@ function createVideoPreviewEngine(compositeCanvas) {
     const sunDir = [Math.cos(sunRad) * 0.68, Math.sin(sunRad) * 0.68, 0.73];
     const lightView = mat4LookAt([sunDir[0] * 260, sunDir[1] * 260, sunDir[2] * 260], [0, 0, 5], [0, 0, 1]);
     const orthoHalf = (numSlots === 1 ? 132 : (numSlots === 2 ? 245 : 365)) + tallExtra * 0.45;
+    const shadowFar = Math.max(700, dist * 2.5 + maxZ * 4);
     const lightMatrix = mat4Multiply(
-      mat4Ortho(-orthoHalf, orthoHalf, -155 - tallExtra * 0.4, 155 + tallExtra * 0.4, 15, 600),
+      mat4Ortho(-orthoHalf, orthoHalf, -155 - tallExtra * 0.4, 155 + tallExtra * 0.4, 10, shadowFar),
       lightView
     );
 
     const stride = 13 * 4;
-    const mapKeys = ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted'];
+    const mapKeys = ['water', 'base', 'greenery', 'trees', 'roads', 'buildings', 'highlighted'];
     const frameAnimMode = animCfg.frameAnimMode === 'snap_4rail' ? 1.0 : 0.0;
 
     // PASS 1: 2048x2048 Shadow Map
@@ -237,6 +288,7 @@ function createVideoPreviewEngine(compositeCanvas) {
       gl.uniform1f(gl.getUniformLocation(shadowProg, 'uHalfH'), slot.cfg.halfH);
       gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileCols'), slot.cfg.tileCols);
       gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileRows'), slot.cfg.tileRows);
+      gl.uniform1f(gl.getUniformLocation(shadowProg, 'uMaxSceneZ'), slot.maxSceneZ || 24.0);
 
       const drawShadowBuf = (b) => {
         if (!b || b.count === 0) return;
@@ -245,9 +297,14 @@ function createVideoPreviewEngine(compositeCanvas) {
         gl.vertexAttribPointer(sMeta, 4, gl.FLOAT, false, stride, 36);
         gl.drawArrays(gl.TRIANGLES, 0, b.count);
       };
-      mapKeys.forEach(k => { if (slot.cfg.elementVisible[k]) drawShadowBuf(slot.buffers[k]); });
+      mapKeys.forEach(k => {
+        if (k === 'water' && slot.cfg.waterCutout) return;
+        if (slot.cfg.elementVisible[k]) drawShadowBuf(slot.buffers[k]);
+      });
       if (animCfg.showFrameProduct !== false && animState.frameAssemble > 0.02) {
         ['backing', 'matboard', 'frame'].forEach(fk => drawShadowBuf(slot.buffers[fk]));
+      } else if (slot.cfg.waterCutout) {
+        drawShadowBuf(slot.buffers.boardOnly);
       }
     });
 
@@ -263,7 +320,11 @@ function createVideoPreviewEngine(compositeCanvas) {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     gl.useProgram(mainProg);
-    gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uProj'), false, mat4Perspective((34 * Math.PI) / 180.0, (width / height) || 1, 22.0, 1450.0));
+    const explodeSpan = (animState.tileExplode * 16.0) + (animState.explodeZ * 67.5);
+    const clipPlanes = (typeof computeCameraClipPlanes === 'function')
+      ? computeCameraClipPlanes(dist, explodeSpan)
+      : { near: Math.max(1.5, dist * 0.04), far: Math.max(1800.0, dist * 5.0 + 350.0) };
+    gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uProj'), false, mat4Perspective((34 * Math.PI) / 180.0, (width / height) || 1, clipPlanes.near, clipPlanes.far));
     gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uView'), false, mat4LookAt(eye, target, [0, 0, 1]));
     gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uLightMatrix'), false, lightMatrix);
     gl.uniform3fv(gl.getUniformLocation(mainProg, 'uEyePos'), eye);
@@ -333,14 +394,17 @@ function createVideoPreviewEngine(compositeCanvas) {
       gl.uniform1f(gl.getUniformLocation(mainProg, 'uOuterFrameHTop'), slot.outerYTop);
       gl.uniform1f(gl.getUniformLocation(mainProg, 'uTileCols'), sc.tileCols);
       gl.uniform1f(gl.getUniformLocation(mainProg, 'uTileRows'), sc.tileRows);
+      gl.uniform1f(gl.getUniformLocation(mainProg, 'uMaxSceneZ'), slot.maxSceneZ || 24.0);
       gl.uniform4f(gl.getUniformLocation(mainProg, 'uPlaqueBounds'), slot.plaqueBounds[0], slot.plaqueBounds[1], slot.plaqueBounds[2], slot.plaqueBounds[3]);
 
       gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorWater'), hexToRgbNorm(sc.colors.water));
       gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorBase'), hexToRgbNorm(sc.colors.base));
       gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorGreenery'), hexToRgbNorm(sc.colors.greenery));
+      gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorTrees'), hexToRgbNorm(sc.colors.trees || sc.colors.greenery));
       gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorRoads'), hexToRgbNorm(sc.colors.roads));
       gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorBuildings'), hexToRgbNorm(sc.colors.buildings));
-      gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorHighlighted'), hexToRgbNorm(sc.colors.highlighted));
+      const hlHex = sc.colors.highlighted || (sc.userClickedHighlight ? '#f59e0b' : sc.colors.buildings);
+      gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorHighlighted'), hexToRgbNorm(hlHex));
       gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorFrame'), frameFinish.rgb);
       gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorMat'), matFinish.rgb);
       gl.uniform3fv(gl.getUniformLocation(mainProg, 'uColorBacking'), backFinish.rgb);
@@ -357,15 +421,23 @@ function createVideoPreviewEngine(compositeCanvas) {
         bindAndDraw(slot.buffers.backing);
         bindAndDraw(slot.buffers.matboard);
         bindAndDraw(slot.buffers.frame);
+      } else if (sc.waterCutout) {
+        bindAndDraw(slot.buffers.boardOnly);
       }
-      mapKeys.forEach(k => { if (sc.elementVisible[k]) bindAndDraw(slot.buffers[k]); });
+      mapKeys.forEach(k => {
+        if (k === 'water' && sc.waterCutout) return;
+        if (sc.elementVisible[k]) bindAndDraw(slot.buffers[k]);
+      });
 
       if (sc.ghostHiddenLayers) {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         gl.depthMask(false);
         gl.uniform1f(gl.getUniformLocation(mainProg, 'uElementAlpha'), 0.16);
-        mapKeys.forEach(k => { if (!sc.elementVisible[k]) bindAndDraw(slot.buffers[k]); });
+        mapKeys.forEach(k => {
+          if (k === 'water' && sc.waterCutout) return;
+          if (!sc.elementVisible[k]) bindAndDraw(slot.buffers[k]);
+        });
         gl.depthMask(true);
         gl.disable(gl.BLEND);
       }
@@ -402,7 +474,12 @@ function createVideoPreviewEngine(compositeCanvas) {
     }
 
     if (animState.cad2dAlpha > 0.005 && gpuSlots.length > 0) {
-      drawVideo2DCadWhipPanOverlay(ctxOut, w, h, animState, primaryCad2D, gpuSlots[0].cfg);
+      const whipDist = animState.webglAlpha > 0.005 ? lastComputedCamDist : animState.camDist;
+      drawVideo2DCadWhipPanOverlay(ctxOut, w, h, {
+        ...animState,
+        camDist: whipDist,
+        slotMaxZ: gpuSlots[0].maxSceneZ || lastComputedSlotMaxZ || 22.0
+      }, primaryCad2D, gpuSlots[0].cfg);
     }
     if (animState.telemetryAlpha > 0.005) {
       drawVideoTelemetryOverlay(ctxOut, w, h, animState.telemetryAlpha, animState.telemetryScroll, primaryTelemetryRows);
@@ -430,5 +507,12 @@ function createVideoPreviewEngine(compositeCanvas) {
     FRAME_FINISHES: VIDEO_FRAME_FINISHES,
     MAT_STYLES: VIDEO_MAT_STYLES,
     BACKING_STYLES: VIDEO_BACKING_STYLES
+  };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    computeLayerGroundZMap,
+    createVideoPreviewEngine
   };
 }

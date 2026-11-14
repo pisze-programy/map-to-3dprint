@@ -92,6 +92,7 @@ function recordCanvasVideoBlob(compositeCanvas, renderFrameAt, animCfg, onProgre
       } else {
         renderFrameAt(1.0, animCfg, exportW, exportH);
         setTimeout(() => {
+          try { if (recorder.state === 'recording') recorder.requestData(); } catch (_) {}
           if (recorder.state !== 'inactive') recorder.stop();
           stream.getTracks().forEach(tr => tr.stop());
         }, 180);

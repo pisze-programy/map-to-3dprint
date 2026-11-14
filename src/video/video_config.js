@@ -12,8 +12,8 @@ const VIDEO_CACHED_PRESETS = [
     subtitle: 'DOWNTOWN • BURJ KHALIFA 828M',
     lat: 25.1923,
     lon: 55.2724,
-    bbox: [25.1865, 55.2660, 25.1981, 55.2788],
-    cacheUrl: 'cache/scene_v4_25.1865_55.2660_25.1981_55.2788.json'
+    spanMeters: 1291,
+    bbox: [25.1865, 55.2660, 25.1981, 55.2788]
   },
   {
     id: 'munich',
@@ -22,8 +22,8 @@ const VIDEO_CACHED_PRESETS = [
     subtitle: 'ISAR & DEUTSCHES MUSEUM',
     lat: 48.1338,
     lon: 11.5855,
-    bbox: [48.1280, 11.5769, 48.1396, 11.5941],
-    cacheUrl: 'cache/scene_v4_48.1280_11.5769_48.1396_11.5941.json'
+    spanMeters: 1291,
+    bbox: [48.1280, 11.5769, 48.1396, 11.5941]
   },
   {
     id: 'krakow',
@@ -32,8 +32,8 @@ const VIDEO_CACHED_PRESETS = [
     subtitle: 'ZAMEK KRÓLEWSKI & WISŁA',
     lat: 50.0543,
     lon: 19.9365,
-    bbox: [50.0488, 19.9280, 50.0598, 19.9450],
-    cacheUrl: 'cache/scene_v4_50.0488_19.9280_50.0598_19.9450.json'
+    spanMeters: 1222,
+    bbox: [50.0488, 19.9280, 50.0598, 19.9450]
   },
   {
     id: 'warszawa',
@@ -42,8 +42,8 @@ const VIDEO_CACHED_PRESETS = [
     subtitle: 'ŚRÓDMIEŚCIE & PKiN',
     lat: 52.2320,
     lon: 21.0068,
-    bbox: [52.2262, 20.9973, 52.2378, 21.0162],
-    cacheUrl: 'cache/scene_v4_52.2262_20.9973_52.2378_21.0162.json'
+    spanMeters: 1291,
+    bbox: [52.2262, 20.9973, 52.2378, 21.0162]
   },
   {
     id: 'sopot',
@@ -52,8 +52,8 @@ const VIDEO_CACHED_PRESETS = [
     subtitle: 'ZATOKA GDAŃSKA & MOLO',
     lat: 54.4446,
     lon: 18.5686,
-    bbox: [54.4381, 18.5575, 54.4511, 18.5797],
-    cacheUrl: 'cache/scene_v4_54.4381_18.5575_54.4511_18.5797.json'
+    spanMeters: 1445,
+    bbox: [54.4381, 18.5575, 54.4511, 18.5797]
   },
   {
     id: 'tokyo',
@@ -62,8 +62,8 @@ const VIDEO_CACHED_PRESETS = [
     subtitle: 'SUMIDA RIVER & ASAKUSA',
     lat: 35.7118,
     lon: 139.8015,
-    bbox: [35.7060, 139.7929, 35.7176, 139.8101],
-    cacheUrl: 'cache/scene_v4_35.7060_139.7929_35.7176_139.8101.json'
+    spanMeters: 1291,
+    bbox: [35.7060, 139.7929, 35.7176, 139.8101]
   },
   {
     id: 'singapore',
@@ -72,8 +72,8 @@ const VIDEO_CACHED_PRESETS = [
     subtitle: 'MARINA BAY & SKYLINE',
     lat: 1.2868,
     lon: 103.8545,
-    bbox: [1.2810, 103.8487, 1.2926, 103.8603],
-    cacheUrl: 'cache/scene_v4_1.2810_103.8487_1.2926_103.8603.json'
+    spanMeters: 1291,
+    bbox: [1.2810, 103.8487, 1.2926, 103.8603]
   },
   {
     id: 'innsbruck',
@@ -82,8 +82,8 @@ const VIDEO_CACHED_PRESETS = [
     subtitle: 'TYROL & DOLINA RZEKI INN',
     lat: 47.2685,
     lon: 11.3933,
-    bbox: [47.2627, 11.3847, 47.2743, 11.4019],
-    cacheUrl: 'cache/scene_v4_47.2627_11.3847_47.2743_11.4019.json'
+    spanMeters: 1291,
+    bbox: [47.2627, 11.3847, 47.2743, 11.4019]
   }
 ];
 
@@ -144,6 +144,8 @@ const VIDEO_MAT_STYLES = {
 
 const VIDEO_BACKING_STYLES = {
   obsidian: { rgb: [0.09, 0.10, 0.13], label: 'Czarny Kontrast (Styl)' },
+  walnut:   { rgb: [0.22, 0.14, 0.09], label: 'Orzech Ciemny (Drewno)' },
+  oak:      { rgb: [0.68, 0.54, 0.36], label: 'Dąb Naturalny (Drewno)' },
   white:    { rgb: [0.95, 0.96, 0.98], label: 'Czysta Biel Architektoniczna' },
   slate:    { rgb: [0.20, 0.25, 0.33], label: 'Grafit Nordycki' },
   sand:     { rgb: [0.89, 0.83, 0.73], label: 'Piaskowy Kartograficzny' }
@@ -155,3 +157,15 @@ const VIDEO_BG_THEMES = {
   obsidian_tech: { dark: [0.020, 0.026, 0.042], light: [0.065, 0.082, 0.120] },
   warm_gallery:  { dark: [0.045, 0.042, 0.040], light: [0.935, 0.918, 0.890] }
 };
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    VIDEO_CACHED_PRESETS,
+    VIDEO_STORYBOARDS,
+    VIDEO_ASPECT_CONFIGS,
+    VIDEO_FRAME_FINISHES,
+    VIDEO_MAT_STYLES,
+    VIDEO_BACKING_STYLES,
+    VIDEO_BG_THEMES
+  };
+}

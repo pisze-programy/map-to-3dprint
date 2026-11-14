@@ -635,20 +635,42 @@ async function applyMap3DUrlParams(ctx) {
     }
 
     if (window.MAP3D_STANDALONE_VIDEO_MODULE || params.get('mode') === 'video') {
-      switchToModule('video', true);
+      const hasExplicitPreset = Boolean(params.get('preset'));
+      const isStandalone = Boolean(window.MAP3D_STANDALONE_VIDEO_MODULE);
+      if (videoStudio && isStandalone && !params.get('grid')) {
+        const wMm = (videoStudio.vState.targetWidthCm || 30) * 10;
+        const hMm = (videoStudio.vState.targetHeightCm || 30) * 10;
+        if (typeof computeOptimalMono4Grid === 'function') {
+          const opt = computeOptimalMono4Grid(wMm, hMm);
+          videoStudio.vState.tileCols = opt.cols;
+          videoStudio.vState.tileRows = opt.rows;
+        } else if (wMm >= 300 || hMm >= 300) {
+          videoStudio.vState.tileCols = 2;
+          videoStudio.vState.tileRows = 2;
+        }
+      }
+      switchToModule('video', isStandalone || hasExplicitPreset);
       if (videoStudio) {
-        const vPreset = params.get('preset') || (window.MAP3D_STANDALONE_VIDEO_MODULE ? 'dubai' : null);
+        const vPreset = params.get('preset') || (isStandalone ? 'dubai' : null);
         if (vPreset) await videoStudio.loadPresetById(vPreset);
         if (params.get('storyboard')) videoStudio.vState.storyboard = params.get('storyboard');
         if (params.get('wave')) videoStudio.vState.waveMode = params.get('wave');
         if (params.get('mat')) videoStudio.vState.matStyle = params.get('mat');
         if (params.get('frame')) videoStudio.vState.frameStyle = params.get('frame');
+        const wcParam = params.get('water_cutout');
+        if (wcParam === '1' || wcParam === 'true') {
+          videoStudio.vState.waterCutout = true;
+          if (videoStudio.vState.backingStyle === 'white') videoStudio.vState.backingStyle = 'obsidian';
+        }
+        const backingParam = params.get('backing');
+        if (backingParam && (typeof VIDEO_BACKING_STYLES === 'undefined' || VIDEO_BACKING_STYLES[backingParam])) {
+          videoStudio.vState.backingStyle = backingParam;
+        }
         if (params.get('palette')) {
           const pal = PALETTES.find(x => x.id === params.get('palette'));
           if (pal) {
             videoStudio.vState.paletteId = pal.id;
             videoStudio.vState.colors = { ...pal.colors };
-            if (pal.id === 'white') videoStudio.vState.colors.water = '#161b24';
           }
         }
         videoStudio.syncControlsFromState();
@@ -656,7 +678,7 @@ async function applyMap3DUrlParams(ctx) {
           const b = document.getElementById('btnVidLayerTriptych');
           if (b) b.click();
         } else {
-          videoStudio.activateModule(false);
+          videoStudio.activateModule(!isStandalone && !hasExplicitPreset);
         }
         if (params.get('t') !== null) {
           videoStudio.vState.isPlaying = false;

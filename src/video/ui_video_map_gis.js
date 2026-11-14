@@ -17,43 +17,114 @@ function createVideoMapGisController(vState, hooks) {
     if (mapCtrl) mapCtrl.draw2DMap();
   }
 
-  async function fetchSceneByBBox(south, west, north, east, title) {
-    const isHttp = typeof window !== 'undefined' && window.location && /^https?:$/.test(window.location.protocol);
-    if (isHttp) {
-      const qs = `south=${south.toFixed(4)}&west=${west.toFixed(4)}&north=${north.toFixed(4)}&east=${east.toFixed(4)}&title=${encodeURIComponent(title)}`;
-      try {
-        const resp = await fetch(`/api/gis?${qs}`);
-        if (resp.ok) {
-          const d = await resp.json();
-          if (d && Array.isArray(d.buildings)) return d;
+  function updateRotationBadgeUI() {
+    const badge = document.getElementById('vidRotBadge');
+    if (!badge) return;
+    const deg = Number(vState.mapRotationDeg) || 0;
+    badge.textContent = (typeof formatRotationBadgeText === 'function')
+      ? formatRotationBadgeText(deg)
+      : `↻ ${deg}°`;
+  }
+
+  function computePresetFetchBBox(preset) {
+    const lat = Number(preset.lat);
+    const lon = Number(preset.lon);
+    const baseSpan = Number(preset.spanMeters) || 1291;
+    const totalW = Number(vState.bedSizeMm) || (Number(vState.targetWidthCm || 30) * 10);
+    const totalH = Number(vState.totalHeightMm) || (Number(vState.targetHeightCm || 30) * 10);
+    const maxDim = Math.max(totalW, totalH) || 300;
+    const halfMx = (baseSpan * (totalW / maxDim)) * 0.5;
+    const halfMy = (baseSpan * (totalH / maxDim)) * 0.5;
+    const cosLat = Math.max(0.2, Math.cos(lat * Math.PI / 180.0));
+    const rotDeg = Number(vState.mapRotationDeg) || 0;
+    const rad = Math.abs(rotDeg) * Math.PI / 180.0;
+    const envPad = 1.045;
+    const envHalfMx = (halfMx * Math.abs(Math.cos(rad)) + halfMy * Math.abs(Math.sin(rad))) * envPad;
+    const envHalfMy = (halfMx * Math.abs(Math.sin(rad)) + halfMy * Math.abs(Math.cos(rad))) * envPad;
+    const dLat = envHalfMy / 111320.0;
+    const dLon = envHalfMx / (111320.0 * cosLat);
+    return {
+      south: lat - dLat,
+      west: lon - dLon,
+      north: lat + dLat,
+      east: lon + dLon,
+      targetSpanMeters: baseSpan,
+      targetWidthMm: totalW,
+      targetHeightMm: totalH,
+      rotationDeg: rotDeg
+    };
+  }
+
+  async function fetchSceneByBBox(south, west, north, east, title, extraOptions = {}) {
+    const spanMeters = (extraOptions && Number(extraOptions.targetSpanMeters) > 0)
+      ? Number(extraOptions.targetSpanMeters)
+      : (Number(vState.mapSpanMeters) || 1291);
+    const targetW = (extraOptions && Number(extraOptions.targetWidthMm) > 0)
+      ? Number(extraOptions.targetWidthMm)
+      : (Number(vState.bedSizeMm) || ((vState.targetWidthCm || 30) * 10));
+    const targetH = (extraOptions && Number(extraOptions.targetHeightMm) > 0)
+      ? Number(extraOptions.targetHeightMm)
+      : (Number(vState.totalHeightMm) || ((vState.targetHeightCm || 30) * 10));
+    const rotDeg = (extraOptions && typeof extraOptions.rotationDeg === 'number')
+      ? extraOptions.rotationDeg
+      : (Number(vState.mapRotationDeg) || 0);
+
+    const fetchOptions = {
+      targetSpanMeters: spanMeters,
+      targetWidthMm: targetW,
+      targetHeightMm: targetH,
+      rotationDeg: rotDeg,
+      isResin: vState.isResin !== false,
+      xyPixelMm: Number(vState.xyPixelMm) || 0.05,
+      lodSettings: vState.lodSettings ? { ...vState.lodSettings } : undefined,
+      onProgress: (info) => {
+        const loadingTxt = document.getElementById('vidLoadingText');
+        if (loadingTxt && info && typeof info === 'object' && info.statusText) {
+          loadingTxt.textContent = info.statusText;
         }
-      } catch (_) {}
-    }
+      }
+    };
+
     if (typeof fetchChunkedGISInBrowser === 'function') {
-      try {
-        return await fetchChunkedGISInBrowser(south, west, north, east, title);
-      } catch (_) {}
+      return await fetchChunkedGISInBrowser(south, west, north, east, title, fetchOptions);
     }
-    return await fetchRealGISInBrowser(south, west, north, east, title);
+    return await fetchRealGISInBrowser(south, west, north, east, title, fetchOptions);
   }
 
   function applyLoadedScene(scene, customTitle, customSub) {
     if (!scene) return;
     if (!scene._fetchedCropRatio) scene._fetchedCropRatio = 0.88;
+
+    if (typeof applySceneRotation === 'function') {
+      const dimW = Number(vState.bedSizeMm) || ((vState.targetWidthCm || 30) * 10);
+      const dimH = Number(vState.totalHeightMm) || ((vState.targetHeightCm || 30) * 10);
+      const maxDim = Math.max(dimW, dimH) || 300;
+      applySceneRotation(
+        scene,
+        Number(vState.mapRotationDeg) || 0,
+        84.6 * (dimW / maxDim),
+        84.6 * (dimH / maxDim)
+      );
+    }
+
     vState.sceneData = scene;
-    vState.mapCenterLat = scene.center[0];
-    vState.mapCenterLon = scene.center[1];
-    vState.mapSpanMeters = scene.spanMeters || 1291.3;
+    if (Array.isArray(scene.center) && scene.center.length >= 2) {
+      vState.mapCenterLat = scene.center[0];
+      vState.mapCenterLon = scene.center[1];
+    }
+    vState.mapSpanMeters = scene.spanMeters || vState.mapSpanMeters || 1291.3;
     vState.cropRatio = scene._fetchedCropRatio;
     vState.title = (customTitle || scene.title || 'MAP3D').toUpperCase().slice(0, 22);
     if (customSub !== undefined) vState.subtitle = customSub;
 
-    const hasHl = (scene.buildings || []).some(b => b.highlighted);
-    if (!hasHl && scene.buildings && scene.buildings.length > 0) {
-      const sorted = [...scene.buildings].sort((a, b) => (b.h || 0) - (a.h || 0));
-      if (sorted[0] && (sorted[0].h >= 65 || sorted[0].landmark)) {
-        sorted[0].highlighted = true;
-      }
+    // Preserve shared sceneData immutability: keep Video Studio highlight selection in vState
+    const preHighlighted = (scene.buildings || []).filter(b => b.highlighted).map(b => b.id);
+    if (preHighlighted.length > 0) {
+      vState.highlightedBuildingIds = preHighlighted;
+      vState.userClickedHighlight = true;
+    } else {
+      vState.highlightedBuildingIds = [];
+      vState.userClickedHighlight = false;
     }
 
     const tInp = document.getElementById('vidTitleInput');
@@ -61,6 +132,7 @@ function createVideoMapGisController(vState, hooks) {
     if (tInp) tInp.value = vState.title;
     if (sInp) sInp.value = vState.subtitle;
 
+    updateRotationBadgeUI();
     draw2DMap();
     vState.pinnedSlots = [];
     vState.tNorm = 0.0;
@@ -69,23 +141,43 @@ function createVideoMapGisController(vState, hooks) {
   }
 
   async function getOrFetchCachedPresetScene(preset) {
-    let scene = sceneJsonCache.get(preset.cacheUrl);
-    const isHttp = typeof window !== 'undefined' && window.location && /^https?:$/.test(window.location.protocol);
-    if (!scene && preset.cacheUrl && isHttp) {
-      try {
-        const resp = await fetch(preset.cacheUrl);
-        if (resp.ok) {
-          scene = await resp.json();
-          sceneJsonCache.set(preset.cacheUrl, scene);
-        }
-      } catch (_) {}
+    if (!preset) return null;
+    const mainSt = (hooks && typeof hooks.getMainState === 'function') ? hooks.getMainState() : null;
+    if (mainSt && mainSt.sceneData && Array.isArray(mainSt.sceneData.center)) {
+      const mLat = mainSt.sceneData.center[0];
+      const mLon = mainSt.sceneData.center[1];
+      const cosLat = Math.max(0.2, Math.cos(preset.lat * Math.PI / 180.0));
+      const distM = Math.hypot((mLat - preset.lat) * 111320.0, (mLon - preset.lon) * 111320.0 * cosLat);
+      const mSpan = Number(mainSt.sceneData.spanMeters) || 1200;
+      const pSpan = Number(preset.spanMeters) || 1291;
+      if (distM < 150 && Math.abs(mSpan - pSpan) / Math.max(1, pSpan) <= 0.20) {
+        return mainSt.sceneData;
+      }
     }
-    if (!scene && preset.id === 'munich' && typeof INITIAL_REAL_SCENE !== 'undefined') {
+
+    const totalW = Number(vState.bedSizeMm) || ((vState.targetWidthCm || 30) * 10);
+    const totalH = Number(vState.totalHeightMm) || ((vState.targetHeightCm || 30) * 10);
+    const rotDeg = Number(vState.mapRotationDeg) || 0;
+    const lodTree = (vState.lodSettings && vState.lodSettings.treeMaxSpanKm) || 4.0;
+    const cacheKey = `${preset.id}_${totalW}x${totalH}_r${rotDeg}_res${vState.isResin !== false ? 1 : 0}_t${lodTree}`;
+    let scene = sceneJsonCache.get(cacheKey);
+
+    if (!scene && preset.id === 'munich' && typeof INITIAL_REAL_SCENE !== 'undefined' && INITIAL_REAL_SCENE && rotDeg === 0) {
       scene = INITIAL_REAL_SCENE;
     }
-    if (!scene && preset.bbox) {
-      const [s, w, n, e] = preset.bbox;
-      scene = await fetchSceneByBBox(s, w, n, e, preset.title);
+
+    if (!scene) {
+      const pb = computePresetFetchBBox(preset);
+      scene = await fetchSceneByBBox(pb.south, pb.west, pb.north, pb.east, preset.title, {
+        targetSpanMeters: pb.targetSpanMeters,
+        targetWidthMm: pb.targetWidthMm,
+        targetHeightMm: pb.targetHeightMm,
+        rotationDeg: pb.rotationDeg
+      });
+      if (scene) {
+        scene.spanMeters = Math.round(pb.targetSpanMeters || scene.spanMeters || 1291);
+        sceneJsonCache.set(cacheKey, scene);
+      }
     }
     return scene;
   }
@@ -151,13 +243,25 @@ function createVideoMapGisController(vState, hooks) {
     if (!mapCtrl) return;
     const loadingEl = document.getElementById('vidLoadingOverlay');
     const loadingTxt = document.getElementById('vidLoadingText');
-    const [south, west, north, east] = mapCtrl.getSelectedBBoxLatLon();
+    const selBox = mapCtrl.getSelectedBBoxLatLon();
+    const fSouth = selBox.fetchSouth !== undefined ? selBox.fetchSouth : selBox[0];
+    const fWest = selBox.fetchWest !== undefined ? selBox.fetchWest : selBox[1];
+    const fNorth = selBox.fetchNorth !== undefined ? selBox.fetchNorth : selBox[2];
+    const fEast = selBox.fetchEast !== undefined ? selBox.fetchEast : selBox[3];
     const title = titleHint || vState.title || 'CUSTOM';
     if (loadingEl) loadingEl.classList.remove('hidden');
     if (loadingTxt) loadingTxt.textContent = `Pobieranie danych GIS (OSM + AWS Terrarium DEM) dla ${title}...`;
     try {
-      const sc = await fetchSceneByBBox(south, west, north, east, title);
-      if (sc) applyLoadedScene(sc, title, subHint !== undefined ? subHint : vState.subtitle);
+      const sc = await fetchSceneByBBox(fSouth, fWest, fNorth, fEast, title, {
+        targetSpanMeters: selBox.targetSpanMeters || vState.mapSpanMeters,
+        targetWidthMm: selBox.targetWidthMm || ((vState.targetWidthCm || 30) * 10),
+        targetHeightMm: selBox.targetHeightMm || ((vState.targetHeightCm || 30) * 10),
+        rotationDeg: selBox.rotationDeg !== undefined ? selBox.rotationDeg : (vState.mapRotationDeg || 0)
+      });
+      if (sc) {
+        sc.spanMeters = Math.round(selBox.targetSpanMeters || sc.spanMeters || 1291);
+        applyLoadedScene(sc, title, subHint !== undefined ? subHint : vState.subtitle);
+      }
     } catch (err) {
       console.warn('Video GIS fetch error:', err);
     } finally {
@@ -165,11 +269,52 @@ function createVideoMapGisController(vState, hooks) {
     }
   }
 
+  function applyVideoRotation(rotDeg, rebuildScene = false) {
+    const normDeg = (typeof normalizeRotationDeg === 'function')
+      ? normalizeRotationDeg(rotDeg)
+      : (Number(rotDeg) || 0);
+    vState.mapRotationDeg = normDeg;
+    updateRotationBadgeUI();
+    draw2DMap();
+    if (rebuildScene && vState.sceneData) {
+      if (typeof applySceneRotation === 'function') {
+        const dimW = Number(vState.bedSizeMm) || ((vState.targetWidthCm || 30) * 10);
+        const dimH = Number(vState.totalHeightMm) || ((vState.targetHeightCm || 30) * 10);
+        const maxDim = Math.max(dimW, dimH) || 300;
+        applySceneRotation(vState.sceneData, normDeg, 84.6 * (dimW / maxDim), 84.6 * (dimH / maxDim));
+      }
+      vState.pinnedSlots = [];
+      hooks.onSceneLoaded();
+    }
+  }
+
   function bindMapAndSearchControls() {
     if (vidMapCanvas && mapCtrl) {
-      let drag2d = false, start2d = [0, 0];
-      vidMapCanvas.addEventListener('mousedown', e => { drag2d = true; start2d = [e.clientX, e.clientY]; });
+      let drag2d = false, isRotating2D = false, didRotate2D = false, start2d = [0, 0];
+      vidMapCanvas.addEventListener('mousedown', e => {
+        const rect = vidMapCanvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const rh = vState._rotHandleScreen;
+        if (rh && Math.hypot(mx - rh.x, my - rh.y) <= 13) {
+          isRotating2D = true;
+          didRotate2D = false;
+          return;
+        }
+        drag2d = true;
+        start2d = [e.clientX, e.clientY];
+      });
       window.addEventListener('mousemove', e => {
+        if (isRotating2D && vState.isActiveModule) {
+          const rect = vidMapCanvas.getBoundingClientRect();
+          const mx = e.clientX - rect.left;
+          const my = e.clientY - rect.top;
+          const rh = vState._rotHandleScreen || { fcx: rect.width * 0.5, fcy: rect.height * 0.5 };
+          const angleDeg = Math.round(Math.atan2(mx - rh.fcx, -(my - rh.fcy)) * 180 / Math.PI);
+          didRotate2D = true;
+          applyVideoRotation(angleDeg, false);
+          return;
+        }
         if (!drag2d || !vState.isActiveModule) return;
         const dx = e.clientX - start2d[0], dy = e.clientY - start2d[1];
         start2d = [e.clientX, e.clientY];
@@ -178,17 +323,29 @@ function createVideoMapGisController(vState, hooks) {
         vState.mapCenterLat = Math.max(-80.0, Math.min(80.0, tileF2lat(lat2tileF(vState.mapCenterLat, z) - dy / 256.0, z)));
         draw2DMap();
       });
-      window.addEventListener('mouseup', () => { drag2d = false; });
+      window.addEventListener('mouseup', () => {
+        drag2d = false;
+        if (isRotating2D) {
+          isRotating2D = false;
+          if (didRotate2D) applyVideoRotation(vState.mapRotationDeg, true);
+          didRotate2D = false;
+        }
+      });
       vidMapCanvas.addEventListener('wheel', e => {
         e.preventDefault();
-        vState.mapZoom = Math.max(3, Math.min(16, vState.mapZoom + (e.deltaY < 0 ? 1 : -1)));
+        vState.mapZoom = Math.max(3, Math.min(19, vState.mapZoom + (e.deltaY < 0 ? 1 : -1)));
         draw2DMap();
       }, { passive: false });
 
       const zIn = document.getElementById('btnVidZoomIn2D');
       const zOut = document.getElementById('btnVidZoomOut2D');
-      if (zIn) zIn.addEventListener('click', () => { vState.mapZoom = Math.min(16, vState.mapZoom + 1); draw2DMap(); });
+      if (zIn) zIn.addEventListener('click', () => { vState.mapZoom = Math.min(19, vState.mapZoom + 1); draw2DMap(); });
       if (zOut) zOut.addEventListener('click', () => { vState.mapZoom = Math.max(3, vState.mapZoom - 1); draw2DMap(); });
+    }
+
+    const rotBadge = document.getElementById('vidRotBadge');
+    if (rotBadge) {
+      rotBadge.addEventListener('click', () => applyVideoRotation(0, true));
     }
 
     document.querySelectorAll('[data-vid-span-km]').forEach(btn => {
@@ -196,6 +353,9 @@ function createVideoMapGisController(vState, hooks) {
         const km = parseFloat(btn.getAttribute('data-vid-span-km')) || 1.2;
         vState.mapSpanMeters = km * 1000;
         vState.cropRatio = 0.88;
+        if (typeof choose2DZoomForSpan === 'function') {
+          vState.mapZoom = Math.min(19, choose2DZoomForSpan(vState.mapSpanMeters));
+        }
         const lbl = document.getElementById('vidSpanBadge');
         if (lbl) lbl.textContent = `${km.toFixed(1)} km`;
         draw2DMap();
@@ -226,7 +386,9 @@ function createVideoMapGisController(vState, hooks) {
               searchInp.value = it.name;
               vState.mapCenterLat = it.lat;
               vState.mapCenterLon = it.lon;
-              vState.mapZoom = 15;
+              vState.mapZoom = (typeof choose2DZoomForSpan === 'function')
+                ? Math.min(19, choose2DZoomForSpan(vState.mapSpanMeters || 1200))
+                : 15;
               draw2DMap();
               await triggerFetchCurrentVideoBBox(it.name.toUpperCase().slice(0, 20), (it.sub || 'CUSTOM EDITION').toUpperCase().slice(0, 32));
             });
@@ -244,7 +406,9 @@ function createVideoMapGisController(vState, hooks) {
           if (dropBox) dropBox.classList.add('hidden');
           vState.mapCenterLat = items[0].lat;
           vState.mapCenterLon = items[0].lon;
-          vState.mapZoom = 15;
+          vState.mapZoom = (typeof choose2DZoomForSpan === 'function')
+            ? Math.min(19, choose2DZoomForSpan(vState.mapSpanMeters || 1200))
+            : 15;
           draw2DMap();
           await triggerFetchCurrentVideoBBox(items[0].name.toUpperCase().slice(0, 20), (items[0].sub || 'CUSTOM 3D').toUpperCase().slice(0, 32));
         }
@@ -260,6 +424,12 @@ function createVideoMapGisController(vState, hooks) {
     renderPresetButtons,
     bindMapAndSearchControls,
     loadPresetById,
-    getOrFetchCachedPresetScene
+    getOrFetchCachedPresetScene,
+    triggerFetchCurrentVideoBBox,
+    updateRotationBadgeUI
   };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { createVideoMapGisController };
 }

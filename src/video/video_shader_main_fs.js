@@ -36,6 +36,7 @@ function buildVideoMainFS(hasDerivatives) {
     uniform vec3 uColorWater;
     uniform vec3 uColorBase;
     uniform vec3 uColorGreenery;
+    uniform vec3 uColorTrees;
     uniform vec3 uColorRoads;
     uniform vec3 uColorBuildings;
     uniform vec3 uColorHighlighted;
@@ -49,6 +50,8 @@ function buildVideoMainFS(hasDerivatives) {
     uniform vec3 uEyePos;
     uniform float uHalfW;
     uniform float uHalfH;
+    uniform float uTileCols;
+    uniform float uTileRows;
     uniform float uOuterFrameW;
     uniform float uOuterFrameHBot;
     uniform float uOuterFrameHTop;
@@ -89,10 +92,22 @@ function buildVideoMainFS(hasDerivatives) {
     void main() {
       int lid = int(vLayerId + 0.5);
 
-      float limX = uHalfW + 0.25 + uTileExplode * 34.0;
-      float limY = uHalfH + 0.25 + uTileExplode * 34.0;
-      if (lid <= 5 && (abs(vLocalPos.x) > limX || abs(vLocalPos.y) > limY)) {
-        discard;
+      if (lid <= 5) {
+        if (abs(vRawPos.x) > uHalfW + 0.35 || abs(vRawPos.y) > uHalfH + 0.35) {
+          discard;
+        }
+        if ((uTileCols > 1.0 || uTileRows > 1.0) && vSubId >= 0.0) {
+          float tid = floor(vSubId + 0.5);
+          float tc = mod(tid, uTileCols);
+          float tr = floor(tid / uTileCols);
+          float stepX = (2.0 * uHalfW) / uTileCols;
+          float stepY = (2.0 * uHalfH) / uTileRows;
+          float tol = uTileExplode > 0.001 ? 0.02 : 0.08;
+          if (vRawPos.x < -uHalfW + tc * stepX - tol || vRawPos.x > -uHalfW + (tc + 1.0) * stepX + tol ||
+              vRawPos.y < -uHalfH + tr * stepY - tol || vRawPos.y > -uHalfH + (tr + 1.0) * stepY + tol) {
+            discard;
+          }
+        }
       }
 
       // Studio Cyclorama Shadow-Catcher Floor (lid == 7)
@@ -153,10 +168,16 @@ function buildVideoMainFS(hasDerivatives) {
         cadEdgeGain = 0.48;
         cadTint = vec3(0.58, 0.64, 0.74);
       } else if (lid == 2) {
-        baseCol = uColorGreenery;
-        if (vNorm.z < 0.88) baseCol *= 0.88;
-        cadEdgeGain = 0.55;
-        cadTint = vec3(0.45, 0.82, 0.62);
+        if (vNorm.z > 0.04 && vNorm.z < 0.98) {
+          baseCol = uColorTrees * 0.92;
+          cadEdgeGain = 0.62;
+          cadTint = vec3(0.32, 0.85, 0.52);
+        } else {
+          baseCol = uColorGreenery;
+          if (vNorm.z < 0.88 && vNorm.z > -0.1) baseCol *= 0.88;
+          cadEdgeGain = 0.55;
+          cadTint = vec3(0.45, 0.82, 0.62);
+        }
       } else if (lid == 3) {
         baseCol = uColorRoads;
         cadEdgeGain = 0.66;
@@ -177,9 +198,9 @@ function buildVideoMainFS(hasDerivatives) {
         }
         cadEdgeGain = 0.78;
         cadTint = vec3(0.75, 0.80, 0.88);
-      } else if (lid == 8) {
-        baseCol = (vSubId > 0.5) ? uColorMat : uColorBacking;
-        cadEdgeGain = (vSubId > 0.5) ? 0.55 : 0.18;
+      } else if (lid == 8 || lid == 11) {
+        baseCol = (lid == 8 && vSubId > 0.5) ? uColorMat : uColorBacking;
+        cadEdgeGain = (lid == 8 && vSubId > 0.5) ? 0.55 : 0.18;
         cadTint = vec3(0.45, 0.50, 0.58);
       }
 
@@ -231,4 +252,8 @@ function buildVideoMainFS(hasDerivatives) {
       gl_FragColor = vec4(clamp(finalCol, 0.0, 1.0), uElementAlpha);
     }
   `;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { buildVideoMainFS };
 }

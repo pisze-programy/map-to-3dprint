@@ -109,12 +109,18 @@ function buildVideoProductFrameBuffers(slotCfg, hasBaseLayer) {
   const outerYTop = innerYTop + frameRim;
   const outerYBot = innerYBot + frameRim;
 
-  // 1. Contrast Backing Plate (lid = 8, subId = 0)
-  const backingTopZ = hasBaseLayer ? -0.04 : 2.38;
+  // 1. Contrast Backing Plate (lid = 8, subId = 0) and Frame-Off Bed Plate (lid = 11)
+  const backingTopZ = hasBaseLayer ? (slotCfg.waterCutout ? -0.025 : -0.04) : 2.38;
   const backingTris = [];
   pushVideoQuadPrism(
     [[-innerX - 1.0, -innerYBot - 1.0], [innerX + 1.0, -innerYBot - 1.0], [innerX + 1.0, innerYTop + 1.0], [-innerX - 1.0, innerYTop + 1.0]],
     -2.15, backingTopZ, 8, 0, backingTris
+  );
+
+  const boardOnlyTris = [];
+  pushVideoQuadPrism(
+    [[-halfW - 0.1, -halfH - 0.1], [halfW + 0.1, -halfH - 0.1], [halfW + 0.1, halfH + 0.1], [-halfW - 0.1, halfH + 0.1]],
+    -2.15, backingTopZ, 11, 0, boardOnlyTris
   );
 
   // 2. Passe-partout Matboard Border (lid = 8, subId = 1)
@@ -187,9 +193,18 @@ function buildVideoProductFrameBuffers(slotCfg, hasBaseLayer) {
     outerYTop,
     plaqueBounds,
     backingTris,
+    boardOnlyTris,
     matTris,
     frameTris,
     plaqueTris,
     glassTris
+  };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    pushVideoQuadPrism,
+    createVideoPlaqueTexture,
+    buildVideoProductFrameBuffers
   };
 }

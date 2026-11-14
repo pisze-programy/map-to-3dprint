@@ -11,7 +11,8 @@ function createVideoControlsController(vState, engine, previewCanvas, deps) {
     const items = [
       { key: 'water', label: '1. Woda i batymetria' },
       { key: 'base', label: '2. Warstwice terenu DEM' },
-      { key: 'greenery', label: '3. Parki i drzewa 3D' },
+      { key: 'greenery', label: '3a. Parki i trawniki' },
+      { key: 'trees', label: '3b. Korony drzew 3D' },
       { key: 'roads', label: '4. Ulice, place i mosty' },
       { key: 'buildings', label: '5. Budynki i dachy LoD2' },
       { key: 'highlighted', label: '6. Wyróżnione obiekty ★' }
@@ -39,19 +40,31 @@ function createVideoControlsController(vState, engine, previewCanvas, deps) {
     if (!box || !vState.sceneData) return;
     box.innerHTML = '';
     const seen = new Set();
+    const hlSet = new Set(Array.isArray(vState.highlightedBuildingIds) ? vState.highlightedBuildingIds : []);
+    const isHlBuilding = (b) => hlSet.has(b.id) || (hlSet.size === 0 && Boolean(vState.userClickedHighlight) && Boolean(b.highlighted));
+
     const candidates = [...(vState.sceneData.buildings || [])]
-      .filter(b => !b.hidden && ((b.name && !b.name.startsWith('Budynek OSM')) || b.h >= 40))
-      .sort((a, b) => (b.highlighted ? 1000 : 0) + (b.h || 0) - ((a.highlighted ? 1000 : 0) + (a.h || 0)));
+      .filter(b => !b.hidden && !b.isOutline && ((b.name && !b.name.startsWith('Budynek OSM')) || b.h >= 40))
+      .sort((a, b) => (isHlBuilding(b) ? 1000 : 0) + (b.h || 0) - ((isHlBuilding(a) ? 1000 : 0) + (a.h || 0)));
 
     candidates.slice(0, 8).forEach(b => {
       const labelName = (b.name && !b.name.startsWith('Budynek OSM')) ? b.name : `Wieżowiec ${Math.round(b.h)}m`;
       if (seen.has(labelName)) return;
       seen.add(labelName);
+      const activeHl = isHlBuilding(b);
       const chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = `px-2 py-0.5 rounded border text-[11px] transition truncate max-w-[165px] ${b.highlighted ? 'border-amber-500 bg-amber-500/20 text-amber-400 font-bold' : 'border-[var(--border)] bg-[var(--background)] text-[var(--muted-foreground)] hover:border-blue-500'}`;
-      chip.textContent = `${b.highlighted ? '★ ' : ''}${labelName.slice(0, 20)} (${Math.round(b.h || 10)}m)`;
-      chip.addEventListener('click', () => { b.highlighted = !b.highlighted; vState.pinnedSlots = []; deps.rebuildSlots(); });
+      chip.className = `px-2 py-0.5 rounded border text-[11px] transition truncate max-w-[165px] ${activeHl ? 'border-amber-500 bg-amber-500/20 text-amber-400 font-bold' : 'border-[var(--border)] bg-[var(--background)] text-[var(--muted-foreground)] hover:border-blue-500'}`;
+      chip.textContent = `${activeHl ? '★ ' : ''}${labelName.slice(0, 20)} (${Math.round(b.h || 10)}m)`;
+      chip.addEventListener('click', () => {
+        const nextSet = new Set(Array.isArray(vState.highlightedBuildingIds) ? vState.highlightedBuildingIds : []);
+        if (nextSet.has(b.id)) nextSet.delete(b.id);
+        else nextSet.add(b.id);
+        vState.highlightedBuildingIds = Array.from(nextSet);
+        vState.userClickedHighlight = vState.highlightedBuildingIds.length > 0;
+        vState.pinnedSlots = [];
+        deps.rebuildSlots();
+      });
       box.appendChild(chip);
     });
   }
@@ -73,6 +86,7 @@ function createVideoControlsController(vState, engine, previewCanvas, deps) {
     setVal('vidTitleInput', vState.title);
     setVal('vidSubtitleInput', vState.subtitle);
     setChk('chkVidGhostLayers', vState.ghostHiddenLayers);
+    setChk('chkVidWaterCutout', vState.waterCutout);
     setChk('chkVidShowFrame', vState.showFrameProduct);
     setChk('chkVidShowPlaque', vState.showPlaque);
     setChk('chkVidShowGlass', vState.showGlass);
@@ -82,6 +96,15 @@ function createVideoControlsController(vState, engine, previewCanvas, deps) {
     const descEl = document.getElementById('vidStoryboardDesc');
     const foundSb = VIDEO_STORYBOARDS.find(x => x.id === vState.storyboard);
     if (descEl && foundSb) descEl.textContent = foundSb.desc;
+    const spanEl = document.getElementById('vidSpanBadge');
+    if (spanEl) spanEl.textContent = `${((Number(vState.mapSpanMeters) || 1200) / 1000).toFixed(1)} km`;
+    const activeDim = `${vState.targetWidthCm}x${vState.targetHeightCm}`;
+    document.querySelectorAll('[data-vid-frame-dim]').forEach(b => {
+      const active = b.getAttribute('data-vid-frame-dim') === activeDim;
+      b.className = active
+        ? 'px-1.5 py-0.5 rounded bg-blue-500/15 border border-blue-500/40 text-blue-400 text-[11px] font-mono font-bold'
+        : 'px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono';
+    });
     renderElementTogglesUI();
     deps.draw2DMap();
   }
@@ -124,12 +147,6 @@ function createVideoControlsController(vState, engine, previewCanvas, deps) {
         const p = PALETTES.find(x => x.id === e.target.value) || PALETTES[0];
         vState.paletteId = p.id;
         vState.colors = { ...p.colors };
-        if (p.id === 'white') {
-          vState.colors.water = '#161b24';
-          vState.backingStyle = 'obsidian';
-          const bSel = document.getElementById('vidBackingSelect');
-          if (bSel) bSel.value = 'obsidian';
-        }
         vState.pinnedSlots = [];
         deps.rebuildSlots();
       });
@@ -141,15 +158,15 @@ function createVideoControlsController(vState, engine, previewCanvas, deps) {
     document.querySelectorAll('[data-elem-preset]').forEach(btn => {
       btn.addEventListener('click', () => {
         const p = btn.getAttribute('data-elem-preset');
-        if (p === 'all') vState.elementVisible = { water: true, base: true, greenery: true, roads: true, buildings: true, highlighted: true };
+        if (p === 'all') vState.elementVisible = { water: true, base: true, greenery: true, trees: true, roads: true, buildings: true, highlighted: true };
         else if (p === 'arch') {
-          vState.elementVisible = { water: false, base: false, greenery: false, roads: true, buildings: true, highlighted: true };
+          vState.elementVisible = { water: false, base: false, greenery: false, trees: false, roads: true, buildings: true, highlighted: true };
           vState.backingStyle = 'obsidian';
         } else if (p === 'spotlight_only') {
-          vState.elementVisible = { water: false, base: false, greenery: false, roads: false, buildings: false, highlighted: true };
+          vState.elementVisible = { water: false, base: false, greenery: false, trees: false, roads: false, buildings: false, highlighted: true };
           vState.ghostHiddenLayers = true;
-        } else if (p === 'hydro_relief') vState.elementVisible = { water: true, base: true, greenery: true, roads: false, buildings: false, highlighted: false };
-        else if (p === 'urban_grid') vState.elementVisible = { water: true, base: false, greenery: false, roads: true, buildings: true, highlighted: true };
+        } else if (p === 'hydro_relief') vState.elementVisible = { water: true, base: true, greenery: true, trees: true, roads: false, buildings: false, highlighted: false };
+        else if (p === 'urban_grid') vState.elementVisible = { water: true, base: false, greenery: false, trees: false, roads: true, buildings: true, highlighted: true };
         vState.pinnedSlots = [];
         syncControlsFromState();
         deps.rebuildSlots();
@@ -192,11 +209,37 @@ function createVideoControlsController(vState, engine, previewCanvas, deps) {
     bindCheck('chkVidShowPlaque', 'showPlaque', true);
     bindCheck('chkVidShowGlass', 'showGlass', true);
 
+    const chkWaterCutout = document.getElementById('chkVidWaterCutout');
+    if (chkWaterCutout) {
+      chkWaterCutout.addEventListener('change', e => {
+        vState.waterCutout = e.target.checked;
+        if (vState.waterCutout && vState.backingStyle === 'white') {
+          vState.backingStyle = 'obsidian';
+          const bSel = document.getElementById('vidBackingSelect');
+          if (bSel) bSel.value = 'obsidian';
+        }
+        vState.pinnedSlots = [];
+        deps.rebuildSlots();
+      });
+    }
+
     document.querySelectorAll('[data-vid-frame-dim]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const [w, h] = btn.getAttribute('data-vid-frame-dim').split('x').map(Number);
+        const dimStr = btn.getAttribute('data-vid-frame-dim');
+        const [w, h] = dimStr.split('x').map(Number);
         vState.targetWidthCm = w; vState.targetHeightCm = h;
         vState.bedSizeMm = w * 10; vState.totalHeightMm = h * 10;
+        if (vState.isResin !== false && typeof computeOptimalMono4Grid === 'function') {
+          const opt = computeOptimalMono4Grid(vState.bedSizeMm, vState.totalHeightMm);
+          vState.tileCols = opt.cols;
+          vState.tileRows = opt.rows;
+        }
+        document.querySelectorAll('[data-vid-frame-dim]').forEach(b => {
+          const active = b.getAttribute('data-vid-frame-dim') === dimStr;
+          b.className = active
+            ? 'px-1.5 py-0.5 rounded bg-blue-500/15 border border-blue-500/40 text-blue-400 text-[11px] font-mono font-bold'
+            : 'px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono';
+        });
         vState.pinnedSlots = [];
         deps.draw2DMap();
         deps.rebuildSlots();
@@ -337,4 +380,8 @@ function createVideoControlsController(vState, engine, previewCanvas, deps) {
     syncControlsFromState,
     bindStudioControls
   };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { createVideoControlsController };
 }

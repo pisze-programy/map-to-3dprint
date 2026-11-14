@@ -12,6 +12,9 @@ function initVideoStudioModule(bridge) {
 
   const engine = createVideoPreviewEngine(previewCanvas);
   const initialScene = (bridge && bridge.getSceneData && bridge.getSceneData()) || (typeof INITIAL_REAL_SCENE !== 'undefined' ? INITIAL_REAL_SCENE : null);
+  const defaultPalette = (typeof PALETTES !== 'undefined' && Array.isArray(PALETTES))
+    ? (PALETTES.find(p => p.id === 'white') || PALETTES[0])
+    : { id: 'white', colors: { water: '#3b82f6', base: '#e2e8f0', greenery: '#4ade80', trees: '#15803d', roads: '#f8fafc', buildings: '#ffffff' } };
 
   const vState = {
     isActiveModule: false,
@@ -28,7 +31,10 @@ function initVideoStudioModule(bridge) {
     mapCenterLon: initialScene ? initialScene.center[1] : 11.5855,
     mapZoom: 15,
     cropRatio: (initialScene && initialScene._fetchedCropRatio) || 0.88,
+    cropCenterX: 0,
+    cropCenterY: 0,
     mapSpanMeters: (initialScene && initialScene.spanMeters) || 1291.3,
+    mapRotationDeg: 0,
     bedSizeMm: 300,
     totalHeightMm: 300,
     targetWidthCm: 30,
@@ -37,6 +43,16 @@ function initVideoStudioModule(bridge) {
     tileRows: 1,
     zScale: 1.28,
     terrainScale: 1.15,
+    isResin: true,
+    xyPixelMm: 0.05,
+    layerHeightMm: 0.05,
+    bedZ: 200,
+    printerProfileId: 'mono4_custom',
+    hollowBase: true,
+    waterCutout: false,
+    lodSettings: { enableTrees: true, treeMaxSpanKm: 4.0, minBuildingFootprintM: 0, roadDetail: 'all' },
+    highlightedBuildingIds: [],
+    userClickedHighlight: false,
 
     storyboard: 'hero',
     waveMode: 'none',
@@ -49,11 +65,11 @@ function initVideoStudioModule(bridge) {
     showOrderHud: true,
     sunAngleDeg: 132,
 
-    elementVisible: { water: true, base: true, greenery: true, roads: true, buildings: true, highlighted: true },
+    elementVisible: { water: true, base: true, greenery: true, trees: true, roads: true, buildings: true, highlighted: true },
     ghostHiddenLayers: false,
 
-    paletteId: 'white',
-    colors: { ...PALETTES[0].colors, water: '#161b24' },
+    paletteId: defaultPalette.id,
+    colors: { ...defaultPalette.colors },
     frameStyle: 'black',
     matStyle: 'none',
     backingStyle: 'obsidian',
@@ -150,9 +166,10 @@ function initVideoStudioModule(bridge) {
     rebuildSlots: rebuildVideoSceneSlots,
     renderPreview: renderCurrentPreviewFrame,
     getAnimConfig
-  });
+  }, bridge);
 
   const mapGisCtrl = createVideoMapGisController(vState, {
+    getMainState: () => (bridge && bridge.getState ? bridge.getState() : null),
     onSceneLoaded: () => {
       syncPlayButtonUI();
       rebuildVideoSceneSlots();
@@ -169,13 +186,44 @@ function initVideoStudioModule(bridge) {
     syncFrom3D: (resetSlots) => syncFromMain3DConfigurator(resetSlots)
   });
 
-  function rebuildVideoSceneSlots() {
-    if (!vState.sceneData) return;
-    const activeSlots = vState.pinnedSlots.length > 0 ? vState.pinnedSlots : [orderCtrl.buildSlotDescriptorFromCurrent()];
+  let slotBuildGen = 0;
+  function applyBuiltSlots(activeSlots) {
     engine.uploadOrderSlots(activeSlots);
     orderCtrl.updateOrderSummaryUI(activeSlots);
     controlsCtrl.updateVideoLandmarkChips();
     renderCurrentPreviewFrame();
+  }
+
+  function rebuildVideoSceneSlots() {
+    const gen = ++slotBuildGen;
+    if (vState.pinnedSlots.length > 0) {
+      applyBuiltSlots(vState.pinnedSlots);
+      return Promise.resolve(vState.pinnedSlots);
+    }
+    if (!vState.sceneData) {
+      const emptySlot = orderCtrl.buildSlotDescriptorFromCurrent({ sceneData: null });
+      applyBuiltSlots([emptySlot]);
+      return Promise.resolve([emptySlot]);
+    }
+    if (orderCtrl.canFastBuildCurrentSlot()) {
+      const fastSlot = orderCtrl.buildSlotDescriptorFromCurrent();
+      applyBuiltSlots([fastSlot]);
+      return Promise.resolve([fastSlot]);
+    }
+    const loadingEl = document.getElementById('vidLoadingOverlay');
+    const loadingTxt = document.getElementById('vidLoadingText');
+    const alreadyBusy = loadingEl && !loadingEl.classList.contains('hidden');
+    if (loadingEl && !alreadyBusy) loadingEl.classList.remove('hidden');
+    if (loadingTxt && !alreadyBusy) loadingTxt.textContent = `Budowanie geometrii SLA (${vState.title || 'MAP3D'})...`;
+    return orderCtrl.buildSlotDescriptorAsync()
+      .then(slot => {
+        if (gen !== slotBuildGen) return null;
+        applyBuiltSlots([slot]);
+        return [slot];
+      })
+      .finally(() => {
+        if (gen === slotBuildGen && loadingEl && !alreadyBusy) loadingEl.classList.add('hidden');
+      });
   }
 
   // Playback RAF Loop & Interactive Orbit
@@ -202,7 +250,7 @@ function initVideoStudioModule(bridge) {
   window.addEventListener('mousemove', e => {
     if (!draggingCanvas || !vState.isActiveModule) return;
     engine.userOrbitOffset.yaw += (e.clientX - lastMouse[0]) * 0.008;
-    engine.userOrbitOffset.pitch = Math.max(-0.6, Math.min(0.8, engine.userOrbitOffset.pitch + (e.clientY - lastMouse[1]) * 0.008));
+    engine.userOrbitOffset.pitch = Math.max(-0.65, Math.min(1.02, engine.userOrbitOffset.pitch + (e.clientY - lastMouse[1]) * 0.008));
     lastMouse = [e.clientX, e.clientY];
     if (!vState.isPlaying) renderCurrentPreviewFrame();
   });
@@ -210,38 +258,85 @@ function initVideoStudioModule(bridge) {
   previewCanvas.addEventListener('wheel', e => {
     if (!vState.isActiveModule) return;
     e.preventDefault();
-    engine.userOrbitOffset.zoomMult = Math.max(0.55, Math.min(1.75, engine.userOrbitOffset.zoomMult + e.deltaY * 0.0008));
+    engine.userOrbitOffset.zoomMult = Math.max(0.14, Math.min(2.20, engine.userOrbitOffset.zoomMult + e.deltaY * 0.0008));
     if (!vState.isPlaying) renderCurrentPreviewFrame();
   }, { passive: false });
 
   function syncFromMain3DConfigurator(resetSlots = false) {
     if (!bridge || !bridge.getState) return;
     const st = bridge.getState();
-    if (!st || !st.sceneData) return;
-    vState.sceneData = st.sceneData;
-    vState.mapCenterLat = st.mapCenterLat;
-    vState.mapCenterLon = st.mapCenterLon;
+    if (!st) return;
+
+    vState.mapCenterLat = st.mapCenterLat !== undefined ? st.mapCenterLat : vState.mapCenterLat;
+    vState.mapCenterLon = st.mapCenterLon !== undefined ? st.mapCenterLon : vState.mapCenterLon;
+    if (st.mapZoom !== undefined) vState.mapZoom = st.mapZoom;
+    vState.mapSpanMeters = Number(st.mapSpanMeters) || (st.sceneData && st.sceneData.spanMeters) || vState.mapSpanMeters;
     vState.cropRatio = st.cropRatio || 0.88;
-    vState.zScale = st.zScale || 1.25;
-    vState.terrainScale = st.terrainScale || 1.15;
-    vState.targetWidthCm = Math.round((st.bedSizeMm || 320) / 10);
-    vState.targetHeightCm = Math.round((st.totalHeightMm || st.bedSizeMm || 320) / 10);
-    vState.bedSizeMm = st.bedSizeMm || 320;
-    vState.totalHeightMm = st.totalHeightMm || 320;
+    vState.cropCenterX = Number(st.cropCenterX) || 0;
+    vState.cropCenterY = Number(st.cropCenterY) || 0;
+    vState.zScale = st.zScale !== undefined ? st.zScale : 1.25;
+    vState.terrainScale = st.terrainScale !== undefined ? st.terrainScale : 1.15;
+    vState.bedSizeMm = st.bedSizeMm || (st.targetWidthCm ? st.targetWidthCm * 10 : 320);
+    vState.totalHeightMm = st.totalHeightMm || (st.targetHeightCm ? st.targetHeightCm * 10 : vState.bedSizeMm);
+    vState.targetWidthCm = Math.round(vState.bedSizeMm / 10);
+    vState.targetHeightCm = Math.round(vState.totalHeightMm / 10);
     vState.tileCols = st.tileCols || 1;
     vState.tileRows = st.tileRows || 1;
+    vState.isResin = st.isResin !== undefined ? Boolean(st.isResin) : true;
+    vState.xyPixelMm = Number(st.xyPixelMm) || 0.05;
+    vState.layerHeightMm = Number(st.layerHeightMm) || 0.05;
+    vState.bedZ = Number(st.bedZ) || 200;
+    if (st.printerProfileId) vState.printerProfileId = st.printerProfileId;
+    vState.hollowBase = st.hollowBase !== undefined ? Boolean(st.hollowBase) : vState.hollowBase;
+    vState.waterCutout = Boolean(st.waterCutout);
+    if (vState.waterCutout && vState.backingStyle === 'white') {
+      vState.backingStyle = 'obsidian';
+    }
+    vState.mapRotationDeg = Number(st.mapRotationDeg) || 0;
+    if (st.lodSettings) vState.lodSettings = { ...st.lodSettings };
+
+    if (st.activePalette) vState.paletteId = st.activePalette;
+    if (st.colors) vState.colors = { ...st.colors };
     vState.frameStyle = st.frameStyle || 'black';
-    vState.title = st.plaqueText || st.sceneData.title || 'MÜNCHEN';
-    if (st.layerVisible) vState.elementVisible = { ...st.layerVisible };
+    vState.title = st.plaqueText || (st.sceneData && st.sceneData.title) || vState.title || 'MÜNCHEN';
+
+    if (st.layerVisible) {
+      const treesVis = typeof isTreesLayerVisible === 'function'
+        ? isTreesLayerVisible(st.sceneData || vState.sceneData || {}, st)
+        : (st.layerVisible.trees !== undefined ? Boolean(st.layerVisible.trees) : Boolean(st.layerVisible.greenery));
+      vState.elementVisible = {
+        ...vState.elementVisible,
+        ...st.layerVisible,
+        trees: treesVis
+      };
+    }
+
+    if (st.sceneData) {
+      vState.sceneData = st.sceneData;
+      const hlIds = (st.sceneData.buildings || []).filter(b => b.highlighted).map(b => b.id);
+      vState.highlightedBuildingIds = hlIds;
+      vState.userClickedHighlight = Boolean((st.colors && st.colors.highlighted) || hlIds.length > 0);
+    } else {
+      vState.sceneData = null;
+      vState.highlightedBuildingIds = [];
+      vState.userClickedHighlight = false;
+    }
+
     if (resetSlots) vState.pinnedSlots = [];
+    mapGisCtrl.updateRotationBadgeUI();
     controlsCtrl.syncControlsFromState();
     rebuildVideoSceneSlots();
   }
 
+  let autoFetchStarted = false;
   function activateModule(syncFrom3D = false) {
     vState.isActiveModule = true;
     if (syncFrom3D) syncFromMain3DConfigurator(false);
-    else { controlsCtrl.syncControlsFromState(); rebuildVideoSceneSlots(); }
+    else { mapGisCtrl.updateRotationBadgeUI(); controlsCtrl.syncControlsFromState(); rebuildVideoSceneSlots(); }
+    if (!vState.sceneData && !autoFetchStarted) {
+      autoFetchStarted = true;
+      mapGisCtrl.triggerFetchCurrentVideoBBox(vState.title || 'MÜNCHEN');
+    }
     vState.tNorm = 0.0;
     vState.isPlaying = true;
     syncPlayButtonUI();
@@ -261,6 +356,7 @@ function initVideoStudioModule(bridge) {
     deactivateModule,
     syncFromMain3DConfigurator,
     syncControlsFromState: controlsCtrl.syncControlsFromState,
+    rebuildVideoSceneSlots,
     loadPresetById: mapGisCtrl.loadPresetById,
     engine,
     vState

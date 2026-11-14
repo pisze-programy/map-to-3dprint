@@ -41,7 +41,10 @@
         </div>
 
         <div class="flex items-center justify-between gap-1 flex-wrap">
-          <span class="text-[11px] text-[var(--muted-foreground)]">Kadr: <strong id="vidSpanBadge" class="font-mono text-[var(--foreground)]">1.2 km</strong></span>
+          <span class="text-[11px] text-[var(--muted-foreground)] flex items-center gap-1.5">
+            Kadr: <strong id="vidSpanBadge" class="font-mono text-[var(--foreground)]">1.2 km</strong>
+            <button id="vidRotBadge" type="button" title="Kliknij, aby wyzerować obrót kadru (0°)" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-emerald-500 text-[10px] font-mono text-emerald-400">↻ 0°</button>
+          </span>
           <div class="flex gap-1">
             <button type="button" data-vid-span-km="0.6" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[10px]">0.6km</button>
             <button type="button" data-vid-span-km="1.2" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[10px]">1.2km</button>
@@ -63,7 +66,7 @@
         </h2>
 
         <div class="flex flex-wrap gap-1">
-          <button type="button" data-elem-preset="all" class="px-2 py-0.5 rounded bg-blue-500/15 border border-blue-500/40 text-blue-400 text-[11px] font-semibold">Wszystkie (6)</button>
+          <button type="button" data-elem-preset="all" class="px-2 py-0.5 rounded bg-blue-500/15 border border-blue-500/40 text-blue-400 text-[11px] font-semibold">Wszystkie (7)</button>
           <button type="button" data-elem-preset="arch" class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px]">Styl (Budynki+Ulice)</button>
           <button type="button" data-elem-preset="spotlight_only" class="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-400 text-[11px] font-semibold">★ Tylko Wybrany Obiekt</button>
           <button type="button" data-elem-preset="hydro_relief" class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px]">Woda + Teren DEM</button>
@@ -241,6 +244,7 @@
           <button type="button" data-vid-frame-dim="30x30" class="px-1.5 py-0.5 rounded bg-blue-500/15 border border-blue-500/40 text-blue-400 text-[11px] font-mono font-bold">30×30</button>
           <button type="button" data-vid-frame-dim="30x40" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono">30×40</button>
           <button type="button" data-vid-frame-dim="50x50" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono">50×50</button>
+          <button type="button" data-vid-frame-dim="50x70" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono" title="Plakat Galeryjny 50×70 cm">50×70</button>
           <button type="button" data-vid-frame-dim="64x64" class="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono" title="Format Gallery XL">64×64 XL</button>
         </div>
 
@@ -284,12 +288,19 @@
               <span class="text-[11px] text-[var(--muted-foreground)] block mb-0.5">Tło Podkładu / Studio:</span>
               <select id="vidBackingSelect" class="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1 font-semibold">
                 <option value="obsidian" selected>Podkład: Czarny</option>
+                <option value="walnut">Orzech Ciemny (Drewno)</option>
+                <option value="oak">Dąb Naturalny (Drewno)</option>
                 <option value="white">Podkład: Biały</option>
                 <option value="slate">Podkład: Grafit</option>
                 <option value="sand">Podkład: Piasek</option>
               </select>
             </div>
           </div>
+
+          <label class="flex items-center gap-1.5 bg-[var(--background)] border border-[var(--border)] rounded-lg px-2 py-1.5 cursor-pointer">
+            <input id="chkVidWaterCutout" type="checkbox" class="rounded accent-blue-600" />
+            <span class="text-[11px] font-medium">Wytnij wodę — odsłoń tło podkładu (drewno / czerń)</span>
+          </label>
 
           <div>
             <span class="text-[11px] text-[var(--muted-foreground)] block mb-0.5">Otoczenie Studia Wideo:</span>
