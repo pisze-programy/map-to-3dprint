@@ -229,7 +229,7 @@ function createVideoControlsController(vState, engine, previewCanvas, deps) {
         const [w, h] = dimStr.split('x').map(Number);
         vState.targetWidthCm = w; vState.targetHeightCm = h;
         vState.bedSizeMm = w * 10; vState.totalHeightMm = h * 10;
-        if (vState.isResin !== false && typeof computeOptimalMono4Grid === 'function') {
+        if (typeof computeOptimalMono4Grid === 'function') {
           const opt = computeOptimalMono4Grid(vState.bedSizeMm, vState.totalHeightMm);
           vState.tileCols = opt.cols;
           vState.tileRows = opt.rows;

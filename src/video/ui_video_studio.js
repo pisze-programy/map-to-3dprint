@@ -44,12 +44,13 @@ function initVideoStudioModule(bridge) {
     zScale: 1.28,
     terrainScale: 1.15,
     isResin: true,
-    xyPixelMm: 0.05,
+    xyPixelMm: 0.017,
     layerHeightMm: 0.05,
-    bedZ: 200,
+    bedZ: 165,
     printerProfileId: 'mono4_custom',
     hollowBase: true,
     waterCutout: false,
+    supportlessMode: false,
     lodSettings: { enableTrees: true, treeMaxSpanKm: 4.0, minBuildingFootprintM: 0, roadDetail: 'all' },
     highlightedBuildingIds: [],
     userClickedHighlight: false,
@@ -289,13 +290,16 @@ function initVideoStudioModule(bridge) {
     vState.targetHeightCm = Math.round(vState.totalHeightMm / 10);
     vState.tileCols = st.tileCols || 1;
     vState.tileRows = st.tileRows || 1;
-    vState.isResin = st.isResin !== undefined ? Boolean(st.isResin) : true;
-    vState.xyPixelMm = Number(st.xyPixelMm) || 0.05;
+    vState.isResin = true;
+    vState.xyPixelMm = Number(st.xyPixelMm) || 0.017;
     vState.layerHeightMm = Number(st.layerHeightMm) || 0.05;
-    vState.bedZ = Number(st.bedZ) || 200;
-    if (st.printerProfileId) vState.printerProfileId = st.printerProfileId;
+    vState.bedZ = Number(st.bedZ) || 165;
+    if (st.printerProfileId) {
+      vState.printerProfileId = typeof resolveMono4ProfileId === 'function' ? resolveMono4ProfileId(st.printerProfileId) : st.printerProfileId;
+    }
     vState.hollowBase = st.hollowBase !== undefined ? Boolean(st.hollowBase) : vState.hollowBase;
     vState.waterCutout = Boolean(st.waterCutout);
+    vState.supportlessMode = Boolean(st.supportlessMode);
     if (vState.waterCutout && vState.backingStyle === 'white') {
       vState.backingStyle = 'obsidian';
     }

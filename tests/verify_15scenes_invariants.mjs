@@ -8,6 +8,7 @@ const ROOT = process.cwd();
 
 const vendor = require(path.join(ROOT, 'src/vendor/vendor_bundle.js'));
 Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/print_physics_config.js')));
+Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/sla_print_laws.js')));
 Object.assign(globalThis, require(path.join(ROOT, 'src/export/export_io_utils.js')));
 const { exportMultiColor3MF } = require(path.join(ROOT, 'src/export/export_3mf.js'));
 const { loadSceneAndBuildModel } = require(path.join(ROOT, 'tools/headless_scene_harness.js'));
@@ -231,7 +232,7 @@ async function run() {
       hollowBase: false,
       showFrame: false,
       wantTrees: true,
-      isResin: false,
+      isResin: true,
       zScale: 1.0,
       terrainScale: 1.0,
       skipTopologyAudit: false,

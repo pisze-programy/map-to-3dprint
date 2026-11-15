@@ -755,9 +755,8 @@ function computeGroundPartsUnionCoverage2D(outerPts, holesPts, groundParts, poin
 }
 
 /**
- * Resolves physical printability tolerances (mm and bed units) from printer profile state.
- * SLA resin profiles (Anycubic Photon Mono 4: 35 um XY, 50 um Z) unlock sub-millimeter
- * details, whereas FDM profiles preserve 0.35-0.42 mm extrusion nozzle clearances.
+ * Resolves physical MSLA printability tolerances (mm and bed units) for Anycubic Photon Mono 4
+ * (17 um XY pixel pitch, 50 um Z layer height), preserving sub-millimeter architectural detail.
  */
 if (typeof window !== 'undefined') {
   window.isPolygonStrictlyInside = isPolygonStrictlyInside;

@@ -89,12 +89,9 @@ function bindStudioPanelControls(ctx) {
     state.totalHeightMm = Math.round(hVal * 10);
     state.lastFetchBbox = null;
     state.lastFetchTitle = null;
-    const prof = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.fdm_330_1x1;
-    if (prof.isResin) {
-      const optGrid = computeOptimalMono4Grid(state.bedSizeMm, state.totalHeightMm);
-      state.tileCols = optGrid.cols;
-      state.tileRows = optGrid.rows;
-    }
+    const optGrid = computeOptimalMono4Grid(state.bedSizeMm, state.totalHeightMm);
+    state.tileCols = optGrid.cols;
+    state.tileRows = optGrid.rows;
     syncFrameSizeChips();
     draw2DMap();
     if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
@@ -172,8 +169,7 @@ function bindStudioPanelControls(ctx) {
     tileExplodeSlider.addEventListener('input', e => {
       const val = parseInt(e.target.value, 10);
       if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1 && val > 0) {
-        const prof = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.fdm_330_1x1;
-        state.tileCols = 2; state.tileRows = prof.isResin ? 3 : 2;
+        state.tileCols = 2; state.tileRows = 3;
         draw2DMap(); rebuildModel3D();
       }
       state.tileExplode = val / 100;
@@ -186,8 +182,7 @@ function bindStudioPanelControls(ctx) {
   if (btnQuickTileExplode) {
     btnQuickTileExplode.addEventListener('click', () => {
       if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1) {
-        const prof = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.fdm_330_1x1;
-        state.tileCols = 2; state.tileRows = prof.isResin ? 3 : 2;
+        state.tileCols = 2; state.tileRows = 3;
         draw2DMap(); rebuildModel3D();
       }
       const target = state.tileExplode > 0.15 ? 0 : 65;
@@ -200,7 +195,10 @@ function bindStudioPanelControls(ctx) {
   }
 
   function applyPrinterProfile(profileId) {
-    const prof = PRINT_PROFILES[profileId] || PRINT_PROFILES.mono4_custom || PRINT_PROFILES.fdm_330_1x1;
+    const resolvedId = (typeof resolveMono4ProfileId === 'function')
+      ? resolveMono4ProfileId(profileId)
+      : (PRINT_PROFILES[profileId] ? profileId : 'mono4_custom');
+    const prof = PRINT_PROFILES[resolvedId] || PRINT_PROFILES.mono4_custom;
     state.printerProfileId = prof.id;
     state.lastFetchBbox = null;
     state.lastFetchTitle = null;
@@ -217,9 +215,10 @@ function bindStudioPanelControls(ctx) {
       state.tileCols = prof.cols; state.tileRows = prof.rows;
     }
     state.exportTileFilter = 'all';
-    state.isResin = !!prof.isResin;
-    state.layerHeightMm = prof.isResin ? 0.05 : 0.20;
-    state.hollowBase = !!prof.isResin;
+    state.isResin = true;
+    state.xyPixelMm = prof.xyPixelMm || 0.017;
+    state.layerHeightMm = prof.layerHeightMm || 0.05;
+    state.hollowBase = true;
     const chkH = document.getElementById('chkHollowBase');
     if (chkH) chkH.checked = state.hollowBase;
     if (state.tileCols === 1 && state.tileRows === 1) {
@@ -461,6 +460,15 @@ function bindStudioPanelControls(ctx) {
   };
   if (chkWaterCutout) chkWaterCutout.addEventListener('change', e => applyWaterCutoutToggle(e.target.checked));
   if (chkPreviewWaterCutout) chkPreviewWaterCutout.addEventListener('change', e => applyWaterCutoutToggle(e.target.checked));
+  const chkSupportlessMode = document.getElementById('chkSupportlessMode');
+  if (chkSupportlessMode) {
+    chkSupportlessMode.addEventListener('change', e => {
+      state.supportlessMode = Boolean(e.target.checked);
+      updateStatsUI();
+      rebuildModel3D();
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+    });
+  }
   const exportTileSelect = document.getElementById('exportTileSelect');
   if (exportTileSelect) exportTileSelect.addEventListener('change', e => { state.exportTileFilter = e.target.value; draw2DMap(); });
 

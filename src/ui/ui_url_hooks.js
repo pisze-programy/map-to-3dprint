@@ -53,8 +53,9 @@ function saveActiveConfig(state) {
       mapRotationDeg: typeof state.mapRotationDeg === 'number' ? Math.round(state.mapRotationDeg) : 0,
       hollowBase: typeof state.hollowBase === 'boolean' ? state.hollowBase : true,
       waterCutout: Boolean(state.waterCutout),
+      supportlessMode: Boolean(state.supportlessMode),
       backingStyle: state.backingStyle || 'black_wood',
-      printerProfileId: state.printerProfileId || 'mono4_custom',
+      printerProfileId: typeof resolveMono4ProfileId === 'function' ? resolveMono4ProfileId(state.printerProfileId) : (state.printerProfileId || 'mono4_custom'),
       camera: cam ? {
         yaw: typeof cam.yaw === 'number' ? Number(cam.yaw.toFixed(4)) : -0.48,
         pitch: typeof cam.pitch === 'number' ? Number(cam.pitch.toFixed(4)) : 0.50,
@@ -164,11 +165,16 @@ function loadActiveConfig() {
     if (typeof parsed.waterCutout === 'boolean') {
       sanitized.waterCutout = parsed.waterCutout;
     }
+    if (typeof parsed.supportlessMode === 'boolean') {
+      sanitized.supportlessMode = parsed.supportlessMode;
+    }
     if (typeof parsed.backingStyle === 'string' && ['black_wood', 'walnut', 'oak', 'obsidian', 'slate'].includes(parsed.backingStyle)) {
       sanitized.backingStyle = parsed.backingStyle;
     }
     if (typeof parsed.printerProfileId === 'string' && parsed.printerProfileId.trim().length > 0) {
-      sanitized.printerProfileId = parsed.printerProfileId.trim();
+      sanitized.printerProfileId = typeof resolveMono4ProfileId === 'function'
+        ? resolveMono4ProfileId(parsed.printerProfileId)
+        : parsed.printerProfileId.trim();
     }
     if (parsed.camera && typeof parsed.camera === 'object' && !Array.isArray(parsed.camera)) {
       const c = parsed.camera;
@@ -248,6 +254,11 @@ function updateUrlQueryParams(cfg) {
     } else {
       params.delete('water_cutout');
       params.delete('backing');
+    }
+    if (cfg.supportlessMode) {
+      params.set('supportless', '1');
+    } else {
+      params.delete('supportless');
     }
     if (typeof cfg.zScale === 'number') {
       params.set('z_scale', cfg.zScale.toFixed(2));
@@ -403,13 +414,17 @@ async function applyMap3DUrlParams(ctx) {
 
     // Printer profile (applied without premature rebuild/save so explicit grid/hollow/rot stay intact)
     const printerParam = params.get('printer');
-    if (printerParam && typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES[printerParam] && state) {
-      const prof = PRINT_PROFILES[printerParam];
-      const prevGeomSig = `${state.printerProfileId}|${state.bedSizeMm}|${state.totalHeightMm}|${state.tileCols}|${state.tileRows}|${state.isResin}|${state.hollowBase}`;
+    if (printerParam && typeof PRINT_PROFILES !== 'undefined' && state) {
+      const resolvedId = typeof resolveMono4ProfileId === 'function'
+        ? resolveMono4ProfileId(printerParam)
+        : (PRINT_PROFILES[printerParam] ? printerParam : 'mono4_custom');
+      const prof = PRINT_PROFILES[resolvedId] || PRINT_PROFILES.mono4_custom;
+      const prevGeomSig = `${state.printerProfileId}|${state.bedSizeMm}|${state.totalHeightMm}|${state.tileCols}|${state.tileRows}|${state.isResin}|${state.hollowBase}|${Boolean(state.supportlessMode)}`;
       state.printerProfileId = prof.id;
       state.bedZ = prof.bedZ || state.bedZ || 165.0;
-      state.isResin = Boolean(prof.isResin);
-      state.layerHeightMm = prof.isResin ? 0.05 : 0.20;
+      state.isResin = true;
+      state.xyPixelMm = prof.xyPixelMm || 0.017;
+      state.layerHeightMm = prof.layerHeightMm || 0.05;
       if (prof.isCustomMono4) {
         const curW = state.targetWidthCm || Math.round(prof.totalWidthMm / 10) || 50;
         const curH = state.targetHeightCm || Math.round(prof.totalHeightMm / 10) || 50;
@@ -439,12 +454,12 @@ async function applyMap3DUrlParams(ctx) {
         }
       }
       if (hollowParam !== '0' && hollowParam !== '1') {
-        state.hollowBase = Boolean(prof.isResin);
+        state.hollowBase = true;
         if (chkHollowBase) chkHollowBase.checked = state.hollowBase;
       }
       const pSel = document.getElementById('printerSelect');
       if (pSel) pSel.value = prof.id;
-      const nextGeomSig = `${state.printerProfileId}|${state.bedSizeMm}|${state.totalHeightMm}|${state.tileCols}|${state.tileRows}|${state.isResin}|${state.hollowBase}`;
+      const nextGeomSig = `${state.printerProfileId}|${state.bedSizeMm}|${state.totalHeightMm}|${state.tileCols}|${state.tileRows}|${state.isResin}|${state.hollowBase}|${Boolean(state.supportlessMode)}`;
       if (nextGeomSig !== prevGeomSig) {
         needs2DUpdate = true;
         needs3DRebuild = true;
@@ -499,6 +514,16 @@ async function applyMap3DUrlParams(ctx) {
       }
       if (chkWaterCutout) chkWaterCutout.checked = Boolean(state.waterCutout);
       if (chkPreviewWaterCutout) chkPreviewWaterCutout.checked = Boolean(state.waterCutout);
+    }
+    const supportlessParam = params.get('supportless');
+    const chkSupportlessMode = (typeof document !== 'undefined') ? document.getElementById('chkSupportlessMode') : null;
+    if ((supportlessParam === '0' || supportlessParam === '1' || supportlessParam === 'true' || supportlessParam === 'false') && state) {
+      const nextSupportless = (supportlessParam === '1' || supportlessParam === 'true');
+      if (Boolean(state.supportlessMode) !== nextSupportless) {
+        state.supportlessMode = nextSupportless;
+        needs3DRebuild = true;
+      }
+      if (chkSupportlessMode) chkSupportlessMode.checked = Boolean(state.supportlessMode);
     }
     const backingParam = params.get('backing');
     if (backingParam && ['black_wood', 'walnut', 'oak', 'obsidian', 'slate'].includes(backingParam) && state) {

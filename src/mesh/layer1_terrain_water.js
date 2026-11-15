@@ -122,7 +122,7 @@
 
     try {
       const tin = new Delatin(gridZ, nx, ny);
-      const maxErrU = Math.max(0.03, (ctx.isResin ? 0.08 : 0.16) / ctx.scaleMm);
+      const maxErrU = Math.max(0.03, 0.08 / ctx.scaleMm);
       tin.run(maxErrU);
       const tinCoords = tin.coords;
       const tinTris = tin.triangles;

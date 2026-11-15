@@ -23,7 +23,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   } = resolveSceneScaleAndSpec(state, null);
   const cfg = (typeof PRINT_PHYSICS_CONFIG !== 'undefined') ? PRINT_PHYSICS_CONFIG : null;
   const mono4 = cfg ? cfg.photonMono4 : { bedXMm: 153.45, bedYMm: 87.05, frameSplitMaxMm: 148.0 };
-  const resinCfg = cfg ? cfg.resin : { defaultKerfMm: 0.08, densityGPerMl: 1.12 };
+  const resinCfg = cfg ? cfg.resin : { defaultKerfMm: 0.08, densityGPerMl: 1.15 };
   const defFrameWidthMm = cfg ? cfg.defaultFrameWidthMm : 12.0;
 
   const targetW_cm = (totalW / 10).toFixed(1);
@@ -32,12 +32,11 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   const tileH = totalH / tileRows;
   const safeTitle = sanitizeFilenameSlug((state && state.plaqueText) || 'MAP3D');
   const pm = (state && state.printMetrics) || {};
-  const isResin = Boolean(state && (state.isResin || state.printerPreset === 'photon_mono_4'));
-  const kerfMm = isResin ? (state.kerfMm !== undefined ? state.kerfMm : resinCfg.defaultKerfMm) : 0.0;
+  const kerfMm = (state && state.kerfMm !== undefined) ? state.kerfMm : resinCfg.defaultKerfMm;
 
   const fitsNormal = (tileW <= mono4.bedXMm && tileH <= mono4.bedYMm);
   const fitsRotated = (tileH <= mono4.bedXMm && tileW <= mono4.bedYMm);
-  const isAutoRotated = isResin && (!fitsNormal && fitsRotated);
+  const isAutoRotated = !fitsNormal && fitsRotated;
 
   const zipFiles = [];
   const tileEntries = [];
@@ -111,7 +110,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
             const segH = (y1 - y0) * scaleMm;
             const segFitsNormal = (segW <= mono4.bedXMm && segH <= mono4.bedYMm);
             const segFitsRotated = (segH <= mono4.bedXMm && segW <= mono4.bedYMm);
-            const segRotate = isResin && (!segFitsNormal && segFitsRotated);
+            const segRotate = !segFitsNormal && segFitsRotated;
             const segBytes = buildSTLBytesFromTriangles(clipped, -x0, -y0, scaleMm, segW, segH, state, segRotate, frameShiftZMm);
             const segName = `Rama_${String(fIdx++).padStart(2, '0')}_R${segNorthRow}C${fc + 1}_${Math.round(segW)}x${Math.round(segH)}mm.stl`;
             zipFiles.push({ name: segName, content: segBytes });
@@ -122,7 +121,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
     } else {
       const fullFrameFitsNormal = (frameTotalWidthMm <= mono4.bedXMm && frameTotalHeightMm <= mono4.bedYMm);
       const fullFrameFitsRotated = (frameTotalHeightMm <= mono4.bedXMm && frameTotalWidthMm <= mono4.bedYMm);
-      const fullRotate = isResin && (!fullFrameFitsNormal && fullFrameFitsRotated);
+      const fullRotate = !fullFrameFitsNormal && fullFrameFitsRotated;
       const fullFrameBytes = buildSTLBytesFromTriangles(
         frameTris, outerHalfW, outerHalfH, scaleMm, frameTotalWidthMm, frameTotalHeightMm, state, fullRotate, frameShiftZMm
       );
@@ -146,9 +145,9 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
     `Podział na kafle:            ${tileCols} kolumn x ${tileRows} wierszy (${numTiles} kafli ogółem)`,
     `Wymiar pojedynczego kafla:   ${tileW.toFixed(1)} x ${tileH.toFixed(1)} mm`,
     `Auto-rotacja dla Mono 4:     ${isAutoRotated ? `TAK (+90° XY: wymiar na stole ${tileH.toFixed(1)} x ${tileW.toFixed(1)} mm <= 153.4 x 87.0 mm)` : `NIE (mieści się w układzie standardowym <= 153.4 x 87.0 mm)`}`,
-    `Odchudzona baza (Hollow):    ${state && state.hollowBase ? `TAK (Ścianka ${state.hollowWallMm || 1.8} mm + kanały drenażowe SLA, oszczędność ~${pm.hollowSavingsPct || 45}%)` : 'NIE (Pełna baza z=0 pod lity wydruk FDM/SLA)'}`,
+    `Odchudzona baza (Hollow):    ${state && state.hollowBase ? `TAK (Ścianka ${state.hollowWallMm || 1.8} mm + kanały drenażowe SLA, oszczędność ~${pm.hollowSavingsPct || 45}%)` : 'NIE (Pełna baza z=0 pod lity wydruk SLA/MSLA)'}`,
     `Wycięcie wody (Cutout):      ${waterCutout ? 'TAK (Woda wycięta do Z=0 pod czarny/drewniany podkład)' : 'NIE (Pełna tafla wody 3D)'}`,
-    `Objętość żywicy całkowita:   ~${(pm.totalVolumeMl || 0).toFixed(1)} ml (~${pm.resinGrams || 0} g żywicy / ~${pm.plaGrams || 0} g PLA)`,
+    `Objętość żywicy całkowita:   ~${(pm.totalVolumeMl || 0).toFixed(1)} ml (~${pm.resinGrams || 0} g żywicy Mono 4)`,
     `Tolerancja montażowa (Kerf): ${kerfMm.toFixed(2)} mm (fabryczny luz kompensujący rozszerzalność światła UV)`,
     `Ramka dekoracyjna 3D:        ${frameEntries.length > 0 ? `DOŁĄCZONA (${frameEntries.length} segmentów)` : 'WYŁĄCZONA Z PACZKI (wyłącznie podgląd 3D Studio)'}`,
     ``,
@@ -194,7 +193,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   };
   const pairingFn = getPairingSchedFn();
   const printableTileEntries = tileEntries.filter(e => !e.skippedEmptyWater);
-  if (isResin && printableTileEntries.length > 1 && typeof pairingFn === 'function') {
+  if (printableTileEntries.length > 1 && typeof pairingFn === 'function') {
     const sched = pairingFn(printableTileEntries, tileW, tileH);
     reportLines.push(
       ``,

@@ -23,22 +23,13 @@ const PRINT_PHYSICS_CONFIG = Object.freeze({
     dualPackMaxWMm: 75.45
   }),
   resin: Object.freeze({
-    xyPixelMm: 0.035,
+    xyPixelMm: 0.017,
     layerHeightMm: 0.05,
     minFeatureMm: 0.12,
-    minChannelMm: 0.14,
-    dpSimplifyMm: 0.025,
+    minChannelMm: 0.48,
+    dpSimplifyMm: 0.017,
     defaultKerfMm: 0.08,
-    densityGPerMl: 1.12
-  }),
-  fdm: Object.freeze({
-    xyPixelMm: 0.40,
-    layerHeightMm: 0.20,
-    minFeatureMm: 0.35,
-    minChannelMm: 0.42,
-    dpSimplifyMm: 0.10,
-    defaultKerfMm: 0.04,
-    densityGPerCm3: 1.24
+    densityGPerMl: 1.15
   }),
   // Physical layer heights & tolerances in millimeters
   baseBottomMm: 2.35,
@@ -66,27 +57,57 @@ const OSM_METRIC_CONFIG = Object.freeze({
   cropRatioBounds: Object.freeze([0.22, 1.0])
 });
 
+function _resolveSlaLawsRef() {
+  if (typeof SLA_PRINT_LAWS !== 'undefined') return SLA_PRINT_LAWS;
+  if (typeof globalThis !== 'undefined' && globalThis.SLA_PRINT_LAWS) return globalThis.SLA_PRINT_LAWS;
+  if (typeof window !== 'undefined' && window.SLA_PRINT_LAWS) return window.SLA_PRINT_LAWS;
+  if (typeof require === 'function') {
+    try { return require('./sla_print_laws.js'); } catch (_) {}
+  }
+  return null;
+}
+
 function resolvePrintPhysicsSpec(state, scaleMm) {
-  const isResin = Boolean(state && state.isResin);
-  const profile = isResin ? PRINT_PHYSICS_CONFIG.resin : PRINT_PHYSICS_CONFIG.fdm;
+  const isResin = true;
+  const profile = PRINT_PHYSICS_CONFIG.resin;
+  const laws = _resolveSlaLawsRef();
+  const monoSpec = (laws && laws.MONO4_SPEC) || null;
   const effScale = Math.max(0.25, Number(scaleMm) || (DEFAULT_BED_SIZE_MM / SCENE_CANONICAL_SPAN_UNITS));
-  const rawPx = (state && Number(state.xyPixelMm) > 0) ? Number(state.xyPixelMm) : 0;
-  const xyPixelMm = (rawPx > 0 && ((isResin && rawPx < 0.2) || (!isResin && rawPx >= 0.2)))
-    ? rawPx
-    : profile.xyPixelMm;
-  const layerHeightMm = (state && Number(state.layerHeightMm) > 0) ? Number(state.layerHeightMm) : profile.layerHeightMm;
-  const minFeatureMm = isResin ? Math.max(profile.minFeatureMm, xyPixelMm * 3.5) : profile.minFeatureMm;
-  const minChannelMm = isResin ? Math.max(profile.minChannelMm, xyPixelMm * 4.0) : profile.minChannelMm;
-  const dpSimplifyMm = isResin ? Math.max(profile.dpSimplifyMm, xyPixelMm * 0.7) : profile.dpSimplifyMm;
+  const xyPixelMm = (monoSpec && monoSpec.xyPixelMm) || profile.xyPixelMm;
+  const rawLayerH = state && Number(state.layerHeightMm);
+  const layerHeightMm = (Number.isFinite(rawLayerH) && rawLayerH > 0 && rawLayerH <= 0.10)
+    ? rawLayerH
+    : ((monoSpec && monoSpec.layerHeightMm) || profile.layerHeightMm);
+  const minWallMm = (laws && typeof laws.minWallThicknessMm === 'function') ? laws.minWallThicknessMm(0) : 0.45;
+  const minStrutMm = (laws && typeof laws.minStrutDiameterMm === 'function') ? laws.minStrutDiameterMm(0) : 0.48;
+  const minPinMm = (laws && typeof laws.minPinDiameterMm === 'function') ? laws.minPinDiameterMm(0) : 0.65;
+  const minAntiCapillaryGapMm = (laws && typeof laws.resolveAntiCapillaryGapMm === 'function')
+    ? laws.resolveAntiCapillaryGapMm(0.48)
+    : 0.48;
+  const maxOverhangMm = (laws && typeof laws.maxUnsupportedOverhangMm === 'function')
+    ? laws.maxUnsupportedOverhangMm(layerHeightMm)
+    : 0.45;
+  const minFeatureMm = Math.max(profile.minFeatureMm, xyPixelMm * 7.0);
+  const minChannelMm = Math.max(minAntiCapillaryGapMm, xyPixelMm * 28.0);
+  const dpSimplifyMm = Math.max(profile.dpSimplifyMm, xyPixelMm);
   const defaultKerfMm = profile.defaultKerfMm;
   return {
     isResin,
+    printerName: (monoSpec && monoSpec.name) || 'Anycubic Photon Mono 4',
     xyPixelMm,
     layerHeightMm,
     minFeatureMm,
     minChannelMm,
     dpSimplifyMm,
     defaultKerfMm,
+    densityGPerMl: (monoSpec && monoSpec.densityGPerCm3) || profile.densityGPerMl,
+    minWallMm,
+    minStrutMm,
+    minPinMm,
+    minAntiCapillaryGapMm,
+    maxOverhangMm,
+    drainHoleMinMm: (monoSpec && monoSpec.drainHoleMinMm) || 1.4,
+    minTileMarginMm: (monoSpec && monoSpec.minTileMarginMm) || 1.0,
     minFeatureUnits: minFeatureMm / effScale,
     minChannelUnits: minChannelMm / effScale,
     dpSimplifyUnits: dpSimplifyMm / effScale

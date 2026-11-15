@@ -101,8 +101,8 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     targetWidthMm: options && options.targetWidthMm,
     targetHeightMm: options && options.targetHeightMm,
     rotationDeg: options && options.rotationDeg,
-    isResin: options && options.isResin !== undefined ? Boolean(options.isResin) : undefined,
-    xyPixelMm: options && options.xyPixelMm,
+    isResin: true,
+    xyPixelMm: (options && options.xyPixelMm) || 0.017,
     lodSettings
   };
 
@@ -315,7 +315,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     });
   }
 
-  const isResin = !(options && options.isResin === false);
+  const isResin = true;
   const maxBlds = ((minBldFootprintM === 0 && effectiveSpanM <= 7500) || (isResin && effectiveSpanM <= 5500))
     ? (effectiveSpanM <= 2600 ? 12000 : 8500)
     : (effectiveSpanM > 12000 ? 2500 : 6000);

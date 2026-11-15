@@ -117,115 +117,69 @@ const PRINT_PROFILES = {
   mono4_75x84_1x1: {
     id: 'mono4_75x84_1x1',
     name: 'Anycubic Photon Mono 4 • 75×84 mm (1 Kafel 1×1)',
-    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
-    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
+    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
     totalWidthMm: 75, totalHeightMm: 84,
     cols: 1, rows: 1,
     isResin: true,
-    xyPixelMm: 0.035,
+    xyPixelMm: 0.017,
     layerHeightMm: 0.05
   },
   mono4_150x168_2x2: {
     id: 'mono4_150x168_2x2',
     name: 'Anycubic Photon Mono 4 • 150×168 mm (4 Kafle 2×2 po 75×84 mm)',
-    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
-    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
+    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
     totalWidthMm: 150, totalHeightMm: 168,
     cols: 2, rows: 2,
     isResin: true,
-    xyPixelMm: 0.035,
+    xyPixelMm: 0.017,
     layerHeightMm: 0.05
   },
   mono4_225x252_3x3: {
     id: 'mono4_225x252_3x3',
     name: 'Anycubic Photon Mono 4 • 225×252 mm (9 Kafli 3×3 po 75×84 mm)',
-    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
-    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
+    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
     totalWidthMm: 225, totalHeightMm: 252,
     cols: 3, rows: 3,
     isResin: true,
-    xyPixelMm: 0.035,
+    xyPixelMm: 0.017,
     layerHeightMm: 0.05
   },
   mono4_150_1x2: {
     id: 'mono4_150_1x2',
     name: 'Anycubic Photon Mono 4 • 150×150 mm (2 Kafle 1×2 po 150×75 mm)',
-    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
-    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
+    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
     totalWidthMm: 150, totalHeightMm: 150,
     cols: 1, rows: 2,
     isResin: true,
-    xyPixelMm: 0.035,
+    xyPixelMm: 0.017,
     layerHeightMm: 0.05
   },
   mono4_296_2x4: {
     id: 'mono4_296_2x4',
     name: 'Anycubic Photon Mono 4 • 296×296 mm (8 Kafli 2×4 po 148×74 mm)',
-    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
-    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
+    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
     totalWidthMm: 296, totalHeightMm: 296,
     cols: 2, rows: 4,
     isResin: true,
-    xyPixelMm: 0.035,
+    xyPixelMm: 0.017,
     layerHeightMm: 0.05
   },
   mono4_custom: {
     id: 'mono4_custom',
     name: 'Anycubic Photon Mono 4 • Dowolny Format cm (Auto-Siatka)',
-    printer: 'Anycubic Photon Mono 4 (153.4×87×165 mm)',
-    bedX: 153.4, bedY: 87.0, bedZ: 165.0,
+    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
+    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
     totalWidthMm: 500, totalHeightMm: 500,
     cols: 4, rows: 6,
     isResin: true,
-    xyPixelMm: 0.035,
+    xyPixelMm: 0.017,
     layerHeightMm: 0.05,
     isCustomMono4: true
-  },
-  fdm_330_1x1: {
-    id: 'fdm_330_1x1',
-    name: 'Prusa XL 5-Toolhead • 320×320 mm (1 Kafel 1×1)',
-    printer: 'Prusa XL (360×360 mm)',
-    bedX: 360.0, bedY: 360.0, bedZ: 360.0,
-    totalWidthMm: 320, totalHeightMm: 320,
-    cols: 1, rows: 1,
-    isResin: false,
-    xyPixelMm: 0.40,
-    layerHeightMm: 0.20
-  },
-  fdm_256_1x1: {
-    id: 'fdm_256_1x1',
-    name: 'Bambu Lab X1C / P1S • 220×220 mm (stół 256mm + wieża AMS)',
-    printer: 'Bambu Lab (256×256 mm)',
-    bedX: 256.0, bedY: 256.0, bedZ: 256.0,
-    totalWidthMm: 220, totalHeightMm: 220,
-    cols: 1, rows: 1,
-    isResin: false,
-    xyPixelMm: 0.40,
-    layerHeightMm: 0.20,
-    hasAmsTower: true
-  },
-  fdm_350_1x1: {
-    id: 'fdm_350_1x1',
-    name: 'Voron 2.4 350 • 340×340 mm (1 Kafel 1×1)',
-    printer: 'Voron 2.4 (350×350 mm)',
-    bedX: 350.0, bedY: 350.0, bedZ: 350.0,
-    totalWidthMm: 340, totalHeightMm: 340,
-    cols: 1, rows: 1,
-    isResin: false,
-    xyPixelMm: 0.40,
-    layerHeightMm: 0.20
-  },
-  fdm_500_2x2: {
-    id: 'fdm_500_2x2',
-    name: 'Format XL 4-Kafle FDM • 440×440 mm (2×2 po 220×220 mm)',
-    printer: 'Bambu / Prusa (256×256 mm)',
-    bedX: 256.0, bedY: 256.0, bedZ: 256.0,
-    totalWidthMm: 440, totalHeightMm: 440,
-    cols: 2, rows: 2,
-    isResin: false,
-    xyPixelMm: 0.40,
-    layerHeightMm: 0.20,
-    hasAmsTower: true
   }
 };
 
@@ -233,6 +187,22 @@ const PRINT_PROFILES = {
 PRINT_PROFILES.mono4_84_1x1 = PRINT_PROFILES.mono4_75x84_1x1;
 PRINT_PROFILES.mono4_168_2x2 = PRINT_PROFILES.mono4_150x168_2x2;
 PRINT_PROFILES.mono4_252_2x3 = PRINT_PROFILES.mono4_225x252_3x3;
+
+/**
+ * Resolves any saved or URL printer profile ID strictly to a valid Photon Mono 4 preset.
+ * Legacy removed IDs fall back silently to 'mono4_custom'.
+ * @param {string} profileId
+ * @returns {string}
+ */
+function resolveMono4ProfileId(profileId) {
+  if (typeof profileId === 'string') {
+    const clean = profileId.trim();
+    if (clean && Object.prototype.hasOwnProperty.call(PRINT_PROFILES, clean)) {
+      return clean;
+    }
+  }
+  return 'mono4_custom';
+}
 
 function escapeHtml(str) {
   return String(str ?? '')
@@ -409,6 +379,7 @@ function safeClosest(target, selector) {
 }
 
 if (typeof window !== 'undefined') {
+  window.resolveMono4ProfileId = resolveMono4ProfileId;
   window.checkTileFitsMono4 = checkTileFitsMono4;
   window.checkTileDualPackableMono4 = checkTileDualPackableMono4;
   window.computeOptimalMono4Grid = computeOptimalMono4Grid;
@@ -433,7 +404,7 @@ if (typeof window !== 'undefined') {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    PALETTES, LAYERS_META, WORLD_LOCATIONS, PRINT_PROFILES, escapeHtml,
+    PALETTES, LAYERS_META, WORLD_LOCATIONS, PRINT_PROFILES, resolveMono4ProfileId, escapeHtml,
     checkTileFitsMono4, checkTileDualPackableMono4, computeOptimalMono4Grid, computeZHeightPairingSchedule, safeClosest
   };
 }

@@ -24,6 +24,9 @@
   if (typeof resolveSceneScaleAndSpec === 'undefined') {
     Object.assign(g, _req('../geometry/print_physics_config.js'));
   }
+  if (typeof MONO4_SPEC === 'undefined' || typeof SLA_PRINT_LAWS === 'undefined') {
+    Object.assign(g, _req('../geometry/sla_print_laws.js'));
+  }
   if (typeof cleanPolygonRing === 'undefined') {
     Object.assign(g, _req('../geometry/polygon_2d.js'));
   }

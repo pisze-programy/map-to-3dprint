@@ -8,6 +8,7 @@ const ROOT = process.cwd();
 
 require(path.join(ROOT, 'src/vendor/vendor_bundle.js'));
 Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/print_physics_config.js')));
+Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/sla_print_laws.js')));
 Object.assign(globalThis, require(path.join(ROOT, 'src/export/export_io_utils.js')));
 const { buildComplete3DModel, rebuildModel3DProgressive } = require(path.join(ROOT, 'src/mesh/mesh_builder.js'));
 const stlMod = require(path.join(ROOT, 'src/export/stl_writer.js'));
@@ -60,7 +61,7 @@ function makeState(overrides = {}) {
     tileRows: 1,
     kerfMm: 0.08,
     isResin: true,
-    xyPixelMm: 0.035,
+    xyPixelMm: 0.017,
     layerHeightMm: 0.05,
     hollowBase: false,
     waterCutout: false,
@@ -359,7 +360,7 @@ async function runSuite() {
         hollowBase: false,
         showFrame: false,
         wantTrees: true,
-        isResin: false,
+        isResin: true,
         zScale: 1.0,
         terrainScale: 1.0,
         skipTopologyAudit: false,

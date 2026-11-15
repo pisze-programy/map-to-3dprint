@@ -23,6 +23,7 @@ def build():
         "src/vendor/manifold_vendor.js",
         # 2. Central Print Config, 2D Geometry & Manifold Core
         "src/geometry/print_physics_config.js",
+        "src/geometry/sla_print_laws.js",
         "src/geometry/polygon_2d.js",
         "src/geometry/obb_medial_2d.js",
         "src/geometry/manifold_core.js",

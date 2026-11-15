@@ -274,7 +274,7 @@ function createUILayersStatsController(state, onRebuildNeeded) {
     const bCount = state.pickIdMap ? state.pickIdMap.size : (sc && sc.buildings ? sc.buildings.length : 0);
     const tCount = sc && sc.trees ? sc.trees.length : 0;
     const pm = state.printMetrics || {};
-    const profile = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.fdm_330_1x1;
+    const profile = PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.mono4_custom;
     const cols = state.tileCols || 1, rows = state.tileRows || 1;
     const numTiles = cols * rows;
     const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 320);
@@ -317,8 +317,8 @@ function createUILayersStatsController(state, onRebuildNeeded) {
     const fitsMono4 = checkTileFitsMono4(tileW, tileH, maxZ);
     const fitWarn = document.getElementById('mono4FitWarning');
     const autoFitBtn = document.getElementById('btnAutoFitMono4');
-    if (fitWarn) fitWarn.classList.toggle('hidden', fitsMono4 || !profile.isResin);
-    if (autoFitBtn) autoFitBtn.classList.toggle('hidden', fitsMono4 || !profile.isResin);
+    if (fitWarn) fitWarn.classList.toggle('hidden', fitsMono4);
+    if (autoFitBtn) autoFitBtn.classList.toggle('hidden', fitsMono4);
 
     const kerfInp = document.getElementById('kerfMmInput');
     if (kerfInp && document.activeElement !== kerfInp) kerfInp.value = (state.kerfMm !== undefined) ? state.kerfMm : 0.08;
@@ -371,19 +371,19 @@ function createUILayersStatsController(state, onRebuildNeeded) {
     }
 
     const totalMl = pm.totalVolumeMl !== undefined ? pm.totalVolumeMl : 42.0;
-    const resinG = pm.resinGrams !== undefined ? pm.resinGrams : Math.round(totalMl * 1.12);
-    const plaG = pm.plaGrams !== undefined ? pm.plaGrams : Math.round(totalMl * 0.42);
+    const resinG = pm.resinGrams !== undefined ? pm.resinGrams : Math.round(totalMl * 1.15);
     const perTileMl = totalMl / numTiles;
+    const estMin = pm.estimatedPrintMin !== undefined
+      ? pm.estimatedPrintMin
+      : (typeof estimateMono4PrintMinutes === 'function' ? estimateMono4PrintMinutes(maxZ) : Math.max(1, Math.ceil((maxZ / 0.05) * 6.8 / 60)));
 
     const matTitle = document.getElementById('statMaterialTitle');
-    if (profile.isResin) {
-      if (matTitle) matTitle.textContent = numTiles > 1 ? `Żywica SLA (1 kafel / suma)` : `Żywica SLA (Photon Mono 4)`;
-      document.getElementById('statFilament').textContent = numTiles > 1
-        ? `~${perTileMl.toFixed(1)} ml / ∑${Math.round(totalMl)} ml (${resinG}g)`
-        : `~${totalMl.toFixed(1)} ml (${resinG} g)`;
-    } else {
-      if (matTitle) matTitle.textContent = profile.hasAmsTower ? `Masa PLA (+ ~18g wieża AMS)` : `Masa PLA (Toolchanger • 0g wieży)`;
-      document.getElementById('statFilament').textContent = `~${plaG} g PLA (~${Math.round(totalMl)} ml)`;
+    if (matTitle) matTitle.textContent = numTiles > 1 ? `Żywica MSLA (1 kafel / suma)` : `Żywica MSLA (Photon Mono 4)`;
+    const statEl = document.getElementById('statFilament');
+    if (statEl) {
+      statEl.textContent = numTiles > 1
+        ? `~${resinG} g żywicy (~${Math.round(totalMl)} ml, ${perTileMl.toFixed(1)} ml/kaf.) • ~${estMin} min Mono 4`
+        : `~${resinG} g żywicy (~${Math.round(totalMl)} ml) • ~${estMin} min Mono 4`;
     }
 
     const activeVols = Object.keys(state.layerVisible).filter(k => state.layerVisible[k]).length;
@@ -391,10 +391,21 @@ function createUILayersStatsController(state, onRebuildNeeded) {
 
     const hollowBadge = document.getElementById('hollowSavingsBadge');
     if (hollowBadge) {
-      hollowBadge.textContent = state.hollowBase ? `-${pm.hollowSavingsPct || 0}% żywicy` : `Pełna FDM (0%)`;
+      hollowBadge.textContent = state.hollowBase ? `-${pm.hollowSavingsPct || 0}% żywicy` : `Pełna bryła (0%)`;
       hollowBadge.className = state.hollowBase
         ? 'text-xs font-mono font-bold text-emerald-400 shrink-0'
         : 'text-xs font-mono font-bold text-amber-400 shrink-0';
+    }
+
+    const isSupportless = Boolean(state && state.supportlessMode);
+    const chkSupportless = document.getElementById('chkSupportlessMode');
+    if (chkSupportless) chkSupportless.checked = isSupportless;
+    const supportlessBadge = document.getElementById('supportlessBadge');
+    if (supportlessBadge) {
+      supportlessBadge.textContent = isSupportless ? 'Skosy ≥ 40°' : 'Wzmocnienie MSLA';
+      supportlessBadge.className = isSupportless
+        ? 'text-xs font-mono font-bold text-violet-400 shrink-0'
+        : 'text-xs font-mono font-bold text-[var(--muted-foreground)] shrink-0';
     }
 
     const cutoutBadge = document.getElementById('waterCutoutBadge');
@@ -429,9 +440,7 @@ function createUILayersStatsController(state, onRebuildNeeded) {
       const isManifold = !!pm.isWatertightManifold;
       if (isManifold) {
         preflightBadge.className = 'text-xs font-mono text-emerald-400';
-        preflightBadge.textContent = profile.isResin
-          ? `Manifold ✓ (0/0) • 0 lewit. • Mono 4 (${tileW}×${tileH}mm) ✓`
-          : `Manifold ✓ (0/0 kraw.) • 0 lewitujących • Bez ramki`;
+        preflightBadge.textContent = `Manifold ✓ (0/0) • 0 lewit. • Mono 4 (${tileW}×${tileH}mm) ✓`;
       } else {
         preflightBadge.className = 'text-xs font-mono text-amber-400';
         preflightBadge.textContent = `⚠ Siatka: otw.${pm.openEdgesCount || 0} nieman.${pm.nonManifoldEdgesCount || 0} lewit.${pm.floatingBuildingsCount || 0}`;

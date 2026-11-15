@@ -529,8 +529,9 @@
     const totalVolU3 = tileVolumesUnits3.reduce((s, v) => s + v, 0);
     const totalVolumeMl = (totalVolU3 * scale3) / 1000.0;
     const solidReferenceMl = totalVolumeMl + (Math.max(0, solidTerrainTotalVolU3 - printedBaseTotalVolU3) * scale3) / 1000.0;
-    const resinDensity = (ctx.cfg && ctx.cfg.resin && ctx.cfg.resin.densityGPerMl) || 1.12;
-    const plaDensity = (ctx.cfg && ctx.cfg.fdm && ctx.cfg.fdm.densityGPerCm3) || 1.24;
+    const resinDensity = (ctx.cfg && ctx.cfg.resin && ctx.cfg.resin.densityGPerMl)
+      || (ctx.slaLaws && ctx.slaLaws.MONO4_SPEC && ctx.slaLaws.MONO4_SPEC.densityGPerCm3)
+      || 1.15;
     const tileVolumesMl = Array.from(tileVolumesUnits3, v => (v * scale3) / 1000.0);
     const tileMaxZMm = Array.from(tileMaxZUnits, z => z * scaleMm);
     const hollowSavingsPct = (hollowBase && solidTerrainTotalVolU3 > 1e-4)
@@ -565,14 +566,22 @@
     const allBounds = ((s3db && s3db.buildingBounds) || []).concat((archetypes && archetypes.buildingBounds) || []);
     const isWatertight = soupAudit.isWatertightManifold && floatingBuildingsCount === 0 && soupAudit.outOfTileTrisCount === 0 && totalVolumeMl > 0;
 
+    const estMinFn = (ctx.slaLaws && typeof ctx.slaLaws.estimateMono4PrintMinutes === 'function')
+      ? ctx.slaLaws.estimateMono4PrintMinutes
+      : (typeof estimateMono4PrintMinutes === 'function' ? estimateMono4PrintMinutes : null);
+    const estimatedPrintMin = estMinFn
+      ? estMinFn(maxZMmVal)
+      : Math.max(1, Math.ceil((Math.max(0, maxZMmVal) / 0.05) * 6.8 / 60));
+
     const printMetrics = {
       totalTriangles,
       totalVolumeMl: Math.round(totalVolumeMl * 10) / 10,
       resinMl: Math.round(totalVolumeMl * 10) / 10,
       solidReferenceMl: Math.round(solidReferenceMl * 10) / 10,
       resinGrams: Math.round(totalVolumeMl * resinDensity),
-      plaGrams: Math.round(totalVolumeMl * plaDensity),
       maxZMm: maxZMmVal,
+      estimatedPrintMin,
+      supportlessMode: Boolean(ctx.supportlessMode),
       bedZ: resolvedBedZ,
       zCapLimitMm: ctx.zCapLimitMm,
       zCapApplied,

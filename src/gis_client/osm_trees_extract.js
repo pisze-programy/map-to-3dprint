@@ -518,7 +518,7 @@ function finalizeOsmTreesLayerJS(ctx) {
     ctx.fetchHalfW,
     ctx.fetchHalfH,
     exclusionChecker,
-    ctx.isResin !== false
+    true
   );
 }
 

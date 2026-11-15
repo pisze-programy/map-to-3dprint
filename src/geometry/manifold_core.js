@@ -47,6 +47,10 @@
       const cfg = _tryRequireLocal('./print_physics_config.js');
       if (cfg) Object.assign(root, cfg);
     }
+    if (typeof root.SLA_PRINT_LAWS === 'undefined' || typeof root.MONO4_SPEC === 'undefined') {
+      const laws = _tryRequireLocal('./sla_print_laws.js');
+      if (laws) Object.assign(root, laws);
+    }
   }
 
   function getManifoldLib() {
@@ -475,9 +479,12 @@
     const scaleMm = (spec && spec.scaleMm) || (Math.max(totalWidthMm, totalHeightMm) / (2 * Math.max(halfW, halfH)));
     const tileCols = Math.max(1, (state && state.tileCols) | 0 || 1);
     const tileRows = Math.max(1, (state && state.tileRows) | 0 || 1);
-    const isResin = Boolean(state && state.isResin);
+    const isResin = true;
     const printSpec = (spec && spec.printSpec) || {};
-    const defKerfMm = printSpec.defaultKerfMm !== undefined ? printSpec.defaultKerfMm : (isResin ? 0.08 : 0.04);
+    const xyPixelMm = (printSpec && printSpec.xyPixelMm) || (root.MONO4_SPEC && root.MONO4_SPEC.xyPixelMm) || 0.017;
+    const supportlessMode = Boolean(state && state.supportlessMode);
+    const slaLaws = root.SLA_PRINT_LAWS || (typeof SLA_PRINT_LAWS !== 'undefined' ? SLA_PRINT_LAWS : null);
+    const defKerfMm = printSpec.defaultKerfMm !== undefined ? printSpec.defaultKerfMm : 0.08;
     const rawKerfMm = (state && state.kerfMm !== undefined) ? Number(state.kerfMm) : defKerfMm;
     const halfKerfMm = (tileCols > 1 || tileRows > 1) ? Math.max(0, rawKerfMm * 0.5) : 0.0;
     const kerfUnits = halfKerfMm / scaleMm;
@@ -519,8 +526,8 @@
     const hollowBase = Boolean(state && state.hollowBase);
     const hollowWallMm = Math.max(0.8, Number((state && state.hollowWallMm) ?? 1.8));
     const isExport = Boolean((options && options.isExport) || (state && state.isExport));
-    const minFeatureMm = (printSpec && printSpec.minFeatureMm) || (isResin ? 0.12 : 0.35);
-    const minPrintU = Math.max(minFeatureMm / scaleMm, (isResin ? 0.22 : 0.48) / scaleMm);
+    const minFeatureMm = (printSpec && printSpec.minFeatureMm) || 0.12;
+    const minPrintU = Math.max(minFeatureMm / scaleMm, 0.22 / scaleMm);
     const quantizeZUnits = (spec && spec.quantizeZUnits) ? spec.quantizeZUnits : ((z) => z);
 
     // Exact toBed coordinate mapping matching terrain_masks.js
@@ -681,6 +688,9 @@
       hollowWallMm,
       isExport,
       isResin,
+      xyPixelMm,
+      supportlessMode,
+      slaLaws,
       rotDeg,
       baseThickU,
       baseBottomZ: 0.0,

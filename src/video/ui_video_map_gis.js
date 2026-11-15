@@ -74,8 +74,8 @@ function createVideoMapGisController(vState, hooks) {
       targetWidthMm: targetW,
       targetHeightMm: targetH,
       rotationDeg: rotDeg,
-      isResin: vState.isResin !== false,
-      xyPixelMm: Number(vState.xyPixelMm) || 0.05,
+      isResin: true,
+      xyPixelMm: Number(vState.xyPixelMm) || 0.017,
       lodSettings: vState.lodSettings ? { ...vState.lodSettings } : undefined,
       onProgress: (info) => {
         const loadingTxt = document.getElementById('vidLoadingText');
@@ -161,7 +161,7 @@ function createVideoMapGisController(vState, hooks) {
     const totalH = Number(vState.totalHeightMm) || ((vState.targetHeightCm || 30) * 10);
     const rotDeg = Number(vState.mapRotationDeg) || 0;
     const lodTree = (vState.lodSettings && vState.lodSettings.treeMaxSpanKm) || 4.0;
-    const cacheKey = `${preset.id}_${totalW}x${totalH}_r${rotDeg}_res${vState.isResin !== false ? 1 : 0}_t${lodTree}`;
+    const cacheKey = `${preset.id}_${totalW}x${totalH}_r${rotDeg}_res1_t${lodTree}`;
     let scene = sceneJsonCache.get(cacheKey);
 
     if (!scene && preset.id === 'munich' && typeof INITIAL_REAL_SCENE !== 'undefined' && INITIAL_REAL_SCENE && rotDeg === 0) {

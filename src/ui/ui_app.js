@@ -46,6 +46,9 @@ function initMap3DApp(initialScene) {
   const initWaterCutout = (urlParams && (urlParams.get('water_cutout') === '0' || urlParams.get('water_cutout') === '1' || urlParams.get('water_cutout') === 'true' || urlParams.get('water_cutout') === 'false'))
     ? (urlParams.get('water_cutout') === '1' || urlParams.get('water_cutout') === 'true')
     : ((savedConfig && typeof savedConfig.waterCutout === 'boolean') ? savedConfig.waterCutout : false);
+  const initSupportless = (urlParams && (urlParams.get('supportless') === '0' || urlParams.get('supportless') === '1' || urlParams.get('supportless') === 'true' || urlParams.get('supportless') === 'false'))
+    ? (urlParams.get('supportless') === '1' || urlParams.get('supportless') === 'true')
+    : ((savedConfig && typeof savedConfig.supportlessMode === 'boolean') ? savedConfig.supportlessMode : false);
   const validBackingStyles = new Set(['black_wood', 'walnut', 'oak', 'obsidian', 'slate']);
   const urlBacking = urlParams ? urlParams.get('backing') : null;
   const initBackingStyle = (urlBacking && validBackingStyles.has(urlBacking))
@@ -53,7 +56,10 @@ function initMap3DApp(initialScene) {
     : ((savedConfig && typeof savedConfig.backingStyle === 'string' && validBackingStyles.has(savedConfig.backingStyle))
         ? savedConfig.backingStyle
         : 'black_wood');
-  const initPrinter = (urlParams && urlParams.get('printer')) || (savedConfig && savedConfig.printerProfileId) || 'mono4_custom';
+  const rawInitPrinter = (urlParams && urlParams.get('printer')) || (savedConfig && savedConfig.printerProfileId) || 'mono4_custom';
+  const initPrinter = (typeof resolveMono4ProfileId === 'function')
+    ? resolveMono4ProfileId(rawInitPrinter)
+    : ((typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES[rawInitPrinter]) ? rawInitPrinter : 'mono4_custom');
 
   const initLodMinBld = (urlParams && (urlParams.get('lod_min_bld') !== null || urlParams.get('lod_bld') !== null))
     ? Math.max(0, Math.min(100, Number(urlParams.get('lod_min_bld') || urlParams.get('lod_bld')) || 0))
@@ -101,11 +107,12 @@ function initMap3DApp(initialScene) {
     tileCols: initCols,
     tileRows: initRows,
     tileExplode: 0.0,
-    isResin: initProf ? Boolean(initProf.isResin) : true,
-    xyPixelMm: (initProf && initProf.xyPixelMm) || (initProf && initProf.isResin === false ? 0.40 : 0.035),
-    layerHeightMm: (initProf && initProf.layerHeightMm) || (initProf && initProf.isResin === false ? 0.20 : 0.05),
+    isResin: true,
+    xyPixelMm: (initProf && initProf.xyPixelMm) || 0.017,
+    layerHeightMm: (initProf && initProf.layerHeightMm) || 0.05,
     hollowBase: initHollow,
     waterCutout: initWaterCutout,
+    supportlessMode: Boolean(initSupportless),
     hollowWallMm: 1.8,
     exportTileFilter: 'all',
     printMetrics: null,
@@ -193,13 +200,13 @@ function initMap3DApp(initialScene) {
     }
 
     const preflightBadge = document.getElementById('preflightStatusBadge');
-    if (preflightBadge && profile.isResin) {
+    if (preflightBadge) {
       preflightBadge.textContent = `Manifold ✓ (0/0) • 0 lewit. • Mono 4 (${tileW}×${tileH}×${maxZ}mm${pm.zCapApplied ? ' • Z-Cap ✓' : ''})`;
     }
 
     const pairingPanel = document.getElementById('mono4PairingSchedulePanel');
     if (pairingPanel) {
-      if (profile.isResin && numTiles > 1) {
+      if (numTiles > 1) {
         pairingPanel.classList.remove('hidden');
         const tileItems = [];
         for (let tid = 0; tid < numTiles; tid++) {
@@ -536,8 +543,8 @@ function initMap3DApp(initialScene) {
         rotationDeg: options.rotationDeg !== undefined
           ? options.rotationDeg
           : (fetchMeta ? fetchMeta.rotationDeg : (state.mapRotationDeg || 0)),
-        isResin: Boolean(state.isResin),
-        xyPixelMm: state.xyPixelMm,
+        isResin: true,
+        xyPixelMm: state.xyPixelMm || 0.017,
         lodSettings: options.lodSettings || state.lodSettings || null,
         onProgress: (info) => {
           const kind = (info && typeof info === 'object') ? info.progressKind : null;
@@ -725,6 +732,8 @@ function initMap3DApp(initialScene) {
   if (chkWaterCutout) chkWaterCutout.checked = Boolean(state.waterCutout);
   const chkPreviewWaterCutout = document.getElementById('chkPreviewWaterCutout');
   if (chkPreviewWaterCutout) chkPreviewWaterCutout.checked = Boolean(state.waterCutout);
+  const chkSupportlessMode = document.getElementById('chkSupportlessMode');
+  if (chkSupportlessMode) chkSupportlessMode.checked = Boolean(state.supportlessMode);
   const backingStyleSel = document.getElementById('backingStyleSelect');
   if (backingStyleSel) backingStyleSel.value = state.backingStyle || 'black_wood';
   const pSel = document.getElementById('printerSelect');

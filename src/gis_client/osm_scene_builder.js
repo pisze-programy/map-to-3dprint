@@ -367,7 +367,7 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     nodesToPts, project,
     fetchHalfW, fetchHalfH, halfW, halfH, metersToUnits, effectiveSpanM,
     wantTrees, minBldFootprintM, roadDetail, lodSettings,
-    isResin: !(options && options.isResin === false),
+    isResin: true,
     waterSamplePts, buildingSamplePts, roadSamplePts,
     coastWays, treeNodes,
     waterPolys, waterLines, greenPolys, roads, roadPolys, bridgePolys

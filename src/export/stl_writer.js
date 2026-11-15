@@ -118,8 +118,7 @@ function buildBinarySTLBytes(state, layerFilter = 'all', tileIdFilter = -1) {
 
   const fitsNormal = (targetW <= mono4.bedXMm && targetH <= mono4.bedYMm);
   const fitsRotated = (targetH <= mono4.bedXMm && targetW <= mono4.bedYMm);
-  const isResinMode = Boolean(state && (state.isResin || state.printerPreset === 'photon_mono_4'));
-  const shouldRotateMono4 = isResinMode && (tileIdFilter >= 0) && (!fitsNormal && fitsRotated);
+  const shouldRotateMono4 = (tileIdFilter >= 0) && (!fitsNormal && fitsRotated);
 
   const meshesObj = (state && (state.layerMeshes || state.meshes)) || {};
   const allTris = [];
@@ -204,7 +203,6 @@ function exportFrameSTL(state) {
   const outerHalfW = halfW + frameWidthUnits;
   const outerHalfH = halfH + frameWidthUnits;
   const safeTitle = sanitizeFilenameSlug((state && state.plaqueText) || 'MAP3D');
-  const isResin = Boolean(state && (state.isResin || state.printerPreset === 'photon_mono_4'));
 
   const canClip = typeof clipMeshToBox3D === 'function';
   const fCols = Math.max(1, Math.ceil(frameTotalWidthMm / mono4.frameSplitMaxMm));
@@ -229,7 +227,7 @@ function exportFrameSTL(state) {
           const segH = (y1 - y0) * scaleMm;
           const segFitsNormal = (segW <= mono4.bedXMm && segH <= mono4.bedYMm);
           const segFitsRotated = (segH <= mono4.bedXMm && segW <= mono4.bedYMm);
-          const segRotate = isResin && (!segFitsNormal && segFitsRotated);
+          const segRotate = !segFitsNormal && segFitsRotated;
           const segBytes = buildSTLBytesFromTriangles(clipped, -x0, -y0, scaleMm, segW, segH, state, segRotate, frameShiftZMm);
           const segName = `Rama_${String(fIdx++).padStart(2, '0')}_R${segNorthRow}C${fc + 1}_${Math.round(segW)}x${Math.round(segH)}mm.stl`;
           zipFiles.push({ name: segName, content: segBytes });

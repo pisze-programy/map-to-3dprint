@@ -855,7 +855,7 @@
       let roofHU = roofShape !== 'flat' ? Math.max(0.20 / scaleMm, roofH_m * mToU * hMult * zCapRatio) : 0;
       const availHU = Math.max(0.2 / scaleMm, zTop - zBase);
       if (roofHU > availHU * 0.72) roofHU = availHU * 0.65;
-      if (roofHU * scaleMm < (ctx.isResin ? 0.12 : 0.22)) {
+      if (roofHU * scaleMm < 0.12) {
         roofShape = 'flat';
         roofHU = 0;
       }

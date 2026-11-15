@@ -42,16 +42,17 @@ function computeVideoGeometrySignature(scene, st) {
   const cropR = Math.round((Number(st.cropRatio) || 0.88) * 1000) / 1000;
   const cropX = Math.round((Number(st.cropCenterX) || 0) * 1000) / 1000;
   const cropY = Math.round((Number(st.cropCenterY) || 0) * 1000) / 1000;
-  const resin = st.isResin !== false ? 1 : 0;
-  const xyPx = Number(st.xyPixelMm) || 0.05;
+  const resin = 1;
+  const xyPx = Number(st.xyPixelMm) || 0.017;
   const layH = Number(st.layerHeightMm) || 0.05;
-  const bZ = Number(st.bedZ) || 200;
+  const bZ = Number(st.bedZ) || 165;
   const hollow = st.hollowBase ? 1 : 0;
   const waterCut = st.waterCutout ? 1 : 0;
+  const supp = st.supportlessMode ? 1 : 0;
   const rot = Math.round((Number(st.mapRotationDeg) || 0) * 10) / 10;
   const scSpan = (scene && scene.spanMeters) ? Math.round(scene.spanMeters) : 0;
   const scRot = (scene && typeof scene._appliedRotationDeg === 'number') ? scene._appliedRotationDeg : rot;
-  return `${wMm}x${hMm}|${tCols}x${tRows}|z${zSc}|t${terSc}|c${cropR},${cropX},${cropY}|r${resin}|px${xyPx}|lh${layH}|bz${bZ}|hb${hollow}|wc${waterCut}|rot${rot}|sr${scRot}|sp${scSpan}|${_normLodForSig(st.lodSettings)}`;
+  return `${wMm}x${hMm}|${tCols}x${tRows}|z${zSc}|t${terSc}|c${cropR},${cropX},${cropY}|r${resin}|px${xyPx}|lh${layH}|bz${bZ}|hb${hollow}|wc${waterCut}|sp${supp}|rot${rot}|sr${scRot}|sp${scSpan}|${_normLodForSig(st.lodSettings)}`;
 }
 
 function partitionSlotMeshes(rawMeshes, pickIdMap, highlightedIdsSet, buildings) {
@@ -177,12 +178,13 @@ function createVideoOrderDemoController(vState, engine, previewCanvas, hooks, br
     const elemVis = overrides.elementVisible
       ? { trees: true, ...overrides.elementVisible }
       : { trees: true, ...vState.elementVisible };
-    const isResin = overrides.isResin !== undefined ? Boolean(overrides.isResin) : (vState.isResin !== false);
-    const xyPixelMm = Number(overrides.xyPixelMm !== undefined ? overrides.xyPixelMm : vState.xyPixelMm) || 0.05;
+    const isResin = true;
+    const xyPixelMm = Number(overrides.xyPixelMm !== undefined ? overrides.xyPixelMm : vState.xyPixelMm) || 0.017;
     const layerHeightMm = Number(overrides.layerHeightMm !== undefined ? overrides.layerHeightMm : vState.layerHeightMm) || 0.05;
-    const bedZ = Number(overrides.bedZ !== undefined ? overrides.bedZ : vState.bedZ) || 200;
+    const bedZ = Number(overrides.bedZ !== undefined ? overrides.bedZ : vState.bedZ) || 165;
     const hollowBase = overrides.hollowBase !== undefined ? Boolean(overrides.hollowBase) : Boolean(vState.hollowBase);
     const waterCutout = overrides.waterCutout !== undefined ? Boolean(overrides.waterCutout) : Boolean(vState.waterCutout);
+    const supportlessMode = overrides.supportlessMode !== undefined ? Boolean(overrides.supportlessMode) : Boolean(vState.supportlessMode);
     const mapRotationDeg = Number(overrides.mapRotationDeg !== undefined ? overrides.mapRotationDeg : vState.mapRotationDeg) || 0;
     const lodSettings = overrides.lodSettings
       ? { ...overrides.lodSettings }
@@ -200,6 +202,7 @@ function createVideoOrderDemoController(vState, engine, previewCanvas, hooks, br
       tileRows: overrides.tileRows || vState.tileRows || 1,
       hollowBase,
       waterCutout,
+      supportlessMode,
       isResin,
       xyPixelMm,
       layerHeightMm,
