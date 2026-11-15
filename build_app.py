@@ -31,6 +31,9 @@ def build():
         "src/mesh/mesh_primitives.js",
         "src/mesh/mesh_clipper_3d.js",
         "src/mesh/layer1_terrain_water.js",
+        "src/mesh/s3db_roof_revolve.js",
+        "src/mesh/s3db_roof_skeleton.js",
+        "src/mesh/s3db_part_builder.js",
         "src/mesh/layer1_s3db_buildings.js",
         "src/mesh/layer1_bridges.js",
         "src/mesh/layer2_archetypes.js",
@@ -47,6 +50,8 @@ def build():
         "src/export/export_3mf.js",
         # 5. In-Browser Overpass + Terrarium DEM GIS Pipeline
         "src/gis_client/overpass_dem_fetch.js",
+        "src/gis_client/s3db_unit_parser.js",
+        "src/gis_client/s3db_relation_helper.js",
         "src/gis_client/s3db_client_matcher.js",
         "src/gis_client/osm_water_extract.js",
         "src/gis_client/osm_bridges_piers_extract.js",

@@ -241,7 +241,7 @@ async function run() {
     const buildMs = Date.now() - t0;
     const pm = built.printMetrics;
 
-    const okTopo = pm.openEdgesCount === 0 && pm.nonManifoldEdgesCount === 0 && pm.sameDirDupEdgesCount === 0 && pm.degenerateTrisCount === 0;
+    const okTopo = pm.openEdgesCount === 0 && pm.nonManifoldEdgesCount === 0 && pm.sameDirDupEdgesCount === 0 && pm.degenerateTrisCount === 0 && pm.floatingBuildingsCount === 0;
     if (!okTopo) failures++;
 
     let threeMfAudit = null;
@@ -289,7 +289,7 @@ async function run() {
     };
     results.push(row);
     console.log(
-      `[${okTopo ? 'PASS' : 'FAIL'}] ${slug.padEnd(22)} | ${String(buildMs).padStart(5)}ms | tris=${String(pm.totalTriangles).padStart(7)} | open=${pm.openEdgesCount} nm=${pm.nonManifoldEdgesCount} dup=${pm.sameDirDupEdgesCount} | bridges=${pm.bridgeCount} | arch=${JSON.stringify(pm.archetypeCounts)}${threeMfAudit ? ` | 3MF(tris=${threeMfAudit.totalXmlTris}, open=${threeMfAudit.openEdges}, nm=${threeMfAudit.nonManifoldEdges})` : ''}`
+      `[${okTopo ? 'PASS' : 'FAIL'}] ${slug.padEnd(22)} | ${String(buildMs).padStart(5)}ms | tris=${String(pm.totalTriangles).padStart(7)} | open=${pm.openEdgesCount} nm=${pm.nonManifoldEdgesCount} dup=${pm.sameDirDupEdgesCount} float=${pm.floatingBuildingsCount} | bridges=${pm.bridgeCount} | arch=${JSON.stringify(pm.archetypeCounts)}${threeMfAudit ? ` | 3MF(tris=${threeMfAudit.totalXmlTris}, open=${threeMfAudit.openEdges}, nm=${threeMfAudit.nonManifoldEdges})` : ''}`
     );
   }
 
@@ -344,8 +344,8 @@ async function run() {
     } }, null, 2));
   }
 
-  assert.equal(failures, 0, `${failures}/15 scenes failed 2-manifold invariants`);
-  console.log('\nALL 15 SCENES PASSED 0 open / 0 non-manifold / 0 dup invariants!');
+  assert.equal(failures, 0, `${failures}/15 scenes failed 2-manifold or floating invariants`);
+  console.log('\nALL 15 SCENES PASSED 0 open / 0 non-manifold / 0 dup / 0 float invariants!');
 }
 
 run().catch(err => {

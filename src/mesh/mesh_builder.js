@@ -45,6 +45,15 @@
   if (typeof buildLayer1TerrainAndWater === 'undefined') {
     Object.assign(g, _req('./layer1_terrain_water.js'));
   }
+  if (typeof buildDirectionalOrRevolveRoof === 'undefined') {
+    Object.assign(g, _req('./s3db_roof_revolve.js'));
+  }
+  if (typeof buildSkeletonOrPolyRoof === 'undefined') {
+    Object.assign(g, _req('./s3db_roof_skeleton.js'));
+  }
+  if (typeof buildS3DBPartSolid === 'undefined') {
+    Object.assign(g, _req('./s3db_part_builder.js'));
+  }
   if (typeof buildLayer1S3DBBuildings === 'undefined') {
     Object.assign(g, _req('./layer1_s3db_buildings.js'));
   }
