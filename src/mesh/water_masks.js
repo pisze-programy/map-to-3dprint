@@ -109,6 +109,38 @@ function _fillSingleRingListOnCtx(mctx, rings, toBed, bedToMask) {
   }
 }
 
+function _isPureOpenSeaScene(scene) {
+  if (!scene || scene._fallback) return false;
+  if ((scene.buildings || []).some(b => b && !b.hidden && b.btype !== 'pier')) return false;
+  if ((scene.greenPolys || []).length > 0) return false;
+  if ((scene.trees || []).length > 0) return false;
+  if ((scene.roadPolys || []).length > 0) return false;
+  if ((scene.roads || []).some(r => r && !r.man_made && !r.floating && !r.isBridge)) return false;
+
+  const dem = scene.dem;
+  if (!dem || !Array.isArray(dem.grid) || dem.grid.length < 2) return false;
+  let gridMin = Infinity;
+  let gridMax = -Infinity;
+  let finiteCount = 0;
+  for (let r = 0; r < dem.grid.length; r++) {
+    const row = dem.grid[r];
+    if (!Array.isArray(row)) continue;
+    for (let c = 0; c < row.length; c++) {
+      const v = Number(row[c]);
+      if (Number.isFinite(v)) {
+        finiteCount++;
+        if (v < gridMin) gridMin = v;
+        if (v > gridMax) gridMax = v;
+      }
+    }
+  }
+  if (finiteCount === 0) return false;
+  const rawMin = Number.isFinite(dem.minElev) ? Math.min(gridMin, Number(dem.minElev)) : gridMin;
+  const rawMax = Number.isFinite(dem.maxElev) ? Math.max(gridMax, Number(dem.maxElev)) : gridMax;
+  if (gridMax > 0.5 || rawMax > 0.5 || rawMin > 0.0) return false;
+  return Boolean(scene._hasMarineTags) || gridMin < -0.05 || (dem.grid.length >= 4 && gridMax <= 0.05 && Number(dem.maxElev) <= 0.5);
+}
+
 function buildWaterMasksAndSDF(scene, mctx, maskEnv) {
   const { MASK_RES_X, MASK_RES_Y, scaleMm, scaleToBed, pxPerUnit, toBed, bedToMask } = maskEnv;
   const totalPixels = MASK_RES_X * MASK_RES_Y;
@@ -124,6 +156,7 @@ function buildWaterMasksAndSDF(scene, mctx, maskEnv) {
 
   const waterPolys = (scene && scene.waterPolys) || [];
   const waterLines = (scene && scene.waterLines) || [];
+  const isWaterCutout = Boolean(maskEnv && maskEnv.waterCutout);
 
   // Collect all island/land holes from waterPolys + standalone island/shingle carriers
   const allIslandRings = [];
@@ -153,6 +186,14 @@ function buildWaterMasksAndSDF(scene, mctx, maskEnv) {
           shingleRings.push(rr);
         }
       }
+    }
+  }
+
+  const hasOpenSeaIslands = isWaterCutout && Array.isArray(scene && scene._openSeaIslands) && scene._openSeaIslands.length > 0;
+  if (hasOpenSeaIslands) {
+    for (const isl of scene._openSeaIslands) {
+      const rr = rotateUnrotRing(isl);
+      if (rr && rr.length >= 3) allIslandRings.push(rr);
     }
   }
 
@@ -193,12 +234,16 @@ function buildWaterMasksAndSDF(scene, mctx, maskEnv) {
   mctx.lineCap = 'round';
   mctx.lineJoin = 'round';
 
-  // Pass 1: Primary water polygons
+  // Pass 1: Primary water polygons (or full open-sea cutout under waterCutout=true)
   const polyWaterMask = new Uint8Array(totalPixels);
-  if (primaryWaterPolys.length > 0) {
+  if (hasOpenSeaIslands) {
+    polyWaterMask.fill(1);
+  } else if (primaryWaterPolys.length > 0) {
     mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
     fillPolysOnMaskCtx(mctx, primaryWaterPolys, toBed, bedToMask);
     _captureAlphaBinaryMask(mctx, MASK_RES_X, MASK_RES_Y, polyWaterMask);
+  } else if (isWaterCutout && waterLines.length === 0 && _isPureOpenSeaScene(scene)) {
+    polyWaterMask.fill(1);
   }
 
   // Pass 2: Explicit island holes & standalone islands/shoals (enforced across overlapping waterPolys)
@@ -374,6 +419,7 @@ function buildWaterMasksAndSDF(scene, mctx, maskEnv) {
     const bedRing = ring.map(toBed);
     const bedArea = _maskRingAbsArea2D(bedRing);
     if (bedArea <= 0 || bedArea > 1.85) continue;
+    if (isWaterCutout && (bedArea * effScaleMm * effScaleMm) < 6.0) continue;
     const probeBed = _maskRingInteriorPt2D(bedRing);
     const [cxPx, cyPx] = bedToMask(probeBed[0], probeBed[1]);
     const ix = Math.round(cxPx), iy = Math.round(cyPx);
@@ -399,6 +445,123 @@ function buildWaterMasksAndSDF(scene, mctx, maskEnv) {
         const nx = ix + dx;
         if (nx >= 0 && nx < MASK_RES_X) {
           waterMask[ny * MASK_RES_X + nx] = 0;
+        }
+      }
+    }
+  }
+
+  // Filter out disconnected micro-islets (< 6.0 mm²) exclusively when waterCutout is active,
+  // protecting any dry ground carrying buildings, bridge abutments, or touching the frame border.
+  if (isWaterCutout) {
+    const halfWEnv = Number(maskEnv && maskEnv.halfW) || 84.6;
+    const halfHEnv = Number(maskEnv && maskEnv.halfH) || 84.6;
+    const padWEnv = Number(maskEnv && maskEnv.padW) || (halfWEnv + 0.4);
+    const padHEnv = Number(maskEnv && maskEnv.padH) || (halfHEnv + 0.4);
+    const spanWEnv = Number(maskEnv && maskEnv.spanW) || (2 * padWEnv);
+    const spanHEnv = Number(maskEnv && maskEnv.spanH) || (2 * padHEnv);
+    const pxAreaMm2 = ((spanWEnv / MASK_RES_X) * effScaleMm) * ((spanHEnv / MASK_RES_Y) * effScaleMm);
+    const minIsletPx = Math.max(2, Math.ceil(6.0 / Math.max(1e-6, pxAreaMm2)));
+
+    let hasAnyWater = false;
+    let hasAnyDry = false;
+    for (let i = 0; i < totalPixels; i++) {
+      if (waterMask[i]) hasAnyWater = true;
+      else hasAnyDry = true;
+      if (hasAnyWater && hasAnyDry) break;
+    }
+
+    if (hasAnyWater && hasAnyDry) {
+      const protectedDry = new Uint8Array(totalPixels);
+      mctx.clearRect(0, 0, MASK_RES_X, MASK_RES_Y);
+      mctx.fillStyle = '#ffffff';
+      mctx.strokeStyle = '#ffffff';
+      mctx.lineCap = 'round';
+      mctx.lineJoin = 'round';
+
+      const bldRings = [];
+      for (const b of (scene && scene.buildings) || []) {
+        if (!b || b.hidden || b.btype === 'pier' || b.isOutline || !b.outer || b.outer.length < 3) continue;
+        bldRings.push(b.outer);
+      }
+      if (bldRings.length > 0) {
+        _fillSingleRingListOnCtx(mctx, bldRings, toBed, bedToMask);
+      }
+
+      const bridgePolysList = [];
+      for (const bp of (scene && scene.bridgePolys) || []) {
+        if (!bp || bp.btype === 'pier' || bp.floating || !bp.outer || bp.outer.length < 3) continue;
+        bridgePolysList.push(bp.outer);
+      }
+      if (bridgePolysList.length > 0) {
+        _fillSingleRingListOnCtx(mctx, bridgePolysList, toBed, bedToMask);
+      }
+
+      for (const rd of (scene && scene.roads) || []) {
+        if (!rd || !rd.isBridge || !rd.pts || rd.pts.length < 2) continue;
+        mctx.lineWidth = Math.max(2.5, ((rd.width || 0.8) * scaleToBed) * pxPerUnit);
+        mctx.beginPath();
+        for (let k = 0; k < rd.pts.length; k++) {
+          const b = toBed(rd.pts[k]);
+          const [px, py] = bedToMask(b[0], b[1]);
+          if (k === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
+        }
+        mctx.stroke();
+      }
+      _captureAlphaBinaryMask(mctx, MASK_RES_X, MASK_RES_Y, protectedDry);
+
+      const visited = new Uint8Array(totalPixels);
+      const queue = new Int32Array(totalPixels);
+      for (let startIdx = 0; startIdx < totalPixels; startIdx++) {
+        if (waterMask[startIdx] !== 0 || visited[startIdx]) continue;
+        let head = 0;
+        let tail = 0;
+        visited[startIdx] = 1;
+        queue[tail++] = startIdx;
+        let touchesBoundary = false;
+        let touchesProtected = false;
+        let touchesWater = false;
+
+        while (head < tail) {
+          const idx = queue[head++];
+          const x = idx % MASK_RES_X;
+          const y = (idx - x) / MASK_RES_X;
+          if (x <= 2 || x >= MASK_RES_X - 3 || y <= 2 || y >= MASK_RES_Y - 3) {
+            touchesBoundary = true;
+          } else {
+            const bx = ((x + 0.5) / MASK_RES_X) * spanWEnv - padWEnv;
+            const by = padHEnv - ((y + 0.5) / MASK_RES_Y) * spanHEnv;
+            if (Math.abs(bx) >= halfWEnv - 0.5 || Math.abs(by) >= halfHEnv - 0.5) {
+              touchesBoundary = true;
+            }
+          }
+          if (protectedDry[idx]) touchesProtected = true;
+
+          if (x > 0) {
+            const n = idx - 1;
+            if (waterMask[n] !== 0) touchesWater = true;
+            else if (!visited[n]) { visited[n] = 1; queue[tail++] = n; }
+          }
+          if (x + 1 < MASK_RES_X) {
+            const n = idx + 1;
+            if (waterMask[n] !== 0) touchesWater = true;
+            else if (!visited[n]) { visited[n] = 1; queue[tail++] = n; }
+          }
+          if (y > 0) {
+            const n = idx - MASK_RES_X;
+            if (waterMask[n] !== 0) touchesWater = true;
+            else if (!visited[n]) { visited[n] = 1; queue[tail++] = n; }
+          }
+          if (y + 1 < MASK_RES_Y) {
+            const n = idx + MASK_RES_X;
+            if (waterMask[n] !== 0) touchesWater = true;
+            else if (!visited[n]) { visited[n] = 1; queue[tail++] = n; }
+          }
+        }
+
+        if (touchesWater && !touchesBoundary && !touchesProtected && tail < minIsletPx) {
+          for (let k = 0; k < tail; k++) {
+            waterMask[queue[k]] = 1;
+          }
         }
       }
     }

@@ -104,7 +104,9 @@ function buildTerrainAndMasks(scene, state) {
   }
 
   const maskEnv = {
-    MASK_RES_X, MASK_RES_Y, scaleMm, scaleToBed, pxPerUnit, toBed, bedToMask, printSpec
+    MASK_RES_X, MASK_RES_Y, scaleMm, scaleToBed, pxPerUnit, toBed, bedToMask, printSpec,
+    waterCutout: Boolean(state && state.waterCutout),
+    halfW, halfH, padW, padH, spanW, spanH
   };
 
   // 1. Water Mask & Smooth Euclidean SDF (delegated to water_masks.js)

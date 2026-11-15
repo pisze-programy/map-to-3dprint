@@ -71,9 +71,12 @@ function buildBinarySTLBytes(state, layerFilter = 'all', tileIdFilter = -1) {
   const tileSpanX = (2 * halfW) / tileCols;
   const tileSpanY = (2 * halfH) / tileRows;
 
+  const isCutout = Boolean(state && state.waterCutout);
   const keys = layerFilter === 'all'
-    ? ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted']
-    : [layerFilter];
+    ? (isCutout
+        ? ['base', 'greenery', 'roads', 'buildings', 'highlighted']
+        : ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted'])
+    : ((isCutout && layerFilter === 'water') ? [] : [layerFilter]);
 
   let shiftXScene = halfW;
   let shiftYScene = halfH;
@@ -124,11 +127,22 @@ function exportBinarySTL(state, layerFilter = 'all') {
     : -1;
 
   if (tileFilter < 0 && (tileCols * tileRows > 1) && layerFilter === 'all') {
-    exportAllTilesZipSTL(state, layerFilter);
-    return;
+    return exportAllTilesZipSTL(state, layerFilter);
   }
 
   const stlBytes = buildBinarySTLBytes(state, layerFilter, tileFilter);
+  if (Boolean(state && state.waterCutout) && stlBytes.byteLength <= 84) {
+    if (typeof document !== 'undefined') {
+      const badge = document.getElementById('preflightStatusBadge');
+      if (badge) {
+        badge.className = 'text-xs font-mono text-amber-400';
+        badge.textContent = tileFilter >= 0
+          ? 'Pominięto eksport .STL: wybrany kafel to 100% wycięta woda.'
+          : 'Pominięto eksport .STL: brak geometrii po wycięciu wody (100% woda).';
+      }
+    }
+    return false;
+  }
   const safeTitle = sanitizeFilenameSlug((state && state.plaqueText) || 'MAP3D');
   const totalWidthMm = (state && state.bedSizeMm) || 320.0;
   const totalHeightMm = (state && state.totalHeightMm) || totalWidthMm;
@@ -145,6 +159,7 @@ function exportBinarySTL(state, layerFilter = 'all') {
     ? `Pelna_Bryla${tileSuffix}`
     : (layerFilter === 'frame' ? `Rama_${Math.round(totalWidthMm + 24)}x${Math.round(totalHeightMm + 24)}mm` : `Warstwa_${layerFilter}${tileSuffix}`);
   downloadBlob(stlBytes, `Map3D_${safeTitle}_${suffix}.stl`, 'model/stl');
+  return true;
 }
 
 function exportFrameSTL(state) {

@@ -261,10 +261,35 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
     const numPiers = Math.max(1, Math.ceil(spanLen / pierSpacingUnits) - 1);
     const twinCols = (deckWidth * scaleMm > 7.5);
     const latOffsets = twinCols ? [-deckWidth * 0.26, deckWidth * 0.26] : [0.0];
-    const pW = twinCols
+    const basePW = twinCols
       ? Math.max(0.46, deckWidth * 0.26)
       : Math.min(deckWidth * 0.72, Math.max(0.44, deckWidth * 0.58));
-    const pT = Math.max(0.42, 0.90 / scaleMm);
+    const basePT = Math.max(0.42, 0.90 / scaleMm);
+
+    let cutPW = basePW;
+    let cutPT = basePT;
+    if (waterCutout) {
+      // Reinforce piers descending to Z=0.0 so slender columns resist MSLA FEP peel forces
+      const pierHeightMm = Math.max(0, (zDeckBot - pierFloorZ) * scaleMm);
+      const extraH = Math.max(0, pierHeightMm - 2.0);
+      const maxSpanPT = Math.max(basePT, (spanLen / (numPiers + 1)) * 0.45);
+      const targetPW = (1.25 + Math.min(1.60, extraH * 0.14)) / scaleMm;
+      const targetPT = (1.35 + Math.min(1.60, extraH * 0.16)) / scaleMm;
+      cutPW = twinCols
+        ? Math.min(deckWidth * 0.44, Math.max(basePW, targetPW))
+        : Math.min(Math.max(basePW, deckWidth * 0.90), Math.max(basePW, targetPW));
+      cutPT = Math.min(maxSpanPT, Math.max(basePT, targetPT));
+    }
+
+    const makePierCorners = (mx, my, w, t) => [
+      [mx - nx * (w * 0.5) - tx * (t * 0.5), my - ny * (w * 0.5) - ty * (t * 0.5)],
+      [mx + nx * (w * 0.5) - tx * (t * 0.5), my + ny * (w * 0.5) - ty * (t * 0.5)],
+      [mx + nx * (w * 0.5) + tx * (t * 0.5), my + ny * (w * 0.5) + ty * (t * 0.5)],
+      [mx - nx * (w * 0.5) + tx * (t * 0.5), my - ny * (w * 0.5) + ty * (t * 0.5)]
+    ];
+    const isAllInWater = (mx, my, corners) =>
+      getActualPrintedSurfaceMinZ(mx, my) < baseBottomZ - 1e-4 &&
+      corners.every(c => getActualPrintedSurfaceMinZ(c[0], c[1]) < baseBottomZ - 1e-4);
 
     for (let p = 1; p <= numPiers; p++) {
       const frac = p / (numPiers + 1);
@@ -274,17 +299,18 @@ function buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShel
         const mx = baseMx + nx * latOffsets[li];
         const my = baseMy + ny * latOffsets[li];
         if (containPoly && !pointInPoly2D(mx, my, containPoly)) continue;
-        const corners = [
-          [mx - nx * (pW * 0.5) - tx * (pT * 0.5), my - ny * (pW * 0.5) - ty * (pT * 0.5)],
-          [mx + nx * (pW * 0.5) - tx * (pT * 0.5), my + ny * (pW * 0.5) - ty * (pT * 0.5)],
-          [mx + nx * (pW * 0.5) + tx * (pT * 0.5), my + ny * (pW * 0.5) + ty * (pT * 0.5)],
-          [mx - nx * (pW * 0.5) + tx * (pT * 0.5), my - ny * (pW * 0.5) + ty * (pT * 0.5)]
-        ];
-        const allInWater = getActualPrintedSurfaceMinZ(mx, my) < baseBottomZ - 1e-4 &&
-                           corners.every(c => getActualPrintedSurfaceMinZ(c[0], c[1]) < baseBottomZ - 1e-4);
-        if (allInWater) {
+        const baseCorners = makePierCorners(mx, my, basePW, basePT);
+        let chosenCorners = null;
+        if (waterCutout && (cutPW > basePW + 1e-6 || cutPT > basePT + 1e-6)) {
+          const reinforcedCorners = makePierCorners(mx, my, cutPW, cutPT);
+          if (isAllInWater(mx, my, reinforcedCorners)) chosenCorners = reinforcedCorners;
+        }
+        if (!chosenCorners && isAllInWater(mx, my, baseCorners)) {
+          chosenCorners = baseCorners;
+        }
+        if (chosenCorners) {
           const pierShell = [];
-          emitClosedPrism(corners, pierFloorZ, zDeckBot, 3, pierShell, 0, allocShellId());
+          emitClosedPrism(chosenCorners, pierFloorZ, zDeckBot, 3, pierShell, 0, allocShellId());
           appendShellClippedToTiles(pierShell, ctx, meshes.roads);
         }
       }

@@ -234,12 +234,24 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
     content: reportContent
   });
 
+  if (waterCutout && zipFiles.filter(f => f.name.endsWith('.stl')).length === 0) {
+    if (typeof document !== 'undefined') {
+      const badge = document.getElementById('preflightStatusBadge');
+      if (badge) {
+        badge.className = 'text-xs font-mono text-amber-400';
+        badge.textContent = 'Pominięto paczkę .ZIP: wszystkie kafle to 100% wycięta woda.';
+      }
+    }
+    return false;
+  }
+
   const zipBytes = createZipArchive(zipFiles);
   downloadBlob(
     zipBytes,
     `Map3D_${safeTitle}_${Math.round(totalW)}x${Math.round(totalH)}mm_${tileCols}x${tileRows}_Kafle_PhotonMono4.zip`,
     'application/zip'
   );
+  return true;
 }
 
 if (typeof module !== 'undefined' && module.exports) {

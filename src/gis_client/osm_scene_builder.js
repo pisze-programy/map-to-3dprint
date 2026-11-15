@@ -275,8 +275,18 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   const ways = new Map();
   const relations = [];
   const treeNodes = [];
+  let hasMarineTags = false;
 
   for (const el of (osmRaw.elements || [])) {
+    const et = el.tags;
+    if (et && (
+      et.place === 'sea' ||
+      et.place === 'ocean' ||
+      /^(coastline|bay|strait|reef|shoal)$/.test(et.natural || '') ||
+      Boolean(et['seamark:type'])
+    )) {
+      hasMarineTags = true;
+    }
     if (el.type === 'node') {
       const pt = project(el.lon, el.lat);
       nodes.set(el.id, pt);
@@ -427,6 +437,11 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     bridgePolys,
     buildings
   };
+  if (hasMarineTags) outScene._hasMarineTags = true;
+  if (osmExtractCtx._openSeaIslands && osmExtractCtx._openSeaIslands.length > 0) {
+    outScene._openSeaIslands = osmExtractCtx._openSeaIslands;
+    outScene._openSeaRect = osmExtractCtx._openSeaRect;
+  }
 
   if (options && typeof options.rotationDeg === 'number' && Number.isFinite(options.rotationDeg)) {
     const rRad = (options.rotationDeg * Math.PI) / 180.0;

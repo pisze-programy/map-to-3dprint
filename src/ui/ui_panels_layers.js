@@ -205,12 +205,32 @@ function createUILayersStatsController(state, onRebuildNeeded) {
     const tw = Math.round((state.bedSizeMm || 320) / cols);
     const th = Math.round((state.totalHeightMm || state.bedSizeMm || 320) / rows);
 
+    const isCut = Boolean(state && state.waterCutout);
+    const lm = state && state.layerMeshes;
+    const exportKeys = ['base', 'greenery', 'roads', 'buildings', 'highlighted'];
+    const hasMeshArrays = isCut && lm && exportKeys.some(k => Array.isArray(lm[k]));
+    const tileHasGeometry = hasMeshArrays ? new Uint8Array(numTiles) : null;
+    if (tileHasGeometry) {
+      for (let ki = 0; ki < exportKeys.length; ki++) {
+        const arr = lm[exportKeys[ki]];
+        if (!Array.isArray(arr)) continue;
+        for (let ti = 0; ti < arr.length; ti++) {
+          const tri = arr[ti];
+          const tid = tri && tri.tileId !== undefined ? tri.tileId : 0;
+          if (tid >= 0 && tid < numTiles) tileHasGeometry[tid] = 1;
+        }
+      }
+    }
+
     sel.innerHTML = '';
     const optAll = document.createElement('option');
     optAll.value = 'all';
-    optAll.textContent = numTiles > 1
-      ? `Wszystkie ${numTiles} kafle (${cols}×${rows} • Paczka .ZIP / .3MF)`
-      : `Cały model 1×1 (${tw}×${th} mm)`;
+    const anyLandTile = !tileHasGeometry || tileHasGeometry.some(v => v === 1);
+    optAll.textContent = !anyLandTile
+      ? `Cały model (POMINIĘTY: 100% woda)`
+      : (numTiles > 1
+          ? `Wszystkie ${numTiles} kafle (${cols}×${rows} • Paczka .ZIP / .3MF)`
+          : `Cały model 1×1 (${tw}×${th} mm)`);
     sel.appendChild(optAll);
 
     if (numTiles > 1) {
@@ -224,13 +244,19 @@ function createUILayersStatsController(state, onRebuildNeeded) {
             : ((pm.totalVolumeMl || 30) / numTiles).toFixed(1);
           const opt = document.createElement('option');
           opt.value = String(tid);
-          opt.textContent = `Kafel ${idx++}/${numTiles} (R${northRow}•C${tc + 1} — ${tw}×${th} mm • ~${vMl} ml)`;
+          const isEmptySea = Boolean(tileHasGeometry && tileHasGeometry[tid] === 0);
+          opt.disabled = isEmptySea;
+          opt.textContent = isEmptySea
+            ? `Kafel ${idx++}/${numTiles} (R${northRow}•C${tc + 1} — POMINIĘTY: 100% woda)`
+            : `Kafel ${idx++}/${numTiles} (R${northRow}•C${tc + 1} — ${tw}×${th} mm • ~${vMl} ml)`;
           sel.appendChild(opt);
         }
       }
     }
 
-    if (prevVal !== 'all' && parseInt(prevVal, 10) < numTiles) {
+    const prevTileIdx = prevVal !== 'all' ? parseInt(prevVal, 10) : -1;
+    const prevDisabled = prevTileIdx >= 0 && Boolean(tileHasGeometry && tileHasGeometry[prevTileIdx] === 0);
+    if (prevVal !== 'all' && prevTileIdx >= 0 && prevTileIdx < numTiles && !prevDisabled) {
       sel.value = prevVal;
     } else {
       state.exportTileFilter = 'all';
@@ -367,12 +393,30 @@ function createUILayersStatsController(state, onRebuildNeeded) {
     }
 
     const cutoutBadge = document.getElementById('waterCutoutBadge');
+    const isCut = Boolean(state && state.waterCutout);
     if (cutoutBadge) {
-      const isCut = Boolean(state && state.waterCutout);
       cutoutBadge.textContent = isCut ? 'Wycięta Z=0' : 'Pełna tafla';
       cutoutBadge.className = isCut
         ? 'text-xs font-mono font-bold text-sky-400 shrink-0'
         : 'text-xs font-mono font-bold text-[var(--muted-foreground)] shrink-0';
+    }
+    const prevChkCut = document.getElementById('chkPreviewWaterCutout');
+    if (prevChkCut) prevChkCut.checked = isCut;
+    const mainChkCut = document.getElementById('chkWaterCutout');
+    if (mainChkCut) mainChkCut.checked = isCut;
+    const backingWrap = document.getElementById('backingStyleWrap');
+    if (backingWrap) {
+      backingWrap.className = isCut
+        ? 'bg-sky-500/10 border border-sky-500/40 rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2 transition-colors'
+        : 'bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2 transition-colors';
+    }
+    const singleLayerSel = document.getElementById('singleLayerStlSelect');
+    if (singleLayerSel) {
+      const waterOpt = singleLayerSel.querySelector('option[value="water"]');
+      if (waterOpt) waterOpt.disabled = isCut;
+      if (isCut && singleLayerSel.value === 'water') {
+        singleLayerSel.value = 'buildings';
+      }
     }
 
     const preflightBadge = document.getElementById('preflightStatusBadge');

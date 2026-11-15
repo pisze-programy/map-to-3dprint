@@ -10,7 +10,7 @@ function bindStudioPanelControls(ctx) {
     draw2DMap, rebuildModel3D, scheduleRebuildModel3D,
     setMapSpanKm, setMapRotationDeg, fetchRealGISAndRender,
     renderLayersUI, getActiveTargetBuildings,
-    updateStatsUI, updateLandmarkChips, updateInspectorUI
+    updateTileSelectorOptions, updateStatsUI, updateLandmarkChips, updateInspectorUI
   } = ctx;
 
   const btnRender = document.getElementById('btnRender3D');
@@ -436,15 +436,27 @@ function bindStudioPanelControls(ctx) {
       if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
     });
   }
-  const chkWaterCutout = document.getElementById('chkWaterCutout');
-  if (chkWaterCutout) {
-    chkWaterCutout.addEventListener('change', e => {
-      state.waterCutout = Boolean(e.target.checked);
-      updateStatsUI();
-      rebuildModel3D();
+  const backingStyleSelect = document.getElementById('backingStyleSelect');
+  if (backingStyleSelect) {
+    backingStyleSelect.addEventListener('change', e => {
+      state.backingStyle = e.target.value || 'black_wood';
       if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
     });
   }
+  const chkWaterCutout = document.getElementById('chkWaterCutout');
+  const chkPreviewWaterCutout = document.getElementById('chkPreviewWaterCutout');
+  const applyWaterCutoutToggle = checked => {
+    const next = Boolean(checked);
+    state.waterCutout = next;
+    if (chkWaterCutout) chkWaterCutout.checked = next;
+    if (chkPreviewWaterCutout) chkPreviewWaterCutout.checked = next;
+    updateStatsUI();
+    if (typeof updateTileSelectorOptions === 'function') updateTileSelectorOptions();
+    rebuildModel3D();
+    if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+  };
+  if (chkWaterCutout) chkWaterCutout.addEventListener('change', e => applyWaterCutoutToggle(e.target.checked));
+  if (chkPreviewWaterCutout) chkPreviewWaterCutout.addEventListener('change', e => applyWaterCutoutToggle(e.target.checked));
   const exportTileSelect = document.getElementById('exportTileSelect');
   if (exportTileSelect) exportTileSelect.addEventListener('change', e => { state.exportTileFilter = e.target.value; draw2DMap(); });
 

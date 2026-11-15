@@ -389,24 +389,42 @@
           </div>
         </div>
 
-        <!-- Environment & Frame Bar -->
-        <div class="grid grid-cols-3 gap-2">
-          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2">
-            <span class="text-xs text-[var(--muted-foreground)]">Rama:</span>
-            <select id="frameStyleSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none">
-              <option value="black" selected>Czarny Mat (Lichtbild)</option>
-              <option value="oak">Dąb Naturalny</option>
-              <option value="walnut">Orzech Ciemny</option>
-              <option value="white">Biały</option>
-            </select>
+        <!-- Environment, Frame & Water Cutout Backing Bar -->
+        <div class="space-y-1.5">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2">
+              <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Rama:</span>
+              <select id="frameStyleSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none min-w-0 truncate">
+                <option value="black" selected>Czarny Mat (Lichtbild)</option>
+                <option value="oak">Dąb Naturalny</option>
+                <option value="walnut">Orzech Ciemny</option>
+                <option value="white">Biały</option>
+              </select>
+            </div>
+            <div id="backingStyleWrap" class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2 transition-colors">
+              <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Podkład:</span>
+              <select id="backingStyleSelect" class="bg-transparent text-xs font-semibold text-[var(--foreground)] focus:outline-none min-w-0 truncate" title="Kolor jednolitej płyty bazowej widocznej po wycięciu wody">
+                <option value="black_wood" selected>Czarne Drewno (Mat)</option>
+                <option value="walnut">Ciemny Orzech</option>
+                <option value="oak">Dąb Naturalny</option>
+                <option value="obsidian">Czarny Mat (Akryl)</option>
+                <option value="slate">Grafitowy Łupek</option>
+              </select>
+            </div>
+            <label class="bg-sky-500/10 border border-sky-500/30 rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2 cursor-pointer" title="Wycina rzeki, jeziora i morza całkowicie do Z=0 — ląd i budynki z białej żywicy na jednolitym podkładzie">
+              <span class="text-xs font-semibold text-[var(--foreground)] truncate">Wytnij wodę (Z=0)</span>
+              <input id="chkPreviewWaterCutout" type="checkbox" class="rounded accent-sky-500 shrink-0" />
+            </label>
           </div>
-          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center gap-2">
-            <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Światło:</span>
-            <input id="sunAngleSlider" type="range" min="0" max="360" value="132" class="w-full" />
-          </div>
-          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center gap-2">
-            <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Tytuł:</span>
-            <input id="plaqueTextInput" type="text" value="MÜNCHEN" maxlength="22" class="bg-transparent text-xs font-mono font-bold text-[var(--foreground)] w-full focus:outline-none text-right" />
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+              <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Światło:</span>
+              <input id="sunAngleSlider" type="range" min="0" max="360" value="132" class="w-full" />
+            </div>
+            <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+              <span class="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Tytuł:</span>
+              <input id="plaqueTextInput" type="text" value="MÜNCHEN" maxlength="22" class="bg-transparent text-xs font-mono font-bold text-[var(--foreground)] w-full focus:outline-none text-right" />
+            </div>
           </div>
         </div>
       </div>

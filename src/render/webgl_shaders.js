@@ -274,6 +274,9 @@ const WEBGL_MAIN_FS = `
       }
     } else if (lid == 8) {
       baseCol = uColorBoard;
+      if (abs(vNorm.z) < 0.5) {
+        baseCol *= 0.78;
+      }
     }
 
     if (vIsSelected > 0.5) {
@@ -309,19 +312,24 @@ const WEBGL_MAIN_FS = `
       heightAo *= clamp(0.90 + 0.10 * ((vWorldPos.z - 2.5) / 8.0), 0.88, 1.0);
     }
 
-    float spec = pow(max(dot(N, H), 0.0), 28.0) * (lid == 0 ? 0.16 : 0.05) * shadow;
+    float spec = (lid == 8) ? 0.0 : pow(max(dot(N, H), 0.0), 28.0) * (lid == 0 ? 0.16 : 0.05) * shadow;
 
     float studioIllum = (0.66 + 0.18 * sky + 0.05 * bounce) + (0.30 * diff * (0.35 + 0.65 * shadow));
     studioIllum *= (0.86 + 0.14 * shadow);
 
     vec3 col = baseCol * studioIllum * heightAo + vec3(spec);
+    if (lid == 8) {
+      float boardShadow = mix(0.34, 1.0, shadow);
+      float boardIllum = (0.72 + 0.16 * sky + 0.18 * diff) * boardShadow;
+      col = baseCol * boardIllum;
+    }
 
-    if (uShowLayerLines > 0.5 && lid != 6) {
+    if (uShowLayerLines > 0.5 && lid != 6 && lid != 8) {
       float wave = sin(vWorldPos.z * 14.0) * 0.5 + 0.5;
       col *= (0.98 + 0.02 * wave);
     }
 
-    if (uActiveTileFilter >= 0.0 && lid != 6) {
+    if (uActiveTileFilter >= 0.0 && lid != 6 && lid != 8) {
       if (abs(vTileId - uActiveTileFilter) > 0.25) {
         col = mix(col * 0.32, vec3(0.12, 0.16, 0.24), 0.45);
       }

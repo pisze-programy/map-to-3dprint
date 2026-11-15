@@ -770,7 +770,7 @@ function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, 
   };
 }
 
-function stitchCoastlineSeaPolysJS(coastWays, halfW, halfH, waterPolys) {
+function stitchCoastlineSeaPolysJS(coastWays, halfW, halfH, waterPolys, metaOut = null) {
   if (!coastWays || coastWays.length === 0) return;
 
   // 1. Merge connected coastline ways strictly in forward direction (OSM invariant:
@@ -1034,6 +1034,11 @@ function stitchCoastlineSeaPolysJS(coastWays, halfW, halfH, waterPolys) {
       );
       for (const fp of fallbackRes.outerPolys) seaPolysOut.push(fp);
     }
+  }
+
+  if (metaOut && seaPolysOut.length === 0 && landIslands.length > 0) {
+    metaOut.openSeaIslands = landIslands.map(r => r.slice());
+    metaOut.seaRect = [[-Cx, -Cy], [Cx, -Cy], [Cx, Cy], [-Cx, Cy]];
   }
 
   for (const sp of seaPolysOut) {

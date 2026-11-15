@@ -38,7 +38,8 @@ function exportMultiColor3MF(state) {
   <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>`;
 
-  const exportLayers = [
+  const isCutout = Boolean(state && state.waterCutout);
+  const allExportLayers = [
     { key: 'water',       objId: 1, matIdx: 0, name: '1_Woda_i_Batymetria' },
     { key: 'base',        objId: 2, matIdx: 1, name: '2_Teren_Warstwice_DEM' },
     { key: 'greenery',    objId: 3, matIdx: 2, name: '3_Zielen_Parki_i_Drzewa_3D' },
@@ -46,6 +47,7 @@ function exportMultiColor3MF(state) {
     { key: 'buildings',   objId: 5, matIdx: 4, name: '5_Budynki_i_Dachy_LoD2' },
     { key: 'highlighted', objId: 6, matIdx: 5, name: '6_Wyroznione_Budynki' }
   ];
+  const exportLayers = isCutout ? allExportLayers.filter(l => l.key !== 'water') : allExportLayers;
 
   let shiftXScene = halfW;
   let shiftYScene = halfH;
@@ -133,6 +135,16 @@ function exportMultiColor3MF(state) {
         buildItemsXml += `<item objectid="${assemblyId}"/>`;
       }
     }
+    if (isCutout && !buildItemsXml) {
+      if (typeof document !== 'undefined') {
+        const badge = document.getElementById('preflightStatusBadge');
+        if (badge) {
+          badge.className = 'text-xs font-mono text-amber-400';
+          badge.textContent = 'Pominięto eksport .3MF: wszystkie kafle to 100% wycięta woda.';
+        }
+      }
+      return false;
+    }
   } else {
     let componentsXml = '';
     exportLayers.forEach(layer => {
@@ -146,6 +158,18 @@ function exportMultiColor3MF(state) {
         componentsXml += `<component objectid="${layer.objId}"/>`;
       }
     });
+    if (isCutout && !componentsXml) {
+      if (typeof document !== 'undefined') {
+        const badge = document.getElementById('preflightStatusBadge');
+        if (badge) {
+          badge.className = 'text-xs font-mono text-amber-400';
+          badge.textContent = tileFilter >= 0
+            ? 'Pominięto eksport .3MF: wybrany kafel to 100% wycięta woda.'
+            : 'Pominięto eksport .3MF: obszar to 100% wycięta woda.';
+        }
+      }
+      return false;
+    }
     objectsXml += `
     <object id="99" name="Map3D_${safeTitle}_${Math.round(totalWidthMm)}x${Math.round(totalHeightMm)}mm${tileSuffix}" type="model">
       <components>${componentsXml}</components>
@@ -189,6 +213,7 @@ function exportMultiColor3MF(state) {
   ]);
 
   downloadBlob(zipBytes, `Map3D_${safeTitle}${tileSuffix}_Multicolor.3mf`, 'model/3mf');
+  return true;
 }
 
 if (typeof module !== 'undefined' && module.exports) {

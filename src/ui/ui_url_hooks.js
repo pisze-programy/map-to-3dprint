@@ -53,6 +53,7 @@ function saveActiveConfig(state) {
       mapRotationDeg: typeof state.mapRotationDeg === 'number' ? Math.round(state.mapRotationDeg) : 0,
       hollowBase: typeof state.hollowBase === 'boolean' ? state.hollowBase : true,
       waterCutout: Boolean(state.waterCutout),
+      backingStyle: state.backingStyle || 'black_wood',
       printerProfileId: state.printerProfileId || 'mono4_custom',
       camera: cam ? {
         yaw: typeof cam.yaw === 'number' ? Number(cam.yaw.toFixed(4)) : -0.48,
@@ -163,6 +164,9 @@ function loadActiveConfig() {
     if (typeof parsed.waterCutout === 'boolean') {
       sanitized.waterCutout = parsed.waterCutout;
     }
+    if (typeof parsed.backingStyle === 'string' && ['black_wood', 'walnut', 'oak', 'obsidian', 'slate'].includes(parsed.backingStyle)) {
+      sanitized.backingStyle = parsed.backingStyle;
+    }
     if (typeof parsed.printerProfileId === 'string' && parsed.printerProfileId.trim().length > 0) {
       sanitized.printerProfileId = parsed.printerProfileId.trim();
     }
@@ -236,8 +240,14 @@ function updateUrlQueryParams(cfg) {
     }
     if (cfg.waterCutout) {
       params.set('water_cutout', '1');
+      if (cfg.backingStyle && cfg.backingStyle !== 'black_wood') {
+        params.set('backing', cfg.backingStyle);
+      } else {
+        params.delete('backing');
+      }
     } else {
       params.delete('water_cutout');
+      params.delete('backing');
     }
     if (typeof cfg.zScale === 'number') {
       params.set('z_scale', cfg.zScale.toFixed(2));
@@ -294,6 +304,8 @@ async function applyMap3DUrlParams(ctx) {
     const placeInput = document.getElementById('placeSearchInput');
     const chkHollowBase = document.getElementById('chkHollowBase');
     const chkWaterCutout = document.getElementById('chkWaterCutout');
+    const chkPreviewWaterCutout = document.getElementById('chkPreviewWaterCutout');
+    const backingStyleSelect = document.getElementById('backingStyleSelect');
     const tileExplodeSlider = document.getElementById('tileExplodeSlider');
     const explodeSlider = document.getElementById('explodeSlider');
     const exportTileSelect = document.getElementById('exportTileSelect');
@@ -486,6 +498,12 @@ async function applyMap3DUrlParams(ctx) {
         needs3DRebuild = true;
       }
       if (chkWaterCutout) chkWaterCutout.checked = Boolean(state.waterCutout);
+      if (chkPreviewWaterCutout) chkPreviewWaterCutout.checked = Boolean(state.waterCutout);
+    }
+    const backingParam = params.get('backing');
+    if (backingParam && ['black_wood', 'walnut', 'oak', 'obsidian', 'slate'].includes(backingParam) && state) {
+      state.backingStyle = backingParam;
+      if (backingStyleSelect) backingStyleSelect.value = backingParam;
     }
 
     const zScaleParam = params.get('z_scale');

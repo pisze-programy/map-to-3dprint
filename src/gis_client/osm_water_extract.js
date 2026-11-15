@@ -394,7 +394,12 @@ function processOsmWaterWayJS(wid, w, tags, nids, isClosed, ctx) {
 }
 
 function finalizeOsmWaterLayerJS(ctx) {
-  stitchCoastlineSeaPolysJS(ctx.coastWays, ctx.fetchHalfW, ctx.fetchHalfH, ctx.waterPolys);
+  const coastMeta = {};
+  stitchCoastlineSeaPolysJS(ctx.coastWays, ctx.fetchHalfW, ctx.fetchHalfH, ctx.waterPolys, coastMeta);
+  if (coastMeta.openSeaIslands && coastMeta.openSeaIslands.length > 0) {
+    ctx._openSeaIslands = coastMeta.openSeaIslands;
+    ctx._openSeaRect = coastMeta.seaRect;
+  }
 
   const waterPolys = ctx.waterPolys || [];
   if (waterPolys.length === 0) return;

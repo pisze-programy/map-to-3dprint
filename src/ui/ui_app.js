@@ -46,6 +46,13 @@ function initMap3DApp(initialScene) {
   const initWaterCutout = (urlParams && (urlParams.get('water_cutout') === '0' || urlParams.get('water_cutout') === '1' || urlParams.get('water_cutout') === 'true' || urlParams.get('water_cutout') === 'false'))
     ? (urlParams.get('water_cutout') === '1' || urlParams.get('water_cutout') === 'true')
     : ((savedConfig && typeof savedConfig.waterCutout === 'boolean') ? savedConfig.waterCutout : false);
+  const validBackingStyles = new Set(['black_wood', 'walnut', 'oak', 'obsidian', 'slate']);
+  const urlBacking = urlParams ? urlParams.get('backing') : null;
+  const initBackingStyle = (urlBacking && validBackingStyles.has(urlBacking))
+    ? urlBacking
+    : ((savedConfig && typeof savedConfig.backingStyle === 'string' && validBackingStyles.has(savedConfig.backingStyle))
+        ? savedConfig.backingStyle
+        : 'black_wood');
   const initPrinter = (urlParams && urlParams.get('printer')) || (savedConfig && savedConfig.printerProfileId) || 'mono4_custom';
 
   const initLodMinBld = (urlParams && (urlParams.get('lod_min_bld') !== null || urlParams.get('lod_bld') !== null))
@@ -114,6 +121,7 @@ function initMap3DApp(initialScene) {
     showLayerLines: true,
     studioBg: true,
     frameStyle: 'black',
+    backingStyle: initBackingStyle,
     autoRotate: false,
     activePalette: initPalette,
     colors: { ...(PALETTES.find(p => p.id === initPalette) || PALETTES[0]).colors },
@@ -690,7 +698,7 @@ function initMap3DApp(initialScene) {
     draw2DMap, rebuildModel3D, scheduleRebuildModel3D,
     setMapSpanKm, setMapRotationDeg, fetchRealGISAndRender,
     renderLayersUI, getActiveTargetBuildings,
-    updateStatsUI, updateLandmarkChips, updateInspectorUI
+    updateTileSelectorOptions, updateStatsUI, updateLandmarkChips, updateInspectorUI
   });
 
   renderPalettesUI();
@@ -719,6 +727,10 @@ function initMap3DApp(initialScene) {
   if (chkHollow) chkHollow.checked = state.hollowBase;
   const chkWaterCutout = document.getElementById('chkWaterCutout');
   if (chkWaterCutout) chkWaterCutout.checked = Boolean(state.waterCutout);
+  const chkPreviewWaterCutout = document.getElementById('chkPreviewWaterCutout');
+  if (chkPreviewWaterCutout) chkPreviewWaterCutout.checked = Boolean(state.waterCutout);
+  const backingStyleSel = document.getElementById('backingStyleSelect');
+  if (backingStyleSel) backingStyleSel.value = state.backingStyle || 'black_wood';
   const pSel = document.getElementById('printerSelect');
   if (pSel) pSel.value = state.printerProfileId;
   const gridSel = document.getElementById('tileGridSelect');
