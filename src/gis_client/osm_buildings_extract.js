@@ -222,6 +222,8 @@ function processOsmS3DBRelationsPass1BJS(ctx) {
 }
 
 function processOsmBuildingMultipolygonJS(rel, tags, _raw, ctx) {
+  const isBrSupport = typeof isBridgeSupportTagJS === 'function' ? isBridgeSupportTagJS(tags) : Boolean(tags && tags['bridge:support']);
+  if (isBrSupport) return false;
   const hasBld = tags.building && !SKIP_BUILDING_VALS_JS.has(String(tags.building).toLowerCase());
   const hasPart = tags['building:part'] && !SKIP_BUILDING_VALS_JS.has(String(tags['building:part']).toLowerCase());
   const isWheel = typeof isObservationWheelTagsJS === 'function' && isObservationWheelTagsJS(tags) && !tags.highway && !tags.waterway && !tags.natural;
@@ -239,6 +241,8 @@ function processOsmBuildingMultipolygonJS(rel, tags, _raw, ctx) {
 }
 
 function processOsmBuildingWayJS(wid, w, tags, nids, isClosed, ctx) {
+  const isBrSupport = typeof isBridgeSupportTagJS === 'function' ? isBridgeSupportTagJS(tags) : Boolean(tags && tags['bridge:support']);
+  if (isBrSupport) return false;
   const hasBld = tags.building && !SKIP_BUILDING_VALS_JS.has(String(tags.building).toLowerCase());
   const hasPart = tags['building:part'] && !SKIP_BUILDING_VALS_JS.has(String(tags['building:part']).toLowerCase());
   const isWheel = typeof isObservationWheelTagsJS === 'function' && isObservationWheelTagsJS(tags) && !tags.highway && !tags.waterway && !tags.natural;

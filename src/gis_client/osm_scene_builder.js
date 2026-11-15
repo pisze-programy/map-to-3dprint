@@ -189,8 +189,8 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
       `(.brels;>;)->.ball;` +
       `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"];relation["type"="multipolygon"]["leisure"];relation["type"="multipolygon"]["highway"="pedestrian"];relation["type"="multipolygon"]["railway"="platform"];relation["type"="multipolygon"]["public_transport"="platform"];)->.grels;` +
       `way(r.grels)(${bbox})->.gways;` +
-      `(way["building"];way["building:part"];way["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["public_transport"="platform"];way["power"="generator"];way["man_made"~"^(bridge|pier|breakwater|groyne|jetty|tower|mast|communications_tower|lighthouse|chimney|cooling_tower|storage_tank|silo|crane|wind_turbine)$"];.gways;)->.wbox;` +
-      `(relation.ball;.grels;.wbox;way.ball;node["natural"="tree"];node["man_made"~"^(wind_turbine|tower|mast|communications_tower|lighthouse|chimney|crane)$"];node["power"="generator"]["generator:source"="wind"];);out body qt;` +
+      `(way["building"];way["building:part"];way["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["public_transport"="platform"];way["bridge:support"];way["power"="generator"];way["man_made"~"^(bridge|pier|breakwater|groyne|jetty|tower|mast|communications_tower|lighthouse|chimney|cooling_tower|storage_tank|silo|crane|wind_turbine)$"];.gways;)->.wbox;` +
+      `(relation.ball;.grels;.wbox;way.ball;node["natural"="tree"];node["bridge:support"];node["man_made"~"^(wind_turbine|tower|mast|communications_tower|lighthouse|chimney|crane)$"];node["power"="generator"]["generator:source"="wind"];);out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
 
   const spanU = (typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined') ? SCENE_CANONICAL_SPAN_UNITS : 169.2;
@@ -262,6 +262,7 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
       roads: [],
       roadPolys: [],
       bridgePolys: [],
+      bridgeSupports: [],
       buildings: [],
       _fallback: true,
       _error: overpassError ? overpassError.message : 'Overpass unreachable'
@@ -277,6 +278,7 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   const ways = new Map();
   const relations = [];
   const treeNodes = [];
+  const bridgeSupports = [];
   let hasMarineTags = false;
 
   for (const el of (osmRaw.elements || [])) {
@@ -293,6 +295,9 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
       const pt = project(el.lon, el.lat);
       nodes.set(el.id, pt);
       collectOsmTreeNodeJS(el, pt, wantTrees, fetchHalfW, fetchHalfH, treeNodes);
+      if (typeof collectOsmBridgeSupportNodeJS === 'function') {
+        collectOsmBridgeSupportNodeJS(el, pt, bridgeSupports);
+      }
     } else if (el.type === 'way') {
       ways.set(el.id, el);
     } else if (el.type === 'relation') {
@@ -336,12 +341,18 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   const buildingSamplePts = downsampleUniform(allBldCandidates, 650);
   const roadSamplePts = downsampleUniform(allRoadCandidates, 450);
 
+  const bridgeRelMeta = [];
   for (const rel of relations) {
+    const relTags = rel.tags || {};
+    const isBridgeRel = Boolean(relTags.type === 'bridge' || relTags.man_made === 'bridge');
     const outerWays = [], innerWays = [], memberWayIds = [];
+    const acrossWayIds = [], supportWayIds = [], supportNodeIds = [], outlineWayIds = [], outlineRelIds = [];
     for (const m of (rel.members || [])) {
+      const role = m.role ?? 'outer';
       if (m.type === 'way' && ways.has(m.ref)) {
-        const role = m.role ?? 'outer';
         if (role === 'part') continue;
+        if (isBridgeRel && (role === 'across' || role === 'forward' || role === 'backward')) { acrossWayIds.push(m.ref); continue; }
+        if (isBridgeRel && (role === 'support' || role === 'pier' || role === 'pylon' || role === 'under')) { supportWayIds.push(m.ref); continue; }
         const wNodes = ways.get(m.ref).nodes || [];
         if (role === 'inner') {
           innerWays.push(wNodes);
@@ -349,8 +360,16 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
         } else if (role === 'outer' || role === 'outline' || role === '') {
           outerWays.push(wNodes);
           memberWayIds.push(m.ref);
+          if (isBridgeRel) outlineWayIds.push(m.ref);
         }
+      } else if (isBridgeRel && m.type === 'relation' && (role === 'outline' || role === 'outer' || role === '')) {
+        outlineRelIds.push(m.ref);
+      } else if (isBridgeRel && m.type === 'node' && (role === 'support' || role === 'pier' || role === 'pylon')) {
+        supportNodeIds.push(m.ref);
       }
+    }
+    if (isBridgeRel) {
+      bridgeRelMeta.push({ relId: rel.id, tags: relTags, acrossWayIds, supportWayIds, supportNodeIds, outlineWayIds, outlineRelIds });
     }
     if (outerWays.length > 0) {
       rawRelWays.set(rel.id, { outerWays, innerWays, memberWayIds });
@@ -360,9 +379,22 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
       if (outerPolys.length > 0) stitchedRelPolys.set(rel.id, { outerPolys, innerPolys, memberWayIds });
     }
   }
+  for (const meta of bridgeRelMeta) {
+    if (!stitchedRelPolys.has(meta.relId) && meta.outlineRelIds.length > 0) {
+      for (const orid of meta.outlineRelIds) {
+        const subSt = stitchedRelPolys.get(orid);
+        if (subSt) {
+          stitchedRelPolys.set(meta.relId, subSt);
+          rawRelWays.set(meta.relId, rawRelWays.get(orid) || { outerWays: [], innerWays: [], memberWayIds: subSt.memberWayIds || [] });
+          consumedRels.add(orid);
+          break;
+        }
+      }
+    }
+  }
 
   const osmExtractCtx = {
-    osmRaw, nodes, ways, relations, relById, rawRelWays, stitchedRelPolys,
+    osmRaw, nodes, ways, relations, relById, rawRelWays, stitchedRelPolys, bridgeRelMeta,
     usedWays, consumedRels, s3db,
     nodesToPts, project,
     fetchHalfW, fetchHalfH, halfW, halfH, metersToUnits, effectiveSpanM,
@@ -370,7 +402,7 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     isResin: true,
     waterSamplePts, buildingSamplePts, roadSamplePts,
     coastWays, treeNodes,
-    waterPolys, waterLines, greenPolys, roads, roadPolys, bridgePolys
+    waterPolys, waterLines, greenPolys, roads, roadPolys, bridgePolys, bridgeSupports
   };
 
   // Pass 1B: Explicit S3DB type=building relations
@@ -437,6 +469,7 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     roads,
     roadPolys,
     bridgePolys,
+    bridgeSupports,
     buildings,
     osmElements: osmRaw.elements
   };

@@ -47,6 +47,9 @@ function ensureUnrotatedSceneSnapshot(scene) {
     bridgePolys: (scene.bridgePolys || []).map(bp => ({
       ...bp, outer: cloneRing(bp.outer), holes: cloneHoles(bp.holes)
     })),
+    bridgeSupports: (scene.bridgeSupports || []).map(bs => ({
+      ...bs, pt: bs.pt ? [bs.pt[0], bs.pt[1]] : null, outer: bs.outer ? cloneRing(bs.outer) : null, pts: bs.pts ? cloneRing(bs.pts) : null
+    })),
     buildings: (scene.buildings || []).map(b => ({
       ...b, outer: cloneRing(b.outer), holes: cloneHoles(b.holes)
     })),
@@ -147,6 +150,12 @@ function applySceneRotation(scene, rotationDeg, bedHalfW = null, bedHalfH = null
   scene.roads = snap.roads.map(rd => ({ ...rd, pts: rotRing(rd.pts) }));
   scene.roadPolys = snap.roadPolys.map(rp => ({ ...rp, outer: rotRing(rp.outer), holes: rotHoles(rp.holes) }));
   scene.bridgePolys = (snap.bridgePolys || []).map(bp => ({ ...bp, outer: rotRing(bp.outer), holes: rotHoles(bp.holes) }));
+  scene.bridgeSupports = (snap.bridgeSupports || []).map(bs => ({
+    ...bs,
+    pt: bs.pt ? rotPt(bs.pt) : null,
+    outer: bs.outer ? rotRing(bs.outer) : null,
+    pts: bs.pts ? rotRing(bs.pts) : null
+  }));
 
   scene.buildings = snap.buildings.map(b => {
     const outer = rotRing(b.outer);

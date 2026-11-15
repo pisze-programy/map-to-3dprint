@@ -34,6 +34,10 @@ const PIPELINE_SCRIPTS = [
   'src/mesh/s3db_roof_skeleton.js',
   'src/mesh/s3db_part_builder.js',
   'src/mesh/layer1_s3db_buildings.js',
+  'src/mesh/bridge_axis_helper.js',
+  'src/mesh/bridge_graph_solver.js',
+  'src/mesh/bridge_deck_builder.js',
+  'src/mesh/bridge_superstructure_solver.js',
   'src/mesh/layer1_bridges.js',
   'src/mesh/layer2_archetypes.js',
   'src/mesh/layer3_invariants_tiles.js',
@@ -45,6 +49,7 @@ const PIPELINE_SCRIPTS = [
   'src/gis_client/s3db_relation_helper.js',
   'src/gis_client/s3db_client_matcher.js',
   'src/gis_client/osm_water_extract.js',
+  'src/gis_client/osm_pier_geometry_helper.js',
   'src/gis_client/osm_bridges_piers_extract.js',
   'src/gis_client/osm_greenery_extract.js',
   'src/gis_client/osm_roads_extract.js',
@@ -894,6 +899,7 @@ class LocalOverpassEvaluator {
     this.waysById = new Map();
     this.relsById = new Map();
     this.treeNodes = [];
+    this.supportNodes = [];
     this.indexedWays = [];
     this.indexedRels = [];
     this._index();
@@ -905,6 +911,7 @@ class LocalOverpassEvaluator {
       if (el.type === 'node') {
         this.nodesById.set(el.id, el);
         if (el.tags && el.tags.natural === 'tree') this.treeNodes.push(el);
+        if (el.tags && el.tags['bridge:support']) this.supportNodes.push(el);
       } else if (el.type === 'way') {
         this.waysById.set(el.id, el);
       } else if (el.type === 'relation') {
@@ -978,6 +985,7 @@ class LocalOverpassEvaluator {
     if (tags.highway) return true;
     if (tags.place === 'square' || tags.place === 'island' || tags.place === 'islet') return true;
     if (tags.railway || tags.public_transport === 'platform') return true;
+    if (tags['bridge:support'] || (tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge))) return true;
     if (tags.man_made && /^(bridge|pier|breakwater|groyne|tower|lighthouse)$/.test(tags.man_made)) return true;
     return false;
   }
@@ -985,7 +993,7 @@ class LocalOverpassEvaluator {
   _matchRelTags(tags) {
     if (!tags) return false;
     if (tags.building || tags.type === 'building' || tags['building:part']) return true;
-    if (tags.man_made === 'bridge') return true;
+    if (tags.man_made === 'bridge' || tags.type === 'bridge') return true;
     if (tags.attraction && ATTRACTION_WHEEL_RE.test(tags.attraction)) return true;
     if (tags.type === 'multipolygon') {
       if (tags.natural || tags.waterway || tags.water || tags.landuse || tags.leisure ||
@@ -1034,6 +1042,13 @@ class LocalOverpassEvaluator {
         const nd = this.nodesById.get(nid);
         if (nd) outNodes.set(nd.id, nd);
       }
+      for (const mem of (item.rel.members || [])) {
+        if (mem.type === 'relation' && this.relsById.has(mem.ref)) {
+          const sub = this.relsById.get(mem.ref);
+          outRels.set(sub.id, sub);
+          for (const sm of (sub.members || [])) if (sm.type === 'way') addWayWithNodes(this.waysById.get(sm.ref));
+        }
+      }
     }
 
     for (const item of this.indexedWays) {
@@ -1044,6 +1059,13 @@ class LocalOverpassEvaluator {
 
     if (wantTrees) {
       for (const nd of this.treeNodes) {
+        if (nd.lat >= south && nd.lat <= north && nd.lon >= west && nd.lon <= east) {
+          outNodes.set(nd.id, nd);
+        }
+      }
+    }
+    if (String(qlText || '').includes('bridge:support')) {
+      for (const nd of this.supportNodes) {
         if (nd.lat >= south && nd.lat <= north && nd.lon >= west && nd.lon <= east) {
           outNodes.set(nd.id, nd);
         }

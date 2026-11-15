@@ -108,6 +108,10 @@ async function runSuite() {
       'src/mesh/s3db_roof_skeleton.js',
       'src/mesh/s3db_part_builder.js',
       'src/mesh/layer1_s3db_buildings.js',
+      'src/mesh/bridge_axis_helper.js',
+      'src/mesh/bridge_graph_solver.js',
+      'src/mesh/bridge_deck_builder.js',
+      'src/mesh/bridge_superstructure_solver.js',
       'src/mesh/layer1_bridges.js',
       'src/mesh/layer2_archetypes.js',
       'src/mesh/layer3_invariants_tiles.js',
@@ -116,6 +120,7 @@ async function runSuite() {
       'src/gis_client/s3db_relation_helper.js',
       'src/gis_client/s3db_client_matcher.js',
       'src/gis_client/osm_scene_builder.js',
+      'src/gis_client/osm_pier_geometry_helper.js',
       'src/gis_client/osm_bridges_piers_extract.js',
       'src/gis_client/osm_roads_extract.js',
     ];
@@ -221,8 +226,10 @@ async function runSuite() {
     assertCleanManifold(res.printMetrics, `7-bridge + multi-deck matrix (${dt} ms)`);
     check(res.printMetrics.bridgeCount === 7, 'All 7 bridges built across river channel', `bridgeCount=${res.printMetrics.bridgeCount}`);
     check(res.printMetrics.multiDeckSeparationsOk === true, 'Crossing layer=1 vs layer=2 decks maintain positive air gap');
-    const waterCutPiersZero = res.audit.bridgeAudits.filter(a => a.crossesWater && Number.isFinite(a.pierMinZ) && a.pierMinZ <= 0.01).length;
-    check(waterCutPiersZero >= 5, 'Over-water bridge piers anchor down to Z=0.0 under waterCutout=true', `anchoredToZero=${waterCutPiersZero}`);
+    const waterBeamAudits = res.audit.bridgeAudits.filter(a => a.crossesWater && a.structure === 'beam');
+    const waterProtectedAudits = res.audit.bridgeAudits.filter(a => a.crossesWater && ['arch', 'suspension', 'cable-stayed', 'truss'].includes(a.structure));
+    check(waterBeamAudits.length >= 1 && waterBeamAudits.every(a => Number.isFinite(a.pierMinZ) && a.pierMinZ <= 0.01), 'Over-water beam piers anchor down to Z=0.0 under waterCutout=true', `beamPiersZero=${waterBeamAudits.filter(a => a.pierMinZ <= 0.01).length}/${waterBeamAudits.length}`);
+    check(waterProtectedAudits.length >= 4 && waterProtectedAudits.every(a => a.syntheticWaterPiers === 0), 'Channel-protected arch/suspension/cable-stayed/truss keep 0 synthetic mid-water piers', `protected=${waterProtectedAudits.length}`);
   }
 
   // [4/6] Layer-2 Pure Semantic OSM Tag Archetypes (NO proper-noun names)

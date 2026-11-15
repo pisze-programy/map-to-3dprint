@@ -157,7 +157,7 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
     const isSurfaceRailTrack = ['rail', 'light_rail', 'tram', 'narrow_gauge', 'funicular'].includes(tags.railway);
     if (!isBridge && isUndergroundOsmRoadOrPlazaJS(tags, isSurfaceRailTrack || isRailPlatform)) return true;
     const layerVal = Math.trunc(parseFloatTagJS(tags.layer, 0) || 0);
-    if (layerVal < 0 || (tags.man_made === 'bridge' && isClosed)) return true;
+    if ((!isBridge && layerVal < 0) || (tags.man_made === 'bridge' && isClosed)) return true;
 
     const hwy = tags.highway || tags.railway || (isRailPlatform ? 'platform' : '') || tags.man_made || 'bridge';
     if (['proposed', 'construction', 'bus_stop', 'elevator', 'rest_area', 'raceway', 'escape'].includes(hwy)) return true;
@@ -165,64 +165,42 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
     if (['subway', 'monorail'].includes(hwy) && !isBridge) return true;
 
     const isPath = ['footway', 'path', 'cycleway', 'steps', 'bridleway', 'track', 'corridor'].includes(hwy);
-
     let rwm = 6.2;
-    if (isRailPlatform) {
-      rwm = 4.8;
-    } else if (isPath) {
+    if (isRailPlatform) { rwm = 4.8; }
+    else if (isPath) {
       const spanM = (ctx && ctx.effectiveSpanM) ? ctx.effectiveSpanM : 1200;
       const minBldM = (ctx && typeof ctx.minBldFootprintM === 'number') ? ctx.minBldFootprintM : 0;
-      const keepCrossingOrIsland = spanM <= 4200;
-      const keepSidewalk = spanM <= 1650 && minBldM <= 0;
-      if (!isBridge && tags.footway) {
-        if (tags.footway === 'access_aisle') return true;
-        if (tags.footway === 'sidewalk' && !keepSidewalk) return true;
-        if ((tags.footway === 'crossing' || tags.footway === 'island') && !keepCrossingOrIsland) return true;
-      }
-      if (!isBridge && tags.cycleway) {
-        if (tags.cycleway === 'sidewalk' && !keepSidewalk) return true;
-        if (tags.cycleway === 'crossing' && !keepCrossingOrIsland) return true;
-      }
+      const keepCrossingOrIsland = spanM <= 4200, keepSidewalk = spanM <= 1650 && minBldM <= 0;
+      if (!isBridge && tags.footway && (tags.footway === 'access_aisle' || (tags.footway === 'sidewalk' && !keepSidewalk) || ((tags.footway === 'crossing' || tags.footway === 'island') && !keepCrossingOrIsland))) return true;
+      if (!isBridge && tags.cycleway && ((tags.cycleway === 'sidewalk' && !keepSidewalk) || (tags.cycleway === 'crossing' && !keepCrossingOrIsland))) return true;
       rwm = hwy === 'track' ? 2.8 : 2.2;
-    } else if (hwy === 'pedestrian') {
-      rwm = 5.2;
-    } else if (hwy === 'living_street') {
-      rwm = 5.4;
-    } else if (['motorway', 'trunk'].includes(hwy)) {
-      rwm = 12.5;
-    } else if (hwy === 'primary') {
-      rwm = 10.5;
-    } else if (['secondary', 'motorway_link', 'trunk_link'].includes(hwy)) {
-      rwm = 8.5;
-    } else if (['tertiary', 'primary_link', 'secondary_link'].includes(hwy)) {
-      rwm = 7.2;
-    } else if (['rail', 'light_rail', 'tram', 'narrow_gauge', 'funicular'].includes(hwy)) {
-      rwm = 4.2;
-    } else if (hwy === 'service') {
-      rwm = (!isBridge && ['parking_aisle', 'driveway', 'alley'].includes(tags.service)) ? 3.8 : 4.8;
-    }
+    } else if (hwy === 'pedestrian') { rwm = 5.2; }
+    else if (hwy === 'living_street') { rwm = 5.4; }
+    else if (['motorway', 'trunk'].includes(hwy)) { rwm = 12.5; }
+    else if (hwy === 'primary') { rwm = 10.5; }
+    else if (['secondary', 'motorway_link', 'trunk_link'].includes(hwy)) { rwm = 8.5; }
+    else if (['tertiary', 'primary_link', 'secondary_link'].includes(hwy)) { rwm = 7.2; }
+    else if (['rail', 'light_rail', 'tram', 'narrow_gauge', 'funicular'].includes(hwy)) { rwm = 4.2; }
+    else if (hwy === 'service') { rwm = (!isBridge && ['parking_aisle', 'driveway', 'alley'].includes(tags.service)) ? 3.8 : 4.8; }
 
     const explicitW = parseFloatTagJS(tags.width, null);
     if (explicitW !== null && explicitW >= 1.2 && explicitW <= 28.0) rwm = explicitW;
 
     const pts = ctx.nodesToPts(nids, 0.022);
     if (pts.length >= 2) {
+      const parseLen = (k) => (tags[k] !== undefined && typeof parseOsmLengthMetersJS === 'function')
+        ? parseOsmLengthMetersJS(tags[k], null) : parseFloatTagJS(tags[k], null);
       ctx.roads.push({
         pts,
         width: Math.round(Math.max(0.24, rwm * ctx.metersToUnits) * 1000) / 1000,
-        hwy,
-        isPath: Boolean(isPath),
-        bridge: Boolean(isBridge),
-        isBridge: Boolean(isBridge),
-        bridgeStructure: tags['bridge:structure'] || (typeof tags.bridge === 'string' && tags.bridge !== 'yes' ? tags.bridge : ''),
+        hwy, isPath: Boolean(isPath), bridge: Boolean(isBridge), isBridge: Boolean(isBridge),
+        bridgeStructure: tags['bridge:structure'] || (typeof tags.bridge === 'string' && !['yes', 'viaduct'].includes(tags.bridge) ? tags.bridge : ''),
         bridgeSupport: tags['bridge:support'] || '',
-        covered: tags.covered || '',
-        man_made: tags.man_made || '',
-        layer: layerVal,
-        level: tags.level !== undefined ? tags.level : '',
-        osmId: w && w.id,
-        tags,
-        name: tags.name || ''
+        covered: tags.covered || '', man_made: tags.man_made || '',
+        layer: layerVal, hasExplicitLayer: tags.layer !== undefined, level: tags.level !== undefined ? tags.level : '',
+        heightM: parseLen('height'), minHeightM: parseLen('min_height'),
+        clearanceM: parseLen('seamark:bridge:clearance_height') ?? parseLen('maxheight'),
+        osmId: w && w.id, tags, name: tags.name || ''
       });
     }
     return true;

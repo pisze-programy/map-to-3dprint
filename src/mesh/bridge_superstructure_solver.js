@@ -1,0 +1,227 @@
+// ============================================================================
+// src/mesh/bridge_superstructure_solver.js
+// OSM bridge:support Piers/Pylons, Channel Protection, Arch/Cable/Truss MSLA
+// ============================================================================
+
+if (typeof _lerpArrAtSJS === 'undefined' && typeof require !== 'undefined') Object.assign(global, require('./bridge_deck_builder.js'));
+
+function _sidePtJS(pt, tx, ty, offset, z) { return [pt[0] - ty * offset, pt[1] + tx * offset, z]; }
+
+function _beamOverlapJS(mf, p0, p1, radius) {
+  const dx = p1[0] - p0[0], dy = p1[1] - p0[1], dz = p1[2] - p0[2], l = Math.hypot(dx, dy, dz);
+  if (l < 1e-4 || radius < 1e-4) return null;
+  const ext = Math.min(radius * 0.45, l * 0.15) / l;
+  return beamManifoldBetween(mf, [p0[0] - dx * ext, p0[1] - dy * ext, p0[2] - dz * ext], [p1[0] + dx * ext, p1[1] + dy * ext, p1[2] + dz * ext], radius);
+}
+
+function _anchorFloorZJS(x, y, terrainWater, ctx) {
+  if (terrainWater.isPointInWater(x, y)) return ctx.waterCutout ? 0.0 : Math.max(0.0, terrainWater.getWaterFloorZ() - 0.35);
+  return Math.max(0.0, terrainWater.getSurfaceZ(x, y) - 0.55);
+}
+
+function _computeAntiCapillarySamplesJS(availLenU, strutDiamMm, desiredCount, ctx) {
+  const pitchMinU = (strutDiamMm * 1.02 + 0.48) / ctx.scaleMm;
+  const maxCount = Math.max(2, Math.floor(availLenU / Math.max(1e-4, pitchMinU)) + 1);
+  const count = Math.max(2, Math.min(desiredCount, maxCount));
+  const rawGapMm = (availLenU / Math.max(1, count - 1)) * ctx.scaleMm - strutDiamMm;
+  const laws = ctx.slaLaws || SLA_PRINT_LAWS;
+  return { count, minGapMm: count <= 1 ? 0.48 : Math.max(0.48, laws.resolveAntiCapillaryGapMm(rawGapMm, 0.48)) };
+}
+
+function _resolvePylonTopZJS(spec, zDeckTop, zFloor, heightOverrideM, ctx) {
+  const mToBedZ = ctx.mToU * ctx.zScale, minAboveU = Math.max(2.6 / ctx.scaleMm, spec.spanU * 0.14);
+  const hM = heightOverrideM != null ? heightOverrideM : spec.heightM;
+  let aboveU = Math.max(minAboveU, spec.spanU * 0.22);
+  if (hM != null && hM > 0) {
+    const rawU = hM * mToBedZ, valleyH = Math.max(0, zDeckTop - zFloor);
+    aboveU = (heightOverrideM != null && heightOverrideM < 200) ? Math.max(minAboveU, rawU) : Math.max(minAboveU, rawU > valleyH * 1.1 ? rawU - valleyH : rawU);
+  }
+  const capU = Math.min(ctx.maxZUnits - zDeckTop - 0.45, Math.max(minAboveU, Math.min(aboveU, Math.max(spec.spanU * 0.42, 34 / ctx.scaleMm))));
+  return zDeckTop + Math.max(minAboveU, capU);
+}
+
+function _addTwinOrPortalPylonJS(parts, pt, tx, ty, halfW, zFloor, zDeckBot, zDeckTop, zPylonTop, shaftR, mf) {
+  const lat = Math.max(halfW * 0.88, shaftR * 1.4);
+  const L = _sidePtJS(pt, tx, ty, lat, 0), R = _sidePtJS(pt, tx, ty, -lat, 0);
+  const baseBox = beamManifoldBetween(mf, [pt[0], pt[1], zFloor], [pt[0], pt[1], zDeckBot + 0.1], Math.min(halfW * 0.72, Math.max(shaftR * 1.6, 0.38)));
+  const shL = beamManifoldBetween(mf, [L[0], L[1], zFloor], [L[0], L[1], zPylonTop], shaftR);
+  const shR = beamManifoldBetween(mf, [R[0], R[1], zFloor], [R[0], R[1], zPylonTop], shaftR);
+  const tieTop = _beamOverlapJS(mf, [L[0], L[1], zPylonTop - shaftR * 1.1], [R[0], R[1], zPylonTop - shaftR * 1.1], shaftR * 0.9);
+  const tieSub = _beamOverlapJS(mf, [L[0], L[1], zDeckBot], [R[0], R[1], zDeckBot], shaftR);
+  for (const m of [baseBox, shL, shR, tieTop, tieSub]) if (m) parts.push(m);
+}
+
+function _addBridgeSupportSolidsJS(spec, terrainWater, ctx, strutRU, parts, supportStationsS, pylonStations, metrics) {
+  const mf = ctx.mf, halfW = spec.width * 0.5, minColR = Math.max(strutRU * 1.25, Math.min(0.45, halfW * 0.42));
+  for (const sup of spec.explicitSupports) {
+    const sPos = sup.sProj, { pt, tx, ty } = _samplePtAtSJS(spec, sPos);
+    const zBot = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sPos), zTop = _lerpArrAtSJS(spec.sArr, spec.zTopArr, sPos);
+    const zFloor = _anchorFloorZJS(sup.pt[0], sup.pt[1], terrainWater, ctx);
+    metrics.pierMinZ = Math.min(metrics.pierMinZ, zFloor); metrics.explicitSupportsUsed++;
+    if (sup.kind === 'pylon') {
+      const zPylonTop = _resolvePylonTopZJS(spec, zTop, zFloor, sup.heightM, ctx);
+      if (sup.outer && sup.outer.length >= 3) { const sub = extrudeRingSolid(mf, sup.outer, [], zFloor, zBot + 0.1); if (sub) parts.push(sub); }
+      _addTwinOrPortalPylonJS(parts, pt, tx, ty, halfW, zFloor, zBot, zTop, zPylonTop, Math.max(minColR, strutRU * 1.6), mf);
+      pylonStations.push({ s: sPos, pt, tx, ty, zTop, zPylonTop }); supportStationsS.push(sPos);
+    } else {
+      const zCap = sup.kind === 'abutment' ? zTop : zBot + 0.12;
+      const m = (sup.outer && sup.outer.length >= 3) ? extrudeRingSolid(mf, sup.outer, [], zFloor, zCap) : beamManifoldBetween(mf, [sup.pt[0], sup.pt[1], zFloor], [sup.pt[0], sup.pt[1], zCap], minColR);
+      if (m) parts.push(m);
+      supportStationsS.push(sPos);
+    }
+  }
+  const channelProtected = ['arch', 'suspension', 'cable-stayed', 'truss'].includes(spec.structNorm);
+  if (!spec.explicitSupports.length && spec.structNorm === 'floating') {
+    for (let i = 0; i < spec.pts.length - 1; i++) {
+      if (!spec.inWater[i] && !spec.inWater[i + 1]) continue;
+      const a = spec.pts[i], b = spec.pts[i + 1], zB = Math.max(0.0, ctx.zWaterTop - 0.35), zT = Math.min(spec.zBotArr[i], spec.zBotArr[i + 1]) + 0.12;
+      const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy);
+      if (l < 0.05 || zT <= zB + 0.05) continue;
+      const nx = (-dy / l) * Math.max(minColR, halfW * 0.72), ny = (dx / l) * Math.max(minColR, halfW * 0.72);
+      const pm = extrudeRingSolid(mf, [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]], [], zB, zT);
+      if (pm) parts.push(pm);
+    }
+  } else if (!spec.explicitSupports.length && !channelProtected && spec.spanU > 3.6 / ctx.scaleMm) {
+    const step = Math.max(3.2 / ctx.scaleMm, spec.width * 2.3);
+    for (let s = step; s < spec.spanU - step * 0.45; s += step) {
+      const { pt } = _samplePtAtSJS(spec, s), zFloor = _anchorFloorZJS(pt[0], pt[1], terrainWater, ctx), zBot = _lerpArrAtSJS(spec.sArr, spec.zBotArr, s);
+      if (terrainWater.isPointInWater(pt[0], pt[1])) metrics.syntheticWaterPiers++;
+      metrics.pierMinZ = Math.min(metrics.pierMinZ, zFloor);
+      const col = beamManifoldBetween(mf, [pt[0], pt[1], zFloor], [pt[0], pt[1], zBot + 0.12], minColR);
+      if (col) parts.push(col);
+      supportStationsS.push(s);
+    }
+  }
+}
+
+function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutRU, parts, metrics) {
+  const mf = ctx.mf, L = spec.spanU, halfW = spec.width * 0.5;
+  let wStart = L * 0.06, wEnd = L * 0.94;
+  if (spec.crossesWater) {
+    const idxs = spec.inWater.map((w, i) => w ? i : -1).filter(i => i >= 0);
+    wStart = Math.max(0, spec.sArr[Math.max(0, idxs[0] - 1)]);
+    wEnd = Math.min(L, spec.sArr[Math.min(spec.pts.length - 1, idxs[idxs.length - 1] + 1)]);
+  }
+  const archSpan = Math.max(0.8, wEnd - wStart);
+  let minW = Infinity, minL = Infinity;
+  const nPts = spec.pts.length;
+  for (let i = 0; i < nPts; i++) {
+    if (spec.inWater[i]) minW = Math.min(minW, spec.zBotArr[i] - ctx.zWaterTop);
+    else if (nPts <= 2 || (i > 0 && i < nPts - 1)) minL = Math.min(minL, spec.zBotArr[i] - terrainWater.getSurfaceZ(spec.pts[i][0], spec.pts[i][1]));
+  }
+  const isThrough = Boolean(spec.explicitThroughArch || (spec.crossesWater ? (minW < Math.max(1.0, Math.min(2.2, archSpan * 0.12))) : (minL < 1.0)));
+  metrics.isThroughArch = isThrough;
+
+  const ribR = Math.max(strutRU * 1.15, spec.deckThick * 0.34), lat = Math.max(halfW * 0.86, ribR * 1.4) * (isThrough ? 1 : 0.85);
+  const { count: nHang, minGapMm } = _computeAntiCapillarySamplesJS(archSpan * 0.86, strutDiamMm, 9, ctx);
+  metrics.minStayGapMm = Math.min(metrics.minStayGapMm, minGapMm);
+
+  const zDeckMid = _lerpArrAtSJS(spec.sArr, isThrough ? spec.zTopArr : spec.zBotArr, (wStart + wEnd) * 0.5);
+  const zFloorLim = spec.crossesWater ? ctx.zWaterTop + 0.28 : terrainWater.getSurfaceZ(spec.pts[spec.pts.length >> 1][0], spec.pts[spec.pts.length >> 1][1]) + 0.2;
+  const riseOrDrop = isThrough
+    ? Math.max(2.0 / ctx.scaleMm, Math.min(archSpan * 0.28, spec.heightM ? spec.heightM * ctx.mToU * ctx.zScale : archSpan * 0.22))
+    : Math.max(0.8, Math.min(archSpan * 0.34, zDeckMid - zFloorLim));
+  if (isThrough) metrics.zPylonTop = Math.max(metrics.zPylonTop, Math.max(...spec.zTopArr) + riseOrDrop);
+  else {
+    for (const sEnd of [wStart, wEnd]) {
+      const { pt } = _samplePtAtSJS(spec, sEnd);
+      if (!terrainWater.isPointInWater(pt[0], pt[1])) {
+        const zF = _anchorFloorZJS(pt[0], pt[1], terrainWater, ctx), zB = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sEnd);
+        const pier = beamManifoldBetween(mf, [pt[0], pt[1], zF], [pt[0], pt[1], zB + 0.1], Math.max(ribR * 1.25, halfW * 0.4));
+        if (pier) parts.push(pier);
+      }
+    }
+  }
+
+  for (const sign of [-1, 1]) {
+    let prev = null;
+    for (let k = 0; k <= 8; k++) {
+      const u = k / 8, s = wStart + u * archSpan, { pt, tx, ty } = _samplePtAtSJS(spec, s);
+      const zBase = isThrough ? _lerpArrAtSJS(spec.sArr, spec.zTopArr, s) - 0.04 : _lerpArrAtSJS(spec.sArr, spec.zBotArr, s) - riseOrDrop;
+      const p = _sidePtJS(pt, tx, ty, sign * lat, zBase + 4 * u * (1 - u) * (riseOrDrop + (isThrough ? 0 : 0.05)));
+      if (prev) { const b = _beamOverlapJS(mf, prev, p, ribR); if (b) parts.push(b); }
+      prev = p;
+    }
+    for (let h = 1; h < nHang - 1; h++) {
+      const u = h / (nHang - 1), s = wStart + u * archSpan, { pt, tx, ty } = _samplePtAtSJS(spec, s);
+      const zD = isThrough ? _lerpArrAtSJS(spec.sArr, spec.zTopArr, s) - 0.05 : _lerpArrAtSJS(spec.sArr, spec.zBotArr, s) + 0.08;
+      const zA = (isThrough ? zD : zD - 0.08 - riseOrDrop) + 4 * u * (1 - u) * riseOrDrop;
+      const bar = _beamOverlapJS(mf, _sidePtJS(pt, tx, ty, sign * lat, Math.min(zD, zA)), _sidePtJS(pt, tx, ty, sign * lat, Math.max(zD, zA)), strutRU);
+      if (bar) parts.push(bar);
+    }
+  }
+}
+
+function _buildCableAndTrussSuperJS(spec, terrainWater, ctx, strutDiamMm, strutRU, parts, pylonStations, metrics) {
+  const mf = ctx.mf, L = spec.spanU, halfW = spec.width * 0.5, lat = Math.max(halfW * 0.84, strutRU * 1.5);
+  if (spec.structNorm === 'cable-stayed' || spec.structNorm === 'suspension') {
+    if (!pylonStations.length) {
+      const fW = spec.inWater.indexOf(true), lW = spec.inWater.lastIndexOf(true);
+      const cands = (fW > 0 && lW < spec.inWater.length - 1) ? [Math.max(0.06 * L, spec.sArr[fW - 1]), Math.min(0.94 * L, spec.sArr[lW + 1])] : [0.22 * L, 0.78 * L];
+      for (const sPos of (Math.abs(cands[1] - cands[0]) < 1.2 ? [L * 0.5] : cands)) {
+        const { pt, tx, ty } = _samplePtAtSJS(spec, sPos), zFloor = _anchorFloorZJS(pt[0], pt[1], terrainWater, ctx);
+        const zBot = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sPos), zTop = _lerpArrAtSJS(spec.sArr, spec.zTopArr, sPos);
+        const zPTop = _resolvePylonTopZJS(spec, zTop, zFloor, null, ctx);
+        metrics.pierMinZ = Math.min(metrics.pierMinZ, zFloor);
+        _addTwinOrPortalPylonJS(parts, pt, tx, ty, halfW, zFloor, zBot, zTop, zPTop, Math.max(strutRU * 1.5, 0.35), mf);
+        pylonStations.push({ s: sPos, pt, tx, ty, zTop, zPylonTop: zPTop });
+      }
+    }
+    for (let pi = 0; pi < pylonStations.length; pi++) {
+      const py = pylonStations[pi]; metrics.zPylonTop = Math.max(metrics.zPylonTop, py.zPylonTop);
+      if (spec.structNorm !== 'cable-stayed') continue;
+      const sL = pi === 0 ? 0.04 * L : (pylonStations[pi - 1].s + py.s) * 0.5, sR = pi === pylonStations.length - 1 ? 0.96 * L : (py.s + pylonStations[pi + 1].s) * 0.5;
+      for (const [a, b] of [[sL, Math.max(sL, py.s - 0.35)], [Math.min(sR, py.s + 0.35), sR]]) {
+        if (b - a < 0.4) continue;
+        const { count, minGapMm } = _computeAntiCapillarySamplesJS(b - a, strutDiamMm, 5, ctx);
+        metrics.minStayGapMm = Math.min(metrics.minStayGapMm, minGapMm);
+        for (let k = 0; k < count; k++) {
+          const sk = a + (k / Math.max(1, count - 1)) * (b - a), { pt, tx, ty } = _samplePtAtSJS(spec, sk), zAnc = _lerpArrAtSJS(spec.sArr, spec.zTopArr, sk) - 0.04;
+          for (const sign of [-1, 1]) { const st = _beamOverlapJS(mf, _sidePtJS(py.pt, py.tx, py.ty, sign * lat, py.zPylonTop - strutRU * 1.2), _sidePtJS(pt, tx, ty, sign * lat, zAnc), strutRU); if (st) parts.push(st); }
+        }
+      }
+    }
+    if (spec.structNorm === 'suspension' && pylonStations.length >= 2) {
+      for (let pi = 0; pi < pylonStations.length - 1; pi++) {
+        const pA = pylonStations[pi], pB = pylonStations[pi + 1], sp = Math.max(0.5, pB.s - pA.s), sagU = Math.max(0.8, Math.min(sp * 0.22, (pA.zPylonTop - pA.zTop) * 0.72));
+        const { count, minGapMm } = _computeAntiCapillarySamplesJS(sp * 0.85, strutDiamMm, 8, ctx);
+        metrics.minStayGapMm = Math.min(metrics.minStayGapMm, minGapMm);
+        for (const sign of [-1, 1]) {
+          let prev = null;
+          for (let k = 0; k <= 8; k++) { const u = k / 8, sk = pA.s + u * sp, { pt, tx, ty } = _samplePtAtSJS(spec, sk), p = _sidePtJS(pt, tx, ty, sign * lat, (pA.zPylonTop + (pB.zPylonTop - pA.zPylonTop) * u) - 4 * u * (1 - u) * sagU); if (prev) { const c = _beamOverlapJS(mf, prev, p, strutRU * 1.2); if (c) parts.push(c); } prev = p; }
+          for (let h = 1; h < count - 1; h++) { const u = h / (count - 1), sk = pA.s + u * sp, { pt, tx, ty } = _samplePtAtSJS(spec, sk), zD = _lerpArrAtSJS(spec.sArr, spec.zTopArr, sk) - 0.04, zC = (pA.zPylonTop + (pB.zPylonTop - pA.zPylonTop) * u) - 4 * u * (1 - u) * sagU; const hg = _beamOverlapJS(mf, _sidePtJS(pt, tx, ty, sign * lat, zD), _sidePtJS(pt, tx, ty, sign * lat, zC), strutRU); if (hg) parts.push(hg); }
+        }
+      }
+    }
+  } else if (spec.structNorm === 'truss') {
+    const trussH = Math.max(1.5 / ctx.scaleMm, Math.min(L * 0.14, spec.width * 0.85)), { count, minGapMm } = _computeAntiCapillarySamplesJS(L * 0.9, strutDiamMm, 8, ctx);
+    metrics.minStayGapMm = Math.min(metrics.minStayGapMm, minGapMm); metrics.zPylonTop = Math.max(metrics.zPylonTop, Math.max(...spec.zTopArr) + trussH);
+    for (const sign of [-1, 1]) {
+      let prevB = null, prevT = null;
+      for (let k = 0; k < count; k++) {
+        const s = (k / (count - 1)) * L, { pt, tx, ty } = _samplePtAtSJS(spec, s), zD = _lerpArrAtSJS(spec.sArr, spec.zTopArr, s) - 0.04;
+        const pB = _sidePtJS(pt, tx, ty, sign * lat, zD), pT = [pB[0], pB[1], zD + trussH];
+        const post = _beamOverlapJS(mf, pB, pT, strutRU); if (post) parts.push(post);
+        if (prevT) { const ch = _beamOverlapJS(mf, prevT, pT, strutRU * 1.15); if (ch) parts.push(ch); }
+        if (prevB && prevT) { const dg = _beamOverlapJS(mf, k % 2 ? prevB : prevT, k % 2 ? pT : pB, strutRU); if (dg) parts.push(dg); }
+        prevB = pB; prevT = pT;
+      }
+    }
+  }
+}
+
+function buildBridgeSuperstructure(spec, terrainWater, ctx) {
+  const laws = ctx.slaLaws || SLA_PRINT_LAWS, minStrutMm = laws.minStrutDiameterMm(spec.spanU * ctx.scaleMm), strutRU = 0.55 * (minStrutMm / ctx.scaleMm);
+  const parts = [], supportStationsS = [], pylonStations = [];
+  const metrics = { explicitSupportsUsed: 0, syntheticWaterPiers: 0, isThroughArch: false, minStrutMm, minStayGapMm: Infinity, zPylonTop: Math.max(...spec.zTopArr), pierMinZ: Infinity };
+  _addBridgeSupportSolidsJS(spec, terrainWater, ctx, strutRU, parts, supportStationsS, pylonStations, metrics);
+  if (spec.structNorm === 'arch') _buildArchSuperstructureJS(spec, terrainWater, ctx, minStrutMm, strutRU, parts, metrics);
+  else if (spec.structNorm !== 'beam' && spec.structNorm !== 'floating') _buildCableAndTrussSuperJS(spec, terrainWater, ctx, minStrutMm, strutRU, parts, pylonStations, metrics);
+  if (!Number.isFinite(metrics.minStayGapMm)) metrics.minStayGapMm = minStrutMm;
+  if (!Number.isFinite(metrics.pierMinZ)) metrics.pierMinZ = Math.min(...spec.zBotArr);
+  return { parts, supportStationsS, metrics };
+}
+
+const _SUPER_EXPORTS = { buildBridgeSuperstructure };
+if (typeof window !== 'undefined') Object.assign(window, _SUPER_EXPORTS);
+if (typeof module !== 'undefined' && module.exports) module.exports = _SUPER_EXPORTS;

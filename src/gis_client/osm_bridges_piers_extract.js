@@ -1,377 +1,217 @@
 // ============================================================================
 // src/gis_client/osm_bridges_piers_extract.js
-// OSM Bridges & Piers Extractor (man_made=bridge Polygons, Linear Bridge Tags,
-// Closed & Linear man_made=pier|pontoon|breakwater|groyne|jetty Structures)
+// OSM Bridges, Bridge Supports & Waterfront Piers Extractor
 // ============================================================================
 
-if (typeof parseFloatTagJS === 'undefined' && typeof require !== 'undefined') {
-  Object.assign(global, require('./s3db_client_matcher.js'));
-}
+if (typeof parseFloatTagJS === 'undefined' && typeof require !== 'undefined') Object.assign(global, require('./s3db_client_matcher.js'));
+if (typeof _pointInRingExtract2D === 'undefined' && typeof require !== 'undefined') Object.assign(global, require('./osm_pier_geometry_helper.js'));
 
 const OSM_PIER_MAN_MADE_SET = new Set(['pier', 'pontoon', 'breakwater', 'groyne', 'jetty']);
 
+function _parseBridgeSignedLayerJS(rawVal, fallback = 1) {
+  if (rawVal === undefined || rawVal === null || rawVal === '') return fallback;
+  const n = parseFloatTagJS(rawVal, fallback);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+}
+
+function _parseLenM(tags, key) {
+  if (!tags || tags[key] === undefined) return null;
+  return typeof parseOsmLengthMetersJS === 'function' ? parseOsmLengthMetersJS(tags[key], null) : parseFloatTagJS(tags[key], null);
+}
+
+function _extractBridgeStructTagJS(tags) {
+  if (!tags) return '';
+  if (tags['bridge:structure']) return String(tags['bridge:structure']).trim().toLowerCase();
+  if (typeof tags.bridge === 'string') {
+    const b = tags.bridge.trim().toLowerCase();
+    if (b && !['yes', 'no', 'false', '0', 'none', 'viaduct', 'bridge'].includes(b)) return b;
+  }
+  return '';
+}
+
 function isOsmPierTagsJS(tags) {
-  if (!tags) return false;
-  return OSM_PIER_MAN_MADE_SET.has(tags.man_made) || tags.mooring === 'pontoon';
+  return Boolean(tags && !tags['bridge:support'] && (OSM_PIER_MAN_MADE_SET.has(tags.man_made) || tags.mooring === 'pontoon'));
 }
 
 function getOsmPierKindJS(tags) {
   if (tags && OSM_PIER_MAN_MADE_SET.has(tags.man_made)) return tags.man_made;
-  if (tags && tags.mooring === 'pontoon') return 'pontoon';
-  return 'pier';
+  return (tags && tags.mooring === 'pontoon') ? 'pontoon' : 'pier';
 }
 
-function _pointInRingExtract2D(px, py, ring) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1];
-    const xj = ring[j][0], yj = ring[j][1];
-    const intersect = ((yi > py) !== (yj > py)) &&
-      (px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-12) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
+function _pushSupportRecJS(arr, tags, osmId, isPoint, pt, outer, pts) {
+  const kind = String((tags && tags['bridge:support']) || '').trim().toLowerCase();
+  if (!kind || kind === 'no' || kind === 'none') return;
+  arr.push({
+    kind, isPoint, pt, outer: outer || null, pts: pts || null,
+    heightM: _parseLenM(tags, 'height'), minHeightM: _parseLenM(tags, 'min_height'),
+    layer: _parseBridgeSignedLayerJS(tags.layer, 0), osmId, name: tags.name || '', tags
+  });
 }
 
-function _ringInsideOuterExtract2D(innerRing, outerRing) {
-  if (!innerRing || innerRing.length < 3 || !outerRing || outerRing.length < 3) return false;
-  if (_pointInRingExtract2D(innerRing[0][0], innerRing[0][1], outerRing)) return true;
-  let cx = 0, cy = 0;
-  for (let i = 0; i < innerRing.length; i++) {
-    cx += innerRing[i][0];
-    cy += innerRing[i][1];
-  }
-  cx /= innerRing.length;
-  cy /= innerRing.length;
-  if (_pointInRingExtract2D(cx, cy, outerRing)) return true;
-  for (let i = 0; i < innerRing.length; i++) {
-    const p0 = innerRing[i], p1 = innerRing[(i + 1) % innerRing.length];
-    if (_pointInRingExtract2D((p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5, outerRing)) return true;
-  }
-  return false;
+function _pushPierAreaRecJS(ctx, outer, holes, tags) {
+  const pierKind = getOsmPierKindJS(tags);
+  const rec = { outer, holes: holes || [], name: tags.name || 'Molo', layer: 0, isPier: true, pierKind, floating: tags.floating === 'yes' || pierKind === 'pontoon' };
+  ctx.bridgePolys.push(rec);
+  if (!ctx.pierPolys) ctx.pierPolys = [];
+  ctx.pierPolys.push({ ...rec, _inBridgePolys: true });
 }
 
-function _signedRingAreaExtract2D(ring) {
-  let s = 0;
-  for (let i = 0, n = ring.length; i < n; i++) {
-    const a = ring[i], b = ring[(i + 1) % n];
-    s += a[0] * b[1] - b[0] * a[1];
-  }
-  return 0.5 * s;
+function _buildBridgeRecJS(outer, holes, tags, osmId) {
+  return {
+    outer, holes: holes || [], name: tags.name || 'Most',
+    layer: _parseBridgeSignedLayerJS(tags.layer, 1),
+    bridgeStructure: _extractBridgeStructTagJS(tags) || (tags.bridge || ''),
+    covered: tags.covered || '', level: tags.level !== undefined ? tags.level : '',
+    heightM: _parseLenM(tags, 'height'), minHeightM: _parseLenM(tags, 'min_height'),
+    clearanceM: _parseLenM(tags, 'seamark:bridge:clearance_height') ?? _parseLenM(tags, 'maxheight'),
+    osmId, tags
+  };
 }
 
-function _segsCrossExtract2D(a, b, c, d) {
-  const orient = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
-  const o1 = orient(a, b, c), o2 = orient(a, b, d);
-  const o3 = orient(c, d, a), o4 = orient(c, d, b);
-  if (((o1 > 1e-9 && o2 < -1e-9) || (o1 < -1e-9 && o2 > 1e-9)) &&
-      ((o3 > 1e-9 && o4 < -1e-9) || (o3 < -1e-9 && o4 > 1e-9))) {
-    return true;
+function collectOsmBridgeSupportNodeJS(el, pt, bridgeSupports) {
+  if (el && el.tags && el.tags['bridge:support'] && Array.isArray(bridgeSupports)) {
+    _pushSupportRecJS(bridgeSupports, el.tags, el.id, true, [pt[0], pt[1]], null, null);
   }
-  return false;
-}
-
-function _isSimpleRingExtract2D(ring) {
-  if (!ring || ring.length < 3 || Math.abs(_signedRingAreaExtract2D(ring)) < 1e-5) return false;
-  const n = ring.length;
-  for (let i = 0; i < n; i++) {
-    const a1 = ring[i], a2 = ring[(i + 1) % n];
-    if (Math.hypot(a2[0] - a1[0], a2[1] - a1[1]) < 1e-5) return false;
-    for (let j = i + 2; j < n; j++) {
-      if (i === 0 && j === n - 1) continue;
-      const b1 = ring[j], b2 = ring[(j + 1) % n];
-      if (_segsCrossExtract2D(a1, a2, b1, b2)) return false;
-    }
-  }
-  return true;
-}
-
-function _bufferPierPolylineToPolys2D(rawPts, widthUnits) {
-  if (!rawPts || rawPts.length < 2) return [];
-  const pts = [rawPts[0]];
-  for (let i = 1; i < rawPts.length; i++) {
-    const prev = pts[pts.length - 1];
-    if (Math.hypot(rawPts[i][0] - prev[0], rawPts[i][1] - prev[1]) >= 0.018) {
-      pts.push(rawPts[i]);
-    }
-  }
-  if (pts.length < 2) return [];
-
-  const halfW = Math.max(0.14, widthUnits * 0.5);
-  const isClosedLoop = pts.length >= 4 &&
-    Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 0.03;
-
-  // Attempt single clean miter/bevel ribbon for open polylines
-  if (!isClosedLoop) {
-    const leftPts = [];
-    const rightPts = [];
-    const n = pts.length;
-    for (let i = 0; i < n; i++) {
-      if (i === 0) {
-        const dx = pts[1][0] - pts[0][0], dy = pts[1][1] - pts[0][1];
-        const l = Math.hypot(dx, dy) || 1;
-        const nx = -dy / l, ny = dx / l;
-        leftPts.push([pts[0][0] + nx * halfW, pts[0][1] + ny * halfW]);
-        rightPts.push([pts[0][0] - nx * halfW, pts[0][1] - ny * halfW]);
-      } else if (i === n - 1) {
-        const dx = pts[n - 1][0] - pts[n - 2][0], dy = pts[n - 1][1] - pts[n - 2][1];
-        const l = Math.hypot(dx, dy) || 1;
-        const nx = -dy / l, ny = dx / l;
-        leftPts.push([pts[n - 1][0] + nx * halfW, pts[n - 1][1] + ny * halfW]);
-        rightPts.push([pts[n - 1][0] - nx * halfW, pts[n - 1][1] - ny * halfW]);
-      } else {
-        const d1x = pts[i][0] - pts[i - 1][0], d1y = pts[i][1] - pts[i - 1][1];
-        const l1 = Math.hypot(d1x, d1y) || 1;
-        const t1x = d1x / l1, t1y = d1y / l1;
-        const d2x = pts[i + 1][0] - pts[i][0], d2y = pts[i + 1][1] - pts[i][1];
-        const l2 = Math.hypot(d2x, d2y) || 1;
-        const t2x = d2x / l2, t2y = d2y / l2;
-
-        const n1x = -t1y, n1y = t1x;
-        const n2x = -t2y, n2y = t2x;
-        const turnDot = t1x * t2x + t1y * t2y;
-        const cross = t1x * t2y - t1y * t2x;
-
-        if (turnDot < -0.15) {
-          // Bevel outer corner on sharp turns (> ~98 deg) to prevent long spikes or self-crossings
-          if (cross > 0) {
-            rightPts.push([pts[i][0] - n1x * halfW, pts[i][1] - n1y * halfW]);
-            rightPts.push([pts[i][0] - n2x * halfW, pts[i][1] - n2y * halfW]);
-            const bx = n1x + n2x, by = n1y + n2y, bl = Math.hypot(bx, by) || 1;
-            leftPts.push([pts[i][0] + (bx / bl) * halfW, pts[i][1] + (by / bl) * halfW]);
-          } else {
-            leftPts.push([pts[i][0] + n1x * halfW, pts[i][1] + n1y * halfW]);
-            leftPts.push([pts[i][0] + n2x * halfW, pts[i][1] + n2y * halfW]);
-            const bx = n1x + n2x, by = n1y + n2y, bl = Math.hypot(bx, by) || 1;
-            rightPts.push([pts[i][0] - (bx / bl) * halfW, pts[i][1] - (by / bl) * halfW]);
-          }
-        } else {
-          const tx = t1x + t2x, ty = t1y + t2y, tl = Math.hypot(tx, ty) || 1;
-          const mnx = -ty / tl, mny = tx / tl;
-          const dot = mnx * n1x + mny * n1y;
-          const miter = Math.min(1.45, 1.0 / Math.max(0.68, dot));
-          leftPts.push([pts[i][0] + mnx * halfW * miter, pts[i][1] + mny * halfW * miter]);
-          rightPts.push([pts[i][0] - mnx * halfW * miter, pts[i][1] - mny * halfW * miter]);
-        }
-      }
-    }
-    const ribbon = rightPts.concat(leftPts.slice().reverse());
-    if (_isSimpleRingExtract2D(ribbon)) {
-      if (_signedRingAreaExtract2D(ribbon) < 0) ribbon.reverse();
-      return [ribbon];
-    }
-  }
-
-  // Fallback for closed walkway loops or self-crossing marina dock polylines:
-  // emit clean per-segment convex quads with slight interior joint overlap
-  const segPolys = [];
-  for (let i = 0; i < pts.length - 1; i++) {
-    const pA = pts[i], pB = pts[i + 1];
-    const dx = pB[0] - pA[0], dy = pB[1] - pA[1];
-    const len = Math.hypot(dx, dy);
-    if (len < 0.02) continue;
-    const tx = dx / len, ty = dy / len;
-    const nx = -ty, ny = tx;
-    const extA = (i > 0 || isClosedLoop) ? Math.min(halfW * 0.45, len * 0.35) : 0;
-    const extB = (i < pts.length - 2 || isClosedLoop) ? Math.min(halfW * 0.45, len * 0.35) : 0;
-    const ax = pA[0] - tx * extA, ay = pA[1] - ty * extA;
-    const bx = pB[0] + tx * extB, by = pB[1] + ty * extB;
-    segPolys.push([
-      [ax - nx * halfW, ay - ny * halfW],
-      [bx - nx * halfW, by - ny * halfW],
-      [bx + nx * halfW, by + ny * halfW],
-      [ax + nx * halfW, ay + ny * halfW]
-    ]);
-  }
-  return segPolys;
 }
 
 function isOsmBridgeMultipolygonJS(tags) {
   if (!tags) return false;
   if (isOsmPierTagsJS(tags)) return true;
   if (['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.indoor === 'yes') return false;
-  if ((parseFloatTagJS(tags.layer, 1) || 1) < 0) return false;
-  return Boolean(
-    tags.man_made === 'bridge' ||
-    (tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge))
-  );
+  if (tags['bridge:support']) return true;
+  return Boolean(tags.man_made === 'bridge' || tags.type === 'bridge' || (tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge)));
 }
 
-function processOsmBridgeMultipolygonJS(rel, tags, raw, ctx) {
+function processOsmBridgeMultipolygonJS(rel, tags, _raw, ctx) {
   if (!isOsmBridgeMultipolygonJS(tags)) return false;
   const st = ctx.stitchedRelPolys.get(rel.id);
-  if (!st) return true;
+  if (!st) return tags.type === 'bridge' || tags.man_made === 'bridge';
   for (const wid of st.memberWayIds) ctx.usedWays.add(wid);
 
-  const isPier = isOsmPierTagsJS(tags);
-  if (isPier) {
-    const pierKind = getOsmPierKindJS(tags);
-    const isFloating = tags.floating === 'yes' || pierKind === 'pontoon';
-    if (!ctx.pierPolys) ctx.pierPolys = [];
+  if (tags['bridge:support']) {
+    if (!ctx.bridgeSupports) ctx.bridgeSupports = [];
+    for (const op of st.outerPolys) if (op && op.length >= 3) _pushSupportRecJS(ctx.bridgeSupports, tags, rel.id, false, _ringCentroidExtract2D(op), op, null);
+    return true;
+  }
+  if (isOsmPierTagsJS(tags)) {
     for (const op of st.outerPolys) {
       if (!op || op.length < 3) continue;
-      const opHoles = (st.innerPolys || []).filter(
-        h => h && h.length >= 3 && _ringInsideOuterExtract2D(h, op)
-      );
-      const rec = {
-        outer: op,
-        holes: opHoles,
-        name: tags.name || 'Molo',
-        layer: 0,
-        isPier: true,
-        pierKind,
-        floating: isFloating
-      };
-      ctx.bridgePolys.push(rec);
-      ctx.pierPolys.push({ ...rec, _inBridgePolys: true });
+      _pushPierAreaRecJS(ctx, op, (st.innerPolys || []).filter(h => h && h.length >= 3 && _ringInsideOuterExtract2D(h, op)), tags);
     }
     return true;
   }
-
-  const layerVal = Math.max(1, Math.trunc(parseFloatTagJS(tags.layer, 1) || 1));
   for (const op of st.outerPolys) {
     if (!op || op.length < 3) continue;
-    const opHoles = (st.innerPolys || []).filter(
-      h => h && h.length >= 3 && _ringInsideOuterExtract2D(h, op)
-    );
-    ctx.bridgePolys.push({
-      outer: op,
-      holes: opHoles,
-      name: tags.name || 'Most',
-      layer: layerVal,
-      bridgeStructure: tags['bridge:structure'] || tags.bridge || '',
-      covered: tags.covered || '',
-      level: tags.level || '',
-      osmId: rel.id,
-      tags
-    });
+    ctx.bridgePolys.push(_buildBridgeRecJS(op, (st.innerPolys || []).filter(h => h && h.length >= 3 && _ringInsideOuterExtract2D(h, op)), tags, rel.id));
   }
   return true;
 }
 
-function processOsmBridgeOrPierWayJS(wid, w, tags, nids, isClosed, ctx) {
-  if (tags.man_made === 'bridge' && isClosed && tags.area !== 'no') {
+function processOsmBridgeOrPierWayJS(wid, _w, tags, nids, isClosed, ctx) {
+  if (tags['bridge:support'] && !['no', 'false', '0', 'none'].includes(String(tags['bridge:support']).toLowerCase())) {
     if (ctx.usedWays.has(wid)) return true;
-    if (['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.indoor === 'yes') return true;
-    const rawLayer = parseFloatTagJS(tags.layer, 1);
-    if (rawLayer !== null && rawLayer < 0) return true;
+    if (!ctx.bridgeSupports) ctx.bridgeSupports = [];
     const pts = ctx.nodesToPts(nids, 0.005);
-    if (pts.length >= 3) {
-      const layerVal = Math.max(1, Math.trunc(rawLayer || 1));
-      ctx.bridgePolys.push({
-        outer: pts,
-        holes: [],
-        name: tags.name || 'Most',
-        layer: layerVal,
-        bridgeStructure: tags['bridge:structure'] || tags.bridge || '',
-        covered: tags.covered || '',
-        level: tags.level || '',
-        osmId: wid,
-        tags
-      });
+    if (pts.length >= 2) {
+      const closedRing = isClosed && pts.length >= 3;
+      _pushSupportRecJS(ctx.bridgeSupports, tags, wid, false, closedRing ? _ringCentroidExtract2D(pts) : pts[pts.length >> 1], closedRing ? pts : null, closedRing ? null : pts);
     }
     return true;
   }
-
+  if (tags.man_made === 'bridge' && isClosed && tags.area !== 'no') {
+    if (ctx.usedWays.has(wid) || ['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.indoor === 'yes') return true;
+    const pts = ctx.nodesToPts(nids, 0.005);
+    if (pts.length >= 3) ctx.bridgePolys.push(_buildBridgeRecJS(pts, [], tags, wid));
+    return true;
+  }
   if (isOsmPierTagsJS(tags)) {
-    if (ctx.usedWays.has(wid)) return true;
-    if (['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.indoor === 'yes') return true;
-
-    const pierKind = getOsmPierKindJS(tags);
-    const isFloating = tags.floating === 'yes' || pierKind === 'pontoon';
-    const isPierArea = isClosed && tags.area !== 'no' && (tags.area === 'yes' || !tags.highway);
-
-    if (isPierArea) {
+    if (ctx.usedWays.has(wid) || ['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.indoor === 'yes') return true;
+    if (isClosed && tags.area !== 'no' && (tags.area === 'yes' || !tags.highway)) {
       const pts = ctx.nodesToPts(nids, 0.005);
-      if (pts.length >= 3) {
-        const rec = {
-          outer: pts,
-          holes: [],
-          name: tags.name || 'Molo',
-          layer: 0,
-          isPier: true,
-          pierKind,
-          floating: isFloating
-        };
-        ctx.bridgePolys.push(rec);
-        if (!ctx.pierPolys) ctx.pierPolys = [];
-        ctx.pierPolys.push({ ...rec, _inBridgePolys: true });
-      }
+      if (pts.length >= 3) _pushPierAreaRecJS(ctx, pts, [], tags);
       return true;
     }
-
-    let rwm = pierKind === 'breakwater'
-      ? 5.0
-      : (pierKind === 'groyne' || pierKind === 'jetty')
-        ? 3.2
-        : pierKind === 'pontoon'
-          ? 2.8
-          : (tags.highway === 'service' ? 4.5 : 3.2);
+    const pierKind = getOsmPierKindJS(tags), isFloating = tags.floating === 'yes' || pierKind === 'pontoon';
+    let rwm = pierKind === 'breakwater' ? 5.0 : (pierKind === 'groyne' || pierKind === 'jetty') ? 3.2 : pierKind === 'pontoon' ? 2.8 : (tags.highway === 'service' ? 4.5 : 3.2);
     const explicitW = parseFloatTagJS(tags.width, null);
     if (explicitW !== null && explicitW >= 1.0 && explicitW <= 30.0) rwm = explicitW;
-    const defaultMToU = (typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined') ? (SCENE_CANONICAL_SPAN_UNITS / 1200) : 0.141;
-    const wUnits = Math.max(0.30, rwm * (ctx.metersToUnits || defaultMToU));
-
+    const wUnits = Math.max(0.30, rwm * (ctx.metersToUnits || 0.141));
     const pts = ctx.nodesToPts(nids, 0.005);
     if (pts.length >= 2) {
       if (!ctx.pierLines) ctx.pierLines = [];
-      ctx.pierLines.push({
-        pts,
-        width: wUnits,
-        pierKind,
-        floating: isFloating,
-        name: tags.name || 'Molo',
-        _inBridgePolys: true
-      });
-      const polyRings = _bufferPierPolylineToPolys2D(pts, wUnits);
-      for (let i = 0; i < polyRings.length; i++) {
-        ctx.bridgePolys.push({
-          outer: polyRings[i],
-          holes: [],
-          name: tags.name || 'Molo',
-          layer: 0,
-          isPier: true,
-          isPierLine: true,
-          pierKind,
-          floating: isFloating,
-          width: wUnits
-        });
+      ctx.pierLines.push({ pts, width: wUnits, pierKind, floating: isFloating, name: tags.name || 'Molo', _inBridgePolys: true });
+      for (const ring of _bufferPierPolylineToPolys2D(pts, wUnits)) {
+        ctx.bridgePolys.push({ outer: ring, holes: [], name: tags.name || 'Molo', layer: 0, isPier: true, isPierLine: true, pierKind, floating: isFloating, width: wUnits });
       }
     }
     return true;
   }
-
   return false;
 }
 
 function isOsmLinearBridgeOrPierWayJS(tags) {
-  if (!tags || isOsmPierTagsJS(tags)) return false;
-  const bridgeTag = tags.bridge;
-  return Boolean(
-    (bridgeTag && !['no', 'false', '0', 'none'].includes(bridgeTag)) ||
-    tags.man_made === 'bridge'
-  );
+  if (!tags || isOsmPierTagsJS(tags) || tags['bridge:support']) return false;
+  return Boolean((tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge)) || tags.man_made === 'bridge');
+}
+
+function _applyBridgeMetaToObjJS(srcTags, obj) {
+  if (!srcTags || !obj) return;
+  const st = _extractBridgeStructTagJS(srcTags);
+  if (st && (!obj.bridgeStructure || obj.bridgeStructure === 'yes' || obj.bridgeStructure === 'viaduct')) obj.bridgeStructure = st;
+  if (!obj.name || obj.name === 'Most') { if (srcTags.name) obj.name = srcTags.name; }
+  if (obj.heightM == null) obj.heightM = _parseLenM(srcTags, 'height');
+  if (obj.minHeightM == null) obj.minHeightM = _parseLenM(srcTags, 'min_height');
+  if (obj.clearanceM == null) obj.clearanceM = _parseLenM(srcTags, 'seamark:bridge:clearance_height') ?? _parseLenM(srcTags, 'maxheight');
 }
 
 function finalizeOsmBridgesLayerJS(ctx) {
   if (!ctx.pierPolys) ctx.pierPolys = [];
   if (!ctx.pierLines) ctx.pierLines = [];
+  if (!ctx.bridgeSupports) ctx.bridgeSupports = [];
+
+  const roadByOsmId = new Map(), polyByOsmId = new Map();
+  for (const rd of (ctx.roads || [])) if (rd && rd.osmId != null) roadByOsmId.set(rd.osmId, rd);
+  for (const bp of (ctx.bridgePolys || [])) if (bp && !bp.isPier && bp.osmId != null) polyByOsmId.set(bp.osmId, bp);
+
+  for (const meta of (ctx.bridgeRelMeta || [])) {
+    const bp = polyByOsmId.get(meta.relId) || (meta.outlineWayIds || []).map(id => polyByOsmId.get(id)).find(Boolean);
+    for (const wid of (meta.acrossWayIds || [])) {
+      const rd = roadByOsmId.get(wid);
+      if (!rd) continue;
+      _applyBridgeMetaToObjJS(meta.tags, rd);
+      rd.parentBridgeRelId = meta.relId; rd.isBridge = true; rd.bridge = true;
+      if (bp) {
+        _applyBridgeMetaToObjJS(bp.tags, rd); _applyBridgeMetaToObjJS(rd.tags, bp);
+        rd._bridgePolyOsmId = bp.osmId;
+        bp.acrossRoadIds = bp.acrossRoadIds || [];
+        if (!bp.acrossRoadIds.includes(rd.osmId)) bp.acrossRoadIds.push(rd.osmId);
+      }
+    }
+    if (bp) { _applyBridgeMetaToObjJS(meta.tags, bp); bp.parentBridgeRelId = meta.relId; }
+  }
+
+  for (const rd of (ctx.roads || [])) {
+    if (!rd || !(rd.isBridge || rd.bridge) || rd._bridgePolyOsmId != null || !rd.pts || rd.pts.length < 2) continue;
+    let bestBp = null, bestDiff = Infinity;
+    for (const bp of (ctx.bridgePolys || [])) {
+      if (!bp || bp.isPier || !bp.outer || bp.outer.length < 3) continue;
+      const diff = Math.abs((rd.hasExplicitLayer ? rd.layer : bp.layer) - (bp.layer ?? 1));
+      if (diff > 1) continue;
+      if (_polylineCrossesRingExtract2D(rd.pts, bp.outer) && diff < bestDiff) { bestDiff = diff; bestBp = bp; }
+    }
+    if (bestBp) {
+      _applyBridgeMetaToObjJS(rd.tags, bestBp); _applyBridgeMetaToObjJS(bestBp.tags, rd);
+      bestBp.acrossRoadIds = bestBp.acrossRoadIds || [];
+      if (rd.osmId != null && !bestBp.acrossRoadIds.includes(rd.osmId)) bestBp.acrossRoadIds.push(rd.osmId);
+      rd._bridgePolyOsmId = bestBp.osmId;
+    }
+  }
 }
 
-if (typeof window !== 'undefined') {
-  window.isOsmBridgeMultipolygonJS = isOsmBridgeMultipolygonJS;
-  window.processOsmBridgeMultipolygonJS = processOsmBridgeMultipolygonJS;
-  window.processOsmBridgeOrPierWayJS = processOsmBridgeOrPierWayJS;
-  window.isOsmLinearBridgeOrPierWayJS = isOsmLinearBridgeOrPierWayJS;
-  window.finalizeOsmBridgesLayerJS = finalizeOsmBridgesLayerJS;
-}
-
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    isOsmBridgeMultipolygonJS,
-    processOsmBridgeMultipolygonJS,
-    processOsmBridgeOrPierWayJS,
-    isOsmLinearBridgeOrPierWayJS,
-    finalizeOsmBridgesLayerJS
-  };
-}
+const _BRIDGES_EXPORTS = {
+  isOsmPierTagsJS, getOsmPierKindJS, collectOsmBridgeSupportNodeJS,
+  isOsmBridgeMultipolygonJS, processOsmBridgeMultipolygonJS,
+  processOsmBridgeOrPierWayJS, isOsmLinearBridgeOrPierWayJS, finalizeOsmBridgesLayerJS
+};
+if (typeof window !== 'undefined') Object.assign(window, _BRIDGES_EXPORTS);
+if (typeof module !== 'undefined' && module.exports) module.exports = _BRIDGES_EXPORTS;

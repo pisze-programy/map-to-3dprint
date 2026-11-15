@@ -555,10 +555,22 @@
 
     const multiDeckOverlapsViolated = (ctx.audit.bridgeAudits || []).filter((a, idx, arr) =>
       arr.some((b, jdx) => {
-        if (jdx <= idx || a.deckLayer === b.deckLayer) return false;
-        if (!a.bbox || !b.bbox) return false;
+        if (jdx <= idx || a.deckLayer === b.deckLayer || !a.bbox || !b.bbox) return false;
         const xyOverlap = !(a.bbox[2] <= b.bbox[0] || b.bbox[2] <= a.bbox[0] || a.bbox[3] <= b.bbox[1] || b.bbox[3] <= a.bbox[1]);
         if (!xyOverlap) return false;
+        if (a.axisPts && b.axisPts && a.zBotArr && b.zBotArr && a.zTopArr && b.zTopArr) {
+          const [lo, hi] = a.deckLayer < b.deckLayer ? [a, b] : [b, a];
+          const hitRad = Math.max(0.8, ((lo.width || 1) + (hi.width || 1)) * 0.52);
+          for (let ki = 0; ki < hi.axisPts.length; ki++) {
+            const hp = hi.axisPts[ki];
+            for (let kj = 0; kj < lo.axisPts.length; kj++) {
+              if (Math.hypot(hp[0] - lo.axisPts[kj][0], hp[1] - lo.axisPts[kj][1]) <= hitRad) {
+                if (hi.zBotArr[ki] <= lo.zTopArr[kj] + 1e-3) return true;
+              }
+            }
+          }
+          return false;
+        }
         return !(a.zDeckTop <= b.zDeckBot + 1e-3 || b.zDeckTop <= a.zDeckBot + 1e-3);
       })
     ).length;

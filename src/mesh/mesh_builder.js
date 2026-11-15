@@ -57,6 +57,12 @@
   if (typeof buildLayer1S3DBBuildings === 'undefined') {
     Object.assign(g, _req('./layer1_s3db_buildings.js'));
   }
+  if (typeof solveBridgeGraph === 'undefined') {
+    Object.assign(g, _req('./bridge_axis_helper.js'));
+    Object.assign(g, _req('./bridge_graph_solver.js'));
+    Object.assign(g, _req('./bridge_deck_builder.js'));
+    Object.assign(g, _req('./bridge_superstructure_solver.js'));
+  }
   if (typeof buildLayer1Bridges === 'undefined') {
     Object.assign(g, _req('./layer1_bridges.js'));
   }

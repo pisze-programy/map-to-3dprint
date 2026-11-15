@@ -294,6 +294,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
         roads: [],
         roadPolys: [],
         bridgePolys: [],
+        bridgeSupports: [],
         dem,
         _fallback: true
       };
