@@ -150,6 +150,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
 
   const concurrency = Math.min(3, totalChunks);
   let nextChunkIdx = 0;
+  let streamCompleted = false;
 
   const runChunkWorker = async () => {
     while (nextChunkIdx < chunks.length) {
@@ -240,8 +241,10 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
         const snapLoaded = loadedChunks;
         partialPreviewPromise = (async () => {
           try {
+            await new Promise(r => setTimeout(r, 400));
+            if (streamCompleted || loadedChunks + failedChunks >= totalChunks || (abortSignal && abortSignal.aborted)) return;
             const demNow = await demPromise;
-            if (abortSignal && abortSignal.aborted) return;
+            if (streamCompleted || loadedChunks + failedChunks >= totalChunks || (abortSignal && abortSignal.aborted)) return;
             const partialElements = mergeAndDeduplicateElements(snapshotArrays, effectiveSpanM, lodQueryOpts);
             const partialScene = await buildSceneFromPreloadedGis(
               south, west, north, east, `${title} (${snapLoaded}/${totalChunks})`, demNow, partialElements, 4500, sceneOptions
@@ -259,6 +262,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   };
 
   await Promise.all(Array.from({ length: concurrency }, () => runChunkWorker()));
+  streamCompleted = true;
 
   if (partialPreviewPromise) {
     try { await partialPreviewPromise; } catch (_) {}
@@ -312,10 +316,10 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
 
   const isResin = !(options && options.isResin === false);
   const maxBlds = ((minBldFootprintM === 0 && effectiveSpanM <= 7500) || (isResin && effectiveSpanM <= 5500))
-    ? Infinity
+    ? (effectiveSpanM <= 2600 ? 12000 : 8500)
     : (effectiveSpanM > 12000 ? 2500 : 6000);
   const finalScene = await buildSceneFromPreloadedGis(south, west, north, east, title, dem, mergedElements, maxBlds, sceneOptions);
-  finalScene._chunkStats = { rows, cols, loadedChunks, totalChunks, lodTier, demZoom: dem.zoom || 14 };
+  finalScene._chunkStats = { rows, cols, loadedChunks, failedChunks, totalChunks, lodTier, demZoom: dem.zoom || 14 };
 
   return finalScene;
 }

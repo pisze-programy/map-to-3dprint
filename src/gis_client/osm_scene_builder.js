@@ -30,8 +30,8 @@ if (typeof finalizeOsmBuildingsLayerJS === 'undefined' && typeof require !== 'un
 const OVERPASS_ENDPOINTS_BUILDER = [
   '/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.openstreetmap.fr/api/interpreter'
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass-api.de/api/interpreter'
 ];
 
 let _overpassMirrorRoundRobin = 0;
@@ -48,10 +48,10 @@ function _getOrderedBuilderMirrors() {
 
 function fetchHedgedOverpassJson(query, options = {}) {
   const signal = options.signal || null;
-  const timeoutMs = options.timeoutMs || 15000;
+  const timeoutMs = options.timeoutMs || 23000;
   const mirrors = _getOrderedBuilderMirrors();
   const staggerDelays = mirrors[0] === '/api/interpreter'
-    ? [0, 6000, 8500, 11000, 13000]
+    ? [0, 21500, 24000, 26500]
     : [0, 2200, 4500, 7200, 9800];
 
   return new Promise((resolve, reject) => {

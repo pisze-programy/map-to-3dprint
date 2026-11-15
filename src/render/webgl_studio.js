@@ -46,6 +46,7 @@ function createWebGLStudio(canvas3d, state) {
 
   const glBuffers = {};
   let meshUploadVersion = 0;
+  let shadowUploadVersion = 0;
   let lastRenderSig = '';
   let lastShadowSig = '';
   let activeGenerationId = 0;
@@ -80,6 +81,7 @@ function createWebGLStudio(canvas3d, state) {
       });
     }
     meshUploadVersion++;
+    shadowUploadVersion++;
     lastRenderSig = '';
     render(true);
   }
@@ -159,6 +161,7 @@ function createWebGLStudio(canvas3d, state) {
     }
 
     meshUploadVersion++;
+    if (!options.deferShadow) shadowUploadVersion++;
     lastRenderSig = '';
     if (options.renderImmediately !== false) {
       render(true);
@@ -172,6 +175,8 @@ function createWebGLStudio(canvas3d, state) {
       entry.buf = entry.chunks[0].buf;
       entry.count = entry.chunks[0].count;
       entry.chunks = [];
+      shadowUploadVersion++;
+      lastRenderSig = '';
       return;
     }
     if (state && state.layerMeshes && state.layerMeshes[layerName]) {
@@ -361,7 +366,7 @@ function createWebGLStudio(canvas3d, state) {
       : -1.0;
 
     // PASS 1: SHADOW MAP (cached across pure color-picker & camera orbit frames)
-    const shadowSig = `${meshUploadVersion}|${state.sunAngleDeg}|${state.explodeFactor}|${tCols}x${tRows}|${tExplode}|${state.showFrame}|${Boolean(state.waterCutout)}|${visKey}|${halfW.toFixed(1)}x${halfH.toFixed(1)}|${sunShadow.frustumKey}`;
+    const shadowSig = `${shadowUploadVersion}|${state.sunAngleDeg}|${state.explodeFactor}|${tCols}x${tRows}|${tExplode}|${state.showFrame}|${Boolean(state.waterCutout)}|${visKey}|${halfW.toFixed(1)}x${halfH.toFixed(1)}|${sunShadow.frustumKey}`;
     if (shadowSig !== lastShadowSig) {
       lastShadowSig = shadowSig;
       gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);

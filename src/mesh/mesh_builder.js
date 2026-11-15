@@ -113,7 +113,8 @@ async function buildS3DBBuildingsMeshProgressive(scene, ctx, baseInfo, state, me
   let nextBldShellId = 1;
   const allocShellId = () => nextBldShellId++;
   const activeItems = prepared.filter(it => !it.skip);
-  const CHUNK_FLUSH_SIZE = 40;
+  const CHUNK_FLUSH_SIZE = Math.max(180, Math.ceil(activeItems.length / 8));
+  const CHUNK_TRI_THRESHOLD = 18000;
   let chunkBuildingsTris = [];
   let chunkHlTris = [];
 
@@ -129,22 +130,24 @@ async function buildS3DBBuildingsMeshProgressive(scene, ctx, baseInfo, state, me
     buildingBounds.push(emitSingleS3DBBuildingItem(item, ctx, allocShellId, targetMainList, targetBatchArr));
 
     const isLast = (i === activeItems.length - 1);
-    const shouldFlush = (chunkBuildingsTris.length + chunkHlTris.length >= 600) ||
+    const shouldFlush = (chunkBuildingsTris.length + chunkHlTris.length >= CHUNK_TRI_THRESHOLD) ||
                         ((i + 1) % CHUNK_FLUSH_SIZE === 0) ||
                         isLast;
 
     if (shouldFlush) {
       if (chunkBuildingsTris.length > 0) {
-        onStageReady('buildings', chunkBuildingsTris, { append: true });
+        onStageReady('buildings', chunkBuildingsTris, { append: true, deferShadow: !isLast });
         chunkBuildingsTris = [];
       }
       if (chunkHlTris.length > 0) {
-        onStageReady('highlighted', chunkHlTris, { append: true });
+        onStageReady('highlighted', chunkHlTris, { append: true, deferShadow: !isLast });
         chunkHlTris = [];
       }
 
       const pct = 72 + Math.round(((i + 1) / activeItems.length) * 20);
       onProgress(pct, `Etap 4/5: Wznoszenie budynków 3D (${i + 1}/${activeItems.length})...`, `Dachy LoD2 i fasady (${i + 1}/${activeItems.length})`);
+      await yieldCtrl.yieldIfNeeded();
+    } else if ((i & 31) === 31) {
       await yieldCtrl.yieldIfNeeded();
     }
   }
@@ -166,6 +169,8 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
     highlighted: [],
     frame: []
   };
+  const onStageReady = typeof options.onStageReady === 'function' ? options.onStageReady : (typeof options.onLayerReady === 'function' ? options.onLayerReady : (() => {}));
+
   if (!scene) {
     const totalWidthMm = state.bedSizeMm || state.targetWidthMm || 320;
     const totalHeightMm = state.totalHeightMm || state.targetHeightMm || totalWidthMm;
@@ -182,6 +187,7 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
     if (typeof emitPolygonWithHolesSlab3D === 'function') {
       emitPolygonWithHolesSlab3D(baseBedRing, [], 0, 1.8 / scaleMm, 1, meshes.base, 0, -1);
     }
+    onStageReady('base', meshes.base, { append: false });
     const totalTriangles = meshes.base.length;
     return { meshes, buildingBounds: [], pickIdMap: new Map(), totalTriangles };
   }
@@ -194,7 +200,6 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
     currentMaxPct = monotonicPct;
     rawOnProgress(monotonicPct, label, sub);
   };
-  const onStageReady = typeof options.onStageReady === 'function' ? options.onStageReady : (typeof options.onLayerReady === 'function' ? options.onLayerReady : (() => {}));
 
   let nextFeatureShellId = -100;
   const allocShellId = () => (nextFeatureShellId--);

@@ -147,16 +147,26 @@ function isSimplePolygon(poly) {
   if (n < 3) return false;
   for (let i = 0; i < n; i++) {
     const a1 = poly[i], a2 = poly[(i + 1) % n];
+    const ax0 = a1[0], ay0 = a1[1], ax1 = a2[0], ay1 = a2[1];
+    const minAx = (ax0 < ax1 ? ax0 : ax1) - 1e-3;
+    const maxAx = (ax0 > ax1 ? ax0 : ax1) + 1e-3;
+    const minAy = (ay0 < ay1 ? ay0 : ay1) - 1e-3;
+    const maxAy = (ay0 > ay1 ? ay0 : ay1) + 1e-3;
     for (let j = i + 2; j < n; j++) {
       if (i === 0 && j === n - 1) continue;
       const b1 = poly[j], b2 = poly[(j + 1) % n];
-      const isReverseBridge = (Math.hypot(a1[0] - b2[0], a1[1] - b2[1]) < 1e-5 && Math.hypot(a2[0] - b1[0], a2[1] - b1[1]) < 1e-5);
-      const isForwardBridge = (Math.hypot(a1[0] - b1[0], a1[1] - b1[1]) < 1e-5 && Math.hypot(a2[0] - b2[0], a2[1] - b2[1]) < 1e-5);
+      const bx0 = b1[0], by0 = b1[1], bx1 = b2[0], by1 = b2[1];
+      if ((bx0 < bx1 ? bx0 : bx1) > maxAx || (bx0 > bx1 ? bx0 : bx1) < minAx ||
+          (by0 < by1 ? by0 : by1) > maxAy || (by0 > by1 ? by0 : by1) < minAy) {
+        continue;
+      }
+      const isReverseBridge = (Math.hypot(ax0 - bx1, ay0 - by1) < 1e-5 && Math.hypot(ax1 - bx0, ay1 - by0) < 1e-5);
+      const isForwardBridge = (Math.hypot(ax0 - bx0, ay0 - by0) < 1e-5 && Math.hypot(ax1 - bx1, ay1 - by1) < 1e-5);
       if (isReverseBridge || isForwardBridge) continue;
       if (segmentsIntersectProper(a1, a2, b1, b2)) return false;
 
-      const endTouchA1 = Math.hypot(a1[0] - b1[0], a1[1] - b1[1]) < 1e-5 || Math.hypot(a1[0] - b2[0], a1[1] - b2[1]) < 1e-5;
-      const endTouchA2 = Math.hypot(a2[0] - b1[0], a2[1] - b1[1]) < 1e-5 || Math.hypot(a2[0] - b2[0], a2[1] - b2[1]) < 1e-5;
+      const endTouchA1 = Math.hypot(ax0 - bx0, ay0 - by0) < 1e-5 || Math.hypot(ax0 - bx1, ay0 - by1) < 1e-5;
+      const endTouchA2 = Math.hypot(ax1 - bx0, ay1 - by0) < 1e-5 || Math.hypot(ax1 - bx1, ay1 - by1) < 1e-5;
       if (!endTouchA1 && pointToSegmentDistSq2D(a1, b1, b2) < 1e-7) return false;
       if (!endTouchA2 && pointToSegmentDistSq2D(a2, b1, b2) < 1e-7) return false;
     }
@@ -167,11 +177,22 @@ function isSimplePolygon(poly) {
 function hasSelfTouchingEdge2D(poly, tolSq = 1e-4) {
   const n = poly.length;
   if (n < 3) return true;
+  const pad = Math.sqrt(Math.max(0, tolSq)) + 1e-4;
   for (let i = 0; i < n; i++) {
     const a1 = poly[i], a2 = poly[(i + 1) % n];
+    const ax0 = a1[0], ay0 = a1[1], ax1 = a2[0], ay1 = a2[1];
+    const minAx = (ax0 < ax1 ? ax0 : ax1) - pad;
+    const maxAx = (ax0 > ax1 ? ax0 : ax1) + pad;
+    const minAy = (ay0 < ay1 ? ay0 : ay1) - pad;
+    const maxAy = (ay0 > ay1 ? ay0 : ay1) + pad;
     for (let j = i + 2; j < n; j++) {
       if (i === 0 && j === n - 1) continue;
       const b1 = poly[j], b2 = poly[(j + 1) % n];
+      const bx0 = b1[0], by0 = b1[1], bx1 = b2[0], by1 = b2[1];
+      if ((bx0 < bx1 ? bx0 : bx1) > maxAx || (bx0 > bx1 ? bx0 : bx1) < minAx ||
+          (by0 < by1 ? by0 : by1) > maxAy || (by0 > by1 ? by0 : by1) < minAy) {
+        continue;
+      }
       if (segmentsIntersectProper(a1, a2, b1, b2)) return true;
       if (pointToSegmentDistSq2D(a1, b1, b2) < tolSq) return true;
       if (pointToSegmentDistSq2D(a2, b1, b2) < tolSq) return true;

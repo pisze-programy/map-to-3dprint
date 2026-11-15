@@ -41,32 +41,41 @@ OVERPASS_USER_AGENT = (
     "Map3DPrintStudio/2.0 (+https://github.com/pisze-programy/map-to-3dprint; "
     "contact@piszeprogramy.pl)"
 )
-OVERPASS_ATTEMPT_TIMEOUT_SEC = 14.0
-OVERPASS_TOTAL_BUDGET_SEC = 14.5
-OVERPASS_UNPROVEN_FAIL_PROBE_SEC = 5.0
+OVERPASS_CONNECT_TIMEOUT_SEC = 2.6
+OVERPASS_ATTEMPT_TIMEOUT_SEC = 6.5
+OVERPASS_MIRROR_PHASE_BUDGET_SEC = 9.0
+OVERPASS_TOTAL_BUDGET_SEC = 20.0
+OVERPASS_CACHE_TTL_SEC = 600.0
+OVERPASS_CACHE_MAX = 64
 
 OVERPASS_UPSTREAM_MIRRORS = [
-    "https://overpass.openstreetmap.fr/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
 ]
 
 _LOG_LOCK = threading.Lock()
 _MIRROR_LOCK = threading.Lock()
+_UPSTREAM_SEMAPHORE = threading.Semaphore(3)
 _MIRROR_STATE = {
     url: {
-        "ewma_ms": 1200.0 + idx * 250.0,
+        "ewma_ms": 1100.0 + idx * 150.0,
         "cooldown_until": 0.0,
         "ok": 0,
         "fail": 0,
         "consec_fail": 0,
+        "in_flight": 0,
     }
     for idx, url in enumerate(OVERPASS_UPSTREAM_MIRRORS)
 }
 
 _INFLIGHT_LOCK = threading.Lock()
 _INFLIGHT_QUERIES = {}
+_OVERPASS_CACHE_LOCK = threading.Lock()
+_OVERPASS_CACHE = OrderedDict()
+_BBOX_QL_RE = re.compile(
+    r"\[bbox:\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\]"
+)
 
 GEOCODE_CACHE_TTL_SEC = 900.0
 GEOCODE_CACHE_MAX = 256
@@ -129,30 +138,40 @@ def _short_mirror_name(url):
         return url
 
 
+def _mark_mirror_inflight(url, delta):
+    with _MIRROR_LOCK:
+        st = _MIRROR_STATE.get(url)
+        if st:
+            st["in_flight"] = max(0, st.get("in_flight", 0) + delta)
+
+
 def _ordered_overpass_mirrors():
     """
-    Orders mirrors so proven healthy mirrors (ok > 0) are NEVER demoted behind
-    zero-success or consecutively failing mirrors.
+    Orders mirrors strictly keeping non-cooling mirrors ahead of cooling ones,
+    balancing concurrent in-flight load across healthy mirrors and skipping
+    long-cooldown mirrors (e.g. HTTP 401/403) when any healthy candidate exists.
     """
     now = time.monotonic()
     with _MIRROR_LOCK:
         ranked = []
+        has_non_cooling = False
         for idx, url in enumerate(OVERPASS_UPSTREAM_MIRRORS):
             st = _MIRROR_STATE[url]
-            is_cooling = st["cooldown_until"] > now
+            cooldown_rem = st["cooldown_until"] - now
+            is_cooling = cooldown_rem > 0.0
             has_ok = st["ok"] > 0
             consec_fail = st["consec_fail"]
-            if has_ok and not is_cooling:
-                tier = 0
-            elif not has_ok and consec_fail == 0 and not is_cooling:
-                tier = 1
-            elif has_ok and is_cooling:
-                tier = 2
+            in_flight = st.get("in_flight", 0)
+            if not is_cooling:
+                has_non_cooling = True
+                tier = 0 if has_ok else 1
             else:
-                tier = 3
-            ranked.append((tier, consec_fail, st["ewma_ms"], idx, url, dict(st)))
-        ranked.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
-        return [(item[4], item[5]) for item in ranked]
+                tier = 2 if has_ok else 3
+            ranked.append((tier, in_flight, consec_fail, st["ewma_ms"], idx, url, dict(st), cooldown_rem))
+        if has_non_cooling:
+            ranked = [item for item in ranked if item[0] <= 1 or item[7] <= 120.0]
+        ranked.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4]))
+        return [(item[5], item[6]) for item in ranked]
 
 
 def _has_healthy_proven_mirror():
@@ -183,7 +202,7 @@ def _record_mirror_failure(url, cooldown_sec=40.0, is_query_timeout=False):
         st["fail"] += 1
         st["consec_fail"] += 1
         # Never cooldown-poison a proven mirror (ok > 0) on isolated heavy-query timeouts
-        if is_query_timeout and st["ok"] > 0 and st["consec_fail"] < 3:
+        if is_query_timeout and st["ok"] > 0 and st["consec_fail"] < 2:
             return
         st["cooldown_until"] = max(st["cooldown_until"], now + cooldown_sec)
         st["ewma_ms"] = min(15000.0, st["ewma_ms"] * 1.3 + 600.0)
@@ -242,74 +261,167 @@ def _is_timeout_exception(exc):
     return "timed out" in str(exc).lower()
 
 
+class _IPv4PreferredHTTPSConnection(http.client.HTTPSConnection):
+    """Connects over IPv4 exclusively when IPv4 A records exist, avoiding macOS IPv6 hangs."""
+
+    def connect(self):
+        last_exc = None
+        ipv4_infos = []
+        try:
+            ipv4_infos = socket.getaddrinfo(
+                self.host, self.port, socket.AF_INET, socket.SOCK_STREAM
+            )
+        except OSError as exc:
+            last_exc = exc
+
+        if ipv4_infos:
+            info_groups = (ipv4_infos,)
+        else:
+            try:
+                info_groups = (
+                    socket.getaddrinfo(
+                        self.host, self.port, socket.AF_UNSPEC, socket.SOCK_STREAM
+                    ),
+                )
+            except OSError as exc:
+                last_exc = exc
+                info_groups = ()
+
+        per_addr_timeout = None
+        if self.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT and self.timeout is not None:
+            per_addr_timeout = min(float(self.timeout), 2.4)
+
+        for infos in info_groups:
+            for af, socktype, proto, _, sa in infos:
+                sock = None
+                try:
+                    sock = socket.socket(af, socktype, proto)
+                    if per_addr_timeout is not None:
+                        sock.settimeout(per_addr_timeout)
+                    sock.connect(sa)
+                    self.sock = _SSL_DEFAULT_CTX.wrap_socket(
+                        sock, server_hostname=self.host
+                    )
+                    if self.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT and self.timeout is not None:
+                        self.sock.settimeout(self.timeout)
+                    return
+                except OSError as exc:
+                    last_exc = exc
+                    if sock is not None:
+                        try:
+                            sock.close()
+                        except OSError:
+                            pass
+        if last_exc is not None:
+            raise last_exc
+        raise OSError(f"Unable to resolve {self.host}:{self.port}")
+
+
 def _fetch_overpass_upstream_once(mirror_url, encoded_form_body, attempt_timeout_sec):
     t0 = time.perf_counter()
-    req = urllib.request.Request(
-        mirror_url,
-        data=encoded_form_body,
-        headers={
-            "User-Agent": OVERPASS_USER_AGENT,
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "Accept": "application/json",
-            "Accept-Encoding": "gzip",
-        },
-        method="POST",
+    parsed = urllib.parse.urlsplit(mirror_url)
+    host = parsed.hostname
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    path_and_query = parsed.path or "/"
+    if parsed.query:
+        path_and_query = f"{path_and_query}?{parsed.query}"
+
+    connect_timeout = min(OVERPASS_CONNECT_TIMEOUT_SEC, attempt_timeout_sec)
+    conn_cls = (
+        _IPv4PreferredHTTPSConnection
+        if parsed.scheme == "https"
+        else http.client.HTTPConnection
     )
+    conn = conn_cls(host, port=port, timeout=connect_timeout)
+    _mark_mirror_inflight(mirror_url, +1)
     try:
-        with urllib.request.urlopen(req, timeout=attempt_timeout_sec) as resp:
-            status = getattr(resp, "status", 200)
-            raw = resp.read()
-            content_encoding = (resp.headers.get("Content-Encoding") or "").lower()
-            content_type = (resp.headers.get("Content-Type") or "").lower()
-    except urllib.error.HTTPError as exc:
-        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        try:
+            conn.connect()
+        except Exception as exc:
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            _record_mirror_failure(mirror_url, cooldown_sec=75.0, is_query_timeout=False)
+            detail = f"{type(exc).__name__}: {exc}"
+            log_server_event(
+                "UPSTREAM_WARN",
+                f"Overpass mirror={_short_mirror_name(mirror_url)} failed phase=connect "
+                f"elapsed_ms={elapsed_ms:.1f} reason={detail!r}",
+            )
+            raise RuntimeError(f"{_short_mirror_name(mirror_url)}: {detail}") from exc
+
+        try:
+            if conn.sock is not None:
+                conn.sock.settimeout(attempt_timeout_sec)
+            req_headers = {
+                "User-Agent": OVERPASS_USER_AGENT,
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "Content-Length": str(len(encoded_form_body)),
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+                "Connection": "close",
+            }
+            conn.request("POST", path_and_query, body=encoded_form_body, headers=req_headers)
+            resp = conn.getresponse()
+            status = resp.status
+            reason = resp.reason
+            content_encoding = (resp.getheader("Content-Encoding") or "").lower()
+            content_type = (resp.getheader("Content-Type") or "").lower()
+            raw = resp.read(240) if status != 200 else resp.read()
+        except Exception as exc:
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            timed_out = _is_timeout_exception(exc)
+            is_query_timeout = bool(timed_out and elapsed_ms >= 5000.0)
+            _record_mirror_failure(
+                mirror_url, cooldown_sec=25.0, is_query_timeout=is_query_timeout
+            )
+            detail = f"{type(exc).__name__}: {exc}"
+            log_server_event(
+                "UPSTREAM_WARN",
+                f"Overpass mirror={_short_mirror_name(mirror_url)} failed phase=read "
+                f"elapsed_ms={elapsed_ms:.1f} reason={detail!r}",
+            )
+            if is_query_timeout:
+                raise OverpassQueryTimeoutError(f"{_short_mirror_name(mirror_url)}: {detail}") from exc
+            raise RuntimeError(f"{_short_mirror_name(mirror_url)}: {detail}") from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        _mark_mirror_inflight(mirror_url, -1)
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    if status != 200:
         err_body = ""
         try:
-            err_raw = exc.read(240)
-            if (exc.headers.get("Content-Encoding") or "").lower() == "gzip":
+            err_raw = raw
+            if content_encoding == "gzip" or err_raw[:2] == b"\x1f\x8b":
                 err_raw = gzip.decompress(err_raw)
             err_body = err_raw.decode("utf-8", errors="replace").replace("\n", " ").strip()
         except Exception:
             err_body = ""
-        is_gw_timeout = exc.code == 504
-        cooldown = 20.0 if exc.code in (429, 504) else 45.0
+        if status in (401, 403):
+            cooldown = 1800.0
+            is_gw_timeout = False
+        elif status == 504:
+            cooldown = 20.0
+            is_gw_timeout = True
+        elif status in (429, 502, 503):
+            cooldown = 35.0
+            is_gw_timeout = False
+        else:
+            cooldown = 45.0
+            is_gw_timeout = False
         _record_mirror_failure(
             mirror_url, cooldown_sec=cooldown, is_query_timeout=is_gw_timeout
         )
-        detail = f"HTTP {exc.code} {exc.reason}" + (f" ({err_body[:120]})" if err_body else "")
+        detail = f"HTTP {status} {reason}" + (f" ({err_body[:120]})" if err_body else "")
         log_server_event(
             "UPSTREAM_WARN",
             f"Overpass mirror={_short_mirror_name(mirror_url)} failed "
             f"elapsed_ms={elapsed_ms:.1f} reason={detail!r}",
         )
         if is_gw_timeout:
-            raise OverpassQueryTimeoutError(f"{_short_mirror_name(mirror_url)}: {detail}") from exc
-        raise RuntimeError(f"{_short_mirror_name(mirror_url)}: {detail}") from exc
-    except Exception as exc:
-        elapsed_ms = (time.perf_counter() - t0) * 1000.0
-        timed_out = _is_timeout_exception(exc)
-        _record_mirror_failure(
-            mirror_url, cooldown_sec=45.0, is_query_timeout=timed_out
-        )
-        detail = f"{type(exc).__name__}: {exc}"
-        log_server_event(
-            "UPSTREAM_WARN",
-            f"Overpass mirror={_short_mirror_name(mirror_url)} failed "
-            f"elapsed_ms={elapsed_ms:.1f} reason={detail!r}",
-        )
-        if timed_out:
-            raise OverpassQueryTimeoutError(f"{_short_mirror_name(mirror_url)}: {detail}") from exc
-        raise RuntimeError(f"{_short_mirror_name(mirror_url)}: {detail}") from exc
-
-    elapsed_ms = (time.perf_counter() - t0) * 1000.0
-    if status != 200:
-        _record_mirror_failure(mirror_url, cooldown_sec=35.0)
-        detail = f"Unexpected HTTP {status}"
-        log_server_event(
-            "UPSTREAM_WARN",
-            f"Overpass mirror={_short_mirror_name(mirror_url)} failed "
-            f"elapsed_ms={elapsed_ms:.1f} reason={detail!r}",
-        )
+            raise OverpassQueryTimeoutError(f"{_short_mirror_name(mirror_url)}: {detail}")
         raise RuntimeError(f"{_short_mirror_name(mirror_url)}: {detail}")
 
     if content_encoding == "gzip" or raw[:2] == b"\x1f\x8b":
@@ -359,13 +471,276 @@ def _fetch_overpass_upstream_once(mirror_url, encoded_form_body, attempt_timeout
     return validated_bytes, element_count, _short_mirror_name(mirror_url), elapsed_ms
 
 
+def _get_cached_overpass(q_hash):
+    now = time.monotonic()
+    with _OVERPASS_CACHE_LOCK:
+        item = _OVERPASS_CACHE.get(q_hash)
+        if not item:
+            return None
+        expires_at, payload, elem_count = item
+        if now >= expires_at:
+            _OVERPASS_CACHE.pop(q_hash, None)
+            return None
+        _OVERPASS_CACHE.move_to_end(q_hash)
+        return payload, elem_count
+
+
+def _put_cached_overpass(q_hash, payload, elem_count):
+    expires_at = time.monotonic() + OVERPASS_CACHE_TTL_SEC
+    with _OVERPASS_CACHE_LOCK:
+        _OVERPASS_CACHE[q_hash] = (expires_at, payload, elem_count)
+        _OVERPASS_CACHE.move_to_end(q_hash)
+        while len(_OVERPASS_CACHE) > OVERPASS_CACHE_MAX:
+            _OVERPASS_CACHE.popitem(last=False)
+
+
+def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
+    m = _BBOX_QL_RE.search(query_str or "")
+    if not m:
+        return None
+    south, west, north, east = (
+        float(m.group(1)),
+        float(m.group(2)),
+        float(m.group(3)),
+        float(m.group(4)),
+    )
+    area_deg2 = abs(north - south) * abs(east - west)
+    if area_deg2 > 0.0036:
+        raise OverpassQueryTimeoutError(
+            "osm-api-v0.6: bbox area > 0.0036 deg^2; split 2x2"
+        )
+
+    fallback_deadline = time.monotonic() + max(0.5, timeout_budget_sec)
+    path_and_query = (
+        f"/api/0.6/map.json?bbox={west:.6f},{south:.6f},{east:.6f},{north:.6f}"
+    )
+    connect_timeout = min(2.8, max(0.5, timeout_budget_sec))
+    read_timeout = min(11.5, max(4.0, timeout_budget_sec))
+    conn = _IPv4PreferredHTTPSConnection(
+        "api.openstreetmap.org", port=443, timeout=connect_timeout
+    )
+    try:
+        conn.connect()
+        if conn.sock is not None:
+            conn.sock.settimeout(read_timeout)
+        req_headers = {
+            "User-Agent": OVERPASS_USER_AGENT,
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "Connection": "close",
+        }
+        conn.request("GET", path_and_query, headers=req_headers)
+        resp = conn.getresponse()
+        status = resp.status
+        encoding = (resp.getheader("Content-Encoding") or "").lower()
+        raw = resp.read() if status == 200 else resp.read(240)
+    except Exception as exc:
+        if _is_timeout_exception(exc):
+            raise OverpassQueryTimeoutError(
+                f"osm-api-v0.6: {type(exc).__name__}: {exc}"
+            ) from exc
+        raise RuntimeError(f"api.openstreetmap.org: {type(exc).__name__}: {exc}") from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    if status in (400, 504, 509):
+        raise OverpassQueryTimeoutError(f"osm-api-v0.6: HTTP {status}; split 2x2")
+    if status != 200:
+        raise RuntimeError(f"api.openstreetmap.org: HTTP {status}")
+
+    if encoding == "gzip" or raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    parsed = json.loads(raw.decode("utf-8"))
+    raw_elements = parsed.get("elements")
+    if not isinstance(raw_elements, list):
+        raise ValueError("OSM v0.6 JSON missing 'elements' array")
+
+    by_key = {}
+    ways_present = set()
+    for el in raw_elements:
+        if not isinstance(el, dict):
+            continue
+        et = el.get("type")
+        eid = el.get("id")
+        if et is None or eid is None:
+            continue
+        by_key[(et, eid)] = el
+        if et == "way":
+            ways_present.add(eid)
+
+    def _is_relevant_3d_relation(tags):
+        if not tags or not isinstance(tags, dict):
+            return False
+        rtype = tags.get("type")
+        if rtype in (
+            "route",
+            "route_master",
+            "superroute",
+            "network",
+            "boundary",
+            "restriction",
+            "associatedStreet",
+            "street",
+            "public_transport",
+            "destination_sign",
+            "enforcement",
+        ):
+            return False
+        if (
+            tags.get("building")
+            or rtype == "building"
+            or tags.get("building:part")
+            or tags.get("man_made")
+            or tags.get("attraction")
+            or tags.get("bridge")
+        ):
+            return True
+        if rtype == "multipolygon" and any(
+            tags.get(k)
+            for k in (
+                "natural",
+                "waterway",
+                "water",
+                "place",
+                "landuse",
+                "leisure",
+                "highway",
+                "railway",
+                "public_transport",
+                "area:highway",
+                "man_made",
+            )
+        ):
+            return True
+        return False
+
+    rels_to_complete = []
+    for el in raw_elements:
+        if not isinstance(el, dict) or el.get("type") != "relation":
+            continue
+        tags = el.get("tags") or {}
+        if not _is_relevant_3d_relation(tags):
+            continue
+        is_interesting = bool(
+            tags.get("building")
+            or tags.get("type") == "building"
+            or tags.get("building:part")
+            or tags.get("man_made") == "bridge"
+            or tags.get("attraction")
+            or (
+                tags.get("type") == "multipolygon"
+                and any(
+                    tags.get(k)
+                    for k in ("water", "waterway", "natural", "landuse", "leisure")
+                )
+            )
+        )
+        if not is_interesting:
+            continue
+        if any(
+            mem.get("type") == "way" and mem.get("ref") not in ways_present
+            for mem in (el.get("members") or [])
+        ):
+            rels_to_complete.append(el.get("id"))
+
+    for rid in rels_to_complete[:5]:
+        rem = fallback_deadline - time.monotonic()
+        if rem <= 2.5:
+            break
+        try:
+            rel_data = _fetch_json_ipv4_preferred(
+                f"https://api.openstreetmap.org/api/0.6/relation/{rid}/full.json",
+                timeout_sec=min(2.0, rem - 0.5),
+            )
+            for rel_el in rel_data.get("elements") or []:
+                if not isinstance(rel_el, dict):
+                    continue
+                ret = rel_el.get("type")
+                reid = rel_el.get("id")
+                if ret is not None and reid is not None:
+                    by_key[(ret, reid)] = rel_el
+        except Exception:
+            pass
+
+    want_trees = '"tree"' in (query_str or "")
+    ref_node_ids = set()
+    for el in by_key.values():
+        et = el.get("type")
+        if et == "way":
+            for nid in el.get("nodes") or []:
+                ref_node_ids.add(nid)
+        elif et == "relation" and _is_relevant_3d_relation(el.get("tags")):
+            for mem in el.get("members") or []:
+                if mem.get("type") == "node":
+                    ref_node_ids.add(mem.get("ref"))
+
+    compacted = []
+    for el in by_key.values():
+        et = el.get("type")
+        eid = el.get("id")
+        tags = el.get("tags")
+        if et == "way":
+            item = {"type": "way", "id": eid, "nodes": el.get("nodes") or []}
+            if tags:
+                item["tags"] = tags
+            compacted.append(item)
+        elif et == "relation":
+            if not _is_relevant_3d_relation(tags):
+                continue
+            item = {"type": "relation", "id": eid, "members": el.get("members") or []}
+            if tags:
+                item["tags"] = tags
+            compacted.append(item)
+        elif et == "node":
+            is_tree = bool(want_trees and tags and tags.get("natural") == "tree")
+            is_marine = bool(
+                tags
+                and (
+                    tags.get("place") in ("sea", "ocean")
+                    or tags.get("natural")
+                    in ("coastline", "bay", "strait", "reef", "shoal")
+                    or "seamark:type" in tags
+                )
+            )
+            if eid in ref_node_ids or is_tree or is_marine:
+                item = {
+                    "type": "node",
+                    "id": eid,
+                    "lat": el.get("lat"),
+                    "lon": el.get("lon"),
+                }
+                if (is_tree or is_marine) and tags:
+                    item["tags"] = tags
+                compacted.append(item)
+
+    raw_out = json.dumps(
+        {
+            "version": 0.6,
+            "generator": "Map3D OSM v0.6 Fallback",
+            "elements": compacted,
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    validated_bytes, elem_count = _validate_overpass_json_bytes(raw_out)
+    return validated_bytes, elem_count, "api.openstreetmap.org"
+
+
 def forward_overpass_query(query_str):
     """
     Forwards an Overpass QL query directly to healthy upstream Overpass mirrors
-    with in-flight deduplication, strict ~14.5s total budget cap (zero 60s dead-mirror
-    waterfall), JSON validation, and non-poisoning mirror ranking.
+    with 10-minute LRU caching, in-flight deduplication, semaphore-paced concurrency,
+    strict budget cap, official OSM API v0.6 failover, JSON validation, and
+    non-poisoning mirror ranking.
     """
     q_hash = hashlib.sha256(query_str.encode("utf-8")).hexdigest()[:16]
+    cached = _get_cached_overpass(q_hash)
+    if cached is not None:
+        payload, elem_count = cached
+        return payload, elem_count, "cache"
+
     leader = False
     with _INFLIGHT_LOCK:
         entry = _INFLIGHT_QUERIES.get(q_hash)
@@ -375,7 +750,7 @@ def forward_overpass_query(query_str):
             leader = True
 
     if not leader:
-        entry["event"].wait(timeout=OVERPASS_TOTAL_BUDGET_SEC + 1.5)
+        entry["event"].wait(timeout=OVERPASS_TOTAL_BUDGET_SEC + 6.0)
         if entry["result"] is not None:
             payload, elem_count, mirror_name, _ = entry["result"]
             return payload, elem_count, f"{mirror_name}(coalesced)"
@@ -386,37 +761,94 @@ def forward_overpass_query(query_str):
             raise RuntimeError(str(err))
 
     try:
+        cached = _get_cached_overpass(q_hash)
+        if cached is not None:
+            payload, elem_count = cached
+            with _INFLIGHT_LOCK:
+                entry["result"] = (payload, elem_count, "cache", 0.0)
+                entry["event"].set()
+            return payload, elem_count, "cache"
+
         encoded_body = urllib.parse.urlencode({"data": query_str}).encode("utf-8")
-        deadline = time.monotonic() + OVERPASS_TOTAL_BUDGET_SEC
-        mirrors_with_state = _ordered_overpass_mirrors()
-        errors = []
-        saw_query_timeout = False
+        with _UPSTREAM_SEMAPHORE:
+            t_start = time.monotonic()
+            deadline = t_start + OVERPASS_TOTAL_BUDGET_SEC
+            has_bbox = bool(_BBOX_QL_RE.search(query_str))
+            mirror_deadline = min(
+                deadline,
+                t_start
+                + (
+                    OVERPASS_MIRROR_PHASE_BUDGET_SEC
+                    if has_bbox
+                    else OVERPASS_TOTAL_BUDGET_SEC
+                ),
+            )
+            mirrors_with_state = _ordered_overpass_mirrors()
+            if has_bbox:
+                now = time.monotonic()
+                mirrors_with_state = [
+                    (url, st)
+                    for url, st in mirrors_with_state
+                    if st.get("cooldown_until", 0.0) <= now
+                ]
 
-        for mirror_url, st_snapshot in mirrors_with_state:
-            remaining = deadline - time.monotonic()
-            if remaining < 2.0:
-                break
+            errors = []
+            saw_query_timeout = False
 
-            attempt_timeout = min(OVERPASS_ATTEMPT_TIMEOUT_SEC, remaining)
-            if st_snapshot["ok"] == 0 and st_snapshot["consec_fail"] > 0:
-                attempt_timeout = min(OVERPASS_UNPROVEN_FAIL_PROBE_SEC, remaining)
+            for mirror_url, _ in mirrors_with_state:
+                mirror_rem = mirror_deadline - time.monotonic()
+                if mirror_rem < 2.2:
+                    break
 
-            try:
-                res = _fetch_overpass_upstream_once(
-                    mirror_url, encoded_body, attempt_timeout
-                )
-                with _INFLIGHT_LOCK:
-                    entry["result"] = res
-                    entry["event"].set()
-                payload, elem_count, mirror_name, _ = res
-                return payload, elem_count, mirror_name
-            except OverpassQueryTimeoutError as exc:
-                saw_query_timeout = True
-                errors.append(str(exc))
-                continue
-            except Exception as exc:
-                errors.append(str(exc))
-                continue
+                attempt_timeout = min(OVERPASS_ATTEMPT_TIMEOUT_SEC, mirror_rem)
+
+                try:
+                    res = _fetch_overpass_upstream_once(
+                        mirror_url, encoded_body, attempt_timeout
+                    )
+                    payload, elem_count, mirror_name, _ = res
+                    _put_cached_overpass(q_hash, payload, elem_count)
+                    with _INFLIGHT_LOCK:
+                        entry["result"] = res
+                        entry["event"].set()
+                    return payload, elem_count, mirror_name
+                except OverpassQueryTimeoutError as exc:
+                    saw_query_timeout = True
+                    errors.append(str(exc))
+                    continue
+                except Exception as exc:
+                    errors.append(str(exc))
+                    continue
+
+            if has_bbox and (deadline - time.monotonic()) >= 3.5:
+                try:
+                    t_fb = time.perf_counter()
+                    res_fb = _fetch_osm_v06_bbox_fallback(
+                        query_str, deadline - time.monotonic()
+                    )
+                    if res_fb is not None:
+                        fb_payload, fb_elems, fb_mirror = res_fb
+                        fb_ms = (time.perf_counter() - t_fb) * 1000.0
+                        log_server_event(
+                            "UPSTREAM_INFO",
+                            f"Overpass fallback mirror={fb_mirror} succeeded "
+                            f"query_hash={q_hash} elapsed_ms={fb_ms:.1f} elements={fb_elems}",
+                        )
+                        _put_cached_overpass(q_hash, fb_payload, fb_elems)
+                        with _INFLIGHT_LOCK:
+                            entry["result"] = (
+                                fb_payload,
+                                fb_elems,
+                                fb_mirror,
+                                fb_ms,
+                            )
+                            entry["event"].set()
+                        return fb_payload, fb_elems, fb_mirror
+                except OverpassQueryTimeoutError as exc:
+                    saw_query_timeout = True
+                    errors.append(str(exc))
+                except Exception as exc:
+                    errors.append(str(exc))
 
         combined = "; ".join(errors) if errors else "No upstream mirrors available"
         log_server_event(
@@ -437,42 +869,6 @@ def forward_overpass_query(query_str):
             with _INFLIGHT_LOCK:
                 _INFLIGHT_QUERIES.pop(q_hash, None)
                 entry["event"].set()
-
-
-class _IPv4PreferredHTTPSConnection(http.client.HTTPSConnection):
-    """Connects over IPv4 first to avoid broken IPv6 AAAA hangs on Nominatim/Open-Meteo."""
-
-    def connect(self):
-        last_exc = None
-        for family in (socket.AF_INET, socket.AF_UNSPEC):
-            try:
-                infos = socket.getaddrinfo(
-                    self.host, self.port, family, socket.SOCK_STREAM
-                )
-            except OSError as exc:
-                last_exc = exc
-                continue
-            for af, socktype, proto, _, sa in infos:
-                sock = None
-                try:
-                    sock = socket.socket(af, socktype, proto)
-                    if self.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
-                        sock.settimeout(self.timeout)
-                    sock.connect(sa)
-                    self.sock = _SSL_DEFAULT_CTX.wrap_socket(
-                        sock, server_hostname=self.host
-                    )
-                    return
-                except OSError as exc:
-                    last_exc = exc
-                    if sock is not None:
-                        try:
-                            sock.close()
-                        except OSError:
-                            pass
-        if last_exc is not None:
-            raise last_exc
-        raise OSError(f"Unable to resolve {self.host}:{self.port}")
 
 
 def _fetch_json_ipv4_preferred(url, headers=None, timeout_sec=3.0):

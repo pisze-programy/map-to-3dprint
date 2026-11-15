@@ -23,6 +23,81 @@ function minTriAltitude2D(a, b, c) {
   return maxL > 1e-8 ? (area2 / maxL) : 0.0;
 }
 
+function _createFastBoundaryDistEvaluator(outerRing, holeRings) {
+  const rings = [];
+  if (outerRing && outerRing.length >= 2) rings.push(outerRing);
+  if (holeRings && holeRings.length > 0) {
+    for (let h = 0; h < holeRings.length; h++) {
+      if (holeRings[h] && holeRings[h].length >= 2) rings.push(holeRings[h]);
+    }
+  }
+  let segCap = 0;
+  for (let r = 0; r < rings.length; r++) segCap += rings[r].length;
+  const sAx = new Float64Array(segCap);
+  const sAy = new Float64Array(segCap);
+  const sDx = new Float64Array(segCap);
+  const sDy = new Float64Array(segCap);
+  const sInvLenSq = new Float64Array(segCap);
+  const sMinX = new Float64Array(segCap);
+  const sMaxX = new Float64Array(segCap);
+  const sMinY = new Float64Array(segCap);
+  const sMaxY = new Float64Array(segCap);
+  let segCount = 0;
+  for (let r = 0; r < rings.length; r++) {
+    const ring = rings[r];
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const a = ring[i], b = ring[(i + 1) % n];
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const lenSq = dx * dx + dy * dy;
+      sAx[segCount] = a[0];
+      sAy[segCount] = a[1];
+      sDx[segCount] = dx;
+      sDy[segCount] = dy;
+      sInvLenSq[segCount] = lenSq > 1e-18 ? (1.0 / lenSq) : 0.0;
+      if (a[0] <= b[0]) { sMinX[segCount] = a[0]; sMaxX[segCount] = b[0]; }
+      else { sMinX[segCount] = b[0]; sMaxX[segCount] = a[0]; }
+      if (a[1] <= b[1]) { sMinY[segCount] = a[1]; sMaxY[segCount] = b[1]; }
+      else { sMinY[segCount] = b[1]; sMaxY[segCount] = a[1]; }
+      segCount++;
+    }
+  }
+  const memo = new Map();
+  return (px, py) => {
+    const k = Math.round(px * 5000) * 16777216 + (Math.round(py * 5000) + 8388608);
+    const hit = memo.get(k);
+    if (hit !== undefined) return hit;
+    if (segCount === 0) {
+      memo.set(k, 0.0);
+      return 0.0;
+    }
+    let bestSq = Infinity;
+    for (let i = 0; i < segCount; i++) {
+      const dxBox = px < sMinX[i] ? sMinX[i] - px : (px > sMaxX[i] ? px - sMaxX[i] : 0.0);
+      if (dxBox * dxBox >= bestSq) continue;
+      const dyBox = py < sMinY[i] ? sMinY[i] - py : (py > sMaxY[i] ? py - sMaxY[i] : 0.0);
+      if (dyBox * dyBox >= bestSq) continue;
+      const vx = px - sAx[i], vy = py - sAy[i];
+      const invL = sInvLenSq[i];
+      let cx, cy;
+      if (invL === 0.0) {
+        cx = vx;
+        cy = vy;
+      } else {
+        let t = (vx * sDx[i] + vy * sDy[i]) * invL;
+        if (t < 0.0) t = 0.0;
+        else if (t > 1.0) t = 1.0;
+        cx = vx - sDx[i] * t;
+        cy = vy - sDy[i] * t;
+      }
+      const dSq = cx * cx + cy * cy;
+      if (dSq < bestSq) bestSq = dSq;
+    }
+    const res = bestSq === Infinity ? 0.0 : Math.sqrt(bestSq);
+    memo.set(k, res);
+    return res;
+  };
+}
+
 // Subdivides interior roof edges (NEVER boundary edges -> 0 open edges!), snapping split points
 // directly onto medial ridge / hip / valley creases so ridges stay razor-straight!
 function subdivideInteriorRoofEdges(tris, outerClean, holesClean, minSplitLen = 0.30, evalRoofDist = null) {
@@ -78,22 +153,27 @@ function subdivideInteriorRoofEdges(tris, outerClean, holesClean, minSplitLen = 
           const d1 = getDist(p1[0], p1[1]);
           let bestT = 0.5;
           let maxCrease = -1.0;
+          let midDist = 0.0;
+          let bestDist = 0.0;
           for (let s = 0; s < sampleTs.length; s++) {
             const t = sampleTs[s];
             const px = p0[0] + (p1[0] - p0[0]) * t;
             const py = p0[1] + (p1[1] - p0[1]) * t;
             const dt = getDist(px, py);
+            if (s === 2) midDist = dt;
             const lin = d0 + (d1 - d0) * t;
             const crease = Math.abs(dt - lin);
             if (crease > maxCrease) {
               maxCrease = crease;
               bestT = t;
+              bestDist = dt;
             }
           }
           const useT = maxCrease > 0.012 ? bestT : 0.5;
+          const candDist = maxCrease > 0.012 ? bestDist : midDist;
           const cand = [p0[0] + (p1[0] - p0[0]) * useT, p0[1] + (p1[1] - p0[1]) * useT];
           const ck = ptKey(cand);
-          if (!usedV5k.has(ck) && distToPolygonBoundary2D(cand[0], cand[1], outerClean, holesClean) > 4e-3) {
+          if (!usedV5k.has(ck) && candDist > 4e-3) {
             usedV5k.add(ck);
             shouldSplit = true;
             splitPt = cand;
@@ -232,23 +312,47 @@ function optimizeRoofTrisRidgeAligned(tris, outerClean, holesClean, getRoofZ, pa
     for (let h = 0; h < holesClean.length; h++) markRing(holesClean[h]);
   }
 
+  const zCache = new Map();
+  const getZCached = (p) => {
+    const k = Math.round(p[0] * 5000) * 16777216 + (Math.round(p[1] * 5000) + 8388608);
+    let z = zCache.get(k);
+    if (z === undefined) {
+      z = getRoofZ(p);
+      zCache.set(k, z);
+    }
+    return z;
+  };
+
+  const diagCostCache = new Map();
   const diagCost = (A, B) => {
-    const zA = getRoofZ(A), zB = getRoofZ(B);
+    const ek = edgeKey(A, B);
+    const cached = diagCostCache.get(ek);
+    if (cached !== undefined) return cached;
+    const zA = getZCached(A), zB = getZCached(B);
     let err = 0;
-    for (const t of [0.2, 0.35, 0.5, 0.65, 0.8]) {
+    for (let s = 0; s < 5; s++) {
+      const t = 0.2 + s * 0.15;
       const mx = A[0] + (B[0] - A[0]) * t;
       const my = A[1] + (B[1] - A[1]) * t;
       const zLin = zA + (zB - zA) * t;
       err += Math.abs(zLin - getRoofZ([mx, my]));
     }
-    return err + 0.0045 * Math.hypot(B[0] - A[0], B[1] - A[1]);
+    const cost = err + 0.0045 * Math.hypot(B[0] - A[0], B[1] - A[1]);
+    diagCostCache.set(ek, cost);
+    return cost;
   };
 
-  const minNzPair = (tA, tB) => {
-    const nA = computeFaceNormal([tA[0][0], tA[0][1], getRoofZ(tA[0])], [tA[1][0], tA[1][1], getRoofZ(tA[1])], [tA[2][0], tA[2][1], getRoofZ(tA[2])]);
-    const nB = computeFaceNormal([tB[0][0], tB[0][1], getRoofZ(tB[0])], [tB[1][0], tB[1][1], getRoofZ(tB[1])], [tB[2][0], tB[2][1], getRoofZ(tB[2])]);
-    return Math.min(nA[2], nB[2]);
+  const triNz = (p0, p1, p2) => {
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = getZCached(p1) - getZCached(p0);
+    const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = getZCached(p2) - getZCached(p0);
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    return nz / len;
   };
+
+  const minNzPair = (a0, a1, a2, b0, b1, b2) => Math.min(triNz(a0, a1, a2), triNz(b0, b1, b2));
 
   let cur = tris.slice();
   for (let pass = 0; pass < passes; pass++) {
@@ -289,8 +393,8 @@ function optimizeRoofTrisRidgeAligned(tris, outerClean, holesClean, getRoofZ, pa
       const newMinAlt = Math.min(minTriAltitude2D(R, P, S), minTriAltitude2D(S, Q, R));
       if (newMinAlt <= 5e-4) continue;
 
-      const curMinNz = minNzPair([P, Q, R], [Q, P, S]);
-      const newMinNz = minNzPair([R, P, S], [S, Q, R]);
+      const curMinNz = minNzPair(P, Q, R, Q, P, S);
+      const newMinNz = minNzPair(R, P, S, S, Q, R);
 
       if (curMinNz < 0.68 && newMinNz > curMinNz + 0.02 && newMinAlt >= Math.min(curMinAlt * 0.6, 0.02)) {
         cur[i1] = [R, P, S];
@@ -427,7 +531,9 @@ function extrudeBuildingLoD2(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
     (holesClean.length === 0 && roofShape === 'hipped' && (computeMinAreaOBB2D(outerClean)?.rectRatio ?? 0) >= 0.74);
 
   const wWingPre = canPitch ? computeCharacteristicWingHalfWidth2D(outerClean, holesClean) : 0;
-  const refineStep = Math.max(0.46, Math.min(2.2, wWingPre * 0.30));
+  let totalRawVerts = outerClean.length;
+  for (let h = 0; h < holesClean.length; h++) totalRawVerts += holesClean[h].length;
+  const refineStep = Math.max(totalRawVerts > 96 ? 0.68 : 0.46, Math.min(2.2, wWingPre * 0.30));
   if (!isAnalyticCap) {
     outerClean = refinePolygonRingMaxEdge2D(outerClean, refineStep);
     holesClean = holesClean.map(h => refinePolygonRingMaxEdge2D(h, refineStep));
@@ -689,12 +795,13 @@ function extrudeBuildingLoD2(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
   }
 
   if (canPitch) {
-    const evalEffDist = (x, y) => distToPolygonBoundary2D(x, y, outerClean, actualHoles);
-    const wWing = computeCharacteristicWingHalfWidth2D(rawOuterForSmooth, actualHoles.length > 0 ? rawHolesForSmooth : []);
+    const distHoles = actualHoles.length > 0 ? rawHolesForSmooth : [];
+    const evalEffDist = _createFastBoundaryDistEvaluator(rawOuterForSmooth, distHoles);
+    const wWing = computeCharacteristicWingHalfWidth2D(rawOuterForSmooth, distHoles);
 
     let subTris = delaunayFlipRoofTris2D(roofTris, outerClean, actualHoles, 45);
     const maxTargetEdge = Math.max(0.30, refineStep * 0.80);
-    for (let pass = 0; pass < 6 && subTris.length < 6500; pass++) {
+    for (let pass = 0; pass < 6 && subTris.length < 2800; pass++) {
       const prevLen = subTris.length;
       const splitThresh = pass === 0 ? Math.max(0.42, refineStep * 1.10) : maxTargetEdge;
       subTris = subdivideInteriorRoofEdges(subTris, outerClean, actualHoles, splitThresh, evalEffDist);
@@ -727,7 +834,7 @@ function extrudeBuildingLoD2(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
       return zEaves + Math.min(1.0, d / wRidge) * effRoofH;
     };
 
-    subTris = optimizeRoofTrisRidgeAligned(subTris, outerClean, actualHoles, getRoofZ, 8);
+    subTris = optimizeRoofTrisRidgeAligned(subTris, outerClean, actualHoles, getRoofZ, subTris.length > 1400 ? 5 : 8);
 
     for (let i = 0; i < subTris.length; i++) {
       const [a, b, c] = subTris[i];

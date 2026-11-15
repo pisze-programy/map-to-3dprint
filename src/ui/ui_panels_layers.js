@@ -211,13 +211,18 @@ function createUILayersStatsController(state, onRebuildNeeded) {
     const hasMeshArrays = isCut && lm && exportKeys.some(k => Array.isArray(lm[k]));
     const tileHasGeometry = hasMeshArrays ? new Uint8Array(numTiles) : null;
     if (tileHasGeometry) {
-      for (let ki = 0; ki < exportKeys.length; ki++) {
+      let foundTiles = 0;
+      for (let ki = 0; ki < exportKeys.length && foundTiles < numTiles; ki++) {
         const arr = lm[exportKeys[ki]];
         if (!Array.isArray(arr)) continue;
         for (let ti = 0; ti < arr.length; ti++) {
           const tri = arr[ti];
           const tid = tri && tri.tileId !== undefined ? tri.tileId : 0;
-          if (tid >= 0 && tid < numTiles) tileHasGeometry[tid] = 1;
+          if (tid >= 0 && tid < numTiles && tileHasGeometry[tid] === 0) {
+            tileHasGeometry[tid] = 1;
+            foundTiles++;
+            if (foundTiles >= numTiles) break;
+          }
         }
       }
     }

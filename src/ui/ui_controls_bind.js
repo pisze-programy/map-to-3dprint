@@ -451,7 +451,6 @@ function bindStudioPanelControls(ctx) {
     if (chkWaterCutout) chkWaterCutout.checked = next;
     if (chkPreviewWaterCutout) chkPreviewWaterCutout.checked = next;
     updateStatsUI();
-    if (typeof updateTileSelectorOptions === 'function') updateTileSelectorOptions();
     rebuildModel3D();
     if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
   };

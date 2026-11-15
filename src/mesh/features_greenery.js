@@ -214,7 +214,7 @@ function _reconstructPolygonsFromConvexPieces2D(pieces) {
   }
   if (!rawEdges.length) return [];
 
-  const CELL = 0.5;
+  const CELL = Math.max(0.05, Math.min(0.5, 2.0 / Math.sqrt(Math.max(1, verts.length))));
   const sGrid = new Map();
   for (let id = 0; id < verts.length; id++) {
     const cx = Math.floor(verts[id][0] / CELL), cy = Math.floor(verts[id][1] / CELL);
@@ -227,7 +227,7 @@ function _reconstructPolygonsFromConvexPieces2D(pieces) {
   const edgeCounts = new Map();
   const addDirEdge = (u, v) => {
     if (u === v) return;
-    const k = u + '_' + v;
+    const k = u * 16777216 + v;
     edgeCounts.set(k, (edgeCounts.get(k) || 0) + 1);
   };
 
@@ -279,9 +279,8 @@ function _reconstructPolygonsFromConvexPieces2D(pieces) {
   const adj = new Map();
   for (const [k, cnt] of edgeCounts.entries()) {
     if (cnt <= 0) continue;
-    const sep = k.indexOf('_');
-    const u = Number(k.slice(0, sep)), v = Number(k.slice(sep + 1));
-    const revCnt = edgeCounts.get(v + '_' + u) || 0;
+    const u = Math.floor(k / 16777216), v = k - u * 16777216;
+    const revCnt = edgeCounts.get(v * 16777216 + u) || 0;
     const net = cnt - Math.min(cnt, revCnt);
     if (net > 0) {
       let out = adj.get(u);
@@ -765,16 +764,29 @@ function _cleanLoopFine2D(ptsInput, wantCCW, minDist = 0.0035) {
 
 function _isStrictManifoldShell3D(tris, scaleMm) {
   if (!tris || tris.length < 4) return false;
-  const checkQuant = (keyFn) => {
+  const checkQuant = (quantFactor, offXY, clampZ) => {
     const vMap = new Map();
     let nv = 0;
     const vid = (p) => {
-      const k = keyFn(p);
-      let id = vMap.get(k);
-      if (id === undefined) { id = nv++; vMap.set(k, id); }
+      const qx = Math.round((p[0] + offXY) * quantFactor);
+      const qy = Math.round((p[1] + offXY) * quantFactor);
+      const pz = clampZ ? Math.max(0, p[2]) : p[2];
+      const qz = Math.round(pz * quantFactor);
+      const xyKey = qx * 16777216 + (qy + 8388608);
+      let bucket = vMap.get(xyKey);
+      if (bucket === undefined) {
+        const id = nv++;
+        vMap.set(xyKey, [qz, id]);
+        return id;
+      }
+      for (let i = 0; i < bucket.length; i += 2) {
+        if (bucket[i] === qz) return bucket[i + 1];
+      }
+      const id = nv++;
+      bucket.push(qz, id);
       return id;
     };
-    const dir = new Map();
+    const dir = new Set();
     let vol6 = 0;
     for (let i = 0; i < tris.length; i++) {
       const { v0: a, v1: b, v2: c } = tris[i];
@@ -783,24 +795,26 @@ function _isStrictManifoldShell3D(tris, scaleMm) {
       vol6 += a[0] * (b[1] * c[2] - b[2] * c[1]) -
               a[1] * (b[0] * c[2] - b[2] * c[0]) +
               a[2] * (b[0] * c[1] - b[1] * c[0]);
-      for (const [u, v] of [[ia, ib], [ib, ic], [ic, ia]]) {
-        const ek = u + '_' + v;
-        if (dir.has(ek)) return false;
-        dir.set(ek, 1);
-      }
+      const e0 = ia * 16777216 + ib;
+      const e1 = ib * 16777216 + ic;
+      const e2 = ic * 16777216 + ia;
+      if (dir.has(e0) || dir.has(e1) || dir.has(e2)) return false;
+      dir.add(e0);
+      dir.add(e1);
+      dir.add(e2);
     }
     if (vol6 <= 1e-9) return false;
-    for (const ek of dir.keys()) {
-      const sep = ek.indexOf('_');
-      const rk = ek.slice(sep + 1) + '_' + ek.slice(0, sep);
+    for (const ek of dir) {
+      const u = Math.floor(ek / 16777216);
+      const v = ek - u * 16777216;
+      const rk = v * 16777216 + u;
       if (!dir.has(rk)) return false;
     }
     return true;
   };
 
   const s = scaleMm || 1.89;
-  return checkQuant(p => `${Math.round(p[0] * 5000)}_${Math.round(p[1] * 5000)}_${Math.round(p[2] * 5000)}`) &&
-         checkQuant(p => `${((p[0] + 84.6) * s).toFixed(3)}_${((p[1] + 84.6) * s).toFixed(3)}_${Math.max(0, p[2] * s).toFixed(3)}`);
+  return checkQuant(5000, 0, false) && checkQuant(s * 1000, 84.6, true);
 }
 
 // Directly extrudes interior-disjoint CCW 2D pieces (with arbitrary holes, hilltop rings,
@@ -818,8 +832,9 @@ function _extrudePlanarPiecesToManifoldSlabs3D(pieces, zBot, zTop, layerId, outM
   const getVid = (x, y) => {
     const gx = Math.floor(x * invS), gy = Math.floor(y * invS);
     for (let dy = -1; dy <= 1; dy++) {
+      const yOff = gy + dy + 1048576;
       for (let dx = -1; dx <= 1; dx++) {
-        const list = vGrid.get((gx + dx) + '_' + (gy + dy));
+        const list = vGrid.get((gx + dx + 1048576) * 2097152 + yOff);
         if (!list) continue;
         for (let k = 0; k < list.length; k++) {
           const id = list[k];
@@ -829,7 +844,7 @@ function _extrudePlanarPiecesToManifoldSlabs3D(pieces, zBot, zTop, layerId, outM
     }
     const id = verts.length;
     verts.push([x, y]);
-    const key = gx + '_' + gy;
+    const key = (gx + 1048576) * 2097152 + (gy + 1048576);
     let bucket = vGrid.get(key);
     if (!bucket) { bucket = []; vGrid.set(key, bucket); }
     bucket.push(id);
@@ -854,7 +869,7 @@ function _extrudePlanarPiecesToManifoldSlabs3D(pieces, zBot, zTop, layerId, outM
   const sGrid = new Map();
   for (let id = 0; id < verts.length; id++) {
     const cx = Math.floor(verts[id][0] / CELL), cy = Math.floor(verts[id][1] / CELL);
-    const key = cx + '_' + cy;
+    const key = (cx + 1048576) * 2097152 + (cy + 1048576);
     let b = sGrid.get(key);
     if (!b) { b = []; sGrid.set(key, b); }
     b.push(id);
@@ -874,8 +889,9 @@ function _extrudePlanarPiecesToManifoldSlabs3D(pieces, zBot, zTop, layerId, outM
     const y1 = Math.floor((Math.max(a[1], b[1]) + 4e-3) / CELL);
     let splits = null;
     for (let cy = y0; cy <= y1; cy++) {
+      const yOff = cy + 1048576;
       for (let cx = x0; cx <= x1; cx++) {
-        const list = sGrid.get(cx + '_' + cy);
+        const list = sGrid.get((cx + 1048576) * 2097152 + yOff);
         if (!list) continue;
         for (let m = 0; m < list.length; m++) {
           const w = list[m];
@@ -911,7 +927,7 @@ function _extrudePlanarPiecesToManifoldSlabs3D(pieces, zBot, zTop, layerId, outM
     const a = verts[ia], b = verts[ib], c = verts[ic];
     const cr = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
     if (cr <= 1e-8) return;
-    const e0 = ia + '_' + ib, e1 = ib + '_' + ic, e2 = ic + '_' + ia;
+    const e0 = ia * 16777216 + ib, e1 = ib * 16777216 + ic, e2 = ic * 16777216 + ia;
     if (dirUsed.has(e0) || dirUsed.has(e1) || dirUsed.has(e2)) return;
     dirUsed.add(e0);
     dirUsed.add(e1);
@@ -1049,9 +1065,9 @@ function _extrudePlanarPiecesToManifoldSlabs3D(pieces, zBot, zTop, layerId, outM
   for (let ti = 0; ti < tris.length; ti++) {
     if (!activeTri[ti]) continue;
     const [ia, ib, ic] = tris[ti];
-    edgeOwner.set(ia + '_' + ib, ti);
-    edgeOwner.set(ib + '_' + ic, ti);
-    edgeOwner.set(ic + '_' + ia, ti);
+    edgeOwner.set(ia * 16777216 + ib, ti);
+    edgeOwner.set(ib * 16777216 + ic, ti);
+    edgeOwner.set(ic * 16777216 + ia, ti);
   }
 
   const visited = new Uint8Array(tris.length);
@@ -1065,8 +1081,11 @@ function _extrudePlanarPiecesToManifoldSlabs3D(pieces, zBot, zTop, layerId, outM
       const [ia, ib, ic] = tris[ti];
       const a = verts[ia], b = verts[ib], c = verts[ic];
       area2 += (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-      for (const rk of [ib + '_' + ia, ic + '_' + ib, ia + '_' + ic]) {
-        const nb = edgeOwner.get(rk);
+      const rk0 = ib * 16777216 + ia;
+      const rk1 = ic * 16777216 + ib;
+      const rk2 = ia * 16777216 + ic;
+      for (let rki = 0; rki < 3; rki++) {
+        const nb = edgeOwner.get(rki === 0 ? rk0 : (rki === 1 ? rk1 : rk2));
         if (nb !== undefined && activeTri[nb] && !visited[nb]) {
           visited[nb] = 1;
           comp.push(nb);
@@ -1078,9 +1097,9 @@ function _extrudePlanarPiecesToManifoldSlabs3D(pieces, zBot, zTop, layerId, outM
     const compEdges = new Set();
     for (let q = 0; q < comp.length; q++) {
       const [ia, ib, ic] = tris[comp[q]];
-      compEdges.add(ia + '_' + ib);
-      compEdges.add(ib + '_' + ic);
-      compEdges.add(ic + '_' + ia);
+      compEdges.add(ia * 16777216 + ib);
+      compEdges.add(ib * 16777216 + ic);
+      compEdges.add(ic * 16777216 + ia);
     }
 
     const cand = [];
@@ -1089,8 +1108,10 @@ function _extrudePlanarPiecesToManifoldSlabs3D(pieces, zBot, zTop, layerId, outM
       const a = verts[ia], b = verts[ib], c = verts[ic];
       pushTri(cand, [a[0], a[1], zTop], [b[0], b[1], zTop], [c[0], c[1], zTop], [0, 0, 1], layerId, 0, tileId, 0);
       pushTri(cand, [a[0], a[1], zBot], [c[0], c[1], zBot], [b[0], b[1], zBot], [0, 0, -1], layerId, 0, tileId, 0);
-      for (const [u, v] of [[ia, ib], [ib, ic], [ic, ia]]) {
-        if (!compEdges.has(v + '_' + u)) {
+      for (let ei = 0; ei < 3; ei++) {
+        const u = ei === 0 ? ia : (ei === 1 ? ib : ic);
+        const v = ei === 0 ? ib : (ei === 1 ? ic : ia);
+        if (!compEdges.has(v * 16777216 + u)) {
           const pa = verts[u], pb = verts[v];
           const dx = pb[0] - pa[0], dy = pb[1] - pa[1], len = Math.hypot(dx, dy);
           if (len > 1e-6) {
@@ -1232,6 +1253,44 @@ function _getPreparedCellTerraces(cellIdx, gx, gy, cellTerracePolys, ctx, cache)
     return null;
   }
 
+  if (rawList.length === 1 && rawList[0].poly && rawList[0].poly.length === 4 &&
+      rawList[0].zSurf >= baseBottomZ - 1e-4 &&
+      gx > 0 && gx < TERRAIN_RES_X - 1 && gy > 0 && gy < TERRAIN_RES_Y - 1) {
+    const tp0 = rawList[0];
+    const tb = tileBounds && tileBounds[tp0.tileId || 0];
+    const pMinX = Math.min(tp0.poly[0][0], tp0.poly[1][0], tp0.poly[2][0], tp0.poly[3][0]);
+    const pMaxX = Math.max(tp0.poly[0][0], tp0.poly[1][0], tp0.poly[2][0], tp0.poly[3][0]);
+    const pMinY = Math.min(tp0.poly[0][1], tp0.poly[1][1], tp0.poly[2][1], tp0.poly[3][1]);
+    const pMaxY = Math.max(tp0.poly[0][1], tp0.poly[1][1], tp0.poly[2][1], tp0.poly[3][1]);
+    if (!tb || (pMinX > tb.x0 + 0.02 && pMaxX < tb.x1 - 0.02 && pMinY > tb.y0 + 0.02 && pMaxY < tb.y1 - 0.02)) {
+      let uniform3x3 = true;
+      for (let dy = -1; dy <= 1 && uniform3x3; dy++) {
+        const rowOff = (gy + dy) * TERRAIN_RES_X + gx;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nList = cellTerracePolys[rowOff + dx];
+          if (!nList || nList.length !== 1 || !nList[0].poly || nList[0].poly.length !== 4 ||
+              nList[0].tileId !== tp0.tileId || Math.abs(nList[0].zSurf - tp0.zSurf) > 1e-5) {
+            uniform3x3 = false;
+            break;
+          }
+        }
+      }
+      if (uniform3x3) {
+        const poly = signedArea2D(tp0.poly) >= 0 ? tp0.poly : tp0.poly.slice().reverse();
+        const edges = [];
+        for (let e = 0, n = poly.length; e < n; e++) {
+          const a = poly[e], b = poly[(e + 1) % n];
+          if (Math.hypot(b[0] - a[0], b[1] - a[1]) >= 1e-7) {
+            edges.push({ a, b, inset: 0.0 });
+          }
+        }
+        const fastPrep = [{ poly, bbox: [pMinX, pMinY, pMaxX, pMaxY], edges, zSurf: tp0.zSurf, tileId: tp0.tileId || 0 }];
+        cache.set(cellIdx, fastPrep);
+        return fastPrep;
+      }
+    }
+  }
+
   const RISER_INSET = 0.0028;
   const out = [];
 
@@ -1247,6 +1306,12 @@ function _getPreparedCellTerraces(cellIdx, gx, gy, cellTerracePolys, ctx, cache)
         for (let k = 0; k < nList.length; k++) {
           const np = nList[k];
           if (np.tileId !== tileId || Math.abs(np.zSurf - zSurf) > 1e-5) continue;
+          let bb = np._bb;
+          if (!bb) {
+            bb = _ringBBox2D(np.poly);
+            np._bb = bb;
+          }
+          if (px < bb[0] - 2.5e-4 || px > bb[2] + 2.5e-4 || py < bb[1] - 2.5e-4 || py > bb[3] + 2.5e-4) continue;
           if (pointInPolyOrNear2D(px, py, np.poly, 2e-4)) return true;
         }
       }
@@ -1341,14 +1406,63 @@ function _emitSingleGreeneryPolygon(poly, ctx, baseInfo, maxBandK, meshes, alloc
   if (!tris2D.length) return;
 
   const buckets = new Map();
+  const cellArea = (2 * halfW / TERRAIN_RES_X) * (2 * halfH / TERRAIN_RES_Y);
+  const pushToBucket = (tid, zSurf, piece) => {
+    const bKey = tid + '_' + Math.round(zSurf * 100000);
+    let bObj = buckets.get(bKey);
+    if (!bObj) {
+      bObj = { tileId: tid, zSurf, pieces: [] };
+      buckets.set(bKey, bObj);
+    }
+    bObj.pieces.push(piece);
+  };
+
   for (let ti = 0; ti < tris2D.length; ti++) {
     const tri = tris2D[ti];
-    if (Math.abs(signedArea2D(tri)) < 1e-7) continue;
-    const tb = _ringBBox2D(tri);
+    const a2 = signedArea2D(tri);
+    if (Math.abs(a2) < 1e-7) continue;
+    const triCCW = a2 > 0 ? tri : [tri[0], tri[2], tri[1]];
+    const tb = _ringBBox2D(triCCW);
     const tgx0 = Math.max(gx0, Math.floor(((tb[0] + halfW) / (2 * halfW)) * TERRAIN_RES_X));
     const tgx1 = Math.min(gx1, Math.floor(((tb[2] + halfW) / (2 * halfW)) * TERRAIN_RES_X));
     const tgy0 = Math.max(gy0, Math.floor(((tb[1] + halfH) / (2 * halfH)) * TERRAIN_RES_Y));
     const tgy1 = Math.min(gy1, Math.floor(((tb[3] + halfH) / (2 * halfH)) * TERRAIN_RES_Y));
+
+    if (tb[0] >= -halfW + 1e-4 && tb[2] <= halfW - 1e-4 &&
+        tb[1] >= -halfH + 1e-4 && tb[3] <= halfH - 1e-4) {
+      let triUniform = true;
+      let triZ0 = null;
+      let triTid0 = 0;
+      outerTriScan: for (let gy = tgy0; gy <= tgy1; gy++) {
+        const row = gy * TERRAIN_RES_X;
+        for (let gx = tgx0; gx <= tgx1; gx++) {
+          const tPieces = _getPreparedCellTerraces(row + gx, gx, gy, cellTerracePolys, ctx, cellCache);
+          if (!tPieces || tPieces.length !== 1) {
+            triUniform = false;
+            break outerTriScan;
+          }
+          const tp = tPieces[0];
+          if (tp.edges.length !== 4 ||
+              (tp.bbox[2] - tp.bbox[0]) * (tp.bbox[3] - tp.bbox[1]) < cellArea * 0.998 ||
+              tp.edges[0].inset !== 0.0 || tp.edges[1].inset !== 0.0 ||
+              tp.edges[2].inset !== 0.0 || tp.edges[3].inset !== 0.0) {
+            triUniform = false;
+            break outerTriScan;
+          }
+          if (triZ0 === null) {
+            triZ0 = tp.zSurf;
+            triTid0 = tp.tileId;
+          } else if (tp.tileId !== triTid0 || Math.abs(tp.zSurf - triZ0) > 1e-5) {
+            triUniform = false;
+            break outerTriScan;
+          }
+        }
+      }
+      if (triUniform && triZ0 !== null) {
+        pushToBucket(triTid0, triZ0, triCCW);
+        continue;
+      }
+    }
 
     for (let gy = tgy0; gy <= tgy1; gy++) {
       const row = gy * TERRAIN_RES_X;
@@ -1360,20 +1474,14 @@ function _emitSingleGreeneryPolygon(poly, ctx, baseInfo, maxBandK, meshes, alloc
           if (tb[2] <= tp.bbox[0] + 1e-7 || tb[0] >= tp.bbox[2] - 1e-7 ||
               tb[3] <= tp.bbox[1] + 1e-7 || tb[1] >= tp.bbox[3] - 1e-7) continue;
 
-          let clipped = tri;
+          let clipped = triCCW;
           for (let ei = 0; ei < tp.edges.length && clipped.length >= 3; ei++) {
             const ed = tp.edges[ei];
             clipped = _clipConvexByEdgeHalfPlane2D(clipped, ed.a, ed.b, true, ed.inset);
           }
           if (clipped.length < 3) continue;
 
-          const bKey = tp.tileId + '_' + Math.round(tp.zSurf * 100000);
-          let bObj = buckets.get(bKey);
-          if (!bObj) {
-            bObj = { tileId: tp.tileId, zSurf: tp.zSurf, pieces: [] };
-            buckets.set(bKey, bObj);
-          }
-          bObj.pieces.push(clipped);
+          pushToBucket(tp.tileId, tp.zSurf, clipped);
         }
       }
     }

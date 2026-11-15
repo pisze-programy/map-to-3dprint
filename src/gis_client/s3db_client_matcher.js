@@ -643,6 +643,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       }
     }
 
+    const sortedParentsByMinX = candidateParents.slice().sort((a, b) => a.bbox[0] - b.bbox[0]);
     for (const part of candidateParts) {
       let bestParent = null;
       const enclosingParents = [];
@@ -665,9 +666,10 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       }
 
       let bestArea = Infinity;
-      for (const parent of candidateParents) {
+      for (const parent of sortedParentsByMinX) {
         const [parMinX, parMinY, parMaxX, parMaxY] = parent.bbox;
-        if (pMinX > parMaxX + 0.12 || pMaxX < parMinX - 0.12 || pMinY > parMaxY + 0.12 || pMaxY < parMinY - 0.12) continue;
+        if (parMinX > pMaxX + 0.12) break;
+        if (pMinX > parMaxX + 0.12 || pMinY > parMaxY + 0.12 || pMaxY < parMinY - 0.12) continue;
         const inHole = parent.holes.some(h => h.length >= 3 && _pointInPolyS3DB(pix, piy, h));
         let enclosed = false;
         if (!inHole && _pointInPolyS3DB(pix, piy, parent.pts)) {

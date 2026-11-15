@@ -15,7 +15,6 @@ CACHE_DIR = os.path.join(ROOT_DIR, "cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 OVERPASS_ENDPOINTS = [
-    "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
     "https://overpass-api.de/api/interpreter",

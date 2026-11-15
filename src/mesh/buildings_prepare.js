@@ -522,6 +522,10 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     }
   }
 
+  const sortedChildEntries = childEntries.length > 1
+    ? childEntries.slice().sort((a, b) => a.bbox[0] - b.bbox[0])
+    : childEntries;
+
   for (let i = 0; i < rawBuildings.length; i++) {
     const b = rawBuildings[i];
     if (b.hidden || b.btype === 'pier') continue;
@@ -550,10 +554,11 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       let groundChildCount = 0;
       const matchedChildren = [];
 
-      for (let j = 0; j < childEntries.length; j++) {
-        const ce = childEntries[j];
+      for (let j = 0; j < sortedChildEntries.length; j++) {
+        const ce = sortedChildEntries[j];
         const [cMinX, cMinY, cMaxX, cMaxY] = ce.bbox;
-        const bboxOverlaps = !(cMinX > bMaxX + 0.25 || cMaxX < bMinX - 0.25 || cMinY > bMaxY + 0.25 || cMaxY < bMinY - 0.25);
+        if (cMinX > bMaxX + 0.25) break;
+        const bboxOverlaps = !(cMaxX < bMinX - 0.25 || cMinY > bMaxY + 0.25 || cMaxY < bMinY - 0.25);
         if (!bboxOverlaps) continue;
 
         const [pix, piy] = ce.interiorPt;
@@ -860,10 +865,15 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     }
   }
 
-  for (let i = 0; i < prepared.length; i++) {
+  const sweepOrder = Array.from({ length: prepared.length }, (_, idx) => idx)
+    .sort((a, b) => prepared[a].minX - prepared[b].minX);
+  for (let ii = 0; ii < sweepOrder.length; ii++) {
+    const i = sweepOrder[ii];
     const A = prepared[i];
-    for (let j = i + 1; j < prepared.length; j++) {
+    for (let jj = ii + 1; jj < sweepOrder.length; jj++) {
+      const j = sweepOrder[jj];
       const B = prepared[j];
+      if (B.minX >= A.maxX - 0.015) break;
       if (A.maxX <= B.minX + 0.015 || A.minX >= B.maxX - 0.015 || A.maxY <= B.minY + 0.015 || A.minY >= B.maxY - 0.015) continue;
       const aInB = isPointInsidePart2D(A.interiorPt[0], A.interiorPt[1], B, 0) && A.area <= B.area * 0.94;
       const bInA = isPointInsidePart2D(B.interiorPt[0], B.interiorPt[1], A, 0) && B.area <= A.area * 0.94;
