@@ -185,15 +185,17 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   const query = (typeof buildAdaptiveOverpassQL === 'function' && typeof selectLodTier === 'function')
     ? buildAdaptiveOverpassQL(south, west, north, east, selectLodTier(effectiveSpanM), 14, lodQueryOpts)
     : `[out:json][timeout:14][bbox:${bbox}];` +
-      `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];relation["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];)->.brels;` +
+      `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];relation["type"="bridge"];relation["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];)->.brels;` +
       `(.brels;>;)->.ball;` +
       `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"];relation["type"="multipolygon"]["leisure"];relation["type"="multipolygon"]["highway"="pedestrian"];relation["type"="multipolygon"]["railway"="platform"];relation["type"="multipolygon"]["public_transport"="platform"];)->.grels;` +
       `way(r.grels)(${bbox})->.gways;` +
-      `(way["building"];way["building:part"];way["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["public_transport"="platform"];way["man_made"~"^(bridge|pier|breakwater|groyne)$"];.gways;)->.wbox;` +
-      `(relation.ball;.grels;.wbox;way.ball;node["natural"="tree"];);out body qt;` +
+      `(way["building"];way["building:part"];way["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["public_transport"="platform"];way["power"="generator"];way["man_made"~"^(bridge|pier|breakwater|groyne|jetty|tower|mast|communications_tower|lighthouse|chimney|cooling_tower|storage_tank|silo|crane|wind_turbine)$"];.gways;)->.wbox;` +
+      `(relation.ball;.grels;.wbox;way.ball;node["natural"="tree"];node["man_made"~"^(wind_turbine|tower|mast|communications_tower|lighthouse|chimney|crane)$"];node["power"="generator"]["generator:source"="wind"];);out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
 
-  const metersToUnits = 169.2 / Math.max(1, effectiveSpanM);
+  const spanU = (typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined') ? SCENE_CANONICAL_SPAN_UNITS : 169.2;
+  const halfU = (typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6;
+  const metersToUnits = spanU / Math.max(1, effectiveSpanM);
   const fetchHalfW = Math.round((0.5 * spanEwM * metersToUnits) * 100) / 100;
   const fetchHalfH = Math.round((0.5 * spanNsM * metersToUnits) * 100) / 100;
 
@@ -202,11 +204,11 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     const tW = Number(options.targetWidthMm);
     const tH = Number(options.targetHeightMm);
     const tMax = Math.max(tW, tH);
-    halfW = Math.round((84.6 * tW / tMax) * 100) / 100;
-    halfH = Math.round((84.6 * tH / tMax) * 100) / 100;
+    halfW = Math.round((halfU * tW / tMax) * 100) / 100;
+    halfH = Math.round((halfU * tH / tMax) * 100) / 100;
   } else {
-    halfW = Math.round((84.6 * spanEwM / maxSpanM) * 100) / 100;
-    halfH = Math.round((84.6 * spanNsM / maxSpanM) * 100) / 100;
+    halfW = Math.round((halfU * spanEwM / maxSpanM) * 100) / 100;
+    halfH = Math.round((halfU * spanNsM / maxSpanM) * 100) / 100;
   }
 
   const halfM = maxSpanM * 0.5;
@@ -435,7 +437,8 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     roads,
     roadPolys,
     bridgePolys,
-    buildings
+    buildings,
+    osmElements: osmRaw.elements
   };
   if (hasMarineTags) outScene._hasMarineTags = true;
   if (osmExtractCtx._openSeaIslands && osmExtractCtx._openSeaIslands.length > 0) {

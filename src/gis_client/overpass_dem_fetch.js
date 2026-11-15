@@ -1132,10 +1132,11 @@ async function fetchAdaptiveTerrariumDem(south, west, north, east, gridSize = 72
   }
 
   const grid = [];
-  let minElev = Infinity, maxElev = -Infinity;
+  const rawGrid = new Float64Array(gridSize * gridSize);
+  const validMask = new Uint8Array(gridSize * gridSize);
+  let validSum = 0, validCount = 0;
   for (let gy = 0; gy < gridSize; gy++) {
     const lat = south + (gy / (gridSize - 1)) * (north - south);
-    const row = [];
     for (let gx = 0; gx < gridSize; gx++) {
       const lon = west + (gx / (gridSize - 1)) * (east - west);
       const xf = lon2tileF(lon, zoom), yf = lat2tileF(lat, zoom);
@@ -1143,10 +1144,46 @@ async function fetchAdaptiveTerrariumDem(south, west, north, east, gridSize = 72
       const px = Math.min(255, Math.max(0, Math.floor((xf - tx) * 256)));
       const py = Math.min(255, Math.max(0, Math.floor((yf - ty) * 256)));
       const data = tilePixels[`${tx}_${ty}`];
-      let elev = 0;
+      const cellIdx = gy * gridSize + gx;
       if (data) {
         const idx = (py * 256 + px) * 4;
-        elev = (data[idx] * 256.0 + data[idx + 1] + data[idx + 2] / 256.0) - 32768.0;
+        const elev = (data[idx] * 256.0 + data[idx + 1] + data[idx + 2] / 256.0) - 32768.0;
+        rawGrid[cellIdx] = elev;
+        validMask[cellIdx] = 1;
+        validSum += elev;
+        validCount++;
+      }
+    }
+  }
+  const avgValidElev = validCount > 0 ? (validSum / validCount) : 0;
+  let minElev = Infinity, maxElev = -Infinity;
+  for (let gy = 0; gy < gridSize; gy++) {
+    const row = [];
+    for (let gx = 0; gx < gridSize; gx++) {
+      const cellIdx = gy * gridSize + gx;
+      let elev = rawGrid[cellIdx];
+      if (!validMask[cellIdx]) {
+        if (validCount > 0) {
+          // Interpolate / carry nearest valid Terrarium pixel instead of emitting 0m sinkholes
+          let bestDistSq = Infinity;
+          let bestElev = avgValidElev;
+          for (let ny = 0; ny < gridSize; ny++) {
+            const dy = ny - gy;
+            const dySq = dy * dy;
+            if (dySq >= bestDistSq) continue;
+            for (let nx = 0; nx < gridSize; nx++) {
+              if (!validMask[ny * gridSize + nx]) continue;
+              const dSq = dySq + (nx - gx) * (nx - gx);
+              if (dSq < bestDistSq) {
+                bestDistSq = dSq;
+                bestElev = rawGrid[ny * gridSize + nx];
+              }
+            }
+          }
+          elev = bestElev;
+        } else {
+          elev = 0;
+        }
       }
       row.push(Math.round(elev * 100) / 100);
       if (elev < minElev) minElev = elev;

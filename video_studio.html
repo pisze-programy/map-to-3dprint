@@ -953,32 +953,24 @@
 
 
   <!-- BUNDLED ENGINE & INITIAL REAL GIS SCENE -->
+  <script src="src/vendor/vendor_bundle.js"></script>
+  <script src="src/vendor/manifold_vendor.js"></script>
+  <script src="src/geometry/print_physics_config.js"></script>
   <script src="src/geometry/polygon_2d.js"></script>
   <script src="src/geometry/obb_medial_2d.js"></script>
-  <script src="src/geometry/marching_squares_2d.js"></script>
+  <script src="src/geometry/manifold_core.js"></script>
   <script src="src/mesh/mesh_primitives.js"></script>
   <script src="src/mesh/mesh_clipper_3d.js"></script>
-  <script src="src/mesh/roof_shapes.js"></script>
-  <script src="src/mesh/roof_architectural.js"></script>
-  <script src="src/mesh/terrain_dem_grid.js"></script>
-  <script src="src/mesh/mesh_tile_append.js"></script>
-  <script src="src/mesh/water_masks.js"></script>
-  <script src="src/mesh/features_greenery.js"></script>
-  <script src="src/mesh/features_roads.js"></script>
-  <script src="src/mesh/features_trees.js"></script>
-  <script src="src/mesh/terrain_masks.js"></script>
-  <script src="src/mesh/features_water.js"></script>
-  <script src="src/mesh/terrain_base_water.js"></script>
-  <script src="src/mesh/features_roads_parks.js"></script>
-  <script src="src/mesh/features_bridges.js"></script>
-  <script src="src/mesh/buildings_prepare.js"></script>
-  <script src="src/mesh/buildings_s3db.js"></script>
-  <script src="src/mesh/mesh_topology.js"></script>
+  <script src="src/mesh/layer1_terrain_water.js"></script>
+  <script src="src/mesh/layer1_s3db_buildings.js"></script>
+  <script src="src/mesh/layer1_bridges.js"></script>
+  <script src="src/mesh/layer2_archetypes.js"></script>
+  <script src="src/mesh/layer3_invariants_tiles.js"></script>
   <script src="src/mesh/mesh_builder.js"></script>
   <script src="src/render/webgl_math.js"></script>
   <script src="src/render/webgl_shaders.js"></script>
   <script src="src/render/webgl_studio.js"></script>
-  <script src="src/export/crc32_zip.js"></script>
+  <script src="src/export/export_io_utils.js"></script>
   <script src="src/export/stl_writer.js"></script>
   <script src="src/export/zip_packager.js"></script>
   <script src="src/export/export_3mf.js"></script>
@@ -1019,8 +1011,11 @@
   <script src="src/initial_scene.js"></script>
   <script>
 window.MAP3D_STANDALONE_VIDEO_MODULE = true;
-function boot() {
+async function boot() {
   try {
+    if (typeof __ensureManifoldReady === 'function') {
+      await __ensureManifoldReady();
+    }
     initMap3DApp(INITIAL_REAL_SCENE);
   } catch (e) {
     console.error('Boot error:', e);

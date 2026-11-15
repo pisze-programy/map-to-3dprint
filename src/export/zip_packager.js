@@ -5,7 +5,7 @@
 // ============================================================================
 
 if (typeof buildBinarySTLBytes === 'undefined' && typeof require !== 'undefined') {
-  Object.assign(global, require('./crc32_zip.js'));
+  Object.assign(global, require('./export_io_utils.js'));
   Object.assign(global, require('./stl_writer.js'));
   Object.assign(global, require('../mesh/mesh_clipper_3d.js'));
 }
@@ -14,8 +14,18 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   const tileCols = Math.max(1, (state && state.tileCols) || 1);
   const tileRows = Math.max(1, (state && state.tileRows) || 1);
   const numTiles = tileCols * tileRows;
-  const totalW = (state && state.bedSizeMm) || 252.0;
-  const totalH = (state && state.totalHeightMm) || totalW;
+  const {
+    totalWidthMm: totalW,
+    totalHeightMm: totalH,
+    scaleMm,
+    halfW,
+    halfH
+  } = resolveSceneScaleAndSpec(state, null);
+  const cfg = (typeof PRINT_PHYSICS_CONFIG !== 'undefined') ? PRINT_PHYSICS_CONFIG : null;
+  const mono4 = cfg ? cfg.photonMono4 : { bedXMm: 153.45, bedYMm: 87.05, frameSplitMaxMm: 148.0 };
+  const resinCfg = cfg ? cfg.resin : { defaultKerfMm: 0.08, densityGPerMl: 1.12 };
+  const defFrameWidthMm = cfg ? cfg.defaultFrameWidthMm : 12.0;
+
   const targetW_cm = (totalW / 10).toFixed(1);
   const targetH_cm = (totalH / 10).toFixed(1);
   const tileW = totalW / tileCols;
@@ -23,10 +33,10 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   const safeTitle = sanitizeFilenameSlug((state && state.plaqueText) || 'MAP3D');
   const pm = (state && state.printMetrics) || {};
   const isResin = Boolean(state && (state.isResin || state.printerPreset === 'photon_mono_4'));
-  const kerfMm = isResin ? (state.kerfMm !== undefined ? state.kerfMm : 0.08) : 0.0;
+  const kerfMm = isResin ? (state.kerfMm !== undefined ? state.kerfMm : resinCfg.defaultKerfMm) : 0.0;
 
-  const fitsNormal = (tileW <= 153.45 && tileH <= 87.05);
-  const fitsRotated = (tileH <= 153.45 && tileW <= 87.05);
+  const fitsNormal = (tileW <= mono4.bedXMm && tileH <= mono4.bedYMm);
+  const fitsRotated = (tileH <= mono4.bedXMm && tileW <= mono4.bedYMm);
   const isAutoRotated = isResin && (!fitsNormal && fitsRotated);
 
   const zipFiles = [];
@@ -43,7 +53,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
       const tVolMl = (pm.tileVolumesMl && pm.tileVolumesMl[tid] !== undefined)
         ? pm.tileVolumesMl[tid].toFixed(1)
         : (isEmptyCutoutTile ? '0.0' : ((pm.totalVolumeMl || 40) / numTiles).toFixed(1));
-      const tGrams = Math.round(parseFloat(tVolMl) * 1.12);
+      const tGrams = Math.round(parseFloat(tVolMl) * resinCfg.densityGPerMl);
       const tZ = (pm.tileMaxZMm && pm.tileMaxZMm[tid] !== undefined)
         ? pm.tileMaxZMm[tid]
         : (isEmptyCutoutTile ? 0.0 : (pm.maxZMm || 20));
@@ -72,20 +82,17 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   const frameEntries = [];
 
   if (state && state.exportFrame && frameTris.length > 0) {
-    const frameWidthMm = state.frameWidthMm || 12.0;
+    const frameWidthMm = (state && Number(state.frameWidthMm) > 0) ? Number(state.frameWidthMm) : defFrameWidthMm;
     const frameTotalWidthMm = totalW + 2 * frameWidthMm;
     const frameTotalHeightMm = totalH + 2 * frameWidthMm;
-    const maxDimMm = Math.max(totalW, totalH);
-    const scaleMm = maxDimMm / 169.2;
     const frameWidthUnits = frameWidthMm / scaleMm;
-    const halfW = 84.6 * (totalW / maxDimMm);
-    const halfH = 84.6 * (totalH / maxDimMm);
     const outerHalfW = halfW + frameWidthUnits;
     const outerHalfH = halfH + frameWidthUnits;
 
     const canClip = typeof clipMeshToBox3D === 'function';
-    const fCols = Math.max(1, Math.ceil(frameTotalWidthMm / 148.0));
-    const fRows = Math.max(1, Math.ceil(frameTotalHeightMm / 148.0));
+    const fCols = Math.max(1, Math.ceil(frameTotalWidthMm / mono4.frameSplitMaxMm));
+    const fRows = Math.max(1, Math.ceil(frameTotalHeightMm / mono4.frameSplitMaxMm));
+    const frameShiftZMm = (typeof computeFrameZShiftMm === 'function') ? computeFrameZShiftMm(frameTris, scaleMm) : 0;
 
     if (canClip && (fCols > 1 || fRows > 1)) {
       const colSpanScene = (2 * outerHalfW) / fCols;
@@ -102,10 +109,10 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
           if (clipped && clipped.length > 0) {
             const segW = (x1 - x0) * scaleMm;
             const segH = (y1 - y0) * scaleMm;
-            const segFitsNormal = (segW <= 153.45 && segH <= 87.05);
-            const segFitsRotated = (segH <= 153.45 && segW <= 87.05);
+            const segFitsNormal = (segW <= mono4.bedXMm && segH <= mono4.bedYMm);
+            const segFitsRotated = (segH <= mono4.bedXMm && segW <= mono4.bedYMm);
             const segRotate = isResin && (!segFitsNormal && segFitsRotated);
-            const segBytes = buildSTLBytesFromTriangles(clipped, -x0, -y0, scaleMm, segW, segH, state, segRotate);
+            const segBytes = buildSTLBytesFromTriangles(clipped, -x0, -y0, scaleMm, segW, segH, state, segRotate, frameShiftZMm);
             const segName = `Rama_${String(fIdx++).padStart(2, '0')}_R${segNorthRow}C${fc + 1}_${Math.round(segW)}x${Math.round(segH)}mm.stl`;
             zipFiles.push({ name: segName, content: segBytes });
             frameEntries.push({ name: segName, w: segW.toFixed(1), h: segH.toFixed(1), rot: segRotate });
@@ -113,11 +120,11 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
         }
       }
     } else {
-      const fullFrameFitsNormal = (frameTotalWidthMm <= 153.45 && frameTotalHeightMm <= 87.05);
-      const fullFrameFitsRotated = (frameTotalHeightMm <= 153.45 && frameTotalWidthMm <= 87.05);
+      const fullFrameFitsNormal = (frameTotalWidthMm <= mono4.bedXMm && frameTotalHeightMm <= mono4.bedYMm);
+      const fullFrameFitsRotated = (frameTotalHeightMm <= mono4.bedXMm && frameTotalWidthMm <= mono4.bedYMm);
       const fullRotate = isResin && (!fullFrameFitsNormal && fullFrameFitsRotated);
       const fullFrameBytes = buildSTLBytesFromTriangles(
-        frameTris, outerHalfW, outerHalfH, scaleMm, frameTotalWidthMm, frameTotalHeightMm, state, fullRotate
+        frameTris, outerHalfW, outerHalfH, scaleMm, frameTotalWidthMm, frameTotalHeightMm, state, fullRotate, frameShiftZMm
       );
       const segName = `Rama_01_Pelna_${Math.round(frameTotalWidthMm)}x${Math.round(frameTotalHeightMm)}mm.stl`;
       zipFiles.push({ name: segName, content: fullFrameBytes });

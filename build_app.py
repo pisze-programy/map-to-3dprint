@@ -18,36 +18,29 @@ def build():
     tpl = tpl.replace("<!--__VIDEO_STUDIO_VIEW__-->", video_view_html)
 
     js_files = [
-        # 1. 2D Geometry & Marching Squares
+        # 1. Vendor Bundles (Clipper2, Delatin, fflate, Poly2Tri, Earcut, Manifold WASM)
+        "src/vendor/vendor_bundle.js",
+        "src/vendor/manifold_vendor.js",
+        # 2. Central Print Config, 2D Geometry & Manifold Core
+        "src/geometry/print_physics_config.js",
         "src/geometry/polygon_2d.js",
         "src/geometry/obb_medial_2d.js",
-        "src/geometry/marching_squares_2d.js",
-        # 2. 3D Mesh Generation, Architectural Roofs & 2-Manifold Topology
+        "src/geometry/manifold_core.js",
+        # 3. 3-Layer Manifold Mesh Pipeline & Export/Topology Primitives
         "src/mesh/mesh_primitives.js",
         "src/mesh/mesh_clipper_3d.js",
-        "src/mesh/roof_shapes.js",
-        "src/mesh/roof_architectural.js",
-        "src/mesh/terrain_dem_grid.js",
-        "src/mesh/mesh_tile_append.js",
-        "src/mesh/water_masks.js",
-        "src/mesh/features_greenery.js",
-        "src/mesh/features_roads.js",
-        "src/mesh/features_trees.js",
-        "src/mesh/terrain_masks.js",
-        "src/mesh/features_water.js",
-        "src/mesh/terrain_base_water.js",
-        "src/mesh/features_roads_parks.js",
-        "src/mesh/features_bridges.js",
-        "src/mesh/buildings_prepare.js",
-        "src/mesh/buildings_s3db.js",
-        "src/mesh/mesh_topology.js",
+        "src/mesh/layer1_terrain_water.js",
+        "src/mesh/layer1_s3db_buildings.js",
+        "src/mesh/layer1_bridges.js",
+        "src/mesh/layer2_archetypes.js",
+        "src/mesh/layer3_invariants_tiles.js",
         "src/mesh/mesh_builder.js",
         # 3. Studio WebGL Renderer & Shaders
         "src/render/webgl_math.js",
         "src/render/webgl_shaders.js",
         "src/render/webgl_studio.js",
         # 4. Binary .STL / .ZIP / .3MF Exporters
-        "src/export/crc32_zip.js",
+        "src/export/export_io_utils.js",
         "src/export/stl_writer.js",
         "src/export/zip_packager.js",
         "src/export/export_3mf.js",
@@ -103,8 +96,11 @@ def build():
         )
 
     boot_code = (
-        "function boot() {\n"
+        "async function boot() {\n"
         "  try {\n"
+        "    if (typeof __ensureManifoldReady === 'function') {\n"
+        "      await __ensureManifoldReady();\n"
+        "    }\n"
         "    initMap3DApp(INITIAL_REAL_SCENE);\n"
         "  } catch (e) {\n"
         "    console.error('Boot error:', e);\n"

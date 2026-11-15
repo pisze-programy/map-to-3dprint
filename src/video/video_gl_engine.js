@@ -137,11 +137,13 @@ function createVideoPreviewEngine(compositeCanvas) {
     primaryCad2D = extracted.cad2D;
 
     list.forEach((item) => {
-      const dimW = Number(item.bedSizeMm) || ((item.widthCm || 30) * 10);
-      const dimH = Number(item.totalHeightMm) || ((item.heightCm || 30) * 10);
-      const maxDim = Math.max(dimW, dimH) || 300;
-      const halfW = 84.6 * (dimW / maxDim);
-      const halfH = 84.6 * (dimH / maxDim);
+      const canonHalfU = (typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6;
+      const defBed = (typeof DEFAULT_BED_SIZE_MM !== 'undefined') ? DEFAULT_BED_SIZE_MM : 320;
+      const dimW = Number(item.bedSizeMm) || (item.widthCm ? item.widthCm * 10 : defBed);
+      const dimH = Number(item.totalHeightMm) || (item.heightCm ? item.heightCm * 10 : dimW);
+      const maxDim = Math.max(dimW, dimH) || defBed;
+      const halfW = canonHalfU * (dimW / maxDim);
+      const halfH = canonHalfU * (dimH / maxDim);
       const meshes = item.meshes || {};
       const elemVis = {
         trees: true,

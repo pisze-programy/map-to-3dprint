@@ -105,10 +105,11 @@ function computeCameraClipPlanes(cameraDistance, explodeSpan = 0) {
 // Texel-snapped orthographic shadow frustum adaptive to close-up zoom:
 // Preserves full-plate cached shadow map at wide studio distances while
 // tightening shadow texel resolution & contact bias at close zoom without shadow acne.
-function computeShadowFrustum(camera, sunAngleDeg, halfW = 84.6, halfH = 84.6, explodeFactor = 0, explodeSpan = 0, shadowRes = 2048) {
+const _CANON_HALF_MATH = (typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6;
+function computeShadowFrustum(camera, sunAngleDeg, halfW = _CANON_HALF_MATH, halfH = _CANON_HALF_MATH, explodeFactor = 0, explodeSpan = 0, shadowRes = 2048) {
   const sunRad = (Number(sunAngleDeg) || 0) * Math.PI / 180;
   const sunDir = [Math.cos(sunRad) * 0.68, Math.sin(sunRad) * 0.68, 0.73];
-  const fullOrthoR = Math.max(115, Math.round(Math.max(halfW || 84.6, halfH || 84.6) * 1.359)) + explodeSpan;
+  const fullOrthoR = Math.max(115, Math.round(Math.max(halfW || _CANON_HALF_MATH, halfH || _CANON_HALF_MATH) * 1.359)) + explodeSpan;
   const camDist = Math.max(2.5, Number(camera && camera.distance) || 274);
   const absPitch = Math.abs(Number(camera && camera.pitch) || 0.5);
   const topRayAngle = absPitch - (17.5 * Math.PI / 180);

@@ -280,7 +280,8 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
       console.warn('DEM fetch error during fallback:', e);
     }
     if (dem) {
-      const mToU = 169.2 / Math.max(1, effectiveSpanM);
+      const spanU = (typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined') ? SCENE_CANONICAL_SPAN_UNITS : 169.2;
+      const mToU = spanU / Math.max(1, effectiveSpanM);
       const fallbackScene = {
         title: `${title || 'TEREN'} (DEM)`,
         center: [centerLat, centerLon],

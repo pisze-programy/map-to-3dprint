@@ -227,18 +227,19 @@ function createVideoOrderDemoController(vState, engine, previewCanvas, hooks, br
 
   function ensureSceneRotatedForBuild(scene, buildState) {
     if (!scene || typeof applySceneRotation !== 'function') return;
-    const dimW = buildState.bedSizeMm || 300;
+    const canonHalfU = (typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6;
+    const dimW = buildState.bedSizeMm || (typeof DEFAULT_BED_SIZE_MM !== 'undefined' ? DEFAULT_BED_SIZE_MM : 320);
     const dimH = buildState.totalHeightMm || dimW;
-    const maxDim = Math.max(dimW, dimH) || 300;
-    const targetHalfW = 84.6 * (dimW / maxDim);
-    const targetHalfH = 84.6 * (dimH / maxDim);
+    const maxDim = Math.max(dimW, dimH) || dimW;
+    const targetHalfW = canonHalfU * (dimW / maxDim);
+    const targetHalfH = canonHalfU * (dimH / maxDim);
     const targetRot = (typeof normalizeRotationDeg === 'function')
       ? normalizeRotationDeg(buildState.mapRotationDeg || 0)
       : (Number(buildState.mapRotationDeg) || 0);
     if (
       scene._appliedRotationDeg !== targetRot ||
-      Math.abs((scene.halfW || 84.6) - targetHalfW) > 0.25 ||
-      Math.abs((scene.halfH || 84.6) - targetHalfH) > 0.25
+      Math.abs((scene.halfW || canonHalfU) - targetHalfW) > 0.25 ||
+      Math.abs((scene.halfH || canonHalfU) - targetHalfH) > 0.25
     ) {
       applySceneRotation(scene, targetRot, targetHalfW, targetHalfH);
     }

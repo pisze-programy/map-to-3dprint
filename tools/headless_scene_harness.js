@@ -20,27 +20,19 @@ const REPO_ROOT = path.resolve(__dirname, '..');
  * plus WebGL math/shaders and UI config/rotation modules.
  */
 const PIPELINE_SCRIPTS = [
+  'src/vendor/vendor_bundle.js',
+  'src/vendor/manifold_vendor.js',
+  'src/geometry/print_physics_config.js',
   'src/geometry/polygon_2d.js',
   'src/geometry/obb_medial_2d.js',
-  'src/geometry/marching_squares_2d.js',
+  'src/geometry/manifold_core.js',
   'src/mesh/mesh_primitives.js',
   'src/mesh/mesh_clipper_3d.js',
-  'src/mesh/roof_shapes.js',
-  'src/mesh/roof_architectural.js',
-  'src/mesh/terrain_dem_grid.js',
-  'src/mesh/mesh_tile_append.js',
-  'src/mesh/water_masks.js',
-  'src/mesh/features_greenery.js',
-  'src/mesh/features_roads.js',
-  'src/mesh/features_trees.js',
-  'src/mesh/terrain_masks.js',
-  'src/mesh/features_water.js',
-  'src/mesh/terrain_base_water.js',
-  'src/mesh/features_roads_parks.js',
-  'src/mesh/features_bridges.js',
-  'src/mesh/buildings_prepare.js',
-  'src/mesh/buildings_s3db.js',
-  'src/mesh/mesh_topology.js',
+  'src/mesh/layer1_terrain_water.js',
+  'src/mesh/layer1_s3db_buildings.js',
+  'src/mesh/layer1_bridges.js',
+  'src/mesh/layer2_archetypes.js',
+  'src/mesh/layer3_invariants_tiles.js',
   'src/mesh/mesh_builder.js',
   'src/render/webgl_math.js',
   'src/render/webgl_shaders.js',
@@ -1359,8 +1351,13 @@ function createPipelineRuntime(opts = {}) {
 
   const sandbox = {
     console: vmConsole,
-    Math, Date, Number, String, Boolean, Array, Object, Map, Set, RegExp, Error, TypeError,
-    Uint8Array, Uint8ClampedArray, Int32Array, Float32Array, Float64Array, ArrayBuffer, DataView,
+    Math, Date, Number, String, Boolean, Array, Object, Map, Set, WeakMap, WeakSet, RegExp, Error, TypeError,
+    Uint8Array, Uint8ClampedArray, Uint16Array, Uint32Array, Int32Array, Float32Array, Float64Array, ArrayBuffer, DataView,
+    TextEncoder: typeof TextEncoder !== 'undefined' ? TextEncoder : undefined,
+    TextDecoder: typeof TextDecoder !== 'undefined' ? TextDecoder : undefined,
+    URLSearchParams: typeof URLSearchParams !== 'undefined' ? URLSearchParams : undefined,
+    atob: typeof atob === 'function' ? atob : (b64 => Buffer.from(b64, 'base64').toString('binary')),
+    WebAssembly: typeof WebAssembly !== 'undefined' ? WebAssembly : undefined,
     JSON, Promise,
     setTimeout, clearTimeout, setInterval, clearInterval,
     performance: { now: () => Date.now() },
@@ -1907,26 +1904,58 @@ async function loadSceneAndBuildModel(opts = {}) {
     throw new Error('buildComplete3DModel missing from VM runtime');
   }
 
-  const origComputeMetrics = sandbox.computePrintMetricsAndTopology;
-  let model;
-  if (opts.skipTopologyAudit && typeof origComputeMetrics === 'function' && typeof sandbox.computeFastVolumeAndExtents === 'function') {
-    sandbox.computePrintMetricsAndTopology = (m, bb, st, c) => {
-      const fastMetrics = sandbox.computeFastVolumeAndExtents(m, bb, st, c);
-      return {
-        meshes: m,
-        buildingBounds: bb,
-        pickIdMap: (c && c.pickIdMap) || new Map(),
-        totalTriangles: fastMetrics.totalTriangles,
-        printMetrics: fastMetrics,
-      };
-    };
-    try {
-      model = sandbox.buildComplete3DModel(scene, state, { fast: Boolean(opts.fast) });
-    } finally {
-      sandbox.computePrintMetricsAndTopology = origComputeMetrics;
+  const model = sandbox.buildComplete3DModel(scene, state, {
+    fast: Boolean(opts.fast),
+    skipTopologyAudit: Boolean(opts.skipTopologyAudit),
+  });
+  if (model && model.audit) {
+    if (!auditState.ctx && model.audit.ctx) auditState.ctx = model.audit.ctx;
+    if (!auditState.baseInfo && model.audit.baseInfo) auditState.baseInfo = model.audit.baseInfo;
+    if (Array.isArray(model.audit.s3dbAllFinalBuildings) && auditState.s3dbAllFinalBuildings.length === 0) {
+      auditState.s3dbAllFinalBuildings.push(...model.audit.s3dbAllFinalBuildings);
     }
-  } else {
-    model = sandbox.buildComplete3DModel(scene, state, { fast: Boolean(opts.fast) });
+    if (Array.isArray(model.audit.preparedList) && model.audit.preparedList.length > 0) {
+      for (const entry of model.audit.preparedList) {
+        auditState.preparedList.push(entry);
+        if (entry.id !== undefined && entry.id !== null) {
+          auditState.preparedById.set(entry.id, entry);
+          auditState.preparedById.set(String(entry.id), entry);
+        }
+        if (entry.osmId !== undefined && entry.osmId !== null) {
+          auditState.preparedById.set(entry.osmId, entry);
+          auditState.preparedById.set(String(entry.osmId), entry);
+        }
+        if (entry.pickId !== undefined && entry.pickId !== null) {
+          auditState.preparedById.set(entry.pickId, entry);
+        }
+      }
+    } else if (auditState.preparedList.length === 0 && Array.isArray(model.buildingBounds)) {
+      for (const bb of model.buildingBounds) {
+        const entry = {
+          id: bb.id,
+          osmId: bb.id,
+          pickId: bb.pickId,
+          shellId: bb.shellId,
+          roofShape: bb.roofShape || null,
+          baseZ: bb.zBot,
+          topZ: bb.zTop,
+          heightU: (bb.zTop || 0) - (bb.zBot || 0),
+          minX: bb.minX,
+          maxX: bb.maxX,
+          minY: bb.minY,
+          maxY: bb.maxY,
+          centroid: bb.interiorPt || [((bb.minX || 0) + (bb.maxX || 0)) * 0.5, ((bb.minY || 0) + (bb.maxY || 0)) * 0.5],
+        };
+        auditState.preparedList.push(entry);
+        if (bb.id !== undefined && bb.id !== null) {
+          auditState.preparedById.set(bb.id, entry);
+          auditState.preparedById.set(String(bb.id), entry);
+        }
+        if (bb.pickId !== undefined && bb.pickId !== null) {
+          auditState.preparedById.set(bb.pickId, entry);
+        }
+      }
+    }
   }
 
   const meta = {

@@ -123,7 +123,12 @@ function bindStudioPanelControls(ctx) {
   }
 
   const kerfMmInput = document.getElementById('kerfMmInput');
-  if (kerfMmInput) kerfMmInput.addEventListener('change', e => { state.kerfMm = Math.max(0, Math.min(1.0, parseFloat(e.target.value) || 0.08)); rebuildModel3D(); });
+  if (kerfMmInput) kerfMmInput.addEventListener('change', e => {
+    const parsed = parseFloat(e.target.value);
+    const defKerf = (typeof resolvePrintPhysicsSpec === 'function') ? resolvePrintPhysicsSpec(state, null).defaultKerfMm : 0.08;
+    state.kerfMm = (Number.isFinite(parsed) && parsed >= 0) ? Math.max(0, Math.min(1.0, parsed)) : defKerf;
+    rebuildModel3D();
+  });
   const chkExportFrame = document.getElementById('chkExportFrame');
   if (chkExportFrame) chkExportFrame.addEventListener('change', e => { state.exportFrame = e.target.checked; });
 

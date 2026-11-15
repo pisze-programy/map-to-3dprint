@@ -129,11 +129,12 @@ function createUIPanelsController(state, draw2DMap, onRebuildNeeded) {
       if (gb.minZ < minZ) minZ = gb.minZ;
       if (gb.maxZ > maxZ) maxZ = gb.maxZ;
     });
-    const maxDimMm = Math.max(state.bedSizeMm || 320, state.totalHeightMm || 320);
-    const scaleMm = maxDimMm / 169.2;
+    const scaleSpec = (typeof resolveSceneScaleAndSpec === 'function') ? resolveSceneScaleAndSpec(state, scene) : null;
+    const scaleMm = scaleSpec ? scaleSpec.scaleMm : (Math.max(state.bedSizeMm || 320, state.totalHeightMm || 320) / 169.2);
+    const mToU = scaleSpec ? scaleSpec.mToU : (scene.metersToUnits || (169.2 / 1200));
     const printMm = (maxZ > minZ)
       ? Math.max(1.0, (maxZ - minZ) * scaleMm).toFixed(1)
-      : (effMeters * (scene.metersToUnits || 0.13) * state.zScale * scaleMm).toFixed(1);
+      : (effMeters * mToU * state.zScale * scaleMm).toFixed(1);
 
     document.getElementById('inspRealHeight').textContent = `${effMeters} m`;
     document.getElementById('inspPrintHeight').textContent = `${printMm} mm w druku`;

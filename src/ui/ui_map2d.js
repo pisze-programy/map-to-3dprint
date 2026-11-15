@@ -133,7 +133,8 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
     if (rawScene && rawScene.center && z >= 11) {
       const scLat = rawScene.center[0];
       const scLon = rawScene.center[1];
-      const mToU = rawScene.metersToUnits || 0.13;
+      const defaultMToU = (typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined') ? (SCENE_CANONICAL_SPAN_UNITS / 1200) : 0.141;
+      const mToU = rawScene.metersToUnits || defaultMToU;
       const cosLat = Math.max(0.2, Math.cos(scLat * Math.PI / 180.0));
 
       const toScreenGeo = (pt) => {

@@ -126,7 +126,7 @@ function initMap3DApp(initialScene) {
     activePalette: initPalette,
     colors: { ...(PALETTES.find(p => p.id === initPalette) || PALETTES[0]).colors },
     layerVisible: {
-      water: true, base: true, greenery: true, trees: true, roads: true, buildings: true
+      water: true, base: true, greenery: true, trees: true, roads: true, buildings: true, highlighted: true
     },
     lodSettings: initLodSettings,
     sceneData: initialScene,
@@ -284,13 +284,11 @@ function initMap3DApp(initialScene) {
     state.bedZ = (curProf && curProf.bedZ) || 165.0;
 
     if (state.sceneData && typeof applySceneRotation === 'function') {
-      const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 500);
-      const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
-      const maxDim = Math.max(dimW, dimH) || 500;
+      const { halfW, halfH } = resolveSceneScaleAndSpec(state, state.sceneData);
       const effRot = (options && typeof options.explicitSceneRotDeg === 'number' && Number.isFinite(options.explicitSceneRotDeg))
         ? options.explicitSceneRotDeg
         : (state.mapRotationDeg || 0);
-      applySceneRotation(state.sceneData, effRot, 84.6 * (dimW / maxDim), 84.6 * (dimH / maxDim));
+      applySceneRotation(state.sceneData, effRot, halfW, halfH);
     }
 
     if (studio && typeof studio.setGenerationId === 'function') {
@@ -392,10 +390,8 @@ function initMap3DApp(initialScene) {
       : (state.mapRotationDeg || 0);
     if (typeof ensureUnrotatedSceneSnapshot === 'function') ensureUnrotatedSceneSnapshot(scene);
     if (typeof applySceneRotation === 'function') {
-      const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 500);
-      const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
-      const maxDim = Math.max(dimW, dimH) || 500;
-      applySceneRotation(scene, rotToApply, 84.6 * (dimW / maxDim), 84.6 * (dimH / maxDim));
+      const { halfW, halfH } = resolveSceneScaleAndSpec(state, scene);
+      applySceneRotation(scene, rotToApply, halfW, halfH);
     }
     state.sceneData = scene;
     if (!isPartial && syncMapCenter && scene.center) {
@@ -778,10 +774,8 @@ function initMap3DApp(initialScene) {
             ? normalizeRotationDeg(state.mapRotationDeg || 0)
             : (Number(state.mapRotationDeg) || 0);
           if (state.sceneData._appliedRotationDeg !== targetRot) {
-            const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 500);
-            const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
-            const maxDim = Math.max(dimW, dimH) || 500;
-            applySceneRotation(state.sceneData, targetRot, 84.6 * (dimW / maxDim), 84.6 * (dimH / maxDim));
+            const { halfW, halfH } = resolveSceneScaleAndSpec(state, state.sceneData);
+            applySceneRotation(state.sceneData, targetRot, halfW, halfH);
             needsRotRebuild = true;
           }
         }

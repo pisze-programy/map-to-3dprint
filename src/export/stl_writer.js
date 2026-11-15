@@ -5,11 +5,23 @@
 // ============================================================================
 
 if (typeof createZipArchive === 'undefined' && typeof require !== 'undefined') {
-  Object.assign(global, require('./crc32_zip.js'));
+  Object.assign(global, require('./export_io_utils.js'));
   Object.assign(global, require('../mesh/mesh_clipper_3d.js'));
 }
 
-function buildSTLBytesFromTriangles(tris, shiftX, shiftY, scaleMm, boundW_mm, boundH_mm, state, shouldRotate = false) {
+function computeFrameZShiftMm(tris, scaleMm) {
+  if (!tris || tris.length === 0) return 0;
+  let minZ = Infinity;
+  for (let i = 0; i < tris.length; i++) {
+    const t = tris[i];
+    if (t.v0 && t.v0[2] < minZ) minZ = t.v0[2];
+    if (t.v1 && t.v1[2] < minZ) minZ = t.v1[2];
+    if (t.v2 && t.v2[2] < minZ) minZ = t.v2[2];
+  }
+  return (Number.isFinite(minZ) && minZ < 0) ? (-minZ * scaleMm) : 0;
+}
+
+function buildSTLBytesFromTriangles(tris, shiftX, shiftY, scaleMm, boundW_mm, boundH_mm, state, shouldRotate = false, shiftZMm = 0) {
   const buf = new ArrayBuffer(84 + tris.length * 50);
   const headerBytes = new Uint8Array(buf, 0, 80);
   const headerStr = 'Map3D Print Studio - Watertight Mesh - Data (c) OpenStreetMap contributors ODbL';
@@ -39,7 +51,7 @@ function buildSTLBytesFromTriangles(tris, shiftX, shiftY, scaleMm, boundW_mm, bo
       const baseOff = offset + 12 + v * 12;
       const xLocal = (pts[v][0] + shiftX) * scaleMm;
       const yLocal = (pts[v][1] + shiftY) * scaleMm;
-      const zLocal = Math.max(0, pts[v][2] * scaleMm);
+      const zLocal = Math.max(0, pts[v][2] * scaleMm + shiftZMm);
       let outX = xLocal;
       let outY = yLocal;
       if (shouldRotate) {
@@ -57,12 +69,17 @@ function buildSTLBytesFromTriangles(tris, shiftX, shiftY, scaleMm, boundW_mm, bo
 }
 
 function buildBinarySTLBytes(state, layerFilter = 'all', tileIdFilter = -1) {
-  const totalWidthMm = (state && state.bedSizeMm) || 320.0;
-  const totalHeightMm = (state && state.totalHeightMm) || totalWidthMm;
-  const maxDimMm = Math.max(totalWidthMm, totalHeightMm);
-  const scaleMm = maxDimMm / 169.2;
-  const halfW = 84.6 * (totalWidthMm / maxDimMm);
-  const halfH = 84.6 * (totalHeightMm / maxDimMm);
+  const {
+    totalWidthMm,
+    totalHeightMm,
+    scaleMm,
+    halfW,
+    halfH
+  } = resolveSceneScaleAndSpec(state, null);
+
+  const cfg = (typeof PRINT_PHYSICS_CONFIG !== 'undefined') ? PRINT_PHYSICS_CONFIG : null;
+  const mono4 = cfg ? cfg.photonMono4 : { bedXMm: 153.45, bedYMm: 87.05, frameSplitMaxMm: 148.0 };
+  const defFrameWidthMm = cfg ? cfg.defaultFrameWidthMm : 12.0;
 
   const tileCols = Math.max(1, (state && state.tileCols) || 1);
   const tileRows = Math.max(1, (state && state.tileRows) || 1);
@@ -84,7 +101,7 @@ function buildBinarySTLBytes(state, layerFilter = 'all', tileIdFilter = -1) {
   let targetH = totalHeightMm;
 
   if (layerFilter === 'frame') {
-    const frameWidthMm = (state && state.frameWidthMm) || 12.0;
+    const frameWidthMm = (state && Number(state.frameWidthMm) > 0) ? Number(state.frameWidthMm) : defFrameWidthMm;
     const frameWidthUnits = frameWidthMm / scaleMm;
     shiftXScene = halfW + frameWidthUnits;
     shiftYScene = halfH + frameWidthUnits;
@@ -99,24 +116,25 @@ function buildBinarySTLBytes(state, layerFilter = 'all', tileIdFilter = -1) {
     targetH = tileHeightMm;
   }
 
-  const fitsNormal = (targetW <= 153.45 && targetH <= 87.05);
-  const fitsRotated = (targetH <= 153.45 && targetW <= 87.05);
+  const fitsNormal = (targetW <= mono4.bedXMm && targetH <= mono4.bedYMm);
+  const fitsRotated = (targetH <= mono4.bedXMm && targetW <= mono4.bedYMm);
   const isResinMode = Boolean(state && (state.isResin || state.printerPreset === 'photon_mono_4'));
   const shouldRotateMono4 = isResinMode && (tileIdFilter >= 0) && (!fitsNormal && fitsRotated);
 
   const meshesObj = (state && (state.layerMeshes || state.meshes)) || {};
   const allTris = [];
   keys.forEach(k => {
-    if (layerFilter === 'all' && state && state.layerVisible && !state.layerVisible[k]) return;
+    if (layerFilter === 'all' && state && state.layerVisible && state.layerVisible[k] === false) return;
     const arr = meshesObj[k] || [];
     for (let i = 0; i < arr.length; i++) {
       const t = arr[i];
-      if (tileIdFilter >= 0 && t.tileId !== undefined && t.tileId !== tileIdFilter) continue;
+      if (tileIdFilter >= 0 && resolveTriangleTileId(t, halfW, halfH, tileCols, tileRows) !== tileIdFilter) continue;
       allTris.push(t);
     }
   });
 
-  return buildSTLBytesFromTriangles(allTris, shiftXScene, shiftYScene, scaleMm, targetW, targetH, state, shouldRotateMono4);
+  const frameZShiftMm = layerFilter === 'frame' ? computeFrameZShiftMm(allTris, scaleMm) : 0;
+  return buildSTLBytesFromTriangles(allTris, shiftXScene, shiftYScene, scaleMm, targetW, targetH, state, shouldRotateMono4, frameZShiftMm);
 }
 
 function exportBinarySTL(state, layerFilter = 'all') {
@@ -144,8 +162,9 @@ function exportBinarySTL(state, layerFilter = 'all') {
     return false;
   }
   const safeTitle = sanitizeFilenameSlug((state && state.plaqueText) || 'MAP3D');
-  const totalWidthMm = (state && state.bedSizeMm) || 320.0;
-  const totalHeightMm = (state && state.totalHeightMm) || totalWidthMm;
+  const { totalWidthMm, totalHeightMm } = resolveSceneScaleAndSpec(state, null);
+  const defFrameWidthMm = (typeof PRINT_PHYSICS_CONFIG !== 'undefined') ? PRINT_PHYSICS_CONFIG.defaultFrameWidthMm : 12.0;
+  const frameWidthMm = (state && Number(state.frameWidthMm) > 0) ? Number(state.frameWidthMm) : defFrameWidthMm;
   const tileW = Math.round(totalWidthMm / tileCols);
   const tileH = Math.round(totalHeightMm / tileRows);
   let tileSuffix = `_${tileW}x${tileH}mm`;
@@ -157,7 +176,7 @@ function exportBinarySTL(state, layerFilter = 'all') {
   }
   const suffix = layerFilter === 'all'
     ? `Pelna_Bryla${tileSuffix}`
-    : (layerFilter === 'frame' ? `Rama_${Math.round(totalWidthMm + 24)}x${Math.round(totalHeightMm + 24)}mm` : `Warstwa_${layerFilter}${tileSuffix}`);
+    : (layerFilter === 'frame' ? `Rama_${Math.round(totalWidthMm + 2 * frameWidthMm)}x${Math.round(totalHeightMm + 2 * frameWidthMm)}mm` : `Warstwa_${layerFilter}${tileSuffix}`);
   downloadBlob(stlBytes, `Map3D_${safeTitle}_${suffix}.stl`, 'model/stl');
   return true;
 }
@@ -167,24 +186,30 @@ function exportFrameSTL(state) {
   const frameTris = meshesObj.frame || [];
   if (frameTris.length === 0) return;
 
-  const totalW = (state && state.bedSizeMm) || 252.0;
-  const totalH = (state && state.totalHeightMm) || totalW;
-  const frameWidthMm = (state && state.frameWidthMm) || 12.0;
+  const {
+    totalWidthMm: totalW,
+    totalHeightMm: totalH,
+    scaleMm,
+    halfW,
+    halfH
+  } = resolveSceneScaleAndSpec(state, null);
+  const cfg = (typeof PRINT_PHYSICS_CONFIG !== 'undefined') ? PRINT_PHYSICS_CONFIG : null;
+  const mono4 = cfg ? cfg.photonMono4 : { bedXMm: 153.45, bedYMm: 87.05, frameSplitMaxMm: 148.0 };
+  const frameWidthMm = (state && Number(state.frameWidthMm) > 0)
+    ? Number(state.frameWidthMm)
+    : (cfg ? cfg.defaultFrameWidthMm : 12.0);
   const frameTotalWidthMm = totalW + 2 * frameWidthMm;
   const frameTotalHeightMm = totalH + 2 * frameWidthMm;
-  const maxDimMm = Math.max(totalW, totalH);
-  const scaleMm = maxDimMm / 169.2;
   const frameWidthUnits = frameWidthMm / scaleMm;
-  const halfW = 84.6 * (totalW / maxDimMm);
-  const halfH = 84.6 * (totalH / maxDimMm);
   const outerHalfW = halfW + frameWidthUnits;
   const outerHalfH = halfH + frameWidthUnits;
   const safeTitle = sanitizeFilenameSlug((state && state.plaqueText) || 'MAP3D');
   const isResin = Boolean(state && (state.isResin || state.printerPreset === 'photon_mono_4'));
 
   const canClip = typeof clipMeshToBox3D === 'function';
-  const fCols = Math.max(1, Math.ceil(frameTotalWidthMm / 148.0));
-  const fRows = Math.max(1, Math.ceil(frameTotalHeightMm / 148.0));
+  const fCols = Math.max(1, Math.ceil(frameTotalWidthMm / mono4.frameSplitMaxMm));
+  const fRows = Math.max(1, Math.ceil(frameTotalHeightMm / mono4.frameSplitMaxMm));
+  const frameShiftZMm = computeFrameZShiftMm(frameTris, scaleMm);
 
   if (canClip && (fCols > 1 || fRows > 1)) {
     const colSpanScene = (2 * outerHalfW) / fCols;
@@ -202,10 +227,10 @@ function exportFrameSTL(state) {
         if (clipped && clipped.length > 0) {
           const segW = (x1 - x0) * scaleMm;
           const segH = (y1 - y0) * scaleMm;
-          const segFitsNormal = (segW <= 153.45 && segH <= 87.05);
-          const segFitsRotated = (segH <= 153.45 && segW <= 87.05);
+          const segFitsNormal = (segW <= mono4.bedXMm && segH <= mono4.bedYMm);
+          const segFitsRotated = (segH <= mono4.bedXMm && segW <= mono4.bedYMm);
           const segRotate = isResin && (!segFitsNormal && segFitsRotated);
-          const segBytes = buildSTLBytesFromTriangles(clipped, -x0, -y0, scaleMm, segW, segH, state, segRotate);
+          const segBytes = buildSTLBytesFromTriangles(clipped, -x0, -y0, scaleMm, segW, segH, state, segRotate, frameShiftZMm);
           const segName = `Rama_${String(fIdx++).padStart(2, '0')}_R${segNorthRow}C${fc + 1}_${Math.round(segW)}x${Math.round(segH)}mm.stl`;
           zipFiles.push({ name: segName, content: segBytes });
         }
@@ -224,6 +249,7 @@ function exportFrameSTL(state) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    computeFrameZShiftMm,
     buildSTLBytesFromTriangles,
     buildBinarySTLBytes,
     exportBinarySTL,

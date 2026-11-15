@@ -4,16 +4,20 @@
 // ============================================================================
 
 if (typeof createZipArchive === 'undefined' && typeof require !== 'undefined') {
-  Object.assign(global, require('./crc32_zip.js'));
+  Object.assign(global, require('./export_io_utils.js'));
+}
+if (typeof resolveSceneScaleAndSpec === 'undefined' && typeof require !== 'undefined') {
+  try { Object.assign(global, require('../geometry/print_physics_config.js')); } catch (_) {}
 }
 
 function exportMultiColor3MF(state) {
-  const totalWidthMm = (state && state.bedSizeMm) || 320.0;
-  const totalHeightMm = (state && state.totalHeightMm) || totalWidthMm;
-  const maxDimMm = Math.max(totalWidthMm, totalHeightMm);
-  const scaleMm = maxDimMm / 169.2;
-  const halfW = 84.6 * (totalWidthMm / maxDimMm);
-  const halfH = 84.6 * (totalHeightMm / maxDimMm);
+  const {
+    totalWidthMm,
+    totalHeightMm,
+    scaleMm,
+    halfW,
+    halfH
+  } = resolveSceneScaleAndSpec(state, null);
 
   const tileCols = Math.max(1, (state && state.tileCols) || 1);
   const tileRows = Math.max(1, (state && state.tileRows) || 1);
@@ -66,12 +70,15 @@ function exportMultiColor3MF(state) {
     const vertexMap = new Map();
     const vChunks = [];
     const tChunks = [];
+    const fmtMm = (v) => (Math.abs(v) < 5e-6 ? 0 : v).toFixed(5);
 
-    function getWeldedVertexIndex(pt, shellTag) {
-      const vx = ((pt[0] + shiftX) * scaleMm).toFixed(3);
-      const vy = ((pt[1] + shiftY) * scaleMm).toFixed(3);
-      const vz = Math.max(0, pt[2] * scaleMm).toFixed(3);
-      const key = `${shellTag}_${vx}_${vy}_${vz}`;
+    function getIndexedVertexIndex(pt, shellTag, mBatch, vi) {
+      const vx = fmtMm((pt[0] + shiftX) * scaleMm);
+      const vy = fmtMm((pt[1] + shiftY) * scaleMm);
+      const vz = fmtMm(Math.max(0, pt[2] * scaleMm));
+      const key = (mBatch !== undefined && vi !== undefined)
+        ? `${mBatch}_${vi}`
+        : `${shellTag}_${vx}_${vy}_${vz}`;
       let idx = vertexMap.get(key);
       if (idx === undefined) {
         idx = vChunks.length;
@@ -84,9 +91,9 @@ function exportMultiColor3MF(state) {
     for (let i = 0; i < tris.length; i++) {
       const t = tris[i];
       const shellTag = `${t.tileId ?? 0}_${t.shellId ?? t.buildingId ?? 0}`;
-      const i0 = getWeldedVertexIndex(t.v0, shellTag);
-      const i1 = getWeldedVertexIndex(t.v1, shellTag);
-      const i2 = getWeldedVertexIndex(t.v2, shellTag);
+      const i0 = getIndexedVertexIndex(t.v0, shellTag, t.mBatch, t.vi0);
+      const i1 = getIndexedVertexIndex(t.v1, shellTag, t.mBatch, t.vi1);
+      const i2 = getIndexedVertexIndex(t.v2, shellTag, t.mBatch, t.vi2);
       if (i0 === i1 || i1 === i2 || i2 === i0) continue;
       tChunks.push(`<triangle v1="${i0}" v2="${i1}" v3="${i2}" pid="10" p1="${matIdx}"/>`);
     }
@@ -115,9 +122,9 @@ function exportMultiColor3MF(state) {
       const tr = Math.floor(tid / tileCols);
       const northRow = tileRows - tr;
       exportLayers.forEach(layer => {
-        if (state && state.layerVisible && !state.layerVisible[layer.key]) return;
+        if (state && state.layerVisible && state.layerVisible[layer.key] === false) return;
         const rawTris = meshesObj[layer.key] || [];
-        const tris = rawTris.filter(t => t.tileId === tid);
+        const tris = rawTris.filter(t => resolveTriangleTileId(t, halfW, halfH, tileCols, tileRows) === tid);
         if (tris.length === 0) return;
         const subObjId = (tid + 1) * 10 + layer.objId;
         const meshXml = buildLayerMeshXml(tris, shiftXScene, shiftYScene, subObjId, `R${northRow}C${tc + 1}_${layer.name}`, layer.matIdx);
@@ -148,9 +155,11 @@ function exportMultiColor3MF(state) {
   } else {
     let componentsXml = '';
     exportLayers.forEach(layer => {
-      if (state && state.layerVisible && !state.layerVisible[layer.key]) return;
+      if (state && state.layerVisible && state.layerVisible[layer.key] === false) return;
       const rawTris = meshesObj[layer.key] || [];
-      const tris = tileFilter >= 0 ? rawTris.filter(t => t.tileId === tileFilter) : rawTris;
+      const tris = tileFilter >= 0
+        ? rawTris.filter(t => resolveTriangleTileId(t, halfW, halfH, tileCols, tileRows) === tileFilter)
+        : rawTris;
       if (tris.length === 0) return;
       const meshXml = buildLayerMeshXml(tris, shiftXScene, shiftYScene, layer.objId, layer.name, layer.matIdx);
       if (meshXml) {
@@ -196,8 +205,8 @@ function exportMultiColor3MF(state) {
       <base name="Kolor_2_Teren_Warstwice" displaycolor="${cBase}FF"/>
       <base name="Kolor_3_Zielen_i_Drzewa" displaycolor="${cGreenery}FF"/>
       <base name="Kolor_4_Ulice_i_Mosty" displaycolor="${cRoads}FF"/>
-      <base name="Kolor_4_Budynki_LoD2" displaycolor="${cBuildings}FF"/>
-      <base name="Kolor_5_Akcent_Highlight" displaycolor="${cHighlighted}FF"/>
+      <base name="Kolor_5_Budynki_LoD2" displaycolor="${cBuildings}FF"/>
+      <base name="Kolor_6_Akcent_Highlight" displaycolor="${cHighlighted}FF"/>
     </basematerials>
     ${objectsXml}
   </resources>

@@ -4,6 +4,23 @@
 // Sutherland-Hodgman Box/Convex Clipping & Centroid/Min-Span Dilation
 // ============================================================================
 
+if (typeof resolveSceneScaleAndSpec === 'undefined' && typeof globalThis !== 'undefined') {
+  try {
+    let _req = (typeof require === 'function') ? require : null;
+    if (!_req && typeof process !== 'undefined') {
+      if (typeof process.getBuiltinModule === 'function') {
+        const _mod = process.getBuiltinModule('module');
+        if (_mod && typeof _mod.createRequire === 'function') {
+          _req = _mod.createRequire(process.cwd() + '/src/geometry/polygon_2d.js');
+        }
+      } else if (process.mainModule && typeof process.mainModule.require === 'function') {
+        _req = process.mainModule.require.bind(process.mainModule);
+      }
+    }
+    if (_req) Object.assign(globalThis, _req('./print_physics_config.js'));
+  } catch (_) {}
+}
+
 function signedArea2D(poly) {
   let a = 0;
   for (let i = 0, n = poly.length; i < n; i++) {
@@ -742,35 +759,12 @@ function computeGroundPartsUnionCoverage2D(outerPts, holesPts, groundParts, poin
  * SLA resin profiles (Anycubic Photon Mono 4: 35 um XY, 50 um Z) unlock sub-millimeter
  * details, whereas FDM profiles preserve 0.35-0.42 mm extrusion nozzle clearances.
  */
-function resolvePrintPhysicsSpec(state, scaleMm) {
-  const isResin = Boolean(state && state.isResin);
-  const effScale = Math.max(0.25, Number(scaleMm) || (320 / 169.2));
-  const rawPx = (state && Number(state.xyPixelMm) > 0) ? Number(state.xyPixelMm) : 0;
-  const xyPixelMm = (rawPx > 0 && ((isResin && rawPx < 0.2) || (!isResin && rawPx >= 0.2)))
-    ? rawPx
-    : (isResin ? 0.035 : 0.40);
-  const layerHeightMm = (state && Number(state.layerHeightMm) > 0) ? Number(state.layerHeightMm) : (isResin ? 0.05 : 0.20);
-  const minFeatureMm = isResin ? Math.max(0.12, xyPixelMm * 3.5) : 0.35;
-  const minChannelMm = isResin ? Math.max(0.14, xyPixelMm * 4.0) : 0.42;
-  const dpSimplifyMm = isResin ? Math.max(0.025, xyPixelMm * 0.7) : 0.10;
-  return {
-    isResin,
-    xyPixelMm,
-    layerHeightMm,
-    minFeatureMm,
-    minChannelMm,
-    dpSimplifyMm,
-    minFeatureUnits: minFeatureMm / effScale,
-    minChannelUnits: minChannelMm / effScale,
-    dpSimplifyUnits: dpSimplifyMm / effScale
-  };
-}
-
 if (typeof window !== 'undefined') {
   window.isPolygonStrictlyInside = isPolygonStrictlyInside;
   window.computeReliefChimneyPolygon = computeReliefChimneyPolygon;
   window.computeGroundPartsUnionCoverage2D = computeGroundPartsUnionCoverage2D;
-  window.resolvePrintPhysicsSpec = resolvePrintPhysicsSpec;
+  if (typeof resolvePrintPhysicsSpec === 'function') window.resolvePrintPhysicsSpec = resolvePrintPhysicsSpec;
+  if (typeof resolveSceneScaleAndSpec === 'function') window.resolveSceneScaleAndSpec = resolveSceneScaleAndSpec;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -781,6 +775,13 @@ if (typeof module !== 'undefined' && module.exports) {
     isPolygonStrictlyInside,
     computeReliefChimneyPolygon,
     computeGroundPartsUnionCoverage2D,
-    resolvePrintPhysicsSpec
+    SCENE_CANONICAL_SPAN_UNITS: typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined' ? SCENE_CANONICAL_SPAN_UNITS : 169.2,
+    SCENE_CANONICAL_HALF_UNITS: typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined' ? SCENE_CANONICAL_HALF_UNITS : 84.6,
+    DEFAULT_BED_SIZE_MM: typeof DEFAULT_BED_SIZE_MM !== 'undefined' ? DEFAULT_BED_SIZE_MM : 320.0,
+    PRINT_PHYSICS_CONFIG: typeof PRINT_PHYSICS_CONFIG !== 'undefined' ? PRINT_PHYSICS_CONFIG : undefined,
+    OSM_METRIC_CONFIG: typeof OSM_METRIC_CONFIG !== 'undefined' ? OSM_METRIC_CONFIG : undefined,
+    resolvePrintPhysicsSpec: typeof resolvePrintPhysicsSpec === 'function' ? resolvePrintPhysicsSpec : undefined,
+    resolveSceneScaleAndSpec: typeof resolveSceneScaleAndSpec === 'function' ? resolveSceneScaleAndSpec : undefined,
+    resolveTriangleTileId: typeof resolveTriangleTileId === 'function' ? resolveTriangleTileId : undefined
   };
 }

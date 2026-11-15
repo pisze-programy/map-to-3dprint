@@ -15,10 +15,14 @@ function extractVideoTelemetryAndCad2D(scene, cropRatio = 0.88) {
   const cosLat = Math.cos((lat * Math.PI) / 180);
   const baseEast = 500000 + (lon - zoneLon0) * 111320 * cosLat;
   const baseNorth = (lat >= 0 ? 0 : 10000000) + lat * 110574;
-  const invM = 1.0 / (scene.metersToUnits || 0.13);
+  const defaultMToU = (typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined') ? (SCENE_CANONICAL_SPAN_UNITS / 1200) : 0.141;
+  const invM = 1.0 / (scene.metersToUnits || defaultMToU);
 
   const baseCrop = scene._fetchedCropRatio || 1.0;
-  const effectiveCrop = Math.min(1.0, Math.max(0.35, (Number(cropRatio) || 0.88) / baseCrop));
+  const cropBounds = (typeof OSM_METRIC_CONFIG !== 'undefined' && OSM_METRIC_CONFIG.cropRatioBounds)
+    ? OSM_METRIC_CONFIG.cropRatioBounds
+    : [0.22, 1.0];
+  const effectiveCrop = Math.min(cropBounds[1], Math.max(cropBounds[0], (Number(cropRatio) || 0.88) / baseCrop));
   const scaleToBed = 1.0 / effectiveCrop;
   const scalePts = (arr) => (arr || []).map(pt => [pt[0] * scaleToBed, pt[1] * scaleToBed]);
 
@@ -288,8 +292,9 @@ function drawVideo2DCadWhipPanOverlay(ctx, w, h, animState, cad2D, slot0Cfg) {
     : (268.0 + Math.max(0, (Number(animState.slotMaxZ) || 22.0) - 22.0) * 0.25);
   const pxPerUnit = (h * 0.5) / (camDist * tanHalfFov);
 
-  const halfW = slot0Cfg.halfW || 84.6;
-  const halfH = slot0Cfg.halfH || 84.6;
+  const canonHalfU = (typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6;
+  const halfW = slot0Cfg.halfW || canonHalfU;
+  const halfH = slot0Cfg.halfH || canonHalfU;
   const cropHalfPxW = halfW * pxPerUnit;
   const cropHalfPxH = halfH * pxPerUnit;
   const cx = w * 0.5;

@@ -14,10 +14,25 @@
     "test:tier4:visual": "playwright test tests/e2e/tier4_uncached_visual.spec.js",
     "test:all": "playwright test tests/e2e/",
     "inspect:3d": "node tools/mcp_map3d_inspector.mjs",
-    "mcp:map3d": "node tools/mcp_map3d_inspector.mjs mcp"
+    "mcp:map3d": "node tools/mcp_map3d_inspector.mjs mcp",
+    "build:vendor": "node scripts/build_vendor_bundles.mjs",
+    "build:app": "python3 build_app.py",
+    "build": "npm run build:vendor && npm run build:app",
+    "benchmark:3layer": "node tests/benchmark_3layer_invariants.test.mjs",
+    "test:headless": "node tests/benchmark_3layer_invariants.test.mjs && node tests/tree_placement_parity.test.js && node tests/unusual_arch_and_water_cutout.test.js && node tests/water_cutout_feature_complete.test.js && node tests/mcp_map3d_inspector.test.js"
+  },
+  "dependencies": {
+    "clipper2-ts": "2.0.1-19",
+    "delatin": "0.2.0",
+    "earcut": "3.2.4",
+    "fflate": "0.8.3",
+    "manifold-3d": "3.5.5",
+    "osmtogeojson": "3.0.0-beta.5",
+    "straight-skeleton": "1.1.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",
+    "esbuild": "^0.25.0",
     "playwright": "^1.65.0"
   }
 }

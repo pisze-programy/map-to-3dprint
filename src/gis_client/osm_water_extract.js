@@ -288,7 +288,7 @@ function processOsmWaterMultipolygonJS(rel, tags, raw, ctx, extraFlags = null) {
       const mw = ctx.ways && ctx.ways.get(wid);
       return Boolean(mw && mw.tags && mw.tags.natural === 'coastline');
     }));
-    if ((rel.members || []).length > 120 || hasCoastlineMember) {
+    if (hasCoastlineMember) {
       return !extraFlags || (!extraFlags.isGreen && !extraFlags.isPlaza);
     }
     const clipped = (typeof stitchClippedMultipolygonRingsJS === 'function')
@@ -379,7 +379,8 @@ function processOsmWaterWayJS(wid, w, tags, nids, isClosed, ctx) {
     const pts = ctx.nodesToPts(nids, 0.035);
     if (pts.length >= 2) {
       const wm = (explicitW !== null && explicitW > 0) ? explicitW : defaultWaterwayWidthMetersJS(ww);
-      const widthUnits = Math.round(Math.max(0.08, wm * (ctx.metersToUnits || 0.14)) * 1000) / 1000;
+      const defaultMToU = (typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined') ? (SCENE_CANONICAL_SPAN_UNITS / 1200) : 0.141;
+      const widthUnits = Math.round(Math.max(0.08, wm * (ctx.metersToUnits || defaultMToU)) * 1000) / 1000;
       ctx.waterLines.push({
         pts,
         width: widthUnits,

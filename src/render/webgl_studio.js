@@ -70,6 +70,7 @@ function createWebGLStudio(canvas3d, state) {
           });
           entry.chunks = [];
         }
+        entry.floatChunks = [];
         if (entry.buf) {
           entry.count = 0;
         }
@@ -84,6 +85,24 @@ function createWebGLStudio(canvas3d, state) {
     shadowUploadVersion++;
     lastRenderSig = '';
     render(true);
+  }
+
+  function decodeStride9ToTriangles(floatData) {
+    const triCount = Math.floor(floatData.length / 27);
+    const tris = new Array(triCount);
+    for (let i = 0; i < triCount; i++) {
+      const o = i * 27;
+      tris[i] = {
+        v0: [floatData[o], floatData[o + 1], floatData[o + 2]],
+        v1: [floatData[o + 9], floatData[o + 10], floatData[o + 11]],
+        v2: [floatData[o + 18], floatData[o + 19], floatData[o + 20]],
+        n: [floatData[o + 3], floatData[o + 4], floatData[o + 5]],
+        layerId: floatData[o + 6],
+        buildingId: floatData[o + 7],
+        tileId: floatData[o + 8]
+      };
+    }
+    return tris;
   }
 
   function uploadLayerMesh(layerName, meshData, options = {}) {
@@ -121,9 +140,10 @@ function createWebGLStudio(canvas3d, state) {
     }
 
     if (!glBuffers[layerName]) {
-      glBuffers[layerName] = { buf: gl.createBuffer(), count: 0, chunks: [] };
+      glBuffers[layerName] = { buf: gl.createBuffer(), count: 0, chunks: [], floatChunks: [] };
     }
     const entry = glBuffers[layerName];
+    if (!entry.floatChunks) entry.floatChunks = [];
 
     if (options.append) {
       if (!entry.chunks) entry.chunks = [];
@@ -136,6 +156,7 @@ function createWebGLStudio(canvas3d, state) {
       gl.bindBuffer(gl.ARRAY_BUFFER, chunkBuf);
       gl.bufferData(gl.ARRAY_BUFFER, floatData, gl.STATIC_DRAW);
       entry.chunks.push({ buf: chunkBuf, count: triCount * 3 });
+      entry.floatChunks.push(floatData);
     } else {
       if (entry.chunks && entry.chunks.length > 0) {
         entry.chunks.forEach(c => {
@@ -147,15 +168,17 @@ function createWebGLStudio(canvas3d, state) {
       gl.bindBuffer(gl.ARRAY_BUFFER, entry.buf);
       gl.bufferData(gl.ARRAY_BUFFER, floatData, gl.STATIC_DRAW);
       entry.count = triCount * 3;
+      entry.floatChunks = [floatData];
     }
 
     if (state && state.layerMeshes) {
+      const trisToStore = Array.isArray(meshData) ? meshData : decodeStride9ToTriangles(floatData);
       if (!options.append) {
-        state.layerMeshes[layerName] = Array.isArray(meshData) ? meshData.slice() : [];
-      } else if (Array.isArray(meshData)) {
+        state.layerMeshes[layerName] = trisToStore.slice();
+      } else {
         if (!state.layerMeshes[layerName]) state.layerMeshes[layerName] = [];
-        for (let i = 0; i < meshData.length; i++) {
-          state.layerMeshes[layerName].push(meshData[i]);
+        for (let i = 0; i < trisToStore.length; i++) {
+          state.layerMeshes[layerName].push(trisToStore[i]);
         }
       }
     }
@@ -172,9 +195,34 @@ function createWebGLStudio(canvas3d, state) {
     const entry = glBuffers[layerName];
     if (!entry || !entry.chunks || entry.chunks.length === 0) return;
     if (entry.chunks.length === 1) {
+      if (entry.buf && entry.buf !== entry.chunks[0].buf) {
+        gl.deleteBuffer(entry.buf);
+      }
       entry.buf = entry.chunks[0].buf;
       entry.count = entry.chunks[0].count;
       entry.chunks = [];
+      shadowUploadVersion++;
+      lastRenderSig = '';
+      return;
+    }
+    if (entry.floatChunks && entry.floatChunks.length === entry.chunks.length) {
+      let totalFloats = 0;
+      for (let i = 0; i < entry.floatChunks.length; i++) totalFloats += entry.floatChunks[i].length;
+      const merged = new Float32Array(totalFloats);
+      let off = 0;
+      for (let i = 0; i < entry.floatChunks.length; i++) {
+        merged.set(entry.floatChunks[i], off);
+        off += entry.floatChunks[i].length;
+      }
+      entry.chunks.forEach(c => {
+        if (c.buf) gl.deleteBuffer(c.buf);
+      });
+      entry.chunks = [];
+      if (!entry.buf) entry.buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.buf);
+      gl.bufferData(gl.ARRAY_BUFFER, merged, gl.STATIC_DRAW);
+      entry.count = Math.floor(totalFloats / 9);
+      entry.floatChunks = [merged];
       shadowUploadVersion++;
       lastRenderSig = '';
       return;
@@ -328,11 +376,14 @@ function createWebGLStudio(canvas3d, state) {
       lastRenderSig = '';
     }
 
-    const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 320);
-    const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
-    const maxDim = Math.max(dimW, dimH) || 320;
-    const halfW = 84.6 * (dimW / maxDim);
-    const halfH = 84.6 * (dimH / maxDim);
+    const { halfW, halfH } = (typeof resolveSceneScaleAndSpec === 'function')
+      ? resolveSceneScaleAndSpec(state, null)
+      : (() => {
+          const dimW = state.bedSizeMm || (state.targetWidthCm ? state.targetWidthCm * 10 : 320);
+          const dimH = state.totalHeightMm || (state.targetHeightCm ? state.targetHeightCm * 10 : dimW);
+          const maxDim = Math.max(dimW, dimH) || 320;
+          return { halfW: 84.6 * (dimW / maxDim), halfH: 84.6 * (dimH / maxDim) };
+        })();
 
     const selPickIds = resolveSelectedPickIds();
     const selKey = Array.from(selPickIds).join(',');

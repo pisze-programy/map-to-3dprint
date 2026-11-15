@@ -234,7 +234,17 @@ function processOsmBridgeMultipolygonJS(rel, tags, raw, ctx) {
     const opHoles = (st.innerPolys || []).filter(
       h => h && h.length >= 3 && _ringInsideOuterExtract2D(h, op)
     );
-    ctx.bridgePolys.push({ outer: op, holes: opHoles, name: tags.name || 'Most', layer: layerVal });
+    ctx.bridgePolys.push({
+      outer: op,
+      holes: opHoles,
+      name: tags.name || 'Most',
+      layer: layerVal,
+      bridgeStructure: tags['bridge:structure'] || tags.bridge || '',
+      covered: tags.covered || '',
+      level: tags.level || '',
+      osmId: rel.id,
+      tags
+    });
   }
   return true;
 }
@@ -248,7 +258,17 @@ function processOsmBridgeOrPierWayJS(wid, w, tags, nids, isClosed, ctx) {
     const pts = ctx.nodesToPts(nids, 0.005);
     if (pts.length >= 3) {
       const layerVal = Math.max(1, Math.trunc(rawLayer || 1));
-      ctx.bridgePolys.push({ outer: pts, holes: [], name: tags.name || 'Most', layer: layerVal });
+      ctx.bridgePolys.push({
+        outer: pts,
+        holes: [],
+        name: tags.name || 'Most',
+        layer: layerVal,
+        bridgeStructure: tags['bridge:structure'] || tags.bridge || '',
+        covered: tags.covered || '',
+        level: tags.level || '',
+        osmId: wid,
+        tags
+      });
     }
     return true;
   }
@@ -289,7 +309,8 @@ function processOsmBridgeOrPierWayJS(wid, w, tags, nids, isClosed, ctx) {
           : (tags.highway === 'service' ? 4.5 : 3.2);
     const explicitW = parseFloatTagJS(tags.width, null);
     if (explicitW !== null && explicitW >= 1.0 && explicitW <= 30.0) rwm = explicitW;
-    const wUnits = Math.max(0.30, rwm * (ctx.metersToUnits || 0.14));
+    const defaultMToU = (typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined') ? (SCENE_CANONICAL_SPAN_UNITS / 1200) : 0.141;
+    const wUnits = Math.max(0.30, rwm * (ctx.metersToUnits || defaultMToU));
 
     const pts = ctx.nodesToPts(nids, 0.005);
     if (pts.length >= 2) {

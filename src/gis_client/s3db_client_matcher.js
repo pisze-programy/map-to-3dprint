@@ -4,6 +4,10 @@
 // Matcher & Coverage-Aware Outline Suppressor (Matching gis/s3db_models.py)
 // ============================================================================
 
+if (typeof OSM_METRIC_CONFIG === 'undefined' && typeof require !== 'undefined') {
+  try { Object.assign(global, require('../geometry/print_physics_config.js')); } catch (_) {}
+}
+
 const ROOF_SHAPES_NORM = {
   flat: 'flat', gabled: 'gabled', gable: 'gabled', saltbox: 'gabled', basilical: 'gabled',
   hipped: 'hipped', hip: 'hipped', 'half-hipped': 'hipped', side_hipped: 'hipped',
@@ -43,26 +47,22 @@ function parseRoofDirectionJS(tags) {
 }
 
 const WHEEL_ATTRACTION_VALS_JS = new Set(['big_wheel', 'observation_wheel', 'ferris_wheel']);
-const WHEEL_NAME_RE_JS = /\b(ain dubai|london eye|millennium wheel|singapore flyer|riesenrad|high roller|sky wheel|ferris wheel|observation wheel|diabelskie ko[łl]o|ko[łl]o widokowe)\b/i;
-const WHEEL_FACILITY_NAME_RE_JS = /\b(ticket|office|shop|store|cafe|restaurant|pier|terminal|station|boarding|pavilion|cruise|lounge|entrance|toilet|kiosk|garden|park)\b/i;
 
 function isObservationWheelTagsJS(tags) {
   if (!tags) return false;
   const attr = String(tags.attraction || '').toLowerCase().trim();
   const tt = String(tags['tower:type'] || '').toLowerCase().trim();
   const ride = String(tags.amusement_ride || '').toLowerCase().trim();
-  if (WHEEL_ATTRACTION_VALS_JS.has(attr) || tt === 'observation_wheel' || WHEEL_ATTRACTION_VALS_JS.has(ride)) {
-    return true;
-  }
-  if (tags._nameInherited) return false;
-  const combinedName = `${tags.name || ''} ${tags['name:en'] || ''} ${tags['name:pl'] || ''}`;
-  if (!WHEEL_NAME_RE_JS.test(combinedName)) return false;
-  if (WHEEL_FACILITY_NAME_RE_JS.test(combinedName)) return false;
+  const bpart = String(tags['building:part'] || '').toLowerCase().trim();
+  const bldg = String(tags.building || '').toLowerCase().trim();
   return Boolean(
-    tags.attraction ||
-    tags['tower:type'] === 'observation_wheel' ||
-    tags.man_made === 'tower' ||
-    (tags.building && tags.building !== 'no')
+    WHEEL_ATTRACTION_VALS_JS.has(attr) ||
+    tt === 'observation_wheel' ||
+    WHEEL_ATTRACTION_VALS_JS.has(ride) ||
+    bpart === 'ferris_wheel' ||
+    bpart === 'observation_wheel' ||
+    bldg === 'ferris_wheel' ||
+    bldg === 'observation_wheel'
   );
 }
 
@@ -351,7 +351,8 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
     const netArea = Math.max(1e-4, outerArea - holesArea);
     let minH = parseFloatTagJS(tags.min_height, 0) || 0;
     const minLvl = parseFloatTagJS(tags['building:min_level'], 0) || 0;
-    if (minH === 0 && minLvl > 0) minH = minLvl * 3.3;
+    const _minLvlM = (typeof OSM_METRIC_CONFIG !== 'undefined') ? OSM_METRIC_CONFIG.minLevelHeightM : 3.5;
+    if (minH === 0 && minLvl > 0) minH = minLvl * _minLvlM;
 
     const archType = isObservationWheelTagsJS(tags) ? 'ferris_wheel' : null;
     const rec = {
@@ -417,7 +418,8 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
     let h = explicitH;
     let minH = isFerrisWheel ? 0.0 : (parseFloatTagJS(tags.min_height, 0.0) || 0.0);
     const minLevel = parseFloatTagJS(tags['building:min_level'], 0.0) || 0.0;
-    if (!isFerrisWheel && minH === 0.0 && minLevel > 0) minH = minLevel * 3.3;
+    const _minLvlM = (typeof OSM_METRIC_CONFIG !== 'undefined') ? OSM_METRIC_CONFIG.minLevelHeightM : 3.5;
+    if (!isFerrisWheel && minH === 0.0 && minLevel > 0) minH = minLevel * _minLvlM;
 
     // Skip thin floating horizontal ornamental crossbars on towers/spires (e.g. cross arms at minH >= 15m)
     if (isPart && minH >= 15.0 && explicitH !== null &&
@@ -426,9 +428,8 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       return;
     }
 
-    const isChurch = btype === 'church' || btype === 'cathedral' || btype === 'chapel' ||
-      tags.amenity === 'place_of_worship' ||
-      (!isPart && /(kirche|kościół|bazylika|katedra|church|cathedral)/i.test(name));
+    const isChurch = btype === 'church' || btype === 'cathedral' || btype === 'chapel' || btype === 'basilica' ||
+      tags.amenity === 'place_of_worship' || tags.historic === 'church' || tags.historic === 'cathedral';
     const isTower = btype === 'tower' || btype === 'bell_tower' || btype === 'water_tower' ||
       ['tower', 'chimney', 'lighthouse'].includes(tags.man_made) || Boolean(tags['tower:type']) || isFerrisWheel;
 
@@ -515,11 +516,13 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
     }
 
     let roofH = 0.0;
+    const _lvlH = (typeof OSM_METRIC_CONFIG !== 'undefined') ? OSM_METRIC_CONFIG.levelHeightM : 3.5;
+    const _roofLvlH = (typeof OSM_METRIC_CONFIG !== 'undefined') ? OSM_METRIC_CONFIG.roofLevelHeightM : 3.0;
     if (roof !== 'flat') {
       const roofHTag = parseFloatTagJS(tags['roof:height'], null);
       const roofLvlTag = parseFloatTagJS(tags['roof:levels'], null);
       if (roofHTag !== null) roofH = roofHTag;
-      else if (roofLvlTag !== null) roofH = roofLvlTag * 3.1;
+      else if (roofLvlTag !== null) roofH = roofLvlTag * _roofLvlH;
       else if (isFinialPinnacle) roofH = Math.min(Math.max(1.8, rawMinSpanM * 2.2), Math.max(2.0, ((explicitH || 20) - minH) * 0.45));
       else if (isRotundaDrum) roofH = Math.round(Math.max(2.0, minSpanM * 0.14) * 10) / 10;
       else if ((isTower || isHistoricPartTurret) && (roof === 'cone' || roof === 'pyramidal')) roofH = Math.min(Math.max(4.0, minSpanM * 1.15), 11.0);
@@ -534,7 +537,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       if (isFerrisWheel) {
         h = Math.max(115.0, Math.min(280.0, maxSpanM * 0.98));
       } else if (levels !== null) {
-        h = levels * 3.55 + roofH;
+        h = levels * _lvlH + roofH;
       } else if (isPart) {
         let baseEst;
         if (isRotundaDrum) {
@@ -562,24 +565,26 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
         }
         h = baseTowerH + roofH;
       } else {
-        const rawId = parseInt(String(osmId).replace(/\D/g, ''), 10) || 1;
-        const hash5 = ((Math.abs(rawId) * 2654435761) >>> 0) % 5;
-        const deltaH = (hash5 - 2) * 0.85;
+        const deltaH = 0;
+        const effAreaM2 = areaM2 > 0 ? areaM2 : (areaU / Math.max(1e-6, mToU * mToU));
+        const museumLargeAreaM2 = (typeof OSM_METRIC_CONFIG !== 'undefined') ? OSM_METRIC_CONFIG.museumLargeAreaM2 : 14000;
+        const commercialLargeAreaM2 = (typeof OSM_METRIC_CONFIG !== 'undefined') ? OSM_METRIC_CONFIG.commercialLargeAreaM2 : 420;
+        const genericLargeAreaM2 = (typeof OSM_METRIC_CONFIG !== 'undefined') ? OSM_METRIC_CONFIG.genericLargeAreaM2 : 310;
         let baseEst;
         if ((isExplicitHistoric || isOldTownPlot) && CIVIC_TRAD_TYPES_JS.has(btype)) {
           baseEst = Math.min(14.5, Math.max(11.0, rawMinSpanM * 1.02)) + deltaH * 0.7;
         } else if (isOldTownPlot && !['hotel', 'university'].includes(btype)) {
           baseEst = Math.min(14.0, Math.max(9.5, rawMinSpanM * 1.05)) + deltaH;
         } else if (['public', 'civic', 'museum', 'university', 'palace', 'government', 'train_station', 'hotel'].includes(btype)) {
-          baseEst = (btype === 'museum' && areaU > 250.0 ? 14.5 : 21.0) + deltaH;
+          baseEst = (btype === 'museum' && effAreaM2 > museumLargeAreaM2 ? 14.5 : 21.0) + deltaH;
         } else if (['house', 'detached', 'semidetached_house', 'terrace', 'bungalow'].includes(btype)) {
           baseEst = 8.5 + deltaH;
         } else if (['apartments', 'residential', 'commercial', 'office', 'retail'].includes(btype)) {
-          baseEst = (areaU > 7.5 ? 18.5 : 14.5) + deltaH;
+          baseEst = (effAreaM2 > commercialLargeAreaM2 ? 18.5 : 14.5) + deltaH;
         } else if (['garage', 'shed', 'hut', 'kiosk', 'roof', 'service', 'toilets', 'boathouse', 'allotment_house', 'transformer_tower'].includes(btype)) {
           baseEst = 4.0;
         } else {
-          baseEst = (areaU > 5.5 ? 16.5 : 12.0) + deltaH;
+          baseEst = (effAreaM2 > genericLargeAreaM2 ? 16.5 : 12.0) + deltaH;
         }
         if (maxDefaultHeightCap !== null && maxDefaultHeightCap >= 6.0) {
           baseEst = Math.min(baseEst, maxDefaultHeightCap);
@@ -615,7 +620,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       holes,
       h: Math.round(h * 10) / 10,
       minH: Math.round(minH * 10) / 10,
-      levels: levels !== null ? Math.max(1, Math.round(levels)) : Math.max(1, Math.round(Math.max(3.0, h - roofH) / 3.5)),
+      levels: levels !== null ? Math.max(1, Math.round(levels)) : Math.max(1, Math.round(Math.max(3.0, h - roofH) / _lvlH)),
       roof,
       roofH: Math.round(roofH * 10) / 10,
       roofOrient,
@@ -704,6 +709,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
         }
       }
 
+      const _lvlHM = (typeof OSM_METRIC_CONFIG !== 'undefined') ? OSM_METRIC_CONFIG.levelHeightM : 3.5;
       for (const ep of enclosingParents) {
         ep.hasParts = true;
         ep.partCount++;
@@ -712,7 +718,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
           ?? parseFloatTagJS(part.tags['building:height'], null)
           ?? parseFloatTagJS(part.tags.est_height, null);
         const ptLvls = parseFloatTagJS(part.tags['building:levels'], null);
-        const partKnownH = ptH !== null ? ptH : (ptLvls !== null ? ptLvls * 3.55 : null);
+        const partKnownH = ptH !== null ? ptH : (ptLvls !== null ? ptLvls * _lvlHM : null);
         ep.allParts.push({ outer: part.pts, holes: part.holes, h: partKnownH, minH: part.minH, part });
         if (part.minH <= 3.5) {
           ep.groundPartsAreaSum += part.netArea;
@@ -736,7 +742,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
         let parH = parseFloatTagJS(bestParent.tags.height, null);
         if (parH === null) {
           const parLvls = parseFloatTagJS(bestParent.tags['building:levels'], null);
-          if (parLvls !== null) parH = parLvls * 3.55;
+          if (parLvls !== null) parH = parLvls * _lvlHM;
         }
         part.parentHeightHint = parH;
       } else if (part.groupId === null) {
@@ -780,7 +786,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       const h3 = parseFloatTagJS(tags.est_height, null);
       if (h3 !== null) return h3;
       const lvls = parseFloatTagJS(tags['building:levels'], null);
-      if (lvls !== null) return lvls * 3.55;
+      if (lvls !== null) return lvls * ((typeof OSM_METRIC_CONFIG !== 'undefined') ? OSM_METRIC_CONFIG.levelHeightM : 3.5);
       return fallbackH || null;
     };
     const bboxOfPts = pts => {
@@ -911,7 +917,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
         for (const p of candidateParts) {
           const inGid = p.groupId !== null && compGids.has(p.groupId);
           const overlaps = bboxOverlapsPad(p.bbox, complexBbox, auxOverlapPad);
-          if (inGid || (overlaps && (p.minH > 3.0 || (extractExplicitH(p.tags, 0) || 0) > 25.0 || WHEEL_NAME_RE_JS.test(String((p.tags && p.tags.name) || ''))))) {
+          if (inGid || (overlaps && (p.minH > 3.0 || (extractExplicitH(p.tags, 0) || 0) > 25.0))) {
             const ph = extractExplicitH(p.tags, p.parentHeightHint);
             if (ph && ph > maxWheelH) maxWheelH = ph;
           }
@@ -919,7 +925,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
         for (const par of candidateParents) {
           const inGid = par.groupId !== null && compGids.has(par.groupId);
           const overlaps = bboxOverlapsPad(par.bbox, complexBbox, auxOverlapPad);
-          if (inGid || (overlaps && ((extractExplicitH(par.tags, 0) || 0) > 25.0 || WHEEL_NAME_RE_JS.test(String((par.tags && par.tags.name) || ''))))) {
+          if (inGid || (overlaps && (extractExplicitH(par.tags, 0) || 0) > 25.0)) {
             const ph = extractExplicitH(par.tags, par.parentHeightHint);
             if (ph && ph > maxWheelH) maxWheelH = ph;
           }
@@ -952,9 +958,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       if (emittedWheelComplexes.length === 0) return false;
       const tags = rec.tags || {};
       const hVal = extractExplicitH(tags, rec.parentHeightHint) || 0;
-      const nm = `${tags.name || ''} ${tags['name:en'] || ''} ${tags['name:pl'] || ''}`;
-      const isWheelNamedNonFacility = WHEEL_NAME_RE_JS.test(nm) && !WHEEL_FACILITY_NAME_RE_JS.test(nm);
-      if (!((rec.minH || 0) > 3.0 || hVal > 25.0 || isWheelNamedNonFacility)) return false;
+      if (!((rec.minH || 0) > 3.0 || hVal > 25.0)) return false;
       const pad = 6 * uPerM;
       for (const wc of emittedWheelComplexes) {
         if (bboxOverlapsPad(rec.bbox, wc.bbox, pad)) return true;

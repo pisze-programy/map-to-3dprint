@@ -213,7 +213,15 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
         hwy,
         isPath: Boolean(isPath),
         bridge: Boolean(isBridge),
+        isBridge: Boolean(isBridge),
+        bridgeStructure: tags['bridge:structure'] || (typeof tags.bridge === 'string' && tags.bridge !== 'yes' ? tags.bridge : ''),
+        bridgeSupport: tags['bridge:support'] || '',
+        covered: tags.covered || '',
+        man_made: tags.man_made || '',
         layer: layerVal,
+        level: tags.level !== undefined ? tags.level : '',
+        osmId: w && w.id,
+        tags,
         name: tags.name || ''
       });
     }

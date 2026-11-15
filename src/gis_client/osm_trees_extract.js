@@ -123,7 +123,8 @@ function _osmTreeInPolyWithHoles(px, py, polyRec) {
 
 function _osmTreeBuildExclusionChecker(ctx) {
   if (!ctx) return null;
-  const mToU = ctx.metersToUnits || 0.14;
+  const defaultMToU = (typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined') ? (SCENE_CANONICAL_SPAN_UNITS / 1200) : 0.141;
+  const mToU = ctx.metersToUnits || defaultMToU;
   const CELL = 4.5;
 
   const polyGrid = new Map();

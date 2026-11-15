@@ -96,14 +96,16 @@ function createVideoMapGisController(vState, hooks) {
     if (!scene._fetchedCropRatio) scene._fetchedCropRatio = 0.88;
 
     if (typeof applySceneRotation === 'function') {
-      const dimW = Number(vState.bedSizeMm) || ((vState.targetWidthCm || 30) * 10);
-      const dimH = Number(vState.totalHeightMm) || ((vState.targetHeightCm || 30) * 10);
-      const maxDim = Math.max(dimW, dimH) || 300;
+      const canonHalfU = (typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6;
+      const defBed = (typeof DEFAULT_BED_SIZE_MM !== 'undefined') ? DEFAULT_BED_SIZE_MM : 320;
+      const dimW = Number(vState.bedSizeMm) || (vState.targetWidthCm ? vState.targetWidthCm * 10 : defBed);
+      const dimH = Number(vState.totalHeightMm) || (vState.targetHeightCm ? vState.targetHeightCm * 10 : dimW);
+      const maxDim = Math.max(dimW, dimH) || defBed;
       applySceneRotation(
         scene,
         Number(vState.mapRotationDeg) || 0,
-        84.6 * (dimW / maxDim),
-        84.6 * (dimH / maxDim)
+        canonHalfU * (dimW / maxDim),
+        canonHalfU * (dimH / maxDim)
       );
     }
 
@@ -278,10 +280,12 @@ function createVideoMapGisController(vState, hooks) {
     draw2DMap();
     if (rebuildScene && vState.sceneData) {
       if (typeof applySceneRotation === 'function') {
-        const dimW = Number(vState.bedSizeMm) || ((vState.targetWidthCm || 30) * 10);
-        const dimH = Number(vState.totalHeightMm) || ((vState.targetHeightCm || 30) * 10);
-        const maxDim = Math.max(dimW, dimH) || 300;
-        applySceneRotation(vState.sceneData, normDeg, 84.6 * (dimW / maxDim), 84.6 * (dimH / maxDim));
+        const canonHalfU = (typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6;
+        const defBed = (typeof DEFAULT_BED_SIZE_MM !== 'undefined') ? DEFAULT_BED_SIZE_MM : 320;
+        const dimW = Number(vState.bedSizeMm) || (vState.targetWidthCm ? vState.targetWidthCm * 10 : defBed);
+        const dimH = Number(vState.totalHeightMm) || (vState.targetHeightCm ? vState.targetHeightCm * 10 : dimW);
+        const maxDim = Math.max(dimW, dimH) || defBed;
+        applySceneRotation(vState.sceneData, normDeg, canonHalfU * (dimW / maxDim), canonHalfU * (dimH / maxDim));
       }
       vState.pinnedSlots = [];
       hooks.onSceneLoaded();

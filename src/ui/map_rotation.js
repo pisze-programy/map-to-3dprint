@@ -56,7 +56,7 @@ function ensureUnrotatedSceneSnapshot(scene) {
       maxElev: scene.dem.maxElev,
       grid: (scene.dem.grid || []).map(row => row.slice())
     } : null,
-    demHalfUnits: scene._demHalfUnits || Math.max((scene.halfW || 84.6) + 0.4, (scene.halfH || 84.6) + 0.4)
+    demHalfUnits: scene._demHalfUnits || Math.max((scene.halfW || ((typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6)) + 0.4, (scene.halfH || ((typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6)) + 0.4)
   };
   scene._appliedRotationDeg = null;
   scene._appliedDemSig = '';
@@ -108,8 +108,9 @@ function applySceneRotation(scene, rotationDeg, bedHalfW = null, bedHalfH = null
   if (!scene) return scene;
   ensureUnrotatedSceneSnapshot(scene);
   const normDeg = normalizeRotationDeg(rotationDeg);
-  const effHalfW = (typeof bedHalfW === 'number' && bedHalfW > 0) ? bedHalfW : (scene.halfW || 84.6);
-  const effHalfH = (typeof bedHalfH === 'number' && bedHalfH > 0) ? bedHalfH : (scene.halfH || 84.6);
+  const canonHalfU = (typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6;
+  const effHalfW = (typeof bedHalfW === 'number' && bedHalfW > 0) ? bedHalfW : (scene.halfW || canonHalfU);
+  const effHalfH = (typeof bedHalfH === 'number' && bedHalfH > 0) ? bedHalfH : (scene.halfH || canonHalfU);
   const padW = effHalfW + 0.4;
   const padH = effHalfH + 0.4;
   const snap = scene._unrotatedSnapshot;

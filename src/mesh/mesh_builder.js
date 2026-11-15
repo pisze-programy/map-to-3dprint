@@ -1,73 +1,81 @@
 // ============================================================================
 // src/mesh/mesh_builder.js
-// Clean Modular 3D Map-to-Print Orchestrator (Terrain/Water -> Marching-Squares
-// Parks/Roads/Footpaths -> Bank-Anchored Bridges -> S3DB Buildings -> Topology)
-// High-Performance Responsive Progressive 3D Pipeline & Time-Sliced Yielding
+// 3-Layer Manifold Mesh Pipeline Orchestrator (Synchronous + Progressive)
+//   Layer 1: Standard OSM/S3DB buildings, bridges, Delatin terrain, water/roads
+//   Layer 2: Semantic OSM tag archetypes (0 proper-noun regexes)
+//   Layer 3: Multi-tile Manifold CSG split, hollowBase/drains & physical audit
 // ============================================================================
 
-if (typeof buildTerrainAndMasks === 'undefined' && typeof require !== 'undefined') {
-  Object.assign(global, require('../geometry/polygon_2d.js'));
-  Object.assign(global, require('../geometry/obb_medial_2d.js'));
-  Object.assign(global, require('../geometry/marching_squares_2d.js'));
-  Object.assign(global, require('./mesh_primitives.js'));
-  Object.assign(global, require('./mesh_clipper_3d.js'));
-  Object.assign(global, require('./roof_shapes.js'));
-  Object.assign(global, require('./roof_architectural.js'));
-  Object.assign(global, require('./terrain_dem_grid.js'));
-  Object.assign(global, require('./terrain_masks.js'));
-  Object.assign(global, require('./terrain_base_water.js'));
-  Object.assign(global, require('./features_roads_parks.js'));
-  Object.assign(global, require('./features_bridges.js'));
-  Object.assign(global, require('./buildings_prepare.js'));
-  Object.assign(global, require('./buildings_s3db.js'));
-  Object.assign(global, require('./mesh_topology.js'));
-}
+(function _initMeshBuilderDeps() {
+  const _req = typeof require === 'function'
+    ? require
+    : (typeof process !== 'undefined' && typeof process.getBuiltinModule === 'function'
+      ? process.getBuiltinModule('module').createRequire(process.cwd() + '/src/mesh/mesh_builder.js')
+      : null);
+  if (!_req) return;
+  const g = typeof globalThis !== 'undefined' ? globalThis : global;
 
-/**
- * High-performance macrotask yield avoiding the 4ms setTimeout clamp in browsers.
- * Fallback chain: scheduler.yield() -> MessageChannel -> setTimeout(0).
- */
+  if (typeof g.__CLIPPER2__ === 'undefined' || typeof g.__DELATIN__ === 'undefined') {
+    _req('../vendor/vendor_bundle.js');
+  }
+  if (typeof g.__ensureManifoldReady !== 'function' || typeof g.__getManifoldSync !== 'function') {
+    _req('../vendor/manifold_vendor.js');
+  }
+  if (typeof resolveSceneScaleAndSpec === 'undefined') {
+    Object.assign(g, _req('../geometry/print_physics_config.js'));
+  }
+  if (typeof cleanPolygonRing === 'undefined') {
+    Object.assign(g, _req('../geometry/polygon_2d.js'));
+  }
+  if (typeof computePolygonOBB === 'undefined') {
+    Object.assign(g, _req('../geometry/obb_medial_2d.js'));
+  }
+  if (typeof emitPolygonWithHolesSlab3D === 'undefined') {
+    Object.assign(g, _req('./mesh_primitives.js'));
+  }
+  if (typeof clipMeshToBox3D === 'undefined') {
+    Object.assign(g, _req('./mesh_clipper_3d.js'));
+  }
+  if (typeof createBuildContext === 'undefined') {
+    Object.assign(g, _req('../geometry/manifold_core.js'));
+  }
+  if (typeof buildLayer1TerrainAndWater === 'undefined') {
+    Object.assign(g, _req('./layer1_terrain_water.js'));
+  }
+  if (typeof buildLayer1S3DBBuildings === 'undefined') {
+    Object.assign(g, _req('./layer1_s3db_buildings.js'));
+  }
+  if (typeof buildLayer1Bridges === 'undefined') {
+    Object.assign(g, _req('./layer1_bridges.js'));
+  }
+  if (typeof buildLayer2Archetypes === 'undefined') {
+    Object.assign(g, _req('./layer2_archetypes.js'));
+  }
+  if (typeof finalize3LayerTilesAndInvariants === 'undefined') {
+    Object.assign(g, _req('./layer3_invariants_tiles.js'));
+  }
+})();
+
 function yieldToEventLoop() {
-  if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') {
-    return scheduler.yield();
-  }
-  if (typeof MessageChannel !== 'undefined') {
-    return new Promise(resolve => {
-      const channel = new MessageChannel();
-      channel.port1.onmessage = () => {
-        channel.port1.close();
-        channel.port2.close();
-        resolve();
-      };
-      channel.port2.postMessage(null);
-    });
-  }
-  return new Promise(resolve => setTimeout(resolve, 0));
+  return new Promise(resolve => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
 }
 
-/**
- * TimeBudgetYieldController controls cooperative time-slicing on the main thread.
- * Guarantees that procedural loops never block the UI for > timeBudgetMs (target 16ms).
- * CheckInterval throttling avoids system clock query overhead.
- */
 class TimeBudgetYieldController {
-  constructor(timeBudgetMs = 16, options = {}) {
-    this.timeBudgetMs = timeBudgetMs;
-    this.sliceStart = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    this.signal = options.signal || null;
-    this.isCancelled = options.isCancelled || null;
-    this.checkInterval = options.checkInterval || 64;
-    this.counter = 0;
+  constructor(signal = null, budgetMs = 14) {
+    this.signal = signal || null;
+    this.budgetMs = Math.max(2, Number(budgetMs) || 14);
+    this.sliceStart = Date.now();
   }
 
   checkCancellation() {
     if (this.signal && this.signal.aborted) {
-      const err = new Error('Pipeline aborted');
-      err.name = 'AbortError';
-      throw err;
-    }
-    if (this.isCancelled && this.isCancelled()) {
-      const err = new Error('Pipeline cancelled');
+      const err = new Error('3D build aborted');
       err.name = 'AbortError';
       throw err;
     }
@@ -75,91 +83,20 @@ class TimeBudgetYieldController {
 
   async yieldIfNeeded(force = false) {
     this.checkCancellation();
-    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    if (force || (now - this.sliceStart > this.timeBudgetMs)) {
+    const now = Date.now();
+    if (force || (now - this.sliceStart) >= this.budgetMs) {
       await yieldToEventLoop();
       this.checkCancellation();
-      this.sliceStart = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      return true;
+      this.sliceStart = Date.now();
     }
-    return false;
   }
 
-  async tick(force = false) {
-    if (force || (++this.counter % this.checkInterval === 0)) {
-      return await this.yieldIfNeeded(force);
-    }
-    return false;
+  async tick() {
+    return this.yieldIfNeeded(false);
   }
 }
 
-/**
- * Progressive batch building extruder for Stage 4.
- * Emits S3DB buildings in batches of ~180, uploading incrementally to WebGL.
- */
-async function buildS3DBBuildingsMeshProgressive(scene, ctx, baseInfo, state, meshes, yieldCtrl, onStageReady, onProgress) {
-  const { tileCols, tileRows, tileBounds, halfW, halfH, mToU, quantizeZUnits } = ctx;
-  const { prepared, clusters, pickIdMap } = prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state);
-  const buildingBounds = [];
-
-  // 1. Support-Aware Hierarchical Z-Tier Resolution (shared with synchronous pipeline)
-  for (const [, cluster] of clusters) {
-    if (cluster.length <= 1) continue;
-    resolveS3DBClusterTiers(cluster, mToU, quantizeZUnits);
-    await yieldCtrl.tick();
-  }
-
-  // 2. Extrude Watertight 2-Manifold LoD2 Shells in Adaptive Time-Sliced Batches
-  let nextBldShellId = 1;
-  const allocShellId = () => nextBldShellId++;
-  const activeItems = prepared.filter(it => !it.skip);
-  const CHUNK_FLUSH_SIZE = Math.max(180, Math.ceil(activeItems.length / 8));
-  const CHUNK_TRI_THRESHOLD = 18000;
-  let chunkBuildingsTris = [];
-  let chunkHlTris = [];
-
-  for (let i = 0; i < activeItems.length; i++) {
-    yieldCtrl.checkCancellation();
-    const item = activeItems[i];
-    const bld = item.b;
-
-    const isHl = item.clusterHighlighted || !!bld.highlighted;
-    const targetBatchArr = isHl ? chunkHlTris : chunkBuildingsTris;
-    const targetMainList = isHl ? meshes.highlighted : meshes.buildings;
-
-    buildingBounds.push(emitSingleS3DBBuildingItem(item, ctx, allocShellId, targetMainList, targetBatchArr));
-
-    const isLast = (i === activeItems.length - 1);
-    const shouldFlush = (chunkBuildingsTris.length + chunkHlTris.length >= CHUNK_TRI_THRESHOLD) ||
-                        ((i + 1) % CHUNK_FLUSH_SIZE === 0) ||
-                        isLast;
-
-    if (shouldFlush) {
-      if (chunkBuildingsTris.length > 0) {
-        onStageReady('buildings', chunkBuildingsTris, { append: true, deferShadow: !isLast });
-        chunkBuildingsTris = [];
-      }
-      if (chunkHlTris.length > 0) {
-        onStageReady('highlighted', chunkHlTris, { append: true, deferShadow: !isLast });
-        chunkHlTris = [];
-      }
-
-      const pct = 72 + Math.round(((i + 1) / activeItems.length) * 20);
-      onProgress(pct, `Etap 4/5: Wznoszenie budynków 3D (${i + 1}/${activeItems.length})...`, `Dachy LoD2 i fasady (${i + 1}/${activeItems.length})`);
-      await yieldCtrl.yieldIfNeeded();
-    } else if ((i & 31) === 31) {
-      await yieldCtrl.yieldIfNeeded();
-    }
-  }
-
-  return { buildingBounds, pickIdMap };
-}
-
-/**
- * Responsive Progressive 3D Pipeline Orchestrator.
- * Yields periodically to the event loop, streaming layers to WebGL in 5 stages.
- */
-async function rebuildModel3DProgressive(scene, state, options = {}) {
+function _buildEmptySceneFallback(state) {
   const meshes = {
     water: [],
     base: [],
@@ -169,202 +106,139 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
     highlighted: [],
     frame: []
   };
-  const onStageReady = typeof options.onStageReady === 'function' ? options.onStageReady : (typeof options.onLayerReady === 'function' ? options.onLayerReady : (() => {}));
-
-  if (!scene) {
-    const totalWidthMm = state.bedSizeMm || state.targetWidthMm || 320;
-    const totalHeightMm = state.totalHeightMm || state.targetHeightMm || totalWidthMm;
-    const maxDimMm = Math.max(totalWidthMm, totalHeightMm) || 320;
-    const scaleMm = maxDimMm / 169.2;
-    const halfW = 84.6 * (totalWidthMm / maxDimMm);
-    const halfH = 84.6 * (totalHeightMm / maxDimMm);
-    const baseBedRing = [
-      [-halfW, -halfH],
-      [halfW, -halfH],
-      [halfW, halfH],
-      [-halfW, halfH]
-    ];
-    if (typeof emitPolygonWithHolesSlab3D === 'function') {
-      emitPolygonWithHolesSlab3D(baseBedRing, [], 0, 1.8 / scaleMm, 1, meshes.base, 0, -1);
-    }
-    onStageReady('base', meshes.base, { append: false });
-    const totalTriangles = meshes.base.length;
-    return { meshes, buildingBounds: [], pickIdMap: new Map(), totalTriangles };
+  const { scaleMm, halfW, halfH } = resolveSceneScaleAndSpec(state, null);
+  const baseBedRing = [
+    [-halfW, -halfH],
+    [halfW, -halfH],
+    [halfW, halfH],
+    [-halfW, halfH]
+  ];
+  if (typeof emitPolygonWithHolesSlab3D === 'function') {
+    emitPolygonWithHolesSlab3D(baseBedRing, [], 0, 1.8 / scaleMm, 1, meshes.base, 0, -1);
   }
+  const totalTriangles = meshes.base.length;
+  return { meshes, buildingBounds: [], pickIdMap: new Map(), totalTriangles };
+}
 
-  const yieldCtrl = new TimeBudgetYieldController(options.timeBudgetMs || 16, options);
-  const rawOnProgress = typeof options.onProgress === 'function' ? options.onProgress : (() => {});
-  let currentMaxPct = 0;
-  const onProgress = (pct, label, sub) => {
-    const monotonicPct = Math.max(currentMaxPct, Math.min(100, Math.round(pct)));
-    currentMaxPct = monotonicPct;
-    rawOnProgress(monotonicPct, label, sub);
-  };
-
-  let nextFeatureShellId = -100;
-  const allocShellId = () => (nextFeatureShellId--);
-
-  // STAGE 1: Fast Terrain DEM & Water (<0.8s)
-  onProgress(25, 'Etap 1/5: Budowanie modelu terenu DEM i wód (<0.8s)...', 'Siatka wysokościowa Terrarium i batymetria zbiorników wodnych');
-  await yieldCtrl.yieldIfNeeded(true);
-  yieldCtrl.checkCancellation();
-
-  const ctx = buildTerrainAndMasks(scene, state);
-  ctx.isExport = Boolean(options && options.isExport);
-  await yieldCtrl.yieldIfNeeded();
-  yieldCtrl.checkCancellation();
-
-  const tBase0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-  const baseInfo = buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options);
-  const baseDuration = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - tBase0;
-  if (state) state.lastTerrainBaseWaterDurationMs = baseDuration;
-  await yieldCtrl.yieldIfNeeded();
-  yieldCtrl.checkCancellation();
-
-  onStageReady('base', meshes.base, { append: false });
-  onStageReady('water', meshes.water, { append: false });
-  onProgress(40, 'Etap 1/5: Wyrenderowano rzeźbę terenu i batymetrię wody', `Wygenerowano ${meshes.base.length + meshes.water.length} trójkątów podłoża`);
-  await yieldCtrl.yieldIfNeeded(true);
-  yieldCtrl.checkCancellation();
-
-  // STAGE 2: Greenery & Parks
-  onProgress(42, 'Etap 2/5: Generowanie parków, skwerów i drzew 3D...', 'Konturowanie Marching-Squares i wygładzanie Taubina');
-  await yieldCtrl.yieldIfNeeded();
-  yieldCtrl.checkCancellation();
-
-  await buildParksStreetsFootpathsAndTrees(scene, ctx, baseInfo, state, meshes, allocShellId, yieldCtrl, onProgress);
-  yieldCtrl.checkCancellation();
-
-  onStageReady('greenery', meshes.greenery, { append: false });
-  onProgress(55, 'Etap 2/5: Wyrenderowano zieleń miejską i korony drzew', `${meshes.greenery.length} trójkątów roślinności`);
-  await yieldCtrl.yieldIfNeeded(true);
-  yieldCtrl.checkCancellation();
-
-  // STAGE 3: Streets, Plazas & Bridges
-  onProgress(58, 'Etap 3/5: Wznoszenie mostów i sieci drogowej...', 'Filarowe mosty rzeczne, ulice i ciągi piesze');
-  await yieldCtrl.yieldIfNeeded();
-  yieldCtrl.checkCancellation();
-
-  buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShellId);
-  yieldCtrl.checkCancellation();
-
-  onStageReady('roads', meshes.roads, { append: false });
-  onProgress(70, 'Etap 3/5: Wyrenderowano sieć drogową i mosty', `${meshes.roads.length} trójkątów infrastruktury`);
-  await yieldCtrl.yieldIfNeeded(true);
-  yieldCtrl.checkCancellation();
-
-  // STAGE 4: Buildings LoD2 (Batched by ~150-200 buildings)
-  onProgress(72, 'Etap 4/5: Wznoszenie budynków 3D i dachów LoD2...', 'Hierarchiczne kondygnacje S3DB i profile dachowe');
-  await yieldCtrl.yieldIfNeeded();
-  yieldCtrl.checkCancellation();
-
-  const { buildingBounds, pickIdMap } = await buildS3DBBuildingsMeshProgressive(
-    scene, ctx, baseInfo, state, meshes, yieldCtrl, onStageReady, onProgress
-  );
-  yieldCtrl.checkCancellation();
-  state.pickIdMap = pickIdMap;
-  onProgress(90, 'Etap 4/5: Wyrenderowano budynki 3D i dachy LoD2', `Wygenerowano ${meshes.buildings.length + meshes.highlighted.length} trójkątów budynków`);
-  await yieldCtrl.yieldIfNeeded(true);
-  yieldCtrl.checkCancellation();
-
-  // STAGE 5: Frame & Fast Topology / Metrics
-  onProgress(92, 'Etap 5/5: Miterowana rama wystawowa i metryki...', 'Generowanie ramy montażowej');
-  await yieldCtrl.yieldIfNeeded();
-  yieldCtrl.checkCancellation();
-
-  emitStudioWallFrame(ctx, meshes);
-  onStageReady('frame', meshes.frame, { append: false });
-
-  onProgress(95, 'Etap 5/5: Obliczanie objętości i audyt topologii...', 'Metryki druku SLA/FDM i test Photon Mono 4');
-  await yieldCtrl.yieldIfNeeded();
-  yieldCtrl.checkCancellation();
-
-  const fastMetrics = computeFastVolumeAndExtents(meshes, buildingBounds, state, ctx);
-  const printMetrics = await auditMeshTopologyNumeric(meshes, buildingBounds, state, ctx, fastMetrics, yieldCtrl);
-
-  onProgress(100, 'Model 3D gotowy!', `Łącznie ${(fastMetrics.totalTriangles || 0).toLocaleString()} trójkątów`);
-
-  return {
-    meshes,
-    buildingBounds,
-    pickIdMap,
-    totalTriangles: fastMetrics.totalTriangles,
-    printMetrics
-  };
+function _runThreeLayerPipelineSync(scene, state, options = {}) {
+  const ctx = createBuildContext(scene, state, options);
+  const terrainWater = buildLayer1TerrainAndWater(ctx, scene, options);
+  const s3db = buildLayer1S3DBBuildings(ctx, scene, terrainWater);
+  const bridges = buildLayer1Bridges(ctx, scene, terrainWater);
+  const archetypes = buildLayer2Archetypes(ctx, scene, terrainWater);
+  return finalize3LayerTilesAndInvariants(ctx, { terrainWater, s3db, bridges, archetypes }, options);
 }
 
 /**
- * Complete synchronous 3D model builder (preserved for backward compatibility).
+ * Synchronous 3-Layer 3D Model Builder.
+ * Produces deterministic, watertight 2-manifold geometry identical to Progressive mode.
  */
 function buildComplete3DModel(scene, state, options = {}) {
-  const meshes = {
-    water: [],
-    base: [],
-    greenery: [],
-    roads: [],
-    buildings: [],
-    highlighted: [],
-    frame: []
-  };
   if (!scene) {
-    const totalWidthMm = state.bedSizeMm || state.targetWidthMm || 320;
-    const totalHeightMm = state.totalHeightMm || state.targetHeightMm || totalWidthMm;
-    const maxDimMm = Math.max(totalWidthMm, totalHeightMm) || 320;
-    const scaleMm = maxDimMm / 169.2;
-    const halfW = 84.6 * (totalWidthMm / maxDimMm);
-    const halfH = 84.6 * (totalHeightMm / maxDimMm);
-    const baseBedRing = [
-      [-halfW, -halfH],
-      [halfW, -halfH],
-      [halfW, halfH],
-      [-halfW, halfH]
-    ];
-    if (typeof emitPolygonWithHolesSlab3D === 'function') {
-      emitPolygonWithHolesSlab3D(baseBedRing, [], 0, 1.8 / scaleMm, 1, meshes.base, 0, -1);
-    }
-    const totalTriangles = meshes.base.length;
-    return { meshes, buildingBounds: [], pickIdMap: new Map(), totalTriangles };
+    return _buildEmptySceneFallback(state);
+  }
+  return _runThreeLayerPipelineSync(scene, state, options);
+}
+
+/**
+ * Responsive Progressive 3-Layer 3D Pipeline Orchestrator.
+ * Yields periodically to the event loop, streaming verified layers to WebGL
+ * with bit-exact triangle/metric parity against buildComplete3DModel().
+ */
+async function rebuildModel3DProgressive(scene, state, options = {}) {
+  const opts = options || {};
+  const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
+  const onStageReady = typeof opts.onStageReady === 'function' ? opts.onStageReady : () => {};
+  const yieldCtrl = new TimeBudgetYieldController(opts.signal || null, opts.budgetMs || 14);
+
+  if (typeof ensureManifoldLibAsync === 'function') {
+    await ensureManifoldLibAsync();
+  }
+  yieldCtrl.checkCancellation();
+
+  if (!scene) {
+    const emptyRes = _buildEmptySceneFallback(state);
+    onStageReady('base', emptyRes.meshes.base, { append: false, deferShadow: false });
+    onProgress(100, 'Gotowe', 'Pusta płyta bazowa');
+    return emptyRes;
   }
 
-  let nextFeatureShellId = -100;
-  const allocShellId = () => (nextFeatureShellId--);
+  onProgress(12, 'Etap 1/5: Teren DEM (Delatin) i maski wody/dróg...', 'Konstrukcja siatki bazowej Manifold 3D');
+  const ctx = createBuildContext(scene, state, opts);
+  const terrainWater = buildLayer1TerrainAndWater(ctx, scene, opts);
+  await yieldCtrl.yieldIfNeeded(true);
 
-  // 1. High-resolution masks (Euclidean Water SDF, Streets, Unbroken Parks, Footpaths) & DEM Grid
-  const ctx = buildTerrainAndMasks(scene, state);
-  ctx.isExport = Boolean(options && options.isExport);
+  onProgress(32, 'Etap 2/5: Budynki S3DB i dachy architektoniczne...', 'Straight Skeleton + CSG 2-manifold');
+  const s3db = buildLayer1S3DBBuildings(ctx, scene, terrainWater);
+  await yieldCtrl.yieldIfNeeded(true);
 
-  // 2. Per-tile watertight stepped DEM base, SLA hollow vault ribs/drains/ID patch & smooth water basin
-  const tBase0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-  const baseInfo = buildTerrainBaseAndWaterMeshes(ctx, state, meshes, options);
-  const baseDuration = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - tBase0;
-  if (state) state.lastTerrainBaseWaterDurationMs = baseDuration;
+  onProgress(52, 'Etap 3/5: Mosty i archetypy semantyczne OSM...', 'Mosty bridge:structure + obiekty specjalne');
+  const bridges = buildLayer1Bridges(ctx, scene, terrainWater);
+  const archetypes = buildLayer2Archetypes(ctx, scene, terrainWater);
+  await yieldCtrl.yieldIfNeeded(true);
 
-  // 3. Global Marching-Squares + Taubin-smoothed parks, streets, embossed footpaths & organic trees
-  buildParksStreetsFootpathsAndTrees(scene, ctx, baseInfo, state, meshes, allocShellId);
+  onProgress(68, 'Etap 4/5: Podział na kafle, drążenie SLA i audyt fizyczny...', 'Weryfikacja niezmienników 2-manifold');
+  const result = finalize3LayerTilesAndInvariants(ctx, { terrainWater, s3db, bridges, archetypes }, opts);
+  await yieldCtrl.yieldIfNeeded(true);
 
-  // 4. Bank-anchored 3D bridges (man_made=bridge polygons + linear spans + flush abutments + piers)
-  buildBankAnchoredBridges(scene, ctx, baseInfo, state, meshes, allocShellId);
+  const { meshes } = result;
+  onStageReady('base', meshes.base, { append: false, deferShadow: true });
+  onProgress(76, 'Etap 5/5: Przesyłanie warstw bazowych do WebGL...', `${meshes.base.length} trójkątów podstawy`);
+  await yieldCtrl.yieldIfNeeded(true);
 
-  // 5. Hierarchical S3DB buildings, architectural roofs & compact 16-bit pickId assignment
-  const { buildingBounds, pickIdMap } = buildS3DBBuildingsMesh(scene, ctx, baseInfo, state, meshes);
-  state.pickIdMap = pickIdMap;
+  if (meshes.water.length > 0) {
+    onStageReady('water', meshes.water, { append: false, deferShadow: true });
+  }
+  if (meshes.greenery.length > 0) {
+    onStageReady('greenery', meshes.greenery, { append: false, deferShadow: true });
+  }
+  if (meshes.roads.length > 0) {
+    onStageReady('roads', meshes.roads, { append: false, deferShadow: true });
+  }
+  if (meshes.frame.length > 0) {
+    onStageReady('frame', meshes.frame, { append: false, deferShadow: true });
+  }
+  onProgress(84, 'Etap 5/5: Przesyłanie dróg, zieleni i wody...', `${meshes.roads.length + meshes.greenery.length} trójkątów`);
+  await yieldCtrl.yieldIfNeeded(true);
 
-  // 6. Mitered Studio Wall Frame (display layer 6; excluded from STL/3MF unless exportFrame=true)
-  emitStudioWallFrame(ctx, meshes);
+  const CHUNK_TRIS = 18000;
+  const bldTris = meshes.buildings || [];
+  if (bldTris.length === 0) {
+    onStageReady('buildings', [], { append: false, deferShadow: true });
+  } else {
+    for (let off = 0; off < bldTris.length; off += CHUNK_TRIS) {
+      yieldCtrl.checkCancellation();
+      const end = Math.min(bldTris.length, off + CHUNK_TRIS);
+      const isLastBld = end >= bldTris.length && (!meshes.highlighted || meshes.highlighted.length === 0);
+      onStageReady('buildings', bldTris.slice(off, end), { append: true, deferShadow: !isLastBld });
+      const pct = 85 + Math.round((end / bldTris.length) * 12);
+      onProgress(pct, `Etap 5/5: Wznoszenie budynków 3D (${end}/${bldTris.length} tr.)...`, 'Strumieniowanie buforów WebGL');
+      await yieldCtrl.yieldIfNeeded();
+    }
+  }
 
-  // 7. Exact volume (ml), mass (g), Mono 4 fit & welded 2-manifold topology audit
-  return computePrintMetricsAndTopology(meshes, buildingBounds, state, {
-    totalWidthMm: ctx.totalWidthMm,
-    totalHeightMm: ctx.totalHeightMm,
-    tileCols: ctx.tileCols,
-    tileRows: ctx.tileRows,
-    kerfUnits: ctx.kerfUnits,
-    hollowBase: ctx.hollowBase,
-    vaultSavedSceneVol: baseInfo.vaultSavedSceneVol,
-    baseBottomZ: ctx.baseBottomZ,
-    getActualPrintedSurfaceMinZ: baseInfo.getActualPrintedSurfaceMinZ,
-    pickIdMap
-  });
+  const hlTris = meshes.highlighted || [];
+  if (hlTris.length === 0) {
+    onStageReady('highlighted', [], { append: false, deferShadow: false });
+  } else {
+    for (let off = 0; off < hlTris.length; off += CHUNK_TRIS) {
+      yieldCtrl.checkCancellation();
+      const end = Math.min(hlTris.length, off + CHUNK_TRIS);
+      const isLastHl = end >= hlTris.length;
+      onStageReady('highlighted', hlTris.slice(off, end), { append: true, deferShadow: !isLastHl });
+      await yieldCtrl.yieldIfNeeded();
+    }
+  }
+
+  onProgress(100, 'Gotowe', `${result.totalTriangles} trójkątów (0 open / 0 nm)`);
+  return result;
+}
+
+if (typeof window !== 'undefined') {
+  window.buildComplete3DModel = buildComplete3DModel;
+  window.rebuildModel3DProgressive = rebuildModel3DProgressive;
+  window.yieldToEventLoop = yieldToEventLoop;
+  window.TimeBudgetYieldController = TimeBudgetYieldController;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
