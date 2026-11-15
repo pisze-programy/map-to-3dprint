@@ -29,6 +29,7 @@ function resolveS3DBClusterTiers(cluster, mToU, quantizeZUnits) {
     for (let j = 0; j < cluster.length; j++) {
       if (i === j || cluster[j].skip) continue;
       const P = cluster[j];
+      if (C.isRotundaDrum && P.roofShape !== 'cone') continue;
       if (Math.abs(C.zTop - P.zTop) < 0.04 && Math.abs((C.scaledMinH || 0) - (P.scaledMinH || 0)) < 0.04 && C.area <= P.area * 1.01) {
         if (isPointInsidePart2D(C.interiorPt[0], C.interiorPt[1], P, 0.03) &&
             C.clippedOuter.every(pt => isPointInsidePart2D(pt[0], pt[1], P, 0.03))) {
@@ -43,6 +44,15 @@ function resolveS3DBClusterTiers(cluster, mToU, quantizeZUnits) {
       }
     }
   }
+
+  const CROWN_ROOF_SET = new Set(['dome', 'onion', 'cone', 'pyramidal']);
+  const shouldPreserveCrownUnderPart = (P, C) =>
+    Boolean(P && C && CROWN_ROOF_SET.has(P.roofShape) && C.area <= P.area * 0.60);
+  const crownSeatingZ = (P, C) => {
+    const spanZ = Math.max(0, (P.zRidge || P.zTop) - (P.zEaves || P.zTop));
+    const frac = (C && C.area <= P.area * 0.20) ? 0.72 : 0.42;
+    return (P.zEaves || P.zTop) + spanZ * frac;
+  };
 
   const flattenSupportingPodium = (P) => {
     P.roofShape = 'flat';
@@ -127,14 +137,18 @@ function resolveS3DBClusterTiers(cluster, mToU, quantizeZUnits) {
           polygonsOverlap2D(C, p)
         );
 
-        // 2A. Terminated lower podium / pier roofs right under zMinH
-        const roofSupps = activeSupps.filter(p => p.zEaves >= zMinH - 0.22 && p.zTop <= zMinH + 0.35);
+        // 2A. Terminated lower podium / pier / crown roofs right under zMinH
+        const roofSupps = activeSupps.filter(p =>
+          (p.zEaves >= zMinH - 0.22 || CROWN_ROOF_SET.has(p.roofShape)) &&
+          p.zTop <= zMinH + 0.45
+        );
         let singleBest = null, singleBestDiff = Infinity;
         for (let s = 0; s < roofSupps.length; s++) {
           const P = roofSupps[s];
           if (!isPointInsidePart2D(C.interiorPt[0], C.interiorPt[1], P, 0.030)) continue;
           if (samples.every(pt => isPointInsidePart2D(pt[0], pt[1], P, 0.030))) {
-            const diff = Math.abs(P.zEaves - zMinH);
+            const refZ = CROWN_ROOF_SET.has(P.roofShape) ? P.zTop : P.zEaves;
+            const diff = Math.abs(refZ - zMinH);
             if (diff < singleBestDiff) { singleBestDiff = diff; singleBest = P; }
           }
         }
@@ -155,8 +169,20 @@ function resolveS3DBClusterTiers(cluster, mToU, quantizeZUnits) {
           if (hasSeparatedSupports) {
             const terminatedOnly = activeSupps.every(p => p.zTop <= zMinH + 0.35);
             if (terminatedOnly) {
-              for (let s = 0; s < activeSupps.length; s++) flattenSupportingPodium(activeSupps[s]);
-              C.effBaseZ = Math.min(zMinH, Math.min(...activeSupps.map(p => p.zTop)) - 0.02);
+              let anyPreservedCrown = false;
+              let crownSeatMin = Infinity;
+              for (let s = 0; s < activeSupps.length; s++) {
+                const P = activeSupps[s];
+                if (shouldPreserveCrownUnderPart(P, C)) {
+                  anyPreservedCrown = true;
+                  crownSeatMin = Math.min(crownSeatMin, crownSeatingZ(P, C));
+                } else {
+                  flattenSupportingPodium(P);
+                }
+              }
+              C.effBaseZ = (anyPreservedCrown && Number.isFinite(crownSeatMin))
+                ? Math.min(zMinH, crownSeatMin)
+                : Math.min(zMinH, Math.min(...activeSupps.map(p => p.zTop)) - 0.02);
             } else {
               C.effBaseZ = zMinH;
             }
@@ -178,12 +204,28 @@ function resolveS3DBClusterTiers(cluster, mToU, quantizeZUnits) {
           ));
           const maxCoreSpan = Math.max(...activeSupps.map(K => K.maxSpan || 0));
           const partThick = Math.max(0.25, C.zTop - zMinH);
-          const maxAllowOverhang = Math.max(0.85, Math.min(3.5, Math.max(partThick * 1.25, maxCoreSpan * 0.85)));
+          const effMToU = Math.max(1e-4, Number(mToU) || 0.14);
+          const maxAllowOverhang = Math.max(
+            0.85,
+            Math.min(38.0 * effMToU, Math.max(partThick * 1.6, maxCoreSpan * 2.5, 18.0 * effMToU))
+          );
           if (maxOverhang <= maxAllowOverhang) {
             const terminatedOnly = activeSupps.every(p => p.zTop <= zMinH + 0.35);
             if (terminatedOnly) {
-              for (let s = 0; s < activeSupps.length; s++) flattenSupportingPodium(activeSupps[s]);
-              C.effBaseZ = Math.min(zMinH, Math.min(...activeSupps.map(p => p.zTop)) - 0.02);
+              let anyPreservedCrown = false;
+              let crownSeatMin = Infinity;
+              for (let s = 0; s < activeSupps.length; s++) {
+                const P = activeSupps[s];
+                if (shouldPreserveCrownUnderPart(P, C)) {
+                  anyPreservedCrown = true;
+                  crownSeatMin = Math.min(crownSeatMin, crownSeatingZ(P, C));
+                } else {
+                  flattenSupportingPodium(P);
+                }
+              }
+              C.effBaseZ = (anyPreservedCrown && Number.isFinite(crownSeatMin))
+                ? Math.min(zMinH, crownSeatMin)
+                : Math.min(zMinH, Math.min(...activeSupps.map(p => p.zTop)) - 0.02);
             } else {
               C.effBaseZ = zMinH;
             }
@@ -200,8 +242,8 @@ function resolveS3DBClusterTiers(cluster, mToU, quantizeZUnits) {
     if (supportingParts && supportingParts.length > 0 && !C.isLateralCantilever && !C.isStructurallySupported3D) {
       if (supportingParts.length === 1) {
         const P = supportingParts[0];
-        if ((P.roofShape === 'dome' || P.roofShape === 'onion') && C.area <= P.area * 0.48) {
-          C.effBaseZ = P.zEaves + (P.zRidge - P.zEaves) * 0.22;
+        if (shouldPreserveCrownUnderPart(P, C)) {
+          C.effBaseZ = crownSeatingZ(P, C);
           C.supportRef = P;
           C.isStructurallySupported3D = true;
         } else {
@@ -211,8 +253,20 @@ function resolveS3DBClusterTiers(cluster, mToU, quantizeZUnits) {
           C.isStructurallySupported3D = true;
         }
       } else {
-        for (let s = 0; s < supportingParts.length; s++) flattenSupportingPodium(supportingParts[s]);
-        C.effBaseZ = Math.min(...supportingParts.map(p => p.zTop));
+        let anyPreservedCrown = false;
+        let crownSeatMin = Infinity;
+        for (let s = 0; s < supportingParts.length; s++) {
+          const P = supportingParts[s];
+          if (shouldPreserveCrownUnderPart(P, C)) {
+            anyPreservedCrown = true;
+            crownSeatMin = Math.min(crownSeatMin, crownSeatingZ(P, C));
+          } else {
+            flattenSupportingPodium(P);
+          }
+        }
+        C.effBaseZ = (anyPreservedCrown && Number.isFinite(crownSeatMin))
+          ? Math.min(crownSeatMin, ...supportingParts.map(p => p.zTop))
+          : Math.min(...supportingParts.map(p => p.zTop));
         C.supportRef = supportingParts[0];
         C.isStructurallySupported3D = true;
       }
@@ -322,6 +376,7 @@ function emitSingleS3DBBuildingItem(item, ctx, allocShellId, outTargetList, outB
     emitShellTriangles(bShell, primaryShellId);
   }
 
+  item.shellId = primaryShellId;
   return {
     building: b,
     shellId: primaryShellId,

@@ -14,10 +14,37 @@ if (typeof triangulateCutLoopExact === 'undefined' && typeof require !== 'undefi
   Object.assign(global, require('./mesh_clipper_3d.js'));
 }
 
+function vKey5k3D(p) {
+  return `${Math.round(p[0] * 5000)},${Math.round(p[1] * 5000)},${Math.round(p[2] * 5000)}`;
+}
+
+function vKey5k2D(p) {
+  return `${Math.round(p[0] * 5000)},${Math.round(p[1] * 5000)}`;
+}
+
+function isClosedManifold5k(tris) {
+  const edgeDirCounts = new Map();
+  for (let i = 0; i < tris.length; i++) {
+    const t = tris[i];
+    const ks = [vKey5k3D(t.v0), vKey5k3D(t.v1), vKey5k3D(t.v2)];
+    if (ks[0] === ks[1] || ks[1] === ks[2] || ks[2] === ks[0]) return false;
+    for (let e = 0; e < 3; e++) {
+      const ek = ks[e] + '->' + ks[(e + 1) % 3];
+      edgeDirCounts.set(ek, (edgeDirCounts.get(ek) || 0) + 1);
+    }
+  }
+  for (const [ek, cnt] of edgeDirCounts.entries()) {
+    if (cnt !== 1) return false;
+    const sep = ek.indexOf('->');
+    if (edgeDirCounts.get(ek.slice(sep + 2) + '->' + ek.slice(0, sep)) !== 1) return false;
+  }
+  return true;
+}
+
 // Razor-sharp 2-plane architectural Gabled roof with vertical gable end-walls
 function tryEmitPlanarGabledBuilding(outerClean, zBase, zEaves, zRidge, roofShape, opts, layerId, bId, outTris, tileId) {
   const obb = computeMinAreaOBB2D(outerClean);
-  if (!obb || obb.rectRatio < 0.78 || obb.halfW < 0.04) return false;
+  if (!obb || obb.rectRatio < 0.68 || obb.halfW < 0.04) return false;
 
   let ux = obb.ux, uy = obb.uy, vx = obb.vx, vy = obb.vy;
   if (opts && opts.roofOrient === 'across') {
@@ -42,7 +69,7 @@ function tryEmitPlanarGabledBuilding(outerClean, zBase, zEaves, zRidge, roofShap
 
   const gableRing = [];
   const ridgeIndices = [];
-  const epsV = 1e-5;
+  const epsV = 6e-4;
   const n = outerClean.length;
 
   for (let i = 0; i < n; i++) {
@@ -83,18 +110,20 @@ function tryEmitPlanarGabledBuilding(outerClean, zBase, zEaves, zRidge, roofShap
 
   const effRoofH = Math.min(zRidge - zEaves, maxAbsV * 0.92);
   const effRidge = zEaves + effRoofH;
+  const ridgeSnapT = epsV / maxAbsV + 1e-6;
   const zGable = (p) => {
     const tv = Math.min(1.0, Math.abs(vCoord(p)) / maxAbsV);
-    return tv < 1e-5 ? effRidge : (zEaves + effRoofH * (1.0 - tv));
+    return tv <= ridgeSnapT ? effRidge : (zEaves + effRoofH * (1.0 - tv));
   };
 
+  const localTris = [];
   for (let i = 0, m = gableRing.length; i < m; i++) {
     const p1 = gableRing[i], p2 = gableRing[(i + 1) % m];
     const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
     const len = Math.hypot(dx, dy);
     if (len < 1e-6) continue;
     pushQuad(
-      outTris,
+      localTris,
       [p1[0], p1[1], zBase], [p2[0], p2[1], zBase],
       [p2[0], p2[1], zGable(p2)], [p1[0], p1[1], zGable(p1)],
       [dy / len, -dx / len, 0], layerId, bId, tileId
@@ -103,25 +132,27 @@ function tryEmitPlanarGabledBuilding(outerClean, zBase, zEaves, zRidge, roofShap
 
   for (let i = 0; i < floorTris.length; i++) {
     const [a, b, c] = floorTris[i];
-    pushTri(outTris, [a[0], a[1], zBase], [c[0], c[1], zBase], [b[0], b[1], zBase], [0, 0, -1], layerId, bId, tileId);
+    pushTri(localTris, [a[0], a[1], zBase], [c[0], c[1], zBase], [b[0], b[1], zBase], [0, 0, -1], layerId, bId, tileId);
   }
 
   for (const halfTris of [tris1, tris2]) {
     for (let i = 0; i < halfTris.length; i++) {
       const [a, b, c] = halfTris[i];
       const A = [a[0], a[1], zGable(a)], B = [b[0], b[1], zGable(b)], C = [c[0], c[1], zGable(c)];
-      if (!isDegenerateTri3D(A, B, C)) {
-        pushTri(outTris, A, B, C, computeFaceNormal(A, B, C), layerId, bId, tileId);
-      }
+      if (isDegenerateTri3D(A, B, C)) return false;
+      pushTri(localTris, A, B, C, computeFaceNormal(A, B, C), layerId, bId, tileId);
     }
   }
+
+  if (!isClosedManifold5k(localTris)) return false;
+  for (let i = 0; i < localTris.length; i++) outTris.push(localTris[i]);
   return true;
 }
 
 // Crisp 4-plane architectural Hipped roof cap for near-rectangular footprints
 function tryEmitPlanarHippedCap(outerClean, zEaves, zRidge, opts, layerId, bId, outTris, tileId) {
   const obb = computeMinAreaOBB2D(outerClean);
-  if (!obb || obb.rectRatio < 0.83 || obb.halfW < 0.04) return false;
+  if (!obb || obb.rectRatio < 0.74 || obb.halfW < 0.04) return false;
 
   let ux = obb.ux, uy = obb.uy, vx = obb.vx, vy = obb.vy;
   let halfL = obb.halfL, halfW = obb.halfW;
@@ -136,6 +167,12 @@ function tryEmitPlanarHippedCap(outerClean, zEaves, zRidge, opts, layerId, bId, 
   if (ridgeHalfL < halfW * 0.14) {
     if (!isStarShapedFromCentroid(outerClean)) return false;
     const apex = [cx, cy, effRidge];
+    const kApex = vKey5k2D(apex);
+    for (let i = 0, n = outerClean.length; i < n; i++) {
+      const ka = vKey5k2D(outerClean[i]);
+      const kb = vKey5k2D(outerClean[(i + 1) % n]);
+      if (ka === kb || ka === kApex || kb === kApex) return false;
+    }
     for (let i = 0, n = outerClean.length; i < n; i++) {
       const A = [outerClean[i][0], outerClean[i][1], zEaves];
       const B = [outerClean[(i + 1) % n][0], outerClean[(i + 1) % n][1], zEaves];
@@ -194,6 +231,8 @@ function tryEmitPlanarHippedCap(outerClean, zEaves, zRidge, opts, layerId, bId, 
   for (let i = 0; i < candTris2D.length; i++) {
     const t = candTris2D[i];
     if (cross2D(t.a, t.b, t.c) <= 1e-6) return false;
+    const ka = vKey5k2D(t.a), kb = vKey5k2D(t.b), kc = vKey5k2D(t.c);
+    if (ka === kb || kb === kc || kc === ka) return false;
   }
 
   for (let i = 0; i < candTris2D.length; i++) {
@@ -294,10 +333,183 @@ function emitStarDomeOrConeCap(outerClean, zEaves, zRidge, roofShape, layerId, b
   }
 }
 
+// Curved longitudinal Barrel Vault (`roof:shape=round` / `round_gabled` / `barrel`)
+// built by slicing the 2D ear-clipped footprint triangulation across cosine-spaced
+// transverse planes via a canonical edge-split vertex table (handles notched walls cleanly
+// with open arched gable ends and verified 100% 2-manifold topology).
+function tryEmitBarrelVaultBuilding(outerClean, zBase, zEaves, zRidge, roofShape, opts, layerId, bId, outTris, tileId) {
+  if (!outerClean || outerClean.length < 3 || zRidge <= zEaves + 0.04) return false;
+  const obb = computeMinAreaOBB2D(outerClean);
+  if (!obb || obb.rectRatio < 0.55 || obb.halfW < 0.04) return false;
+
+  let ux = obb.ux, uy = obb.uy, vx = obb.vx, vy = obb.vy;
+  if (opts && opts.roofOrient === 'across') {
+    ux = obb.vx; uy = obb.vy; vx = -obb.ux; vy = -obb.uy;
+  } else if (opts && typeof opts.roofDir === 'number') {
+    const rad = (opts.roofDir * Math.PI) / 180.0;
+    const downX = Math.sin(rad), downY = Math.cos(rad);
+    if (Math.abs(downX * obb.ux + downY * obb.uy) > Math.abs(downX * obb.vx + downY * obb.vy)) {
+      ux = obb.vx; uy = obb.vy; vx = -obb.ux; vy = -obb.uy;
+    }
+  }
+
+  const cx = obb.cx, cy = obb.cy;
+  const vCoord = p => (p[0] - cx) * vx + (p[1] - cy) * vy;
+
+  let vMin = Infinity, vMax = -Infinity;
+  for (let i = 0; i < outerClean.length; i++) {
+    const vv = vCoord(outerClean[i]);
+    if (vv < vMin) vMin = vv;
+    if (vv > vMax) vMax = vv;
+  }
+  const vSpan = vMax - vMin;
+  if (vSpan < 0.05) return false;
+
+  const vMid = 0.5 * (vMin + vMax);
+  const halfV = vSpan * 0.5;
+  const archH = Math.min(zRidge - zEaves, vSpan * 0.85);
+  if (archH <= 0.04) return false;
+
+  const archZ = (vVal) => {
+    const t = Math.max(-1.0, Math.min(1.0, (vVal - vMid) / halfV));
+    return zEaves + archH * Math.sqrt(Math.max(0.0, 1.0 - t * t));
+  };
+
+  const verts = outerClean.map(p => [p[0], p[1]]);
+  const n0 = verts.length;
+  const rawTris = (typeof triangulateCutLoopExact === 'function')
+    ? triangulateCutLoopExact(outerClean)
+    : triangulateSimplePoly(outerClean);
+  if (!rawTris || rawTris.length === 0) return false;
+
+  const findOrigIdx = (pt) => {
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < n0; i++) {
+      const d = Math.hypot(pt[0] - verts[i][0], pt[1] - verts[i][1]);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return bestD <= 1e-4 ? best : -1;
+  };
+
+  let idxTris = [];
+  for (let i = 0; i < rawTris.length; i++) {
+    const [pa, pb, pc] = rawTris[i];
+    const ia = findOrigIdx(pa), ib = findOrigIdx(pb), ic = findOrigIdx(pc);
+    if (ia < 0 || ib < 0 || ic < 0 || ia === ib || ib === ic || ia === ic) return false;
+    idxTris.push([ia, ib, ic]);
+  }
+  if (idxTris.length === 0) return false;
+
+  let perimLoop = Array.from({ length: n0 }, (_, i) => i);
+
+  const N_SEGS = 16;
+  const cuts = [];
+  for (let s = 1; s < N_SEGS; s++) {
+    cuts.push(vMid - Math.cos((s / N_SEGS) * Math.PI) * halfV);
+  }
+
+  const eps = Math.max(6e-4, 1e-5 * vSpan);
+  for (let ci = 0; ci < cuts.length; ci++) {
+    const vc = cuts[ci];
+    const side = new Int8Array(verts.length);
+    const vVals = new Float64Array(verts.length);
+    for (let i = 0; i < verts.length; i++) {
+      const dv = vCoord(verts[i]) - vc;
+      vVals[i] = dv;
+      side[i] = dv > eps ? 1 : (dv < -eps ? -1 : 0);
+    }
+    const edgeSplitCache = new Map();
+    const getSplitVert = (i, j) => {
+      const lo = Math.min(i, j), hi = Math.max(i, j);
+      const key = lo + '_' + hi;
+      let idx = edgeSplitCache.get(key);
+      if (idx !== undefined) return idx;
+      const dLo = vVals[lo], dHi = vVals[hi];
+      const t = Math.max(0, Math.min(1, (-dLo) / (dHi - dLo)));
+      const pLo = verts[lo], pHi = verts[hi];
+      idx = verts.length;
+      verts.push([pLo[0] + (pHi[0] - pLo[0]) * t, pLo[1] + (pHi[1] - pLo[1]) * t]);
+      edgeSplitCache.set(key, idx);
+      return idx;
+    };
+
+    const nextPerim = [];
+    for (let k = 0; k < perimLoop.length; k++) {
+      const a = perimLoop[k], b = perimLoop[(k + 1) % perimLoop.length];
+      nextPerim.push(a);
+      if (side[a] * side[b] === -1) nextPerim.push(getSplitVert(a, b));
+    }
+    perimLoop = nextPerim;
+
+    const nextTris = [];
+    for (let t = 0; t < idxTris.length; t++) {
+      const tri = idxTris[t];
+      const s0 = side[tri[0]], s1 = side[tri[1]], s2 = side[tri[2]];
+      const hasPos = (s0 === 1 || s1 === 1 || s2 === 1);
+      const hasNeg = (s0 === -1 || s1 === -1 || s2 === -1);
+      if (!hasPos || !hasNeg) {
+        nextTris.push(tri);
+        continue;
+      }
+      let zeroIdx = -1;
+      for (let k = 0; k < 3; k++) if (side[tri[k]] === 0) zeroIdx = k;
+      if (zeroIdx !== -1) {
+        const i0 = tri[zeroIdx], i1 = tri[(zeroIdx + 1) % 3], i2 = tri[(zeroIdx + 2) % 3];
+        const m = getSplitVert(i1, i2);
+        nextTris.push([i0, i1, m], [i0, m, i2]);
+      } else {
+        let loneK = 0;
+        for (let k = 0; k < 3; k++) {
+          if (side[tri[k]] !== side[tri[(k + 1) % 3]] && side[tri[k]] !== side[tri[(k + 2) % 3]]) {
+            loneK = k;
+            break;
+          }
+        }
+        const a = tri[loneK], b = tri[(loneK + 1) % 3], c = tri[(loneK + 2) % 3];
+        const ab = getSplitVert(a, b);
+        const ac = getSplitVert(a, c);
+        nextTris.push([a, ab, ac], [ab, b, c], [ab, c, ac]);
+      }
+    }
+    idxTris = nextTris;
+  }
+
+  const topV = verts.map(p => [p[0], p[1], archZ(vCoord(p))]);
+  const botV = verts.map(p => [p[0], p[1], zBase]);
+  const localTris = [];
+
+  for (let i = 0; i < idxTris.length; i++) {
+    const [a, b, c] = idxTris[i];
+    const A = topV[a], B = topV[b], C = topV[c];
+    const fn = computeFaceNormal(A, B, C);
+    if (fn[2] < 0) pushTri(localTris, A, C, B, [-fn[0], -fn[1], -fn[2]], layerId, bId, tileId);
+    else pushTri(localTris, A, B, C, fn, layerId, bId, tileId);
+
+    const BA = botV[a], BB = botV[b], BC = botV[c];
+    const bfn = computeFaceNormal(BA, BC, BB);
+    if (bfn[2] > 0) pushTri(localTris, BA, BB, BC, [0, 0, -1], layerId, bId, tileId);
+    else pushTri(localTris, BA, BC, BB, [0, 0, -1], layerId, bId, tileId);
+  }
+
+  for (let k = 0; k < perimLoop.length; k++) {
+    const a = perimLoop[k], b = perimLoop[(k + 1) % perimLoop.length];
+    const p1 = verts[a], p2 = verts[b];
+    const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+    const len = Math.hypot(dx, dy) || 1e-6;
+    pushQuad(localTris, botV[a], botV[b], topV[b], topV[a], [dy / len, -dx / len, 0], layerId, bId, tileId);
+  }
+
+  if (!isClosedManifold5k(localTris)) return false;
+
+  for (let i = 0; i < localTris.length; i++) outTris.push(localTris[i]);
+  return true;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     tryEmitPlanarGabledBuilding,
     tryEmitPlanarHippedCap,
+    tryEmitBarrelVaultBuilding,
     computeSkillionRoofEvaluator,
     emitStarDomeOrConeCap
   };

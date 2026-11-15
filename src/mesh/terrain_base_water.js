@@ -481,17 +481,31 @@ function emitStudioWallFrame(ctx, meshes) {
   const innerW = halfW + 0.25, innerH = halfH + 0.25;
   const outerW = halfW + 9.9, outerH = halfH + 9.9;
   const scaleMm = ctx.scaleMm || 1.0;
-  const zFrameBot = -1.6 / scaleMm;
-  const zFrameTop = (ctx.baseBottomZ || (2.35 / scaleMm)) + 1.1 / scaleMm;
-  const miterQuads = [
-    [[-outerW, -outerH], [outerW, -outerH], [innerW, -innerH], [-innerW, -innerH]],
-    [[outerW, -outerH], [outerW, outerH], [innerW, innerH], [innerW, -innerH]],
-    [[outerW, outerH], [-outerW, outerH], [-innerW, innerH], [innerW, innerH]],
-    [[-outerW, outerH], [-outerW, -outerH], [-innerW, -innerH], [-innerW, innerH]]
-  ];
-  miterQuads.forEach(mq => {
-    extrudeBuildingLoD2(mq, [], zFrameBot, zFrameTop, zFrameTop, false, 6, -1, meshes.frame, -1, 'flat');
-  });
+  const z0 = -1.6 / scaleMm;
+  const z1 = (ctx.baseBottomZ || (2.35 / scaleMm)) + 1.1 / scaleMm;
+
+  // Single closed genus-1 rectangular torus shell (32 tris, 0 internal miter walls, 0 non-manifold edges)
+  const O = [[-outerW, -outerH], [outerW, -outerH], [outerW, outerH], [-outerW, outerH]];
+  const I = [[-innerW, -innerH], [innerW, -innerH], [innerW, innerH], [-innerW, innerH]];
+  const outNorms = [[0, -1, 0], [1, 0, 0], [0, 1, 0], [-1, 0, 0]];
+  const inNorms = [[0, 1, 0], [-1, 0, 0], [0, -1, 0], [1, 0, 0]];
+  const startIdx = meshes.frame.length;
+
+  for (let s = 0; s < 4; s++) {
+    const n = (s + 1) & 3;
+    const os0 = [O[s][0], O[s][1], z0], on0 = [O[n][0], O[n][1], z0];
+    const on1 = [O[n][0], O[n][1], z1], os1 = [O[s][0], O[s][1], z1];
+    const is0 = [I[s][0], I[s][1], z0], in0 = [I[n][0], I[n][1], z0];
+    const in1 = [I[n][0], I[n][1], z1], is1 = [I[s][0], I[s][1], z1];
+
+    pushQuad(meshes.frame, os0, on0, on1, os1, outNorms[s], 6, -1, 0, 1);
+    pushQuad(meshes.frame, in0, is0, is1, in1, inNorms[s], 6, -1, 0, 1);
+    pushQuad(meshes.frame, os1, on1, in1, is1, [0, 0, 1], 6, -1, 0, 1);
+    pushQuad(meshes.frame, on0, os0, is0, in0, [0, 0, -1], 6, -1, 0, 1);
+  }
+  for (let k = startIdx; k < meshes.frame.length; k++) {
+    meshes.frame[k].shellId = 1;
+  }
 }
 
 function emitBaseReliefChimneyShafts(ctx, chimneys, meshes) {

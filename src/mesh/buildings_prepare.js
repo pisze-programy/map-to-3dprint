@@ -103,33 +103,262 @@ function computeSolidInteriorPoint2D(outerPts, holesPts) {
   return [outerPts[0][0], outerPts[0][1]];
 }
 
+function pointToSegDistSq2D(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  const t = lenSq > 1e-12 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq)) : 0;
+  const qx = ax + t * dx, qy = ay + t * dy;
+  const ex = px - qx, ey = py - qy;
+  return [qx, qy, ex * ex + ey * ey];
+}
+
+function pointToPolyDistSq2D(px, py, poly) {
+  let bestX = px, bestY = py, bestDSq = Infinity;
+  for (let e = 0, n = poly.length; e < n; e++) {
+    const a = poly[e], b = poly[(e + 1) % n];
+    const [qx, qy, dSq] = pointToSegDistSq2D(px, py, a[0], a[1], b[0], b[1]);
+    if (dSq < bestDSq) { bestDSq = dSq; bestX = qx; bestY = qy; }
+  }
+  return [bestX, bestY, bestDSq];
+}
+
+function segsCrossStrict2D(a, b, c, d) {
+  const c1 = (d[0] - c[0]) * (a[1] - c[1]) - (d[1] - c[1]) * (a[0] - c[0]);
+  const c2 = (d[0] - c[0]) * (b[1] - c[1]) - (d[1] - c[1]) * (b[0] - c[0]);
+  if ((c1 >= 0 && c2 >= 0) || (c1 <= 0 && c2 <= 0)) return false;
+  const c3 = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const c4 = (b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0]);
+  return (c3 > 0 && c4 < 0) || (c3 < 0 && c4 > 0);
+}
+
+// Ensures two holes are disjoint in 2D and stay at least `minGap` apart (preventing 5000-grid pinches).
+function areHolesStrictlyDisjoint2D(hA, hB, minGap = 0.012) {
+  if (!hA || !hB || hA.length < 3 || hB.length < 3) return false;
+  let minXa = Infinity, maxXa = -Infinity, minYa = Infinity, maxYa = -Infinity;
+  for (let i = 0; i < hA.length; i++) {
+    const x = hA[i][0], y = hA[i][1];
+    if (x < minXa) minXa = x; if (x > maxXa) maxXa = x;
+    if (y < minYa) minYa = y; if (y > maxYa) maxYa = y;
+  }
+  let minXb = Infinity, maxXb = -Infinity, minYb = Infinity, maxYb = -Infinity;
+  for (let i = 0; i < hB.length; i++) {
+    const x = hB[i][0], y = hB[i][1];
+    if (x < minXb) minXb = x; if (x > maxXb) maxXb = x;
+    if (y < minYb) minYb = y; if (y > maxYb) maxYb = y;
+  }
+  if (maxXa + minGap < minXb || maxXb + minGap < minXa ||
+      maxYa + minGap < minYb || maxYb + minGap < minYa) {
+    return true;
+  }
+
+  const key5k = (p) => `${Math.round(p[0] * 5000)},${Math.round(p[1] * 5000)}`;
+  const vertsA = new Set(hA.map(key5k));
+  for (let i = 0; i < hB.length; i++) {
+    if (vertsA.has(key5k(hB[i]))) return false;
+  }
+
+  if (pointInPoly2D(hA[0][0], hA[0][1], hB) || pointInPoly2D(hB[0][0], hB[0][1], hA)) return false;
+
+  const minGapSq = minGap * minGap;
+  for (let i = 0; i < hA.length; i++) {
+    if (pointInPoly2D(hA[i][0], hA[i][1], hB) || pointToPolyDistSq2D(hA[i][0], hA[i][1], hB)[2] < minGapSq) {
+      return false;
+    }
+  }
+  for (let i = 0; i < hB.length; i++) {
+    if (pointInPoly2D(hB[i][0], hB[i][1], hA) || pointToPolyDistSq2D(hB[i][0], hB[i][1], hA)[2] < minGapSq) {
+      return false;
+    }
+  }
+  for (let i = 0; i < hA.length; i++) {
+    const a1 = hA[i], a2 = hA[(i + 1) % hA.length];
+    const mx = 0.5 * (a1[0] + a2[0]), my = 0.5 * (a1[1] + a2[1]);
+    if (pointInPoly2D(mx, my, hB)) return false;
+    for (let j = 0; j < hB.length; j++) {
+      if (segsCrossStrict2D(a1, a2, hB[j], hB[(j + 1) % hB.length])) return false;
+    }
+  }
+  for (let j = 0; j < hB.length; j++) {
+    const b1 = hB[j], b2 = hB[(j + 1) % hB.length];
+    if (pointInPoly2D(0.5 * (b1[0] + b2[0]), 0.5 * (b1[1] + b2[1]), hA)) return false;
+  }
+  return true;
+}
+
+// Merges simple hole rings sharing >=1 reversed boundary edge into single simple courtyard holes.
+function mergeTouchingHoles2D(holeItems) {
+  if (!holeItems || holeItems.length <= 1) return holeItems || [];
+  const k5k = (p) => `${Math.round(p[0] * 5000)},${Math.round(p[1] * 5000)}`;
+  const items = holeItems
+    .map(it => ({ ring: cleanPolygonRing(it.ring, false), isExtra: Boolean(it.isExtra) }))
+    .filter(it => it.ring.length >= 3);
+  const n = items.length;
+  if (n <= 1) return items;
+
+  const splitRings = items.map(it => it.ring.slice());
+  // Split edges on T-junction vertices from other holes so collinear partial overlaps cancel cleanly.
+  for (let a = 0; a < n; a++) {
+    const polyA = splitRings[a];
+    const otherPts = [];
+    for (let b = 0; b < n; b++) {
+      if (a === b) continue;
+      for (let v = 0; v < items[b].ring.length; v++) otherPts.push(items[b].ring[v]);
+    }
+    const nextPoly = [];
+    for (let e = 0; e < polyA.length; e++) {
+      const p1 = polyA[e], p2 = polyA[(e + 1) % polyA.length];
+      nextPoly.push(p1);
+      const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq <= 1e-10) continue;
+      const k1 = k5k(p1), k2 = k5k(p2);
+      const splits = [];
+      for (let oi = 0; oi < otherPts.length; oi++) {
+        const q = otherPts[oi];
+        const kq = k5k(q);
+        if (kq === k1 || kq === k2) continue;
+        const t = ((q[0] - p1[0]) * dx + (q[1] - p1[1]) * dy) / lenSq;
+        if (t <= 1e-4 || t >= 1 - 1e-4) continue;
+        const px = p1[0] + t * dx, py = p1[1] + t * dy;
+        if ((q[0] - px) * (q[0] - px) + (q[1] - py) * (q[1] - py) <= 9e-8) {
+          splits.push({ t, pt: q });
+        }
+      }
+      if (splits.length > 0) {
+        splits.sort((u, v) => u.t - v.t);
+        let prevK = k1;
+        for (const sp of splits) {
+          const sk = k5k(sp.pt);
+          if (sk !== prevK && sk !== k2) {
+            nextPoly.push(sp.pt);
+            prevK = sk;
+          }
+        }
+      }
+    }
+    splitRings[a] = nextPoly;
+  }
+
+  const adj = Array.from({ length: n }, () => new Set());
+  const dirMap = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = splitRings[i];
+    for (let e = 0; e < r.length; e++) {
+      const u = k5k(r[e]), v = k5k(r[(e + 1) % r.length]);
+      if (u === v) continue;
+      const rev = dirMap.get(`${v}->${u}`);
+      if (rev !== undefined && rev !== i) {
+        adj[i].add(rev);
+        adj[rev].add(i);
+      }
+      if (!dirMap.has(`${u}->${v}`)) dirMap.set(`${u}->${v}`, i);
+    }
+  }
+
+  const visited = new Uint8Array(n);
+  const out = [];
+  for (let s = 0; s < n; s++) {
+    if (visited[s]) continue;
+    const comp = [];
+    const stack = [s];
+    visited[s] = 1;
+    while (stack.length > 0) {
+      const cur = stack.pop();
+      comp.push(cur);
+      for (const nb of adj[cur]) {
+        if (!visited[nb]) { visited[nb] = 1; stack.push(nb); }
+      }
+    }
+    if (comp.length === 1) {
+      out.push(items[comp[0]]);
+      continue;
+    }
+
+    const ptByKey = new Map();
+    const edgeCounts = new Map();
+    for (const idx of comp) {
+      const r = splitRings[idx];
+      for (let e = 0; e < r.length; e++) {
+        const pU = r[e], pV = r[(e + 1) % r.length];
+        const u = k5k(pU), v = k5k(pV);
+        if (u === v) continue;
+        if (!ptByKey.has(u)) ptByKey.set(u, pU);
+        if (!ptByKey.has(v)) ptByKey.set(v, pV);
+        const revKey = `${v}->${u}`;
+        const revCount = edgeCounts.get(revKey) || 0;
+        if (revCount > 0) {
+          edgeCounts.set(revKey, revCount - 1);
+        } else {
+          const fwdKey = `${u}->${v}`;
+          edgeCounts.set(fwdKey, (edgeCounts.get(fwdKey) || 0) + 1);
+        }
+      }
+    }
+
+    const nextByU = new Map();
+    const inDeg = new Map();
+    let totalRem = 0;
+    let validGraph = true;
+    for (const [ek, cnt] of edgeCounts.entries()) {
+      if (cnt === 0) continue;
+      if (cnt !== 1) { validGraph = false; break; }
+      const sep = ek.indexOf('->');
+      const u = ek.slice(0, sep), v = ek.slice(sep + 2);
+      if (nextByU.has(u)) { validGraph = false; break; }
+      nextByU.set(u, v);
+      inDeg.set(v, (inDeg.get(v) || 0) + 1);
+      if (inDeg.get(v) > 1) { validGraph = false; break; }
+      totalRem++;
+    }
+
+    let mergedOk = false;
+    if (validGraph && totalRem >= 3) {
+      const startU = nextByU.keys().next().value;
+      const cyclePts = [];
+      const seenU = new Set();
+      let cur = startU;
+      while (cur && !seenU.has(cur)) {
+        seenU.add(cur);
+        cyclePts.push(ptByKey.get(cur));
+        cur = nextByU.get(cur);
+      }
+      if (cur === startU && cyclePts.length === totalRem) {
+        const cleaned = cleanPolygonRing(cyclePts, false);
+        const noSelfTouch = typeof hasSelfTouchingEdge2D !== 'function' || !hasSelfTouchingEdge2D(cleaned);
+        if (cleaned.length >= 3 && isSimplePolygon(cleaned) && noSelfTouch) {
+          out.push({ ring: cleaned, isExtra: comp.every(idx => items[idx].isExtra) });
+          mergedOk = true;
+        }
+      }
+    }
+    if (!mergedOk) {
+      for (const idx of comp) out.push(items[idx]);
+    }
+  }
+  return out;
+}
+
 // Sanitizes courtyard holes against clippedOuter so grazing/simplified OSM inner rings
 // stay strictly interior and never trigger keyhole drop in extrudeBuildingLoD2.
-function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles, scaleMm = 1.89, isResin = false) {
-  if (!rawClippedHoles || rawClippedHoles.length === 0 || !clippedOuter || clippedOuter.length < 3) return [];
+function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles, scaleMm = 1.89, isResin = false, extraBedHoles = []) {
+  const rawList = rawClippedHoles || [];
+  const extraList = extraBedHoles || [];
+  if ((rawList.length === 0 && extraList.length === 0) || !clippedOuter || clippedOuter.length < 3) return [];
   const outerArea = Math.abs(signedArea2D(clippedOuter));
   if (outerArea < 1e-4) return [];
   const effScale = Math.max(0.5, Number(scaleMm) || 1.89);
   const minHoleArea = isResin ? Math.max(0.0012, Math.pow(0.14 / effScale, 2)) : 0.01;
   const bndDistSqTol = isResin ? 1e-4 : 4e-4;
 
-  const nearestOuterBoundaryPt = (px, py) => {
-    let bestX = px, bestY = py, bestDSq = Infinity;
-    for (let e = 0, n = clippedOuter.length; e < n; e++) {
-      const a = clippedOuter[e], b = clippedOuter[(e + 1) % n];
-      const dx = b[0] - a[0], dy = b[1] - a[1];
-      const lenSq = dx * dx + dy * dy;
-      const t = lenSq > 1e-12 ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / lenSq)) : 0;
-      const qx = a[0] + t * dx, qy = a[1] + t * dy;
-      const dSq = (px - qx) * (px - qx) + (py - qy) * (py - qy);
-      if (dSq < bestDSq) { bestDSq = dSq; bestX = qx; bestY = qy; }
-    }
-    return [bestX, bestY, bestDSq];
-  };
+  const combinedItems = mergeTouchingHoles2D(
+    rawList.map(h => ({ ring: h, isExtra: Boolean(h && h._isExtra) }))
+      .concat(extraList.map(h => ({ ring: h, isExtra: true })))
+  );
 
   const candidates = [];
-  for (let hi = 0; hi < rawClippedHoles.length; hi++) {
-    let h = rawClippedHoles[hi];
+  for (let hi = 0; hi < combinedItems.length; hi++) {
+    let h = combinedItems[hi].ring;
+    const isExtra = combinedItems[hi].isExtra;
     if (!h || h.length < 3) continue;
     let hArea = Math.abs(signedArea2D(h));
     if (hArea < minHoleArea || hArea >= outerArea * 0.985) continue;
@@ -140,7 +369,7 @@ function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles, scaleMm = 1.89, 
     let needsClamp = false;
     for (let v = 0; v < h.length; v++) {
       const pt = h[v];
-      if (!pointInPoly2D(pt[0], pt[1], clippedOuter) || nearestOuterBoundaryPt(pt[0], pt[1])[2] < bndDistSqTol) {
+      if (!pointInPoly2D(pt[0], pt[1], clippedOuter) || pointToPolyDistSq2D(pt[0], pt[1], clippedOuter)[2] < bndDistSqTol) {
         needsClamp = true;
         break;
       }
@@ -149,7 +378,7 @@ function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles, scaleMm = 1.89, 
     if (needsClamp) {
       const clamped = h.map(pt => {
         const inside = pointInPoly2D(pt[0], pt[1], clippedOuter);
-        const [bx, by, dSq] = nearestOuterBoundaryPt(pt[0], pt[1]);
+        const [bx, by, dSq] = pointToPolyDistSq2D(pt[0], pt[1], clippedOuter);
         if (inside && dSq >= bndDistSqTol) return pt;
         const baseX = inside ? pt[0] : bx;
         const baseY = inside ? pt[1] : by;
@@ -168,24 +397,31 @@ function sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles, scaleMm = 1.89, 
       if (hArea < minHoleArea) continue;
     }
 
-    candidates.push({ h, area: hArea, ip: hIp });
+    candidates.push({ h, area: hArea, ip: hIp, isExtra });
   }
 
   if (candidates.length === 0) return [];
   candidates.sort((a, b) => b.area - a.area);
 
-  // Drop duplicate/nested holes and verify keyhole simplicity incrementally
+  // Drop duplicate/nested/touching holes and verify keyhole simplicity incrementally
   const accepted = [];
   for (let i = 0; i < candidates.length; i++) {
     const cand = candidates[i];
     if (accepted.some(prev => pointInPoly2D(cand.ip[0], cand.ip[1], prev))) continue;
-    const trial = accepted.concat([cand.h]);
-    const merged = mergeHolesIntoOuterKeyhole(clippedOuter, trial);
-    if (merged.length >= 3 && isSimplePolygon(merged)) {
-      accepted.push(cand.h);
-    } else if (typeof insetPolygonCentroid === 'function') {
+    const isDisjoint = accepted.every(prev => areHolesStrictlyDisjoint2D(cand.h, prev, 0.012));
+    if (isDisjoint) {
+      const trial = accepted.concat([cand.h]);
+      const merged = mergeHolesIntoOuterKeyhole(clippedOuter, trial);
+      if (merged.length >= 3 && isSimplePolygon(merged)) {
+        accepted.push(cand.h);
+        continue;
+      }
+    }
+    if (!cand.isExtra && typeof insetPolygonCentroid === 'function') {
       const insetH = cleanPolygonRing(insetPolygonCentroid(cand.h, 0.028), false);
-      if (insetH.length >= 3 && insetH.every(p => pointInPoly2D(p[0], p[1], clippedOuter))) {
+      if (insetH.length >= 3 &&
+          insetH.every(p => pointInPoly2D(p[0], p[1], clippedOuter)) &&
+          accepted.every(prev => areHolesStrictlyDisjoint2D(insetH, prev, 0.012))) {
         const trialInset = accepted.concat([insetH]);
         const mergedInset = mergeHolesIntoOuterKeyhole(clippedOuter, trialInset);
         if (mergedInset.length >= 3 && isSimplePolygon(mergedInset)) {
@@ -491,7 +727,7 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
   const prepared = [];
   for (let i = 0; i < rawBuildings.length; i++) {
     const b = rawBuildings[i];
-    if (b.hidden || b.btype === 'pier' || suppressedIdx.has(i)) continue;
+    if (b.hidden || b.btype === 'pier' || suppressedIdx.has(i) || (b.h !== undefined && b.h !== null && b.h <= 0)) continue;
     const rawBedPts = b.outer.map(toBed);
     let uMinX = Infinity, uMaxX = -Infinity, uMinY = Infinity, uMaxY = -Infinity;
     for (let k = 0; k < rawBedPts.length; k++) {
@@ -584,7 +820,7 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     const extraBedHoles = (inheritedExtraHoles.get(i) || [])
       .map(h => cleanPolygonRing(clipPolyToBox(h, -halfW + 0.38, -halfH + 0.38, halfW - 0.38, halfH - 0.38), false))
       .filter(h => h.length >= 3);
-    const clippedHoles = sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles.concat(extraBedHoles), scaleMm, printSpec.isResin);
+    const clippedHoles = sanitizeBuildingHoles2D(clippedOuter, rawClippedHoles, scaleMm, printSpec.isResin, extraBedHoles);
 
     const interiorPt = computeSolidInteriorPoint2D(clippedOuter, clippedHoles);
     const maxSpan = Math.max(maxX - minX, maxY - minY);
@@ -605,6 +841,7 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       cy: interiorPt[1],
       groupId: effectiveGid.get(i) || b.groupId || b.osmId || b.id,
       scaledMinH: isFerrisWheel ? 0 : (b.minH || 0),
+      isRotundaDrum: Boolean(b.isRotundaDrum),
       skip: false
     });
   }
@@ -784,12 +1021,19 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
     }
 
     const hMult = (item.clusterHeightMult || b.heightMult || 1.0) * (state.zScale || 1.0);
-    const totalHMm = Math.max(0.95, (b.h || 6.0) * mToU * hMult);
+    const rawHVal = (b.h !== undefined && b.h !== null) ? b.h : 6.0;
+    const totalHMm = Math.max(0.95, Math.max(1.5, rawHVal) * mToU * hMult);
     const isSpireRoof = (roofShape === 'dome' || roofShape === 'onion' || ((b.tower || b.church) && (roofShape === 'pyramidal' || roofShape === 'cone')));
 
     let roofHMm = (roofShape !== 'flat') ? Math.max(0.28, (b.roofH || 3.2) * mToU * hMult) : 0;
-    if (isSpireRoof) {
+    if (roofShape === 'round') {
+      roofHMm = Math.min(roofHMm, item.minSpan * 0.95, totalHMm * 0.80);
+    } else if (isSpireRoof) {
       roofHMm = Math.min(roofHMm, item.minSpan * 1.45, totalHMm * 0.65);
+    } else if (b.hasExplicitRoofH) {
+      roofHMm = Math.min(roofHMm, item.minSpan * 0.72, totalHMm * 0.65);
+    } else if (roofShape === 'gabled' || roofShape === 'gambrel' || roofShape === 'mansard' || roofShape === 'hipped') {
+      roofHMm = Math.min(roofHMm, item.minSpan * 0.58, totalHMm * 0.48);
     } else {
       roofHMm = Math.min(roofHMm, item.minSpan * 0.44, totalHMm * 0.40);
     }
@@ -818,7 +1062,8 @@ function prepareAndClusterS3DBBuildings(scene, ctx, baseInfo, state) {
       ? Math.min(maxPadZ, Math.max(centerSurfZ, maxPadZ - totalHMm * 0.45))
       : minPadZ;
     const zTop = quantizeZUnits(tZ + totalHMm);
-    const zEaves = hasPitched ? quantizeZUnits(Math.max(tZ + 0.55, zTop - roofHMm)) : zTop;
+    const minWallHUnits = Math.min(0.55, Math.max(0.25, totalHMm * 0.25));
+    const zEaves = hasPitched ? quantizeZUnits(Math.max(tZ + minWallHUnits, zTop - roofHMm)) : zTop;
     const zRidge = hasPitched ? Math.max(zEaves + 0.14, zTop) : zEaves;
 
     item.tZ = tZ;

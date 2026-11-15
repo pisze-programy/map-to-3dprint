@@ -5,10 +5,14 @@
 // ============================================================================
 
 const ROOF_SHAPES_NORM = {
-  flat: 'flat', gabled: 'gabled', gable: 'gabled', hipped: 'hipped', hip: 'hipped',
-  'half-hipped': 'hipped', pyramidal: 'pyramidal', pyramid: 'pyramidal',
-  skillion: 'skillion', shed: 'skillion', lean_to: 'skillion', dome: 'dome', round: 'dome',
-  onion: 'onion', cone: 'cone', conical: 'cone', mansard: 'mansard', gambrel: 'gambrel'
+  flat: 'flat', gabled: 'gabled', gable: 'gabled', saltbox: 'gabled', basilical: 'gabled',
+  hipped: 'hipped', hip: 'hipped', 'half-hipped': 'hipped', side_hipped: 'hipped',
+  pyramidal: 'pyramidal', pyramid: 'pyramidal',
+  skillion: 'skillion', shed: 'skillion', lean_to: 'skillion',
+  round: 'round', round_gabled: 'round', barrel: 'round',
+  dome: 'dome', onion: 'onion', cone: 'cone', conical: 'cone',
+  mansard: 'mansard', quadruple_saltbox: 'mansard',
+  gambrel: 'gambrel', double_saltbox: 'gambrel'
 };
 
 const CARDINAL_DEG_JS = {
@@ -62,17 +66,39 @@ function isObservationWheelTagsJS(tags) {
   );
 }
 
+function hasAllNegativeLevelJS(tags) {
+  if (!tags || tags.level === undefined || tags.level === null || tags.level === '') return false;
+  const nums = String(tags.level)
+    .split(/[;,]/)
+    .map(s => parseFloat(s.trim().replace(',', '.')))
+    .filter(Number.isFinite);
+  return nums.length > 0 && nums.every(v => v < 0);
+}
+
 function isUndergroundOrSkippedBuildingJS(tags) {
   if (!tags) return true;
   if (tags.location === 'underground' || tags.location === 'underwater') return true;
   if (['yes', 'building_passage', 'culvert'].includes(tags.tunnel)) return true;
-  if (['room', 'corridor', 'area', 'level'].includes(tags.indoor)) return true;
   const bVal = String(tags.building || '').toLowerCase().trim();
   const bpVal = String(tags['building:part'] || '').toLowerCase().trim();
+  const indoorVal = String(tags.indoor || '').toLowerCase().trim();
+  if (['room', 'corridor', 'area', 'level'].includes(indoorVal)) return true;
+  if (indoorVal === 'yes' && !tags['roof:shape'] && bVal !== 'roof' && bpVal !== 'roof') return true;
+  if (hasAllNegativeLevelJS(tags)) return true;
   if (SKIP_BUILDING_VALS_JS.has(bVal) && (!bpVal || SKIP_BUILDING_VALS_JS.has(bpVal))) return true;
   if (!bVal && SKIP_BUILDING_VALS_JS.has(bpVal)) return true;
   if (bVal === 'bridge' && tags.min_height === undefined && tags['building:min_level'] === undefined) return true;
   const layerVal = parseFloatTagJS(tags.layer, 0) || 0;
+  if ((bpVal === 'elevator' || tags.highway === 'elevator' || tags.elevator === 'yes') &&
+      (indoorVal === 'yes' || layerVal < 0 || (!bVal && !tags.height && !tags['building:height']))) {
+    return true;
+  }
+  const bLevels = parseFloatTagJS(tags['building:levels'], null);
+  if (bLevels !== null && bLevels <= 0 &&
+      tags.height === undefined && tags['building:height'] === undefined &&
+      tags.est_height === undefined && !tags['roof:shape']) {
+    return true;
+  }
   if (layerVal < -0.5 && tags.height === undefined && tags['building:levels'] === undefined) return true;
   return false;
 }
@@ -222,10 +248,83 @@ function computeSolidInteriorPtJS(outerPts, holesPts) {
   return [outerPts[0][0], outerPts[0][1]];
 }
 
+const HISTORIC_ARCH_RE_JS = /\b(gothic|baroque|renaissance|romanesque|medieval|timber|half-timbered|classic|neoclassic|neogothic|historic|tudor|victorian|georgian|wilhelminian|gruenderzeit)\b/i;
+const TRAD_PITCHED_ROOFS_JS = new Set(['gabled', 'gable', 'half-hipped', 'hipped', 'hip', 'gambrel', 'mansard', 'saltbox', 'double_saltbox', 'quadruple_saltbox', 'pyramidal']);
+const CIVIC_TRAD_TYPES_JS = new Set(['government', 'townhall', 'cathedral', 'church', 'chapel', 'castle', 'palace', 'civic', 'public', 'synagogue', 'monastery']);
+
+function computeRingRadialCircularityJS(outer, minX, maxX, minY, maxY, cx, cy) {
+  if (!outer || outer.length < 10) return { rCv: 1.0, isoperimetric: 0 };
+  let perim = 0;
+  const n = outer.length;
+  for (let i = 0; i < n; i++) {
+    const a = outer[i], b = outer[(i + 1) % n];
+    perim += Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+  const area = Math.abs(_polyAreaSignedS3DB(outer));
+  const isoperimetric = perim > 1e-6 ? (4.0 * Math.PI * area) / (perim * perim) : 0;
+  const evalCv = (mx, my) => {
+    let sumR = 0;
+    const rs = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const r = Math.hypot(outer[i][0] - mx, outer[i][1] - my);
+      rs[i] = r;
+      sumR += r;
+    }
+    const meanR = sumR / n;
+    if (meanR <= 1e-6) return 1.0;
+    let varSum = 0;
+    for (let i = 0; i < n; i++) {
+      const d = rs[i] - meanR;
+      varSum += d * d;
+    }
+    return Math.sqrt(varSum / n) / meanR;
+  };
+  const bx = (minX + maxX) * 0.5, by = (minY + maxY) * 0.5;
+  return { rCv: Math.min(evalCv(bx, by), evalCv(cx, cy)), isoperimetric };
+}
+
+function isHistoricAnchorTagsJS(tags, areaM2) {
+  if (!tags) return false;
+  const histVal = String(tags.historic || '').toLowerCase().trim();
+  if (histVal && !['memorial', 'monument', 'archaeological_site', 'ruins', 'wayside_cross', 'wayside_shrine'].includes(histVal)) {
+    return true;
+  }
+  const startYear = tags.start_date ? parseInt(String(tags.start_date), 10) : NaN;
+  if (Number.isFinite(startYear) && startYear > 0 && startYear < 1945) return true;
+  if (tags['building:material'] === 'timber_framing') return true;
+  if (HISTORIC_ARCH_RE_JS.test(String(tags['building:architecture'] || ''))) return true;
+  const rs = String(tags['roof:shape'] || '').toLowerCase().trim();
+  if (rs && TRAD_PITCHED_ROOFS_JS.has(rs) && areaM2 <= 650.0) return true;
+  return false;
+}
+
 function createS3DBClientCollector(halfW, halfH, metersToUnits) {
   const candidateParents = [];
   const candidateParts = [];
   const buildings = [];
+  let _contextState = null;
+
+  function computeRecordMetricsM(pts) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+    }
+    const mToU = Math.max(1e-4, metersToUnits);
+    let rawMinSpanM = Math.min(maxX - minX, maxY - minY) / mToU;
+    let rawMaxSpanM = Math.max(maxX - minX, maxY - minY) / mToU;
+    if (typeof computeMinAreaOBB2D === 'function' && pts.length >= 3) {
+      const obb = computeMinAreaOBB2D(pts);
+      if (obb && obb.halfL > 0) {
+        rawMinSpanM = (obb.halfW * 2) / mToU;
+        rawMaxSpanM = (obb.halfL * 2) / mToU;
+      }
+    }
+    const areaU = Math.abs(_polyAreaSignedS3DB(pts));
+    const areaM2 = areaU / (mToU * mToU);
+    return { minX, maxX, minY, maxY, rawMinSpanM, rawMaxSpanM, areaU, areaM2 };
+  }
 
   function registerCandidate(osmId, tags, outerPts, holesPts, isPart, groupId = null, fromBldRel = false) {
     if (outerPts.length < 3 || isUndergroundOrSkippedBuildingJS(tags)) return;
@@ -287,24 +386,26 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
 
   function addBuildingRecord(osmId, tags, outer, holes, groupId = null, isPart = false, parentHeightHint = null, maxDefaultHeightCap = null) {
     if (outer.length < 3) return;
-    let sx = 0, sy = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let sx = 0, sy = 0;
     for (const p of outer) {
       sx += p[0]; sy += p[1];
-      if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
-      if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
     }
     const cx = sx / outer.length, cy = sy / outer.length;
     if (Math.abs(cx) > halfW + 4.0 || Math.abs(cy) > halfH + 4.0) return;
 
-    const spanXM = (maxX - minX) / Math.max(1e-4, metersToUnits);
-    const spanYM = (maxY - minY) / Math.max(1e-4, metersToUnits);
-    const minSpanM = Math.max(1.5, Math.min(spanXM, spanYM));
-    const maxSpanM = Math.max(spanXM, spanYM);
-    const areaU = Math.abs(polyAreaSignedJS(outer));
+    const mToU = Math.max(1e-4, metersToUnits);
+    const { minX, maxX, minY, maxY, rawMinSpanM, rawMaxSpanM, areaU, areaM2 } = computeRecordMetricsM(outer);
+    const minSpanM = Math.max(1.5, rawMinSpanM);
+    const maxSpanM = rawMaxSpanM;
+    const wingHalfU = (typeof computeCharacteristicWingHalfWidth2D === 'function')
+      ? computeCharacteristicWingHalfWidth2D(outer, holes || [])
+      : (minSpanM * mToU * 0.5);
+    const wingSpanM = Math.max(1.5, (wingHalfU * 2.0) / mToU);
+    const effPitchSpanM = Math.min(minSpanM, wingSpanM);
 
     const archType = tags._archTypeOverride || (isObservationWheelTagsJS(tags) ? 'ferris_wheel' : null);
     const isFerrisWheel = archType === 'ferris_wheel';
-    const btype = tags.building || tags['building:part'] || (isFerrisWheel ? 'observation_wheel' : 'yes');
+    const btype = String(tags.building || tags['building:part'] || (isFerrisWheel ? 'observation_wheel' : 'yes')).toLowerCase().trim();
     let name = tags.name || tags['name:en'] || tags['name:pl'] || tags['addr:housename'] || '';
     if (/[\u0600-\u06FF\u3040-\u30FF\u4E00-\u9FFF]/.test(name) && tags['name:en']) name = tags['name:en'];
     if (!name && tags['addr:street']) name = `${tags['addr:street']} ${tags['addr:housenumber'] || ''}`.trim();
@@ -318,16 +419,100 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
     const minLevel = parseFloatTagJS(tags['building:min_level'], 0.0) || 0.0;
     if (!isFerrisWheel && minH === 0.0 && minLevel > 0) minH = minLevel * 3.3;
 
+    // Skip thin floating horizontal ornamental crossbars on towers/spires (e.g. cross arms at minH >= 15m)
+    if (isPart && minH >= 15.0 && explicitH !== null &&
+        (explicitH - minH) > 0 && (explicitH - minH) <= 1.5 &&
+        rawMaxSpanM <= 4.0 && rawMinSpanM <= 1.6) {
+      return;
+    }
+
     const isChurch = btype === 'church' || btype === 'cathedral' || btype === 'chapel' ||
       tags.amenity === 'place_of_worship' ||
       (!isPart && /(kirche|kościół|bazylika|katedra|church|cathedral)/i.test(name));
     const isTower = btype === 'tower' || btype === 'bell_tower' || btype === 'water_tower' ||
       ['tower', 'chimney', 'lighthouse'].includes(tags.man_made) || Boolean(tags['tower:type']) || isFerrisWheel;
 
+    const circ = computeRingRadialCircularityJS(outer, minX, maxX, minY, maxY, cx, cy);
+    const aspect = rawMaxSpanM / Math.max(0.5, rawMinSpanM);
+    const isCircularDrumShape = outer.length >= 10 && circ.rCv <= 0.065 && circ.isoperimetric >= 0.86 &&
+      aspect <= 1.20 && rawMinSpanM >= 8.0 && rawMaxSpanM <= 34.0;
+
+    let isRotundaDrum = false;
+    if (isPart && !isTower && !isFerrisWheel && h === null && levels === null && isCircularDrumShape) {
+      const grpSpanM = (_contextState && groupId !== null && _contextState.groupMaxSpanM.get(groupId)) || 0;
+      const hasLargerComplex = grpSpanM >= rawMaxSpanM * 1.8 ||
+        Boolean(_contextState && _contextState.hasLargerComplexNear(cx, cy, rawMaxSpanM * 1.8));
+      if (hasLargerComplex) isRotundaDrum = true;
+    }
+
     const rawRoof = String(tags['roof:shape'] || '').toLowerCase().trim();
+    const hasExplicitRoofH = Boolean(tags['roof:height'] !== undefined || tags['roof:levels'] !== undefined);
     let roof = rawRoof ? (ROOF_SHAPES_NORM[rawRoof] || 'flat') : ((isChurch && !isPart && areaU > 6.0) ? 'gabled' : 'flat');
     const roofOrient = String(tags['roof:orientation'] || '').toLowerCase().trim() === 'across' ? 'across' : 'along';
     const roofDir = parseRoofDirectionJS(tags);
+
+    const startMatch = tags.start_date ? String(tags.start_date).match(/\b(1[0-9]{3})\b/) : null;
+    const startYear = startMatch ? parseInt(startMatch[1], 10) : NaN;
+    const histTag = String(tags.historic || '').toLowerCase().trim();
+    const isExplicitHistoric = Boolean(histTag && !['memorial', 'monument', 'archaeological_site', 'ruins'].includes(histTag)) ||
+      (Number.isFinite(startYear) && startYear > 0 && startYear < 1945) ||
+      tags['building:material'] === 'timber_framing' ||
+      HISTORIC_ARCH_RE_JS.test(String(tags['building:architecture'] || ''));
+
+    const isNonTradType = [
+      'industrial', 'warehouse', 'hangar', 'commercial', 'office', 'retail_park', 'supermarket',
+      'parking', 'garages', 'garage', 'roof', 'shed', 'kiosk', 'containers', 'bridge',
+      'train_station', 'transportation', 'hospital', 'university'
+    ].includes(btype);
+
+    const isPitchEligibleType = ![
+      'industrial', 'warehouse', 'hangar', 'parking', 'garages', 'garage', 'roof', 'shed',
+      'kiosk', 'containers', 'bridge', 'train_station', 'transportation'
+    ].includes(btype);
+
+    const isFinialPinnacle = isPart && !rawRoof && !isFerrisWheel && rawMaxSpanM <= 2.2 && (explicitH || 0) >= 18.0 &&
+      (['gold', 'copper', 'metal', 'bronze'].includes(String(tags['building:material'] || '').toLowerCase()) || rawMinSpanM <= 1.2);
+
+    const isCivicPitchCandidate = !isPart && !rawRoof && !isTower && !isFerrisWheel &&
+      (isExplicitHistoric || CIVIC_TRAD_TYPES_JS.has(btype) || tags.amenity === 'townhall' || tags.amenity === 'place_of_worship') &&
+      isPitchEligibleType &&
+      ((isExplicitHistoric || tags.amenity === 'townhall' || isChurch)
+        ? ((rawMinSpanM <= 36.0 && areaM2 <= 3200.0) || (wingSpanM <= 56.0 && rawMinSpanM <= 88.0 && areaM2 <= 9500.0) || (isExplicitHistoric && holes && holes.length > 0 && wingSpanM <= 38.0 && rawMinSpanM <= 140.0 && areaM2 <= 15000.0))
+        : (rawMinSpanM <= 32.0 && areaM2 <= 1800.0 && (explicitH === null || explicitH <= 32.0) && (levels === null || levels <= 7)));
+
+    const isHistoricOriel = isPart && !rawRoof && !isFerrisWheel && btype === 'oriel' && isExplicitHistoric && rawMaxSpanM <= 8.0;
+
+    const isHistoricPartTurret = isPart && !rawRoof && !isFerrisWheel && !isFinialPinnacle && !isRotundaDrum && !isHistoricOriel &&
+      minH <= 0.5 && isExplicitHistoric && isPitchEligibleType &&
+      rawMaxSpanM <= 12.0 && aspect <= 1.35 && (isTower || btype === 'yes' || btype === 'turret' || btype === 'tower');
+
+    const isHistoricWingPart = isPart && !rawRoof && !isTower && !isFerrisWheel && !isHistoricOriel &&
+      minH <= 0.5 && isExplicitHistoric && isPitchEligibleType && !isNonTradType && !isHistoricPartTurret &&
+      wingSpanM <= 38.0 && rawMinSpanM <= 78.0 && areaM2 >= 20.0 && areaM2 <= 9500.0 &&
+      (explicitH === null || explicitH <= 36.0) && (levels === null || levels <= 8);
+
+    const nearHistCount = (!isPart && !rawRoof && !isTower && !isFerrisWheel && !isCivicPitchCandidate && _contextState)
+      ? _contextState.countHistoricAnchorsNear(cx, cy, 95.0 * mToU)
+      : 0;
+    const isOldTownPlot = !isPart && !rawRoof && !isTower && !isFerrisWheel && !isNonTradType &&
+      areaM2 >= 22.0 && areaM2 <= 540.0 && rawMinSpanM >= 4.0 && rawMinSpanM <= 17.5 && rawMaxSpanM <= 38.0 &&
+      (levels === null || levels <= 6) && (explicitH === null || explicitH <= 26.0) &&
+      nearHistCount >= 3;
+
+    // Infer roofs for finials, rotundas, historic spires, historic civic halls & old-town quarters
+    if (isFinialPinnacle) {
+      roof = 'cone';
+    } else if (isRotundaDrum && !rawRoof) {
+      roof = 'cone';
+    } else if (!rawRoof && (isTower || isHistoricPartTurret) && !isFerrisWheel && rawMaxSpanM <= 16.0) {
+      const tType = String(tags['tower:type'] || '').toLowerCase().trim();
+      const histArch = HISTORIC_ARCH_RE_JS.test(String(tags['building:architecture'] || ''));
+      if (isHistoricPartTurret || isExplicitHistoric || histArch || ['bell_tower', 'defensive', 'church', 'watchtower'].includes(tType) || btype === 'bell_tower') {
+        roof = (circ.rCv <= 0.08 && outer.length >= 10) ? 'cone' : 'pyramidal';
+      }
+    } else if ((isCivicPitchCandidate || isHistoricWingPart || isHistoricOriel || isOldTownPlot) && !rawRoof && roof === 'flat') {
+      roof = (isHistoricOriel || areaM2 > 900.0 || rawMinSpanM > 20.0 || (holes && holes.length > 0)) ? 'hipped' : 'gabled';
+    }
 
     let roofH = 0.0;
     if (roof !== 'flat') {
@@ -335,8 +520,15 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       const roofLvlTag = parseFloatTagJS(tags['roof:levels'], null);
       if (roofHTag !== null) roofH = roofHTag;
       else if (roofLvlTag !== null) roofH = roofLvlTag * 3.1;
-      else roofH = Math.min(minSpanM * 0.42, 10.0);
+      else if (isFinialPinnacle) roofH = Math.min(Math.max(1.8, rawMinSpanM * 2.2), Math.max(2.0, ((explicitH || 20) - minH) * 0.45));
+      else if (isRotundaDrum) roofH = Math.round(Math.max(2.0, minSpanM * 0.14) * 10) / 10;
+      else if ((isTower || isHistoricPartTurret) && (roof === 'cone' || roof === 'pyramidal')) roofH = Math.min(Math.max(4.0, minSpanM * 1.15), 11.0);
+      else if (isHistoricOriel) roofH = Math.min(Math.max(1.2, effPitchSpanM * 0.65), 3.2);
+      else if (isCivicPitchCandidate || isHistoricWingPart || isOldTownPlot) roofH = Math.round(Math.min(Math.max(3.6, effPitchSpanM * 0.52), 8.5) * 10) / 10;
+      else roofH = Math.min(effPitchSpanM * 0.42, 10.0);
     }
+
+    const heightSource = explicitH !== null ? 'explicit_height' : (levels !== null ? 'levels' : 'estimated_default');
 
     if (h === null) {
       if (isFerrisWheel) {
@@ -344,19 +536,41 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       } else if (levels !== null) {
         h = levels * 3.55 + roofH;
       } else if (isPart) {
-        let baseEst = Math.min(18.0, Math.max(5.5, minSpanM * 1.45));
-        if (parentHeightHint !== null) baseEst = Math.min(baseEst, parentHeightHint * 0.65);
+        let baseEst;
+        if (isRotundaDrum) {
+          baseEst = Math.max(20.0, Math.min(25.0, minSpanM * 1.15));
+        } else if (rawMaxSpanM >= 35.0 || areaM2 >= 500.0 || aspect >= 2.2) {
+          baseEst = Math.min(12.5, Math.max(7.5, minSpanM * 0.65));
+        } else {
+          baseEst = Math.min(18.0, Math.max(5.5, minSpanM * 1.45));
+        }
+        if (parentHeightHint !== null && !isRotundaDrum) baseEst = Math.min(baseEst, parentHeightHint * 0.65);
         h = baseEst + roofH;
       } else if (isChurch) {
         h = 26.0 + roofH;
       } else if (isTower) {
-        h = 44.0 + roofH;
+        const tType = String(tags['tower:type'] || '').toLowerCase().trim();
+        let baseTowerH;
+        if (tType === 'communication' || tType === 'observation') {
+          baseTowerH = Math.min(65.0, Math.max(28.0, minSpanM * 4.5));
+        } else if (tType === 'bell_tower' || btype === 'bell_tower') {
+          baseTowerH = Math.min(35.0, Math.max(18.0, minSpanM * 3.4));
+        } else if (tType === 'defensive' || histTag === 'tower' || histTag === 'city_gate' || histTag === 'castle_wall') {
+          baseTowerH = Math.min(22.0, Math.max(12.0, minSpanM * 2.7));
+        } else {
+          baseTowerH = Math.min(28.0, Math.max(14.0, minSpanM * 3.0));
+        }
+        h = baseTowerH + roofH;
       } else {
         const rawId = parseInt(String(osmId).replace(/\D/g, ''), 10) || 1;
         const hash5 = ((Math.abs(rawId) * 2654435761) >>> 0) % 5;
         const deltaH = (hash5 - 2) * 0.85;
         let baseEst;
-        if (['public', 'civic', 'museum', 'university', 'palace', 'government', 'train_station', 'hotel'].includes(btype)) {
+        if ((isExplicitHistoric || isOldTownPlot) && CIVIC_TRAD_TYPES_JS.has(btype)) {
+          baseEst = Math.min(14.5, Math.max(11.0, rawMinSpanM * 1.02)) + deltaH * 0.7;
+        } else if (isOldTownPlot && !['hotel', 'university'].includes(btype)) {
+          baseEst = Math.min(14.0, Math.max(9.5, rawMinSpanM * 1.05)) + deltaH;
+        } else if (['public', 'civic', 'museum', 'university', 'palace', 'government', 'train_station', 'hotel'].includes(btype)) {
           baseEst = (btype === 'museum' && areaU > 250.0 ? 14.5 : 21.0) + deltaH;
         } else if (['house', 'detached', 'semidetached_house', 'terrace', 'bungalow'].includes(btype)) {
           baseEst = 8.5 + deltaH;
@@ -380,8 +594,10 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
 
     if (roof !== 'flat') {
       const availH = Math.max(0.0, h - minH - 0.8);
-      if (['dome', 'onion', 'cone', 'pyramidal'].includes(roof)) {
+      if (['dome', 'onion', 'cone', 'pyramidal', 'round'].includes(roof)) {
         roofH = Math.min(roofH, availH, Math.max(minSpanM * 1.15, 3.0));
+      } else if (hasExplicitRoofH || isCivicPitchCandidate || isOldTownPlot) {
+        roofH = Math.min(roofH, availH, h * 0.55, minSpanM * 0.62);
       } else {
         roofH = Math.min(roofH, availH, h * 0.45, minSpanM * 0.55);
       }
@@ -403,6 +619,9 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       roof,
       roofH: Math.round(roofH * 10) / 10,
       roofOrient,
+      hasExplicitRoofH,
+      isRotundaDrum,
+      heightSource,
       part: Boolean(isPart && !isFerrisWheel),
       isOutline: false,
       archType: archType || null,
@@ -740,6 +959,76 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       }
       return false;
     };
+
+    const buildSpatialContext = () => {
+      const mToU = Math.max(1e-4, metersToUnits);
+      const cellU = Math.max(1e-3, 80.0 * mToU);
+      const histCells = new Map();
+      const groupMaxSpanM = new Map();
+      const largeComplexes = [];
+
+      const indexRec = (rec) => {
+        const metrics = computeRecordMetricsM(rec.pts);
+        const gid = rec.groupId;
+        if (gid !== null && gid !== undefined) {
+          const prev = groupMaxSpanM.get(gid) || 0;
+          if (metrics.rawMaxSpanM > prev) groupMaxSpanM.set(gid, metrics.rawMaxSpanM);
+        }
+        if (metrics.rawMaxSpanM >= 35.0 || metrics.areaM2 >= 500.0) {
+          largeComplexes.push({ bbox: rec.bbox, maxSpanM: metrics.rawMaxSpanM });
+        }
+        if ((!rec.isPart || rec.tags['roof:shape']) && isHistoricAnchorTagsJS(rec.tags, metrics.areaM2)) {
+          const gx = Math.floor(rec.cx / cellU);
+          const gy = Math.floor(rec.cy / cellU);
+          const key = `${gx}_${gy}`;
+          let arr = histCells.get(key);
+          if (!arr) histCells.set(key, arr = []);
+          arr.push([rec.cx, rec.cy]);
+        }
+      };
+
+      for (const par of candidateParents) indexRec(par);
+      for (const pt of candidateParts) indexRec(pt);
+
+      const countHistoricAnchorsNear = (cx, cy, radiusScene) => {
+        const r = Math.max(1e-4, radiusScene);
+        const rSq = r * r;
+        const gMinX = Math.floor((cx - r) / cellU);
+        const gMaxX = Math.floor((cx + r) / cellU);
+        const gMinY = Math.floor((cy - r) / cellU);
+        const gMaxY = Math.floor((cy + r) / cellU);
+        let cnt = 0;
+        for (let gy = gMinY; gy <= gMaxY; gy++) {
+          for (let gx = gMinX; gx <= gMaxX; gx++) {
+            const arr = histCells.get(`${gx}_${gy}`);
+            if (!arr) continue;
+            for (let k = 0; k < arr.length; k++) {
+              const dx = arr[k][0] - cx, dy = arr[k][1] - cy;
+              const dSq = dx * dx + dy * dy;
+              if (dSq > 1e-6 && dSq <= rSq) cnt++;
+            }
+          }
+        }
+        return cnt;
+      };
+
+      const padU = 25.0 * mToU;
+      const hasLargerComplexNear = (cx, cy, minReqSpanM) => {
+        for (let i = 0; i < largeComplexes.length; i++) {
+          const lc = largeComplexes[i];
+          if (lc.maxSpanM < minReqSpanM) continue;
+          const b = lc.bbox;
+          if (cx >= b[0] - padU && cx <= b[2] + padU && cy >= b[1] - padU && cy <= b[3] + padU) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      return { groupMaxSpanM, countHistoricAnchorsNear, hasLargerComplexNear };
+    };
+
+    _contextState = buildSpatialContext();
 
     for (const part of candidateParts) {
       if (isWheelSuppressedAux(part)) {

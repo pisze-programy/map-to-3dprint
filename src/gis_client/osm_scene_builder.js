@@ -187,9 +187,9 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     : `[out:json][timeout:14][bbox:${bbox}];` +
       `(relation["building"];relation["type"="building"];relation["building:part"];relation["man_made"="bridge"];relation["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];)->.brels;` +
       `(.brels;>;)->.ball;` +
-      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"];relation["type"="multipolygon"]["leisure"];relation["type"="multipolygon"]["highway"="pedestrian"];)->.grels;` +
+      `(relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath)$"];relation["type"="multipolygon"]["waterway"~"^(riverbank|dock|canal)$"];relation["type"="multipolygon"]["water"];relation["type"="multipolygon"]["landuse"];relation["type"="multipolygon"]["leisure"];relation["type"="multipolygon"]["highway"="pedestrian"];relation["type"="multipolygon"]["railway"="platform"];relation["type"="multipolygon"]["public_transport"="platform"];)->.grels;` +
       `way(r.grels)(${bbox})->.gways;` +
-      `(way["building"];way["building:part"];way["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["man_made"~"^(bridge|pier|breakwater|groyne)$"];.gways;)->.wbox;` +
+      `(way["building"];way["building:part"];way["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];way["natural"];way["waterway"];way["water"];way["landuse"];way["leisure"];way["highway"];way["place"="square"];way["railway"];way["public_transport"="platform"];way["man_made"~"^(bridge|pier|breakwater|groyne)$"];.gways;)->.wbox;` +
       `(relation.ball;.grels;.wbox;way.ball;node["natural"="tree"];);out body qt;` +
       `(node(w.wbox);node.ball;);out skel qt;`;
 

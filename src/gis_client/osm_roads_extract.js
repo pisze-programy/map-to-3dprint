@@ -19,14 +19,44 @@ const MOTOR_ROAD_VALS_JS = new Set([
   'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link'
 ]);
 
-function isUndergroundOsmRoadOrPlazaJS(tags) {
+function _hasAllNegRoadLevelJS(tags) {
+  if (!tags || tags.level === undefined || tags.level === null || tags.level === '') return false;
+  const nums = String(tags.level)
+    .split(/[;,]/)
+    .map(s => parseFloat(s.trim().replace(',', '.')))
+    .filter(Number.isFinite);
+  return nums.length > 0 && nums.every(v => v < 0);
+}
+
+function isSurfaceRailPlatformJS(tags) {
   if (!tags) return false;
-  const tun = String(tags.tunnel || '').trim().toLowerCase();
-  if (tun && !['no', 'false', '0', 'none'].includes(tun)) return true;
-  if (tags.covered === 'yes' || tags.indoor === 'yes') return true;
-  if (tags.location === 'underground' || tags.parking === 'underground') return true;
+  if (tags.subway === 'yes' || tags.station === 'subway' || tags.location === 'underground') return false;
+  if (_hasAllNegRoadLevelJS(tags)) return false;
   const layerVal = Math.trunc(parseFloatTagJS(tags.layer, 0) || 0);
-  return layerVal < 0;
+  if (layerVal < 0) return false;
+  if (tags.railway === 'platform') return true;
+  if (tags.public_transport === 'platform') {
+    const hwVal = String(tags.highway || '').toLowerCase();
+    const busVal = String(tags.bus || '').toLowerCase();
+    if (busVal === 'yes' || hwVal === 'bus_stop' || hwVal === 'platform') return false;
+    return Boolean(tags.train === 'yes' || tags.tram === 'yes' || tags.light_rail === 'yes' || !tags.highway);
+  }
+  return false;
+}
+
+function isUndergroundOsmRoadOrPlazaJS(tags, allowSurfaceCoveredRail = false) {
+  if (!tags) return false;
+  if (tags.location === 'underground' || tags.parking === 'underground') return true;
+  if (_hasAllNegRoadLevelJS(tags)) return true;
+  const layerVal = Math.trunc(parseFloatTagJS(tags.layer, 0) || 0);
+  if (layerVal < 0) return true;
+  if (tags.indoor === 'yes') return true;
+  const tun = String(tags.tunnel || '').trim().toLowerCase();
+  if (tun && !['no', 'false', '0', 'none'].includes(tun)) {
+    if (!(allowSurfaceCoveredRail && tun === 'building_passage')) return true;
+  }
+  if (tags.covered === 'yes' && !allowSurfaceCoveredRail) return true;
+  return false;
 }
 
 function collectOsmRoadSampleCandidateJS(w, wt, wn, isBrWay, isTunWay, nodes, fetchHalfW, fetchHalfH, allRoadCandidates) {
@@ -47,13 +77,15 @@ function collectOsmRoadSampleCandidateJS(w, wt, wn, isBrWay, isTunWay, nodes, fe
 function isOsmPlazaMultipolygonJS(tags) {
   return Boolean(
     (['pedestrian', 'footway', 'living_street'].includes(tags.highway) && tags.area !== 'no') ||
-    tags.place === 'square'
+    tags.place === 'square' ||
+    (isSurfaceRailPlatformJS(tags) && tags.area !== 'no')
   );
 }
 
 function processOsmPlazaMultipolygonJS(rel, tags, raw, ctx) {
   if (!isOsmPlazaMultipolygonJS(tags)) return false;
-  if (isUndergroundOsmRoadOrPlazaJS(tags)) {
+  const isPlatform = isSurfaceRailPlatformJS(tags);
+  if (isUndergroundOsmRoadOrPlazaJS(tags, isPlatform)) {
     for (const wid of raw.memberWayIds) ctx.usedWays.add(wid);
     return true;
   }
@@ -96,12 +128,14 @@ function processOsmPlazaMultipolygonJS(rel, tags, raw, ctx) {
 }
 
 function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
+  const isRailPlatform = isSurfaceRailPlatformJS(tags);
   const isPlazaAreaWay = isClosed && !ctx.usedWays.has(wid) && (
     tags.place === 'square' ||
+    isRailPlatform ||
     (['pedestrian', 'footway', 'living_street', 'service', 'residential', 'unclassified'].includes(tags.highway) && tags.area === 'yes')
   );
   if (isPlazaAreaWay) {
-    if (isUndergroundOsmRoadOrPlazaJS(tags)) return true;
+    if (isUndergroundOsmRoadOrPlazaJS(tags, isRailPlatform)) return true;
     const pts = ctx.nodesToPts(nids, 0.025);
     if (pts.length >= 3) {
       ctx.roadPolys.push({
@@ -109,29 +143,33 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
         holes: [],
         name: tags.name || '',
         isSquare: Boolean(tags.place === 'square' && !tags.highway),
-        hwy: tags.highway || ''
+        hwy: tags.highway || (isRailPlatform ? 'platform' : '')
       });
       return true;
     }
   }
 
-  if (tags.highway || tags.railway || ['bridge', 'pier', 'breakwater', 'groyne'].includes(tags.man_made)) {
+  if (tags.highway || tags.railway || isRailPlatform || ['bridge', 'pier', 'breakwater', 'groyne'].includes(tags.man_made)) {
     const isBridge = (typeof isOsmLinearBridgeOrPierWayJS === 'function')
       ? isOsmLinearBridgeOrPierWayJS(tags)
       : Boolean((tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge)) || ['bridge', 'pier', 'breakwater', 'groyne'].includes(tags.man_made));
 
-    if (!isBridge && isUndergroundOsmRoadOrPlazaJS(tags)) return true;
+    const isSurfaceRailTrack = ['rail', 'light_rail', 'tram', 'narrow_gauge', 'funicular'].includes(tags.railway);
+    if (!isBridge && isUndergroundOsmRoadOrPlazaJS(tags, isSurfaceRailTrack || isRailPlatform)) return true;
     const layerVal = Math.trunc(parseFloatTagJS(tags.layer, 0) || 0);
     if (layerVal < 0 || (tags.man_made === 'bridge' && isClosed)) return true;
 
-    const hwy = tags.highway || tags.railway || tags.man_made || 'bridge';
-    if (['proposed', 'construction', 'platform', 'bus_stop', 'elevator', 'rest_area', 'raceway', 'escape'].includes(hwy)) return true;
+    const hwy = tags.highway || tags.railway || (isRailPlatform ? 'platform' : '') || tags.man_made || 'bridge';
+    if (['proposed', 'construction', 'bus_stop', 'elevator', 'rest_area', 'raceway', 'escape'].includes(hwy)) return true;
+    if (hwy === 'platform' && !isRailPlatform) return true;
     if (['subway', 'monorail'].includes(hwy) && !isBridge) return true;
 
     const isPath = ['footway', 'path', 'cycleway', 'steps', 'bridleway', 'track', 'corridor'].includes(hwy);
 
     let rwm = 6.2;
-    if (isPath) {
+    if (isRailPlatform) {
+      rwm = 4.8;
+    } else if (isPath) {
       const spanM = (ctx && ctx.effectiveSpanM) ? ctx.effectiveSpanM : 1200;
       const minBldM = (ctx && typeof ctx.minBldFootprintM === 'number') ? ctx.minBldFootprintM : 0;
       const keepCrossingOrIsland = spanM <= 4200;
