@@ -29,7 +29,10 @@ def build():
         "src/geometry/manifold_core.js",
         # 3. 3-Layer Manifold Mesh Pipeline & Export/Topology Primitives
         "src/mesh/mesh_primitives.js",
-        "src/mesh/mesh_clipper_3d.js",
+        "src/mesh/frame_csg_solver.js",
+        "src/mesh/tile_id_emboss.js",
+        "src/mesh/tile_sla_vault_solver.js",
+        "src/mesh/global_invariants_auditor.js",
         "src/mesh/terrain_delatin_water.js",
         "src/mesh/terrain_surface_drape.js",
         "src/mesh/layer1_terrain_water.js",

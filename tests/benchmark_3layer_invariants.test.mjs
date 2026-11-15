@@ -119,6 +119,10 @@ async function runSuite() {
       'src/mesh/lattice_and_structures_solver.js',
       'src/mesh/tree_scatter_solver.js',
       'src/mesh/layer2_archetypes.js',
+      'src/mesh/frame_csg_solver.js',
+      'src/mesh/tile_id_emboss.js',
+      'src/mesh/tile_sla_vault_solver.js',
+      'src/mesh/global_invariants_auditor.js',
       'src/mesh/layer3_invariants_tiles.js',
       'src/mesh/mesh_builder.js',
       'src/gis_client/s3db_unit_parser.js',
@@ -290,7 +294,7 @@ async function runSuite() {
   {
     const scene = {
       spanMeters: 700,
-      dem: { grid: [[8, 9, 8], [7, 2, 7], [8, 9, 8]], minElev: 2, maxElev: 9 },
+      dem: { grid: [[28, 32, 28], [24, 2, 24], [28, 32, 28]], minElev: 2, maxElev: 32 },
       waterPolys: [{ outer: [[-84, -14], [84, -14], [84, 14], [-84, 14]], holes: [] }],
       waterLines: [],
       greenPolys: [{ outer: [[-65, 25], [-20, 25], [-20, 65], [-65, 65]], holes: [] }],

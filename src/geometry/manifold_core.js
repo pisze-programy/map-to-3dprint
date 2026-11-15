@@ -375,6 +375,92 @@
     }
   }
 
+  function trianglesToShellManifolds(mf, tris) {
+    if (!mf || !Array.isArray(tris) || tris.length === 0) return [];
+    const groups = new Map();
+    for (let i = 0; i < tris.length; i++) {
+      const t = tris[i];
+      const key = `${t.mBatch !== undefined ? t.mBatch : -1}|${t.layerId ?? 0}|${t.tileId ?? 0}|${t.shellId ?? 0}`;
+      let arr = groups.get(key);
+      if (!arr) { arr = []; groups.set(key, arr); }
+      arr.push(t);
+    }
+    const solids = [];
+    for (const gTris of groups.values()) {
+      let man = null;
+      const allBatch = gTris.every(t => t.mBatch !== undefined && t.vi0 !== undefined && t.vi1 !== undefined && t.vi2 !== undefined);
+      if (allBatch) {
+        const viToIdx = new Map();
+        const pos = [];
+        const idx = new Uint32Array(gTris.length * 3);
+        let nIdx = 0;
+        const regVert = (vi, v) => {
+          let li = viToIdx.get(vi);
+          if (li === undefined) {
+            li = pos.length / 3;
+            viToIdx.set(vi, li);
+            pos.push(v[0], v[1], v[2]);
+          }
+          return li;
+        };
+        for (let i = 0; i < gTris.length; i++) {
+          const t = gTris[i];
+          const a = regVert(t.vi0, t.v0), b = regVert(t.vi1, t.v1), c = regVert(t.vi2, t.v2);
+          if (a === b || b === c || c === a) continue;
+          idx[nIdx++] = a; idx[nIdx++] = b; idx[nIdx++] = c;
+        }
+        if (nIdx >= 12) {
+          try {
+            const mesh = new mf.Mesh({
+              numProp: 3,
+              vertProperties: new Float32Array(pos),
+              triVerts: nIdx === idx.length ? idx : idx.subarray(0, nIdx),
+            });
+            man = new mf.Manifold(mesh);
+            if (man.status() !== 'NoError' || man.numTri() === 0) {
+              safeDeleteManifold(man);
+              man = null;
+            }
+          } catch (_) {
+            safeDeleteManifold(man);
+            man = null;
+          }
+        }
+      }
+      if (!man) {
+        const vMap = new Map();
+        const pos = [];
+        const idx = [];
+        const regPt = (p) => {
+          const x = Math.fround(p[0]), y = Math.fround(p[1]), z = Math.fround(p[2]);
+          const k = `${Math.round(x * 1e5)},${Math.round(y * 1e5)},${Math.round(z * 1e5)}`;
+          let li = vMap.get(k);
+          if (li === undefined) {
+            li = pos.length / 3;
+            vMap.set(k, li);
+            pos.push(x, y, z);
+          }
+          return li;
+        };
+        for (let i = 0; i < gTris.length; i++) {
+          const t = gTris[i];
+          const a = regPt(t.v0), b = regPt(t.v1), c = regPt(t.v2);
+          if (a === b || b === c || c === a) continue;
+          idx.push(a, b, c);
+        }
+        if (idx.length >= 12) {
+          man = manifoldFromRawSoup(mf, new Float32Array(pos), new Uint32Array(idx), 1e-4);
+        }
+      }
+      if (man && man.numTri() > 0 && man.volume() > 1e-9) {
+        solids.push(man);
+      } else {
+        safeDeleteManifold(man);
+      }
+    }
+    return solids;
+  }
+
   function boxManifoldFromBounds(mf, minX, maxX, minY, maxY, minZ, maxZ) {
     const dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
     if (dx <= 1e-5 || dy <= 1e-5 || dz <= 1e-5) return null;
@@ -460,6 +546,112 @@
       added++;
     }
     return added;
+  }
+
+  // Convert a Manifold to STL triangles while separating pinched/near-coincident vertices
+  // so Float32 serialization preserves strict 0-open, 0-non-manifold, 0-degenerate topology.
+  function extractDePinchedStlTriangles(mf, man, tid = 0, scaleMm = 1) {
+    if (!man || man.numTri() === 0) return [];
+    const scMm = Math.max(1e-4, Number(scaleMm) || 1);
+    let src = man, ownsSrc = false;
+    if (typeof man.simplify === 'function') {
+      try {
+        const tol = Math.max(1e-5, Math.min(1e-3, 0.0015 / scMm));
+        const simp = man.simplify(tol);
+        if (simp && simp.numTri() > 0) { src = simp; ownsSrc = true; }
+        else safeDeleteManifold(simp);
+      } catch (_) {}
+    }
+    const m = src.getMesh();
+    const rawVp = m.vertProperties, tv = m.triVerts, np = m.numProp || 3;
+    const nv = Math.floor(rawVp.length / np), nTri = Math.floor(tv.length / 3);
+    const vp = new Float64Array(nv * 3);
+    for (let v = 0; v < nv; v++) {
+      vp[v * 3] = rawVp[v * np];
+      vp[v * 3 + 1] = rawVp[v * np + 1];
+      vp[v * 3 + 2] = rawVp[v * np + 2];
+    }
+
+    const vNorm = new Float64Array(nv * 3);
+    for (let t = 0; t < nTri; t++) {
+      const i0 = tv[t * 3], i1 = tv[t * 3 + 1], i2 = tv[t * 3 + 2];
+      const a = i0 * 3, b = i1 * 3, c = i2 * 3;
+      const ux = vp[b] - vp[a], uy = vp[b + 1] - vp[a + 1], uz = vp[b + 2] - vp[a + 2];
+      const vx = vp[c] - vp[a], vy = vp[c + 1] - vp[a + 1], vz = vp[c + 2] - vp[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      vNorm[a] += nx; vNorm[a + 1] += ny; vNorm[a + 2] += nz;
+      vNorm[b] += nx; vNorm[b + 1] += ny; vNorm[b + 2] += nz;
+      vNorm[c] += nx; vNorm[c + 1] += ny; vNorm[c + 2] += nz;
+    }
+
+    const cellU = 0.001 / scMm, shiftU = 0.0015 / scMm;
+    const minDistSq = (cellU * 0.5) * (cellU * 0.5);
+    const grid = new Map();
+    const cellKey = (x, y, z) => `${Math.floor(x / cellU)},${Math.floor(y / cellU)},${Math.floor(z / cellU)}`;
+    const hasCloseVert = (x, y, z) => {
+      const cx = Math.floor(x / cellU), cy = Math.floor(y / cellU), cz = Math.floor(z / cellU);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            const list = grid.get(`${cx + dx},${cy + dy},${cz + dz}`);
+            if (!list) continue;
+            for (let k = 0; k < list.length; k++) {
+              const oi = list[k] * 3;
+              const ddx = x - vp[oi], ddy = y - vp[oi + 1], ddz = z - vp[oi + 2];
+              if (ddx * ddx + ddy * ddy + ddz * ddz < minDistSq) return true;
+            }
+          }
+        }
+      }
+      return false;
+    };
+
+    for (let v = 0; v < nv; v++) {
+      const b = v * 3;
+      let x = vp[b], y = vp[b + 1], z = vp[b + 2];
+      const origZ = z;
+      if (hasCloseVert(x, y, z)) {
+        const nx = vNorm[b], ny = vNorm[b + 1], nz = vNorm[b + 2];
+        const dirs = [[nx, ny, nz], [nx, ny, 0], [1, 0, 0], [0, 1, 0], [0, 0, origZ <= shiftU * 2 ? -1 : 1]];
+        outer: for (let di = 0; di < dirs.length; di++) {
+          let [dx, dy, dz] = dirs[di];
+          const dl = Math.hypot(dx, dy, dz);
+          if (dl < 1e-9) continue;
+          dx /= dl; dy /= dl; dz /= dl;
+          for (let step = 1; step <= 8; step++) {
+            const tx = vp[b] - dx * shiftU * step;
+            const ty = vp[b + 1] - dy * shiftU * step;
+            const tz = vp[b + 2] - dz * shiftU * step;
+            if (origZ >= 0 && tz < 0) continue;
+            if (!hasCloseVert(tx, ty, tz)) { x = tx; y = ty; z = tz; break outer; }
+          }
+        }
+        vp[b] = x; vp[b + 1] = y; vp[b + 2] = z;
+      }
+      const ck = cellKey(x, y, z);
+      let arr = grid.get(ck);
+      if (!arr) { arr = []; grid.set(ck, arr); }
+      arr.push(v);
+    }
+
+    const out = [];
+    for (let t = 0; t < nTri; t++) {
+      const i0 = tv[t * 3], i1 = tv[t * 3 + 1], i2 = tv[t * 3 + 2];
+      if (i0 === i1 || i1 === i2 || i2 === i0) continue;
+      const b0 = i0 * 3, b1 = i1 * 3, b2 = i2 * 3;
+      const x0 = vp[b0], y0 = vp[b0 + 1], z0 = vp[b0 + 2];
+      const x1 = vp[b1], y1 = vp[b1 + 1], z1 = vp[b1 + 2];
+      const x2 = vp[b2], y2 = vp[b2 + 1], z2 = vp[b2 + 2];
+      const ux = x1 - x0, uy = y1 - y0, uz = z1 - z0;
+      const vx = x2 - x0, vy = y2 - y0, vz = z2 - z0;
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const nl = Math.hypot(nx, ny, nz);
+      if (nl >= 1e-18 && Number.isFinite(nl)) { nx /= nl; ny /= nl; nz /= nl; }
+      else { nx = 0; ny = 0; nz = 1; }
+      out.push({ v0: [x0, y0, z0], v1: [x1, y1, z1], v2: [x2, y2, z2], n: [nx, ny, nz], layerId: 1, buildingId: -1, tileId: tid, shellId: 1 });
+    }
+    if (ownsSrc) safeDeleteManifold(src);
+    return out;
   }
 
   // Build standardized 3-Layer Build Context matching exact scene bounds & printer physics
@@ -737,9 +929,11 @@
     batchUnionManifolds,
     extrudeRingSolid,
     manifoldFromRawSoup,
+    trianglesToShellManifolds,
     boxManifoldFromBounds,
     beamManifoldBetween,
     appendManifoldToTriangles,
+    extractDePinchedStlTriangles,
     createBuildContext,
   };
 

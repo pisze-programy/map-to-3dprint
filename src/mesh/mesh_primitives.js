@@ -124,10 +124,7 @@ function emitPolygonWithHolesSlab3D(outerInput, holesInput, zBot, zTop, layerId,
     actualHoles = [];
   }
 
-  const triangulator = (typeof triangulateCutLoopExact === 'function' && actualHoles.length > 0)
-    ? triangulateCutLoopExact
-    : triangulateSimplePoly;
-  const capTris = triangulator(ring);
+  const capTris = triangulateSimplePoly(ring);
   if (!capTris || capTris.length === 0) return;
 
   for (let i = 0; i < capTris.length; i++) {

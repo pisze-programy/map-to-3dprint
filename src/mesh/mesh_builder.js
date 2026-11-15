@@ -36,11 +36,20 @@
   if (typeof emitPolygonWithHolesSlab3D === 'undefined') {
     Object.assign(g, _req('./mesh_primitives.js'));
   }
-  if (typeof clipMeshToBox3D === 'undefined') {
-    Object.assign(g, _req('./mesh_clipper_3d.js'));
-  }
   if (typeof createBuildContext === 'undefined') {
     Object.assign(g, _req('../geometry/manifold_core.js'));
+  }
+  if (typeof buildFrameSegmentsCSG === 'undefined') {
+    Object.assign(g, _req('./frame_csg_solver.js'));
+  }
+  if (typeof buildTileIdLabelPolys === 'undefined') {
+    Object.assign(g, _req('./tile_id_emboss.js'));
+  }
+  if (typeof carveTileHollowVaultAndId === 'undefined') {
+    Object.assign(g, _req('./tile_sla_vault_solver.js'));
+  }
+  if (typeof assemblePrintMetricsReport === 'undefined') {
+    Object.assign(g, _req('./global_invariants_auditor.js'));
   }
   if (typeof buildLayer1TerrainAndWater === 'undefined') {
     Object.assign(g, _req('./terrain_delatin_water.js'));

@@ -329,11 +329,11 @@ async function run() {
     silent: true,
   });
   const hpm = hollowBuilt.printMetrics;
-  console.log(`\n[HOLLOW 2x2] porto | tris=${hpm.totalTriangles} | open=${hpm.openEdgesCount} nm=${hpm.nonManifoldEdgesCount} dup=${hpm.sameDirDupEdgesCount} | drainCount=${hpm.drainCount} hasDrainChannels=${hpm.hasDrainChannels} savings=${hpm.hollowSavingsPct}%`);
+  console.log(`\n[HOLLOW 2x2] porto | tris=${hpm.totalTriangles} | open=${hpm.openEdgesCount} nm=${hpm.nonManifoldEdgesCount} dup=${hpm.sameDirDupEdgesCount} | drainCount=${hpm.drainCount} chambersKept=${hpm.hollowChambersKept} hasDrainChannels=${hpm.hasDrainChannels} savings=${hpm.hollowSavingsPct}%`);
   assert.equal(hpm.openEdgesCount, 0, 'Porto hollow 2x2 openEdges');
   assert.equal(hpm.nonManifoldEdgesCount, 0, 'Porto hollow 2x2 nonManifoldEdges');
   assert.equal(hpm.sameDirDupEdgesCount, 0, 'Porto hollow 2x2 sameDirDupEdges');
-  assert.ok(hpm.drainCount >= 2 && hpm.hasDrainChannels === true, `Expected real drainCount >= 2, got ${hpm.drainCount}`);
+  assert.ok(hpm.hollowChambersKept >= 1 && hpm.drainCount >= 2 && hpm.hasDrainChannels === true, `Expected chambersKept>=1 and real drainCount >= 2, got kept=${hpm.hollowChambersKept} drains=${hpm.drainCount}`);
 
   if (process.env.OUT_JSON) {
     fs.writeFileSync(process.env.OUT_JSON, JSON.stringify({ results, portoHollow2x2: {
