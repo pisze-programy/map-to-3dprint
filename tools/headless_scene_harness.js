@@ -29,6 +29,8 @@ const PIPELINE_SCRIPTS = [
   'src/geometry/manifold_core.js',
   'src/mesh/mesh_primitives.js',
   'src/mesh/mesh_clipper_3d.js',
+  'src/mesh/terrain_delatin_water.js',
+  'src/mesh/terrain_surface_drape.js',
   'src/mesh/layer1_terrain_water.js',
   'src/mesh/s3db_roof_revolve.js',
   'src/mesh/s3db_roof_skeleton.js',
@@ -39,6 +41,9 @@ const PIPELINE_SCRIPTS = [
   'src/mesh/bridge_deck_builder.js',
   'src/mesh/bridge_superstructure_solver.js',
   'src/mesh/layer1_bridges.js',
+  'src/mesh/waterfront_piers_solver.js',
+  'src/mesh/lattice_and_structures_solver.js',
+  'src/mesh/tree_scatter_solver.js',
   'src/mesh/layer2_archetypes.js',
   'src/mesh/layer3_invariants_tiles.js',
   'src/mesh/mesh_builder.js',
@@ -982,11 +987,11 @@ class LocalOverpassEvaluator {
     if (tags.natural && (isDetail || DETAIL_URBAN_NAT_SET.has(tags.natural))) return true;
     if (tags.landuse && (isDetail || DETAIL_LANDUSE_SET.has(tags.landuse))) return true;
     if (tags.leisure && (isDetail || DETAIL_LEISURE_SET.has(tags.leisure))) return true;
-    if (tags.highway) return true;
+    if (tags.highway || tags['area:highway']) return true;
     if (tags.place === 'square' || tags.place === 'island' || tags.place === 'islet') return true;
     if (tags.railway || tags.public_transport === 'platform') return true;
-    if (tags['bridge:support'] || (tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge))) return true;
-    if (tags.man_made && /^(bridge|pier|breakwater|groyne|tower|lighthouse)$/.test(tags.man_made)) return true;
+    if (tags['bridge:support'] || tags['tower:construction'] || (tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge))) return true;
+    if (tags.man_made && /^(bridge|pier|pontoon|breakwater|groyne|jetty|quay|tower|mast|communications_tower|lighthouse|chimney|cooling_tower|storage_tank|silo|crane|wind_turbine)$/.test(tags.man_made)) return true;
     return false;
   }
 
@@ -998,8 +1003,9 @@ class LocalOverpassEvaluator {
     if (tags.type === 'multipolygon') {
       if (tags.natural || tags.waterway || tags.water || tags.landuse || tags.leisure ||
           tags.place === 'island' || tags.place === 'islet' ||
-          tags.highway === 'pedestrian' || tags.railway === 'platform' ||
-          tags.public_transport === 'platform') {
+          tags.highway === 'pedestrian' || tags['area:highway'] ||
+          tags.man_made === 'quay' || tags.man_made === 'pier' || tags.man_made === 'pontoon' ||
+          tags.railway === 'platform' || tags.public_transport === 'platform') {
         return true;
       }
     }
@@ -2031,6 +2037,7 @@ async function loadSceneAndBuildModel(opts = {}) {
       preparedList: auditState.preparedList,
       preparedById: auditState.preparedById,
       baseInfo: auditState.baseInfo,
+      pierAudits: (model && model.audit && model.audit.pierAudits) || [],
       ctx: auditState.ctx,
     },
     runtime,

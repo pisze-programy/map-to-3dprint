@@ -243,6 +243,9 @@ async function run() {
 
     const okTopo = pm.openEdgesCount === 0 && pm.nonManifoldEdgesCount === 0 && pm.sameDirDupEdgesCount === 0 && pm.degenerateTrisCount === 0 && pm.floatingBuildingsCount === 0;
     if (!okTopo) failures++;
+    if (slug === 'eiffel_seine') {
+      assert.ok((pm.archetypeCounts?.latticeTowers || 0) >= 1, `eiffel_seine expected arch.latticeTowers >= 1, got ${JSON.stringify(pm.archetypeCounts)}`);
+    }
 
     let threeMfAudit = null;
     if (threeMfCheckSlugs.has(slug)) {

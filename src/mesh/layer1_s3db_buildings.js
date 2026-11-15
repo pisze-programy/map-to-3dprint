@@ -87,7 +87,7 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
     const rawTagById = new Map();
     for (const el of ((scene && scene.osmElements) || [])) if (el && el.id !== undefined && el.tags) rawTagById.set(el.id, el.tags);
     const padClip = 0.25, platePoly = [[[-halfW - padClip, -halfH - padClip], [halfW + padClip, -halfH - padClip], [halfW + padClip, halfH + padClip], [-halfW - padClip, halfH + padClip]]];
-    const normalGroups = new Map(), highlightGroups = new Map(), boundsOut = [], consumedArchBuildingIds = new Set();
+    const normalGroups = new Map(), highlightGroups = new Map(), boundsOut = [], consumedArchBuildingIds = new Set(), consumedArchGroups = new Set();
 
     const buildingsList = (scene && scene.buildings) || [];
     const _prepMeta = buildingsList.map((b, idx) => {
@@ -137,7 +137,7 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
       const b = buildingsList[i];
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) continue;
       const tags = Object.assign({}, rawTagById.get(b.osmId) || {}, b.tags || {});
-      if (isLayer2ArchetypeRecord(b, tags)) { if (b.id !== undefined) consumedArchBuildingIds.add(b.id); continue; }
+      if (isLayer2ArchetypeRecord(b, tags)) { if (b.id !== undefined) consumedArchBuildingIds.add(b.id); if (b.groupId != null) consumedArchGroups.add(String(b.groupId)); continue; }
       const metaP = _prepMeta[i];
       if (metaP && metaP.skip) {
         ctx.audit.preparedList.push({ id: b.id ?? (i + 1), osmId: b.osmId || null, groupId: b.groupId ?? null, name: b.name || '', btype: b.btype || 'yes', isPart: Boolean(b.part || tags['building:part']), part: Boolean(b.part), skip: true, skipReason: metaP.skipReason, preRoofShape: metaP.normRoof, roofShape: metaP.normRoof, roof: metaP.normRoof, h: metaP.rawH, minH: metaP.rawMinH, zBase: metaP.rawMinH, zTop: metaP.rawH, area: metaP.areaM2 });
@@ -191,7 +191,7 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
     }
 
     for (const c of allClusters) {
-      if (c.mergedOut || c.hasGrounded || c.records.length === 0) continue;
+      if (c.mergedOut || c.hasGrounded || c.records.length === 0 || c.records.some(r => r.groupId != null && consumedArchGroups.has(String(r.groupId)))) continue;
       for (const rc of c.records) if (rc.structured.length) {
         const anchor = core.extrudeRingSolid(mf, rc.structured[0].outer, rc.structured[0].holes, rc.zGroundSeat, rc.zBase + (0.12 / scaleMm));
         if (anchor) {
@@ -217,7 +217,7 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
           const anchor = core.extrudeRingSolid(mf, primary.structured[0].outer, primary.structured[0].holes, Math.max(0.10 / scaleMm, mGroundZ - (0.20 / scaleMm)), mbb.min[2] + (0.12 / scaleMm));
           if (anchor) { const g = merged.add(anchor); core.safeDeleteManifold(anchor); if (g && g.numTri() > 0) { core.safeDeleteManifold(merged); merged = g; mbb = merged.boundingBox(); } else core.safeDeleteManifold(g); }
         }
-        out.push({ buildingId: pickId, sourceBuildingId: primary.bId, manifold: merged, isFloatingPart: false });
+        out.push({ buildingId: pickId, sourceBuildingId: primary.bId, groupId: primary.groupId ?? null, manifold: merged, isFloatingPart: false });
         for (const r of c.records) {
           const rCx = (r.bb.min[0] + r.bb.max[0]) * 0.5, rCy = (r.bb.min[1] + r.bb.max[1]) * 0.5;
           boundsOut.push({ id: r.bId, osmId: r.osmId, name: r.name, minX: r.bb.min[0], minY: r.bb.min[1], minZ: mbb.min[2], maxX: r.bb.max[0], maxY: r.bb.max[1], maxZ: r.bb.max[2], cx: rCx, cy: rCy, interiorPt: [rCx, rCy], roof: r.roofShape, minH: r.rawMinH_m, h: r.rawH_m });

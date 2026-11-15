@@ -48,9 +48,13 @@ function _pushSupportRecJS(arr, tags, osmId, isPoint, pt, outer, pts) {
   });
 }
 
-function _pushPierAreaRecJS(ctx, outer, holes, tags) {
+function _pushPierAreaRecJS(ctx, outer, holes, tags, osmId) {
   const pierKind = getOsmPierKindJS(tags);
-  const rec = { outer, holes: holes || [], name: tags.name || 'Molo', layer: 0, isPier: true, pierKind, floating: tags.floating === 'yes' || pierKind === 'pontoon' };
+  const rec = {
+    outer, holes: holes || [], name: tags.name || 'Molo', layer: _parseBridgeSignedLayerJS(tags.layer, 0),
+    isPier: true, pierKind, floating: tags.floating === 'yes' || pierKind === 'pontoon' || tags.platform === 'floating',
+    osmId, tags
+  };
   ctx.bridgePolys.push(rec);
   if (!ctx.pierPolys) ctx.pierPolys = [];
   ctx.pierPolys.push({ ...rec, _inBridgePolys: true });
@@ -96,7 +100,7 @@ function processOsmBridgeMultipolygonJS(rel, tags, _raw, ctx) {
   if (isOsmPierTagsJS(tags)) {
     for (const op of st.outerPolys) {
       if (!op || op.length < 3) continue;
-      _pushPierAreaRecJS(ctx, op, (st.innerPolys || []).filter(h => h && h.length >= 3 && _ringInsideOuterExtract2D(h, op)), tags);
+      _pushPierAreaRecJS(ctx, op, (st.innerPolys || []).filter(h => h && h.length >= 3 && _ringInsideOuterExtract2D(h, op)), tags, rel.id);
     }
     return true;
   }
@@ -126,12 +130,13 @@ function processOsmBridgeOrPierWayJS(wid, _w, tags, nids, isClosed, ctx) {
   }
   if (isOsmPierTagsJS(tags)) {
     if (ctx.usedWays.has(wid) || ['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.indoor === 'yes') return true;
-    if (isClosed && tags.area !== 'no' && (tags.area === 'yes' || !tags.highway)) {
+    const isAreaPier = isClosed && tags.area !== 'no' && (tags.area === 'yes' || tags.public_transport === 'platform' || tags.floating === 'yes' || tags.man_made === 'pontoon' || !tags.highway);
+    if (isAreaPier) {
       const pts = ctx.nodesToPts(nids, 0.005);
-      if (pts.length >= 3) _pushPierAreaRecJS(ctx, pts, [], tags);
+      if (pts.length >= 3) _pushPierAreaRecJS(ctx, pts, [], tags, wid);
       return true;
     }
-    const pierKind = getOsmPierKindJS(tags), isFloating = tags.floating === 'yes' || pierKind === 'pontoon';
+    const pierKind = getOsmPierKindJS(tags), isFloating = tags.floating === 'yes' || pierKind === 'pontoon' || tags.platform === 'floating';
     let rwm = pierKind === 'breakwater' ? 5.0 : (pierKind === 'groyne' || pierKind === 'jetty') ? 3.2 : pierKind === 'pontoon' ? 2.8 : (tags.highway === 'service' ? 4.5 : 3.2);
     const explicitW = parseFloatTagJS(tags.width, null);
     if (explicitW !== null && explicitW >= 1.0 && explicitW <= 30.0) rwm = explicitW;
@@ -139,9 +144,9 @@ function processOsmBridgeOrPierWayJS(wid, _w, tags, nids, isClosed, ctx) {
     const pts = ctx.nodesToPts(nids, 0.005);
     if (pts.length >= 2) {
       if (!ctx.pierLines) ctx.pierLines = [];
-      ctx.pierLines.push({ pts, width: wUnits, pierKind, floating: isFloating, name: tags.name || 'Molo', _inBridgePolys: true });
+      ctx.pierLines.push({ pts, width: wUnits, pierKind, floating: isFloating, layer: _parseBridgeSignedLayerJS(tags.layer, 0), minHeightM: _parseLenM(tags, 'min_height'), heightM: _parseLenM(tags, 'height'), name: tags.name || 'Molo', osmId: wid, tags, _inBridgePolys: true });
       for (const ring of _bufferPierPolylineToPolys2D(pts, wUnits)) {
-        ctx.bridgePolys.push({ outer: ring, holes: [], name: tags.name || 'Molo', layer: 0, isPier: true, isPierLine: true, pierKind, floating: isFloating, width: wUnits });
+        ctx.bridgePolys.push({ outer: ring, holes: [], name: tags.name || 'Molo', layer: _parseBridgeSignedLayerJS(tags.layer, 0), isPier: true, isPierLine: true, pierKind, floating: isFloating, width: wUnits, osmId: wid, tags });
       }
     }
     return true;

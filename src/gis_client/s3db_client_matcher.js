@@ -138,6 +138,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       part: Boolean(isPart && !isFerrisWheel), fromBuildingRel: Boolean(fromBldRel), isOutline: false,
       archType: archType || null, church: isChurch, tower: isTower,
       towerConstruction: tags['tower:construction'] ? String(tags['tower:construction']).toLowerCase().trim() : null,
+      parentHeightM: (parentHeightHint !== null && parentHeightHint !== undefined) ? Math.round(parentHeightHint * 10) / 10 : null,
       landmark: Boolean(tags.name || tags.wikidata || tags.heritage || isChurch || isTower || isFerrisWheel),
       isLandmark: isFerrisWheel,
     };
@@ -190,6 +191,8 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
         const parH = parseOsmLengthMetersJS(bestParent.tags.height, null);
         const parLvls = parH === null ? parseFloatTagJS(bestParent.tags['building:levels'], null) : null;
         part.parentHeightHint = parH !== null ? parH : (parLvls !== null ? parLvls * lvlHM : null);
+        const pTc = bestParent.tags['tower:construction'] || enclosingParents.map(e => e.tags && e.tags['tower:construction']).find(Boolean);
+        if ((pTc === 'lattice' || pTc === 'guyed_lattice') && !part.tags['tower:construction']) part.parentTowerConstruction = pTc;
       } else if (part.groupId === null) {
         part.groupId = part.wid;
       }
@@ -198,7 +201,9 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
     const isWheelSuppressedAux = consolidateWheelComplexesS3DB(candidateParents, candidateParts, metersToUnits, addBuildingRecord);
     for (const part of candidateParts) {
       if (isWheelSuppressedAux(part)) { part._suppressedByWheel = true; continue; }
-      addBuildingRecord(part.wid, part.tags, part.pts, part.holes, part.groupId, true, part.parentHeightHint, part.fromBuildingRel);
+      const t = part.tags, dH = (parseOsmLengthMetersJS(t.height, 0) || 0) - (parseOsmLengthMetersJS(t.min_height, 0) || 0);
+      const inheritLat = part.parentTowerConstruction && !t['tower:construction'] && !t.amenity && !t.shop && !t.office && !t.tourism && t.covered !== 'yes' && (t.wall === 'no' || t['building:part'] === 'roof' || dH >= 12.0);
+      addBuildingRecord(part.wid, inheritLat ? Object.assign({}, t, { 'tower:construction': part.parentTowerConstruction }) : t, part.pts, part.holes, part.groupId, true, part.parentHeightHint, part.fromBuildingRel);
     }
     for (const parent of candidateParents) {
       if (isWheelSuppressedAux(parent)) continue;

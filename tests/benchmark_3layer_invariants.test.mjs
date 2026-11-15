@@ -103,6 +103,8 @@ async function runSuite() {
   {
     const targetFiles = [
       'src/geometry/manifold_core.js',
+      'src/mesh/terrain_delatin_water.js',
+      'src/mesh/terrain_surface_drape.js',
       'src/mesh/layer1_terrain_water.js',
       'src/mesh/s3db_roof_revolve.js',
       'src/mesh/s3db_roof_skeleton.js',
@@ -113,6 +115,9 @@ async function runSuite() {
       'src/mesh/bridge_deck_builder.js',
       'src/mesh/bridge_superstructure_solver.js',
       'src/mesh/layer1_bridges.js',
+      'src/mesh/waterfront_piers_solver.js',
+      'src/mesh/lattice_and_structures_solver.js',
+      'src/mesh/tree_scatter_solver.js',
       'src/mesh/layer2_archetypes.js',
       'src/mesh/layer3_invariants_tiles.js',
       'src/mesh/mesh_builder.js',

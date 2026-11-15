@@ -30,7 +30,7 @@ function _hasAllNegRoadLevelJS(tags) {
 
 function isSurfaceRailPlatformJS(tags) {
   if (!tags) return false;
-  if (tags.subway === 'yes' || tags.station === 'subway' || tags.location === 'underground') return false;
+  if (tags.subway === 'yes' || tags.station === 'subway' || tags.location === 'underground' || (typeof isOsmPierTagsJS === 'function' && isOsmPierTagsJS(tags))) return false;
   if (_hasAllNegRoadLevelJS(tags)) return false;
   const layerVal = Math.trunc(parseFloatTagJS(tags.layer, 0) || 0);
   if (layerVal < 0) return false;
@@ -78,6 +78,8 @@ function isOsmPlazaMultipolygonJS(tags) {
   return Boolean(
     (['pedestrian', 'footway', 'living_street'].includes(tags.highway) && tags.area !== 'no') ||
     tags.place === 'square' ||
+    (tags['area:highway'] && !['no', 'none'].includes(tags['area:highway'])) ||
+    tags.man_made === 'quay' ||
     (isSurfaceRailPlatformJS(tags) && tags.area !== 'no')
   );
 }
@@ -121,7 +123,9 @@ function processOsmPlazaMultipolygonJS(rel, tags, raw, ctx) {
       holes: e.holes || [],
       name: tags.name || '',
       isSquare,
-      hwy: tags.highway || ''
+      isQuay: tags.man_made === 'quay',
+      isWaterfrontPromenade: Boolean(tags.man_made === 'quay' || tags['area:highway'] || (['pedestrian', 'footway'].includes(tags.highway) && tags.area !== 'no')),
+      hwy: tags.highway || (tags['area:highway'] ? 'area:highway' : (tags.man_made === 'quay' ? 'quay' : ''))
     });
   }
   return true;
@@ -129,9 +133,10 @@ function processOsmPlazaMultipolygonJS(rel, tags, raw, ctx) {
 
 function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
   const isRailPlatform = isSurfaceRailPlatformJS(tags);
+  const isAreaHwy = Boolean(tags['area:highway'] && !['no', 'none'].includes(tags['area:highway']));
+  const isQuayArea = isClosed && tags.man_made === 'quay' && tags.area !== 'no';
   const isPlazaAreaWay = isClosed && !ctx.usedWays.has(wid) && (
-    tags.place === 'square' ||
-    isRailPlatform ||
+    tags.place === 'square' || isRailPlatform || isAreaHwy || isQuayArea ||
     (['pedestrian', 'footway', 'living_street', 'service', 'residential', 'unclassified'].includes(tags.highway) && tags.area === 'yes')
   );
   if (isPlazaAreaWay) {
@@ -139,20 +144,21 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
     const pts = ctx.nodesToPts(nids, 0.025);
     if (pts.length >= 3) {
       ctx.roadPolys.push({
-        outer: pts,
-        holes: [],
-        name: tags.name || '',
+        outer: pts, holes: [], name: tags.name || '',
         isSquare: Boolean(tags.place === 'square' && !tags.highway),
-        hwy: tags.highway || (isRailPlatform ? 'platform' : '')
+        isQuay: isQuayArea,
+        isWaterfrontPromenade: Boolean(isQuayArea || isAreaHwy || (['pedestrian', 'footway'].includes(tags.highway) && tags.area === 'yes')),
+        hwy: tags.highway || (tags['area:highway'] ? 'area:highway' : (isQuayArea ? 'quay' : (isRailPlatform ? 'platform' : '')))
       });
       return true;
     }
   }
 
-  if (tags.highway || tags.railway || isRailPlatform || ['bridge', 'pier', 'breakwater', 'groyne'].includes(tags.man_made)) {
-    const isBridge = (typeof isOsmLinearBridgeOrPierWayJS === 'function')
+  if (tags.highway || tags.railway || isRailPlatform || ['bridge', 'pier', 'breakwater', 'groyne', 'quay'].includes(tags.man_made)) {
+    const isQuayWay = tags.man_made === 'quay';
+    const isBridge = isQuayWay ? false : ((typeof isOsmLinearBridgeOrPierWayJS === 'function')
       ? isOsmLinearBridgeOrPierWayJS(tags)
-      : Boolean((tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge)) || ['bridge', 'pier', 'breakwater', 'groyne'].includes(tags.man_made));
+      : Boolean((tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge)) || ['bridge', 'pier', 'breakwater', 'groyne'].includes(tags.man_made)));
 
     const isSurfaceRailTrack = ['rail', 'light_rail', 'tram', 'narrow_gauge', 'funicular'].includes(tags.railway);
     if (!isBridge && isUndergroundOsmRoadOrPlazaJS(tags, isSurfaceRailTrack || isRailPlatform)) return true;
@@ -174,7 +180,7 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
       if (!isBridge && tags.footway && (tags.footway === 'access_aisle' || (tags.footway === 'sidewalk' && !keepSidewalk) || ((tags.footway === 'crossing' || tags.footway === 'island') && !keepCrossingOrIsland))) return true;
       if (!isBridge && tags.cycleway && ((tags.cycleway === 'sidewalk' && !keepSidewalk) || (tags.cycleway === 'crossing' && !keepCrossingOrIsland))) return true;
       rwm = hwy === 'track' ? 2.8 : 2.2;
-    } else if (hwy === 'pedestrian') { rwm = 5.2; }
+    } else if (hwy === 'pedestrian' || hwy === 'quay') { rwm = hwy === 'quay' ? 5.5 : 5.2; }
     else if (hwy === 'living_street') { rwm = 5.4; }
     else if (['motorway', 'trunk'].includes(hwy)) { rwm = 12.5; }
     else if (hwy === 'primary') { rwm = 10.5; }
@@ -193,7 +199,7 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
       ctx.roads.push({
         pts,
         width: Math.round(Math.max(0.24, rwm * ctx.metersToUnits) * 1000) / 1000,
-        hwy, isPath: Boolean(isPath), bridge: Boolean(isBridge), isBridge: Boolean(isBridge),
+        hwy, isPath: Boolean(isPath), bridge: Boolean(isBridge), isBridge: Boolean(isBridge), isQuay: Boolean(isQuayWay),
         bridgeStructure: tags['bridge:structure'] || (typeof tags.bridge === 'string' && !['yes', 'viaduct'].includes(tags.bridge) ? tags.bridge : ''),
         bridgeSupport: tags['bridge:support'] || '',
         covered: tags.covered || '', man_made: tags.man_made || '',

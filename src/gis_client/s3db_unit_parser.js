@@ -166,7 +166,7 @@ function isUndergroundOrSkippedBuildingJS(tags) {
 }
 
 function estimateDefaultHeightM({ isFerrisWheel, isPart, isChurch, isTower, btype, rawMinSpanM, rawMaxSpanM, minSpanM, maxSpanM, areaM2, parentHeightHint, tags, roofH, cfg }) {
-  if (isFerrisWheel) return Math.max(115.0, Math.min(280.0, maxSpanM * 0.98));
+  if (isFerrisWheel) return Math.max(8.0, Math.min(280.0, maxSpanM * 0.98));
   if (isPart) {
     const aspect = rawMaxSpanM / Math.max(0.5, rawMinSpanM);
     let baseEst = (rawMaxSpanM >= 35.0 || areaM2 >= 500.0 || aspect >= 2.2)

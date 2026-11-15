@@ -20,10 +20,10 @@ function isLayer2ArchetypeRecord(b, tags = {}) {
   if (!b) return false;
   if (b.archType === 'ferris_wheel' || b.btype === 'pier' || b.btype === 'observation_wheel') return true;
   const attr = String(tags.attraction || '').toLowerCase().trim(), tt = String(tags['tower:type'] || '').toLowerCase().trim();
-  const mm = String(tags.man_made || '').toLowerCase().trim(), tc = String(tags['tower:construction'] || '').toLowerCase().trim();
+  const mm = String(tags.man_made || '').toLowerCase().trim(), tc = String(tags['tower:construction'] || b.towerConstruction || '').toLowerCase().trim();
   if (WHEEL_ATTR_SET.has(attr) || tt === 'observation_wheel' || LAYER2_MAN_MADE_SET.has(mm) || mm === 'lighthouse') return true;
+  if (tc === 'lattice' || tc === 'guyed_lattice') return true;
   const isPart = Boolean(b.part || b.fromBuildingRel || tags['building:part']);
-  if ((tc === 'lattice' || tc === 'guyed_lattice') && !isPart) return true;
   return mm === 'tower' && !isPart;
 }
 
@@ -141,7 +141,7 @@ function buildS3DBPartSolid(core, b, tags, metaP, groupDatumById, platePoly, sce
   let rawMinH_m = Math.max(0, Number(b.minH !== undefined ? b.minH : (tags.min_height || 0)) || 0);
   const hMult = (b.heightMult || 1.0) * zScale * scaleToBed, mToMm = mToU * hMult * scaleMm;
 
-  if (slaLaws && metaP && metaP.bodyTopM > 0 && rawH_m > metaP.bodyTopM + 1.5) {
+  if (slaLaws && metaP && metaP.bodyTopM > 0 && rawH_m > metaP.bodyTopM + 1.5 && rawMinH_m <= metaP.bodyTopM + 2.0) {
     const bodyTopMm = metaP.bodyTopM * mToMm, rawDeltaMm = (rawH_m - metaP.bodyTopM) * mToMm;
     const cappedDeltaMm = slaLaws.capSpireProtrusionMm(rawDeltaMm, bodyTopMm);
     if (cappedDeltaMm > 0 && cappedDeltaMm < rawDeltaMm) {

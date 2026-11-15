@@ -43,6 +43,8 @@
     Object.assign(g, _req('../geometry/manifold_core.js'));
   }
   if (typeof buildLayer1TerrainAndWater === 'undefined') {
+    Object.assign(g, _req('./terrain_delatin_water.js'));
+    Object.assign(g, _req('./terrain_surface_drape.js'));
     Object.assign(g, _req('./layer1_terrain_water.js'));
   }
   if (typeof buildDirectionalOrRevolveRoof === 'undefined') {
@@ -67,6 +69,9 @@
     Object.assign(g, _req('./layer1_bridges.js'));
   }
   if (typeof buildLayer2Archetypes === 'undefined') {
+    Object.assign(g, _req('./waterfront_piers_solver.js'));
+    Object.assign(g, _req('./lattice_and_structures_solver.js'));
+    Object.assign(g, _req('./tree_scatter_solver.js'));
     Object.assign(g, _req('./layer2_archetypes.js'));
   }
   if (typeof finalize3LayerTilesAndInvariants === 'undefined') {
@@ -143,7 +148,7 @@ function _runThreeLayerPipelineSync(scene, state, options = {}) {
   const terrainWater = buildLayer1TerrainAndWater(ctx, scene, options);
   const s3db = buildLayer1S3DBBuildings(ctx, scene, terrainWater);
   const bridges = buildLayer1Bridges(ctx, scene, terrainWater);
-  const archetypes = buildLayer2Archetypes(ctx, scene, terrainWater);
+  const archetypes = buildLayer2Archetypes(ctx, scene, terrainWater, s3db);
   return finalize3LayerTilesAndInvariants(ctx, { terrainWater, s3db, bridges, archetypes }, options);
 }
 
@@ -192,7 +197,7 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
 
   onProgress(52, 'Etap 3/5: Mosty i archetypy semantyczne OSM...', 'Mosty bridge:structure + obiekty specjalne');
   const bridges = buildLayer1Bridges(ctx, scene, terrainWater);
-  const archetypes = buildLayer2Archetypes(ctx, scene, terrainWater);
+  const archetypes = buildLayer2Archetypes(ctx, scene, terrainWater, s3db);
   await yieldCtrl.yieldIfNeeded(true);
 
   onProgress(68, 'Etap 4/5: Podział na kafle, drążenie SLA i audyt fizyczny...', 'Weryfikacja niezmienników 2-manifold');
