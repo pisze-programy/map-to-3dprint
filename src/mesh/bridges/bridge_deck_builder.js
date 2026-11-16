@@ -1,6 +1,6 @@
 // ============================================================================
 // src/mesh/bridges/bridge_deck_builder.js
-// Watertight Curved Z(s) Bridge Decks, Abutments & Supportless >= 35° Corbels
+// Watertight Curved Z(s) Bridge Decks, Flush Abutments & >= 35° Corbels
 // ============================================================================
 
 if (typeof manifoldFromRawSoup === 'undefined' && typeof require !== 'undefined') {
@@ -17,7 +17,7 @@ function _stationTangentsJS(pts) {
   return tans;
 }
 
-function _buildClosedStationTubeJS(pts, halfW, zBotArr, zTopArr, mf) {
+function _buildClosedStationTubeJS(pts, halfW, zBotArr, zTopArr, mf, minThickU = 0.03) {
   const n = pts.length;
   if (n < 2) return null;
   const tans = _stationTangentsJS(pts);
@@ -35,11 +35,11 @@ function _buildClosedStationTubeJS(pts, halfW, zBotArr, zTopArr, mf) {
     }
     const rx = ty * halfW * miter, ry = -tx * halfW * miter;
     const lp = [pts[i][0] - rx, pts[i][1] - ry], rp = [pts[i][0] + rx, pts[i][1] + ry];
-    if (prevL && (((lp[0] - prevL[0]) * tx + (lp[1] - prevL[1]) * ty) <= 0.005 || ((rp[0] - prevR[0]) * tx + (rp[1] - prevR[1]) * ty) <= 0.005)) {
+    if (prevL && (((lp[0] - prevL[0]) * tx + (lp[1] - prevL[1]) * ty) <= 0.002 || ((rp[0] - prevR[0]) * tx + (rp[1] - prevR[1]) * ty) <= 0.002)) {
       return null;
     }
     prevL = lp; prevR = rp;
-    const zb = zBotArr[i], zt = Math.max(zb + 0.05, zTopArr[i]);
+    const zb = zBotArr[i], zt = Math.max(zb + minThickU, zTopArr[i]);
     verts.push(lp[0], lp[1], zb, rp[0], rp[1], zb, rp[0], rp[1], zt, lp[0], lp[1], zt);
   }
   tris.push(0, 1, 2, 0, 2, 3);
@@ -55,7 +55,7 @@ function _buildClosedStationTubeJS(pts, halfW, zBotArr, zTopArr, mf) {
   return manifoldFromRawSoup(mf, verts, tris);
 }
 
-function _buildSegmentUnionTubeJS(pts, halfW, zBotArr, zTopArr, mf) {
+function _buildSegmentUnionTubeJS(pts, halfW, zBotArr, zTopArr, mf, minThickU = 0.03) {
   const parts = [], n = pts.length;
   const cornerSharp = new Array(n).fill(false);
   for (let i = 1; i < n - 1; i++) {
@@ -64,28 +64,30 @@ function _buildSegmentUnionTubeJS(pts, halfW, zBotArr, zTopArr, mf) {
     const dot = ((p1[0] - p0[0]) / l1) * ((p2[0] - p1[0]) / l2) + ((p1[1] - p0[1]) / l1) * ((p2[1] - p1[1]) / l2);
     if (dot < 0.55) cornerSharp[i] = true;
     if (dot < 0.992) {
-      const zb = zBotArr[i], zt = Math.max(zb + 0.05, zTopArr[i]);
-      const jc = mf.Manifold.cylinder(zt - zb, halfW * 1.005, halfW * 1.005, 20, false).translate([p1[0], p1[1], zb]);
+      const zb = Math.max(zBotArr[i - 1], zBotArr[i], zBotArr[i + 1]);
+      const ztLow = Math.min(zTopArr[i - 1], zTopArr[i], zTopArr[i + 1]);
+      const zt = Math.max(zb + minThickU, ztLow);
+      const jc = mf.Manifold.cylinder(zt - zb, halfW * 0.998, halfW * 0.998, 20, false).translate([p1[0], p1[1], zb]);
       parts.push(jc);
     }
   }
   for (let i = 0; i < n - 1; i++) {
     const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
-    if (len < 0.01) continue;
+    if (len < 0.005) continue;
     const tx = dx / len, ty = dy / len;
     const extA = (i === 0 || cornerSharp[i]) ? 0 : Math.min(halfW * 0.28, len * 0.25);
     const extB = (i === n - 2 || cornerSharp[i + 1]) ? 0 : Math.min(halfW * 0.28, len * 0.25);
     const segPts = [[a[0] - tx * extA, a[1] - ty * extA], [b[0] + tx * extB, b[1] + ty * extB]];
-    const m = _buildClosedStationTubeJS(segPts, halfW, [zBotArr[i], zBotArr[i + 1]], [zTopArr[i], zTopArr[i + 1]], mf);
+    const m = _buildClosedStationTubeJS(segPts, halfW, [zBotArr[i], zBotArr[i + 1]], [zTopArr[i], zTopArr[i + 1]], mf, minThickU);
     if (m) parts.push(m);
   }
   return parts.length ? batchUnionManifolds(mf, parts) : null;
 }
 
-function _buildSlopedWedgeCorbelJS(pA, pB, halfW, zBotA, zBotB, zTopA, zTopB, mf) {
+function _buildSlopedWedgeCorbelJS(pA, pB, halfW, zBotA, zBotB, zTopA, zTopB, mf, minThickU = 0.03) {
   const dx = pB[0] - pA[0], dy = pB[1] - pA[1], l = Math.hypot(dx, dy);
-  if (l < 0.03) return null;
-  return _buildClosedStationTubeJS([pA, pB], halfW, [zBotA, zBotB], [zTopA, zTopB], mf);
+  if (l < 0.015) return null;
+  return _buildClosedStationTubeJS([pA, pB], halfW, [zBotA, zBotB], [zTopA, zTopB], mf, minThickU);
 }
 
 function _distPtToPolyDeckJS(px, py, pts) {
@@ -100,9 +102,12 @@ function _distPtToPolyDeckJS(px, py, pts) {
 }
 
 function buildSlopedBridgeDeck(spec, mf) {
+  const scaleMm = spec.scaleMm || 1.89;
+  const minThickU = Math.min(0.05, 0.08 / scaleMm);
+  const flatTolU = Math.min(0.08, 0.12 / scaleMm);
   const zTopMin = Math.min(...spec.zTopArr), zTopMax = Math.max(...spec.zTopArr);
   const zBotMin = Math.min(...spec.zBotArr), zBotMax = Math.max(...spec.zBotArr);
-  const isFlat = (zTopMax - zTopMin) <= 0.08 && (zBotMax - zBotMin) <= 0.08;
+  const isFlat = (zTopMax - zTopMin) <= flatTolU && (zBotMax - zBotMin) <= flatTolU;
 
   if (spec.isAreaPoly && spec.outer && spec.outer.length >= 3) {
     if (isFlat) {
@@ -113,7 +118,7 @@ function buildSlopedBridgeDeck(spec, mf) {
     const pts = spec.pts, n = pts.length;
     const t0x = pts[1][0] - pts[0][0], t0y = pts[1][1] - pts[0][1], l0 = Math.hypot(t0x, t0y) || 1;
     const t1x = pts[n - 1][0] - pts[n - 2][0], t1y = pts[n - 1][1] - pts[n - 2][1], l1 = Math.hypot(t1x, t1y) || 1;
-    const extDist = Math.max(0.6, Math.min(3.0, (spec.spanU || 4.0) * 0.18));
+    const extDist = Math.max(0.4 / scaleMm, Math.min(3.0, (spec.spanU || 4.0) * 0.18));
     const extPts = [[pts[0][0] - (t0x / l0) * extDist, pts[0][1] - (t0y / l0) * extDist]].concat(
       pts,
       [[pts[n - 1][0] + (t1x / l1) * extDist, pts[n - 1][1] + (t1y / l1) * extDist]]
@@ -123,13 +128,13 @@ function buildSlopedBridgeDeck(spec, mf) {
     let trueMaxLat = spec.width * 0.55;
     for (const p of spec.outer) trueMaxLat = Math.max(trueMaxLat, _distPtToPolyDeckJS(p[0], p[1], extPts));
     const envHalfW = Math.max(spec.width * 0.60, Math.min(trueMaxLat + Math.min(0.35, spec.width * 0.25), spec.width * 4.0 + 4.0));
-    const env = _buildClosedStationTubeJS(extPts, envHalfW, ezB, ezT, mf) || _buildSegmentUnionTubeJS(extPts, envHalfW, ezB, ezT, mf);
+    const env = _buildClosedStationTubeJS(extPts, envHalfW, ezB, ezT, mf, minThickU) || _buildSegmentUnionTubeJS(extPts, envHalfW, ezB, ezT, mf, minThickU);
     if (!env) { col.delete(); return extrudeRingSolid(mf, spec.outer, spec.holes || [], zBotMin, zTopMax); }
     try { const out = col.intersect(env); col.delete(); env.delete(); return out; } catch (_) { env.delete(); return col; }
   }
 
-  return _buildClosedStationTubeJS(spec.pts, spec.width * 0.5, spec.zBotArr, spec.zTopArr, mf) ||
-         _buildSegmentUnionTubeJS(spec.pts, spec.width * 0.5, spec.zBotArr, spec.zTopArr, mf);
+  return _buildClosedStationTubeJS(spec.pts, spec.width * 0.5, spec.zBotArr, spec.zTopArr, mf, minThickU) ||
+         _buildSegmentUnionTubeJS(spec.pts, spec.width * 0.5, spec.zBotArr, spec.zTopArr, mf, minThickU);
 }
 
 function _lerpArrAtSJS(sArr, valArr, s) {
@@ -156,90 +161,187 @@ function _samplePtAtSJS(spec, s) {
   return { pt: [pts[i][0] + dx * t, pts[i][1] + dy * t], tx: dx / dl, ty: dy / dl };
 }
 
+function _safeSubDeckCapZJS(spec, sPos, radiusU, scaleMm = 1.89) {
+  const s0 = Math.max(0, sPos - radiusU), s1 = Math.min(spec.spanU || 0, sPos + radiusU);
+  const zbMin = Math.min(
+    _lerpArrAtSJS(spec.sArr, spec.zBotArr, sPos),
+    _lerpArrAtSJS(spec.sArr, spec.zBotArr, s0),
+    _lerpArrAtSJS(spec.sArr, spec.zBotArr, s1)
+  );
+  const ztMin = Math.min(
+    _lerpArrAtSJS(spec.sArr, spec.zTopArr, sPos),
+    _lerpArrAtSJS(spec.sArr, spec.zTopArr, s0),
+    _lerpArrAtSJS(spec.sArr, spec.zTopArr, s1)
+  );
+  const marginTop = Math.max(0.06 / scaleMm, spec.deckThick * 0.24);
+  const embedUp = Math.min(spec.deckThick * 0.45, 0.18 / scaleMm);
+  return Math.min(ztMin - marginTop, zbMin + embedUp);
+}
+
 function buildBankAbutments(spec, terrainWater, ctx) {
   const mf = ctx.mf, parts = [];
-  const wHalf = Math.max(0.25, spec.width * 0.46), padL = Math.max(0.35, Math.min(1.1, spec.spanU * 0.08));
+  const scaleMm = ctx.scaleMm || spec.scaleMm || 1.89;
+  const minThickU = Math.min(0.05, 0.08 / scaleMm);
+  const wHalf = Math.max(0.16 / scaleMm, spec.width * 0.46);
+  const basePadL = Math.min(spec.spanU * 0.12, Math.max(0.28 / scaleMm, Math.min(1.0 / scaleMm, spec.width * 0.55)));
+  const sinkU = Math.min(0.55, 0.85 / scaleMm);
+
   for (const idx of [0, spec.pts.length - 1]) {
     const isStart = idx === 0;
-    if ((isStart && (spec.clippedStart || spec.joinPolyStart)) || (!isStart && (spec.clippedEnd || spec.joinPolyEnd))) continue;
+    if (isStart && (spec.clippedStart || spec.joinPolyStart || spec.joinBridgeStart || spec.joinPierStart)) continue;
+    if (!isStart && (spec.clippedEnd || spec.joinPolyEnd || spec.joinBridgeEnd || spec.joinPierEnd)) continue;
+
     const sPos = isStart ? 0 : spec.spanU;
     const { pt, tx, ty } = _samplePtAtSJS(spec, sPos);
     if (Math.abs(pt[0]) > ctx.halfW + 0.05 || Math.abs(pt[1]) > ctx.halfH + 0.05) continue;
+
+    const ptInWater = terrainWater.isPointInWater(pt[0], pt[1]);
     const surfZ = terrainWater.getSurfaceZ(pt[0], pt[1]);
-    const floorZ = ctx.waterCutout && terrainWater.isPointInWater(pt[0], pt[1]) ? 0.0 : Math.max(0.0, Math.min(surfZ, spec.zBotArr[idx]) - 0.55);
-    const meetZ = Math.min(spec.zTopArr[idx] - 0.05, spec.zBotArr[idx] + 0.14);
-    if (meetZ <= floorZ + 0.05) continue;
-    const isSkyDeadEnd = Boolean(spec.isPath && ((isStart ? spec.elevatedDeadEndStart : spec.elevatedDeadEndEnd) || (spec.deckLayer >= 1 && spec.zBotArr[idx] > surfZ + 0.10)));
+    const floorZ = ctx.waterCutout && ptInWater ? 0.0 : Math.max(0.0, Math.min(surfZ, spec.zBotArr[idx]) - sinkU);
+    const isSkyDeadEnd = Boolean(
+      spec.isPath &&
+      ((isStart ? spec.elevatedDeadEndStart : spec.elevatedDeadEndEnd) ||
+       (!ptInWater && spec.deckLayer >= 1 && spec.zBotArr[idx] > surfZ + 0.35 / scaleMm))
+    );
+
     if (spec.isElevatedViaduct || isSkyDeadEnd) {
-      const colR = Math.max(0.24 / ctx.scaleMm, Math.min(spec.width * 0.38, 0.55 / ctx.scaleMm));
+      const colR = Math.max(0.24 / scaleMm, Math.min(spec.width * 0.36, 0.50 / scaleMm));
       const inset = Math.min(spec.width * 0.40, colR * 1.15, spec.spanU * 0.16);
-      const px = pt[0] + (isStart ? 1 : -1) * tx * inset;
-      const py = pt[1] + (isStart ? 1 : -1) * ty * inset;
-      const col = beamManifoldBetween(mf, [px, py, floorZ], [px, py, meetZ], colR);
-      if (col) parts.push(col);
+      const sCol = isStart ? inset : Math.max(0, spec.spanU - inset);
+      const meetColZ = _safeSubDeckCapZJS(spec, sCol, colR, scaleMm);
+      if (meetColZ > floorZ + minThickU) {
+        const px = pt[0] + (isStart ? 1 : -1) * tx * inset;
+        const py = pt[1] + (isStart ? 1 : -1) * ty * inset;
+        const col = beamManifoldBetween(mf, [px, py, floorZ], [px, py, meetColZ], colR);
+        if (col) parts.push(col);
+      }
       continue;
     }
-    const pA = isStart ? [pt[0] - tx * padL * 0.3, pt[1] - ty * padL * 0.3] : [pt[0] - tx * padL, pt[1] - ty * padL];
-    const pB = isStart ? [pt[0] + tx * padL, pt[1] + ty * padL] : [pt[0] + tx * padL * 0.3, pt[1] + ty * padL * 0.3];
-    let blk = _buildSlopedWedgeCorbelJS(pA, pB, wHalf, floorZ, floorZ, meetZ, meetZ, mf);
-    if (blk && spec.isAreaPoly && spec.outer && spec.outer.length >= 3) {
-      const mask = extrudeRingSolid(mf, spec.outer, spec.holes || [], floorZ - 0.1, meetZ + 0.1);
-      if (mask) {
-        try {
-          const clipped = blk.intersect(mask);
-          mask.delete();
-          if (clipped && clipped.numTri() > 0) { blk.delete(); blk = clipped; }
-          else if (clipped) clipped.delete();
-        } catch (_) { mask.delete(); }
+
+    const inSign = isStart ? 1 : -1;
+    let padIn = basePadL;
+    if (!ptInWater) {
+      for (const f of [0.25, 0.5, 0.75, 1.0]) {
+        const sx = pt[0] + inSign * tx * (basePadL * f);
+        const sy = pt[1] + inSign * ty * (basePadL * f);
+        if (terrainWater.isPointInWater(sx, sy)) {
+          padIn = basePadL * Math.max(0.12, f - 0.22);
+          break;
+        }
       }
     }
-    if (blk) parts.push(blk);
+
+    const meetZ = _safeSubDeckCapZJS(spec, isStart ? padIn * 0.5 : (spec.spanU - padIn * 0.5), padIn * 0.5, scaleMm);
+    if (meetZ > floorZ + minThickU) {
+      const backPad = Math.min(0.08 / scaleMm, padIn * 0.18);
+      const pA = isStart
+        ? [pt[0] - tx * backPad, pt[1] - ty * backPad]
+        : [pt[0] - tx * padIn, pt[1] - ty * padIn];
+      const pB = isStart
+        ? [pt[0] + tx * padIn, pt[1] + ty * padIn]
+        : [pt[0] + tx * backPad, pt[1] + ty * backPad];
+      let blk = _buildSlopedWedgeCorbelJS(pA, pB, Math.min(wHalf, spec.width * 0.46), floorZ, floorZ, meetZ, meetZ, mf, minThickU);
+      if (blk && spec.isAreaPoly && spec.outer && spec.outer.length >= 3) {
+        const mask = extrudeRingSolid(mf, spec.outer, spec.holes || [], floorZ - 0.1, meetZ + 0.1);
+        if (mask) {
+          try {
+            const clipped = blk.intersect(mask);
+            mask.delete();
+            if (clipped && clipped.numTri() > 0) { blk.delete(); blk = clipped; }
+            else if (clipped) clipped.delete();
+          } catch (_) { mask.delete(); }
+        }
+      }
+      if (blk) parts.push(blk);
+    }
+
+    // Smooth outward dry-land approach transition when a bridge ends elevated above an embankment/ground road
+    const dzAboveGround = spec.zTopArr[idx] - surfZ;
+    if (!ptInWater && !spec.isAreaPoly && dzAboveGround > 0.12 / scaleMm && dzAboveGround < 3.2 / scaleMm) {
+      const outSign = isStart ? -1 : 1;
+      const maxRampOut = Math.min(2.6 / scaleMm, Math.max(0.45 / scaleMm, dzAboveGround * 3.2));
+      let rampOut = maxRampOut;
+      for (const f of [0.25, 0.5, 0.75, 1.0]) {
+        const rx = pt[0] + outSign * tx * (maxRampOut * f);
+        const ry = pt[1] + outSign * ty * (maxRampOut * f);
+        if (Math.abs(rx) > ctx.halfW - 0.05 || Math.abs(ry) > ctx.halfH - 0.05 || terrainWater.isPointInWater(rx, ry)) {
+          rampOut = maxRampOut * Math.max(0, f - 0.25);
+          break;
+        }
+      }
+      if (rampOut >= 0.22 / scaleMm) {
+        const endPt = [pt[0] + outSign * tx * rampOut, pt[1] + outSign * ty * rampOut];
+        const endSurfZ = terrainWater.getSurfaceZ(endPt[0], endPt[1]);
+        const endFloorZ = Math.max(0.0, Math.min(floorZ, endSurfZ - 0.25 / scaleMm));
+        const overlapPt = [pt[0] - outSign * tx * Math.min(0.08 / scaleMm, spec.spanU * 0.05), pt[1] - outSign * ty * Math.min(0.08 / scaleMm, spec.spanU * 0.05)];
+        const rampA = isStart ? endPt : overlapPt;
+        const rampB = isStart ? overlapPt : endPt;
+        const zTopA = isStart ? endSurfZ : spec.zTopArr[idx];
+        const zTopB = isStart ? spec.zTopArr[idx] : endSurfZ;
+        const zBotA = isStart ? endFloorZ : floorZ;
+        const zBotB = isStart ? floorZ : endFloorZ;
+        const rampWedge = _buildSlopedWedgeCorbelJS(rampA, rampB, spec.width * 0.48, zBotA, zBotB, zTopA, zTopB, mf, minThickU);
+        if (rampWedge) parts.push(rampWedge);
+      }
+    }
   }
   return parts;
 }
 
 function buildSupportlessUndersideCorbels(spec, supportStationsS, terrainWater, ctx) {
-  if (!ctx.supportlessMode) return [];
+  if (!ctx.supportlessMode || spec.isPierGangway) return [];
+  const scaleMm = ctx.scaleMm || spec.scaleMm || 1.89;
+  const minThickU = Math.min(0.05, 0.08 / scaleMm);
   const mf = ctx.mf, parts = [], tanMin = Math.tan(42 * Math.PI / 180);
-  const stops = [0, ...supportStationsS.filter(s => s > 0.25 && s < spec.spanU - 0.25), spec.spanU].sort((a, b) => a - b);
-  const corbelHalfW = Math.max(0.22, spec.width * 0.42);
-  const deckJoinUp = Math.max(0.08, spec.deckThick * 0.25);
+  const endPad = Math.min(0.25, 0.45 / scaleMm);
+  const stops = [0, ...supportStationsS.filter(s => s > endPad && s < spec.spanU - endPad), spec.spanU].sort((a, b) => a - b);
+  const corbelHalfW = Math.max(0.18 / scaleMm, spec.width * 0.42);
+  const deckJoinUp = Math.min(spec.deckThick * 0.35, 0.14 / scaleMm);
 
   for (let i = 0; i < stops.length - 1; i++) {
     const sA = stops[i], sB = stops[i + 1], subSpanU = sB - sA;
-    if (subSpanU * ctx.scaleMm <= 1.8) continue;
+    if (subSpanU * scaleMm <= 1.8) continue;
     const zBotA = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sA), zBotB = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sB);
-    const zMinWaterGuard = spec.inWater.some(Boolean) ? ctx.zWaterTop + 0.14 : 0.05;
-    const availL = Math.max(0.22, (zBotA - zMinWaterGuard) * 0.85);
-    const availR = Math.max(0.22, (zBotB - zMinWaterGuard) * 0.85);
+    const zMinWaterGuard = spec.inWater.some(Boolean) ? ctx.zWaterTop + 0.24 / scaleMm : 0.05 / scaleMm;
+    const availL = Math.max(0.20 / scaleMm, (zBotA - zMinWaterGuard) * 0.85);
+    const availR = Math.max(0.20 / scaleMm, (zBotB - zMinWaterGuard) * 0.85);
     const dropL = Math.min(availL, subSpanU * 0.48 * tanMin);
     const dropR = Math.min(availR, subSpanU * 0.48 * tanMin);
-    const sLend = Math.min(sB, sA + Math.max(0.2, dropL / tanMin));
-    const sRend = Math.max(sA, sB - Math.max(0.2, dropR / tanMin));
+    const sLend = Math.min(sB, sA + Math.max(0.18 / scaleMm, dropL / tanMin));
+    const sRend = Math.max(sA, sB - Math.max(0.18 / scaleMm, dropR / tanMin));
     const pA = _samplePtAtSJS(spec, sA), pL = _samplePtAtSJS(spec, sLend);
     const pR = _samplePtAtSJS(spec, sRend), pB = _samplePtAtSJS(spec, sB);
     const zBotL = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sLend), zBotR = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sRend);
-    const cL = _buildSlopedWedgeCorbelJS(pA.pt, pL.pt, corbelHalfW, Math.max(0.05, zBotA - dropL), zBotL - 0.02, zBotA + deckJoinUp, zBotL + deckJoinUp, mf);
-    const cR = _buildSlopedWedgeCorbelJS(pR.pt, pB.pt, corbelHalfW, zBotR - 0.02, Math.max(0.05, zBotB - dropR), zBotR + deckJoinUp, zBotB + deckJoinUp, mf);
+    const topAL = Math.min(_lerpArrAtSJS(spec.sArr, spec.zTopArr, sA) - 0.05 / scaleMm, zBotA + deckJoinUp);
+    const topLL = Math.min(_lerpArrAtSJS(spec.sArr, spec.zTopArr, sLend) - 0.05 / scaleMm, zBotL + deckJoinUp);
+    const topRR = Math.min(_lerpArrAtSJS(spec.sArr, spec.zTopArr, sRend) - 0.05 / scaleMm, zBotR + deckJoinUp);
+    const topBR = Math.min(_lerpArrAtSJS(spec.sArr, spec.zTopArr, sB) - 0.05 / scaleMm, zBotB + deckJoinUp);
+    const cL = _buildSlopedWedgeCorbelJS(pA.pt, pL.pt, corbelHalfW, Math.max(0.04 / scaleMm, zBotA - dropL), zBotL - 0.02 / scaleMm, topAL, topLL, mf, minThickU);
+    const cR = _buildSlopedWedgeCorbelJS(pR.pt, pB.pt, corbelHalfW, zBotR - 0.02 / scaleMm, Math.max(0.04 / scaleMm, zBotB - dropR), topRR, topBR, mf, minThickU);
     if (cL) parts.push(cL);
     if (cR) parts.push(cR);
-    // Longitudinal 42-deg keel rib reducing unsupported flat span laterally and along midspan
     const mPts = [], mzB = [], mzT = [], steps = 5;
     for (let k = 0; k <= steps; k++) {
       const sk = sA + (k / steps) * subSpanU, pk = _samplePtAtSJS(spec, sk).pt;
       const zb = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sk);
+      const zt = _lerpArrAtSJS(spec.sArr, spec.zTopArr, sk);
       const u = Math.sin(Math.PI * (k / steps));
-      const keelDrop = Math.min(Math.max(0.24, corbelHalfW * tanMin), Math.max(0.18, (zb - zMinWaterGuard) * 0.48));
-      mPts.push(pk); mzT.push(zb + deckJoinUp); mzB.push(Math.max(zMinWaterGuard, zb - keelDrop * (1 - 0.32 * u)));
+      const keelDrop = Math.min(Math.max(0.24 / scaleMm, corbelHalfW * tanMin), Math.max(0.18 / scaleMm, (zb - zMinWaterGuard) * 0.48));
+      mPts.push(pk);
+      mzT.push(Math.min(zt - 0.05 / scaleMm, zb + deckJoinUp));
+      mzB.push(Math.max(zMinWaterGuard, zb - keelDrop * (1 - 0.32 * u)));
     }
-    const keelW = Math.max(0.18 / ctx.scaleMm, corbelHalfW * 0.45);
-    const keel = _buildClosedStationTubeJS(mPts, keelW, mzB, mzT, mf) || _buildSegmentUnionTubeJS(mPts, keelW, mzB, mzT, mf);
+    const keelW = Math.max(0.18 / scaleMm, corbelHalfW * 0.45);
+    const keel = _buildClosedStationTubeJS(mPts, keelW, mzB, mzT, mf, minThickU) || _buildSegmentUnionTubeJS(mPts, keelW, mzB, mzT, mf, minThickU);
     if (keel) parts.push(keel);
   }
   return parts;
 }
 
-const _DECK_BUILDER_EXPORTS = { buildSlopedBridgeDeck, buildBankAbutments, buildSupportlessUndersideCorbels, _lerpArrAtSJS, _samplePtAtSJS };
+const _DECK_BUILDER_EXPORTS = {
+  buildSlopedBridgeDeck, buildBankAbutments, buildSupportlessUndersideCorbels,
+  _lerpArrAtSJS, _samplePtAtSJS, _safeSubDeckCapZJS
+};
 if (typeof globalThis !== 'undefined') Object.assign(globalThis, _DECK_BUILDER_EXPORTS);
 if (typeof window !== 'undefined') Object.assign(window, _DECK_BUILDER_EXPORTS);
 if (typeof module !== 'undefined' && module.exports) module.exports = _DECK_BUILDER_EXPORTS;

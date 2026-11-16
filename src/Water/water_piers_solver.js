@@ -70,6 +70,22 @@
     return { rawGapMm, resolvedGapMm, isFloating };
   }
 
+  function computePierDeckHeights(ctx, laws, rec, pierKind, waterTop, pileFloorZ) {
+    const scaleMm = ctx.scaleMm || 1.89;
+    const isSolidStone = pierKind === 'breakwater' || pierKind === 'groyne';
+    const deckThickMm = laws && typeof laws.minWallThicknessMm === 'function' ? Math.max(0.50, laws.minWallThicknessMm(0.55)) : 0.50;
+    const deckThickU = deckThickMm / scaleMm;
+    const { rawGapMm, resolvedGapMm, isFloating } = _resolvePierClearance(ctx, laws, rec, pierKind, isSolidStone);
+    const needsPiles = !isSolidStone && resolvedGapMm >= 0.48;
+    const zDeckBot = needsPiles ? (waterTop + resolvedGapMm / scaleMm) : pileFloorZ;
+    const zDeckTop = needsPiles
+      ? (zDeckBot + deckThickU)
+      : (isSolidStone
+          ? Math.max(ctx.zLandDatum + 0.16 / scaleMm, waterTop + deckThickU, zDeckBot + deckThickU + 0.15 / scaleMm)
+          : Math.max(waterTop + deckThickU + (isFloating ? 0.08 / scaleMm : 0), zDeckBot + deckThickU + 0.15 / scaleMm));
+    return { rawGapMm, resolvedGapMm, isFloating, needsPiles, deckThickU, zDeckBot, zDeckTop };
+  }
+
   function _collectPierItems(scene, ctx) {
     const { toBed, scaleToBed, minPrintU } = ctx;
     const items = [], seenOsm = new Set();
@@ -122,6 +138,7 @@
       const pileH = topZ - floorZ, rUse = Math.max(minPileR, customR || pierR);
       if (pileH <= 1e-4 || !Number.isFinite(px) || !Number.isFinite(py)) return false;
       if (!forceAnchor) {
+        if (terrainWater && typeof terrainWater.isPointInWater === 'function' && !terrainWater.isPointInWater(px, py)) return false;
         const minSep = Math.max(rUse, pierR * 0.85) * 1.65;
         for (let i = 0; i < placedPilePts.length; i++) {
           if (Math.hypot(placedPilePts[i][0] - px, placedPilePts[i][1] - py) < minSep) return false;
@@ -246,7 +263,10 @@
         if (deckM) solids.push(deckM);
         if (needsPiles) addAreaMedialPiles(ptsOrRing, holesBed, obb, pileFloorZ, zPileTop);
       } else {
-        const rings = core.clipperBufferOpenPaths([{ pts: ptsOrRing, halfW: widthU, squareEnd: true }], 'Miter', 1e-5);
+        const startDry = terrainWater && typeof terrainWater.isPointInWater === 'function' && !terrainWater.isPointInWater(ptsOrRing[0][0], ptsOrRing[0][1]);
+        const endDry = terrainWater && typeof terrainWater.isPointInWater === 'function' && !terrainWater.isPointInWater(ptsOrRing[ptsOrRing.length - 1][0], ptsOrRing[ptsOrRing.length - 1][1]);
+        const useSqEnd = !(startDry || endDry);
+        const rings = core.clipperBufferOpenPaths([{ pts: ptsOrRing, halfW: widthU, squareEnd: useSqEnd }], 'Miter', 1e-5);
         for (const r of rings) {
           const m = core.extrudeRingSolid(mf, r, [], zDeckBot, zDeckTop);
           if (m) solids.push(m);
@@ -272,7 +292,7 @@
     return { solids: [core.batchUnionManifolds(mf, solids)].filter(Boolean), pierCount: items.length };
   }
 
-  const exportsObj = { computeFootprintOBB, resolveGroundZ, buildMarinePiersAndBreakwaters };
+  const exportsObj = { computeFootprintOBB, resolveGroundZ, computePierDeckHeights, buildMarinePiersAndBreakwaters };
   Object.assign(root, exportsObj);
   if (typeof window !== 'undefined') Object.assign(window, exportsObj);
   if (typeof module !== 'undefined' && module.exports) module.exports = exportsObj;

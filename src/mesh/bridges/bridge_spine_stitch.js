@@ -8,35 +8,49 @@ if (typeof _polyLenJS === 'undefined' && typeof require !== 'undefined') {
 }
 
 function _stitchEndpointsJS(chains, minDot, maxSnapU, canPairFn, onPairFn) {
-  let merged = true;
-  while (merged) {
-    merged = false;
-    for (let i = 0; i < chains.length && !merged; i++) for (let j = i + 1; j < chains.length && !merged; j++) {
-      const a = chains[i], b = chains[j];
-      if (canPairFn && !canPairFn(a, b)) continue;
-      const modes = [
-        [a.pts[a.pts.length - 1], b.pts[0], 0],
-        [a.pts[a.pts.length - 1], b.pts[b.pts.length - 1], 1],
-        [a.pts[0], b.pts[0], 2],
-        [a.pts[0], b.pts[b.pts.length - 1], 3]
-      ];
-      for (const [pa, pb, mode] of modes) {
-        if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) > maxSnapU) continue;
-        const tA = _outTan2DJS(a.pts, mode >= 2), tB = _outTan2DJS(b.pts, mode === 0 || mode === 2);
-        if (-(tA[0] * tB[0] + tA[1] * tB[1]) < minDot) continue;
-        const newPts = mode === 0 ? a.pts.concat(b.pts.slice(1))
-          : mode === 1 ? a.pts.concat(b.pts.slice(0, -1).reverse())
-          : mode === 2 ? b.pts.slice().reverse().concat(a.pts.slice(1))
-          : b.pts.concat(a.pts.slice(1));
-        a.joinPolyStart = mode === 0 || mode === 1 ? Boolean(a.joinPolyStart) : (mode === 2 ? Boolean(b.joinPolyEnd) : Boolean(b.joinPolyStart));
-        a.joinPolyEnd = mode === 0 ? Boolean(b.joinPolyEnd) : mode === 1 ? Boolean(b.joinPolyStart) : Boolean(a.joinPolyEnd);
-        a.clippedStart = mode === 0 || mode === 1 ? Boolean(a.clippedStart) : (mode === 2 ? Boolean(b.clippedEnd) : Boolean(b.clippedStart));
-        a.clippedEnd = mode === 0 ? Boolean(b.clippedEnd) : mode === 1 ? Boolean(b.clippedStart) : Boolean(a.clippedEnd);
-        a.pts = _dedupPtsJS(newPts, 0.01);
-        if (onPairFn) onPairFn(a, b);
-        chains.splice(j, 1); merged = true; break;
+  while (true) {
+    let bestScore = -Infinity, bestI = -1, bestJ = -1, bestMode = -1;
+    for (let i = 0; i < chains.length; i++) {
+      const a = chains[i];
+      for (let j = i + 1; j < chains.length; j++) {
+        const b = chains[j];
+        if (canPairFn && !canPairFn(a, b)) continue;
+        const modes = [
+          [a.pts[a.pts.length - 1], b.pts[0], 0],
+          [a.pts[a.pts.length - 1], b.pts[b.pts.length - 1], 1],
+          [a.pts[0], b.pts[0], 2],
+          [a.pts[0], b.pts[b.pts.length - 1], 3]
+        ];
+        for (const [pa, pb, mode] of modes) {
+          const aAtStart = mode >= 2, bAtStart = (mode === 0 || mode === 2);
+          if ((aAtStart ? (a.joinPolyStart || a.clippedStart) : (a.joinPolyEnd || a.clippedEnd)) ||
+              (bAtStart ? (b.joinPolyStart || b.clippedStart) : (b.joinPolyEnd || b.clippedEnd))) {
+            continue;
+          }
+          const dist = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
+          if (dist > maxSnapU) continue;
+          const tA = _outTan2DJS(a.pts, aAtStart), tB = _outTan2DJS(b.pts, bAtStart);
+          const alignDot = -(tA[0] * tB[0] + tA[1] * tB[1]);
+          if (alignDot < minDot) continue;
+          const wRatio = (a.width > 0 && b.width > 0) ? (Math.min(a.width, b.width) / Math.max(a.width, b.width)) : 1.0;
+          const score = alignDot * (0.45 + 0.55 * wRatio) - (dist / Math.max(1e-4, maxSnapU)) * 0.08;
+          if (score > bestScore) { bestScore = score; bestI = i; bestJ = j; bestMode = mode; }
+        }
       }
     }
+    if (bestI < 0) break;
+    const a = chains[bestI], b = chains[bestJ], mode = bestMode;
+    const newPts = mode === 0 ? a.pts.concat(b.pts.slice(1))
+      : mode === 1 ? a.pts.concat(b.pts.slice(0, -1).reverse())
+      : mode === 2 ? b.pts.slice().reverse().concat(a.pts.slice(1))
+      : b.pts.concat(a.pts.slice(1));
+    a.joinPolyStart = mode === 0 || mode === 1 ? Boolean(a.joinPolyStart) : (mode === 2 ? Boolean(b.joinPolyEnd) : Boolean(b.joinPolyStart));
+    a.joinPolyEnd = mode === 0 ? Boolean(b.joinPolyEnd) : mode === 1 ? Boolean(b.joinPolyStart) : Boolean(a.joinPolyEnd);
+    a.clippedStart = mode === 0 || mode === 1 ? Boolean(a.clippedStart) : (mode === 2 ? Boolean(b.clippedEnd) : Boolean(b.clippedStart));
+    a.clippedEnd = mode === 0 ? Boolean(b.clippedEnd) : mode === 1 ? Boolean(b.clippedStart) : Boolean(a.clippedEnd);
+    a.pts = _dedupPtsJS(newPts, 0.01);
+    if (onPairFn) onPairFn(a, b);
+    chains.splice(bestJ, 1);
   }
   return chains;
 }

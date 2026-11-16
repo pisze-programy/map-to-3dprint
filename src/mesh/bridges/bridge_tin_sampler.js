@@ -102,18 +102,30 @@ function _sampleDryCrossSectionMinTopJS(px, py, nx, ny, widthU, outerRing, terra
   return Math.max(maxSurfZ, maxTinZ + minDryReliefU);
 }
 
-function _sampleAbutmentZJS(pt, outDirX, outDirY, outerRing, terrainWater, ctx, tinSampler, minDryReliefU) {
+function _sampleAbutmentZJS(pt, outDirX, outDirY, outerRing, terrainWater, ctx, tinSampler, minDryReliefU, deckWidthU = 0) {
   let sx0 = pt[0], sy0 = pt[1];
+  const scaleMm = (ctx && ctx.scaleMm) || 1.89;
+  const ringStep = Math.min(0.45, 0.85 / scaleMm);
   if (outerRing) {
-    for (let k = 0; k < 5 && _ptInRingJS(sx0, sy0, outerRing); k++) { sx0 += outDirX * 0.45; sy0 += outDirY * 0.45; }
+    for (let k = 0; k < 6 && _ptInRingJS(sx0, sy0, outerRing); k++) { sx0 += outDirX * ringStep; sy0 += outDirY * ringStep; }
   }
-  for (const d of [0.0, 0.35, 0.85, 1.6]) {
-    const sx = sx0 + outDirX * d, sy = sy0 + outDirY * d;
-    if (Math.abs(sx) <= ctx.halfW + 0.5 && Math.abs(sy) <= ctx.halfH + 0.5 && !terrainWater.isPointInWater(sx, sy)) {
-      const zSurf = tinSampler ? tinSampler.getTrueSurfaceZ(sx, sy) : terrainWater.getSurfaceZ(sx, sy);
-      const zFloor = tinSampler ? (tinSampler.getTinZ(sx, sy) + (minDryReliefU || 0)) : zSurf;
-      return { z: Math.max(zSurf, zFloor), inWater: false };
+  const pStep = Math.min(0.35, 0.70 / scaleMm);
+  const latSpan = deckWidthU > 0 ? deckWidthU * 0.36 : 0;
+  const nx = -outDirY, ny = outDirX;
+  const latOffsets = latSpan > 1e-4 ? [0, -latSpan, latSpan] : [0];
+  for (const d of [0.0, pStep, pStep * 2.4, pStep * 4.5]) {
+    const cx = sx0 + outDirX * d, cy = sy0 + outDirY * d;
+    let bestZ = -Infinity, foundDry = false;
+    for (const loff of latOffsets) {
+      const sx = cx + nx * loff, sy = cy + ny * loff;
+      if (Math.abs(sx) <= ctx.halfW + 0.5 && Math.abs(sy) <= ctx.halfH + 0.5 && !terrainWater.isPointInWater(sx, sy)) {
+        const zSurf = tinSampler ? tinSampler.getTrueSurfaceZ(sx, sy) : terrainWater.getSurfaceZ(sx, sy);
+        const zFloor = tinSampler ? (tinSampler.getTinZ(sx, sy) + (minDryReliefU || 0)) : zSurf;
+        bestZ = Math.max(bestZ, zSurf, zFloor);
+        foundDry = true;
+      }
     }
+    if (foundDry) return { z: bestZ, inWater: false };
   }
   return { z: terrainWater.getSurfaceZ(pt[0], pt[1]), inWater: terrainWater.isPointInWater(pt[0], pt[1]) };
 }
@@ -127,10 +139,14 @@ function _hasPositiveOsmLevelJS(rawLevel) {
 function _stationWaterFlagsJS(pts, terrainWater) {
   const n = pts.length, flags = new Array(n).fill(false);
   for (let i = 0; i < n; i++) {
-    if (terrainWater.isPointInWater(pts[i][0], pts[i][1])) { flags[i] = true; continue; }
-    if (i > 0) {
-      const mx = (pts[i - 1][0] + pts[i][0]) * 0.5, my = (pts[i - 1][1] + pts[i][1]) * 0.5;
-      if (terrainWater.isPointInWater(mx, my)) { flags[i] = true; flags[i - 1] = true; }
+    if (terrainWater.isPointInWater(pts[i][0], pts[i][1])) flags[i] = true;
+  }
+  const hasInteriorWet = flags.some(Boolean);
+  for (let i = 1; i < n; i++) {
+    const mx = (pts[i - 1][0] + pts[i][0]) * 0.5, my = (pts[i - 1][1] + pts[i][1]) * 0.5;
+    if (terrainWater.isPointInWater(mx, my)) {
+      if (!hasInteriorWet || i < n - 1) flags[i] = true;
+      if (!hasInteriorWet || i - 1 > 0) flags[i - 1] = true;
     }
   }
   return flags;

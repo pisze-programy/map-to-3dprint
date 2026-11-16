@@ -214,7 +214,7 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
         covered: tags.covered || '', man_made: tags.man_made || '',
         layer: layerVal, hasExplicitLayer: tags.layer !== undefined, level: tags.level !== undefined ? tags.level : '',
         heightM: parseLen('height'), minHeightM: parseLen('min_height'),
-        clearanceM: parseLen('seamark:bridge:clearance_height') ?? parseLen('maxheight'),
+        clearanceM: parseLen('maxheight:below') ?? parseLen('seamark:bridge:clearance_height_closed') ?? (String(tags.bridge || '').trim().toLowerCase() !== 'movable' ? parseLen('seamark:bridge:clearance_height') : null),
         osmId: w && w.id, tags, name: tags.name || ''
       });
     }

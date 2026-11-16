@@ -690,6 +690,96 @@ async function runSuite() {
     );
   }
 
+  // [14/14] Large-Format 50x100cm (12km) Physical-Scale Viaducts, Butt-Joint Flyovers, Y-Splits & Marina Pier Gangways
+  console.log('\n[14/14] 50x100cm (12km) Physical Scale: Flyover Butt-Joints, Y-Splits, Short Canal & Marina Pier Gangways');
+  {
+    const mToU = 169.2 / 12000; // 0.0141 u/m at 12km span
+    const scene = {
+      spanMeters: 12000,
+      metersToUnits: mToU,
+      dem: { grid: [[4, 4], [4, 4]], minElev: 4, maxElev: 4 },
+      waterPolys: [
+        // Main canal y = -1.2 .. 1.2 (~170 m wide)
+        { outer: [[-35, -1.2], [35, -1.2], [35, 1.2], [-35, 1.2]], holes: [] },
+        // Short narrow canal x = -28.3 .. -27.9 (~28 m wide)
+        { outer: [[-28.3, 12], [-27.9, 12], [-27.9, 26], [-28.3, 26]], holes: [] },
+        // Marina basin y = 30 .. 45
+        { outer: [[-15, 30], [15, 30], [15, 45], [-15, 45]], holes: [] },
+      ],
+      waterLines: [], greenPolys: [], trees: [], bridgeSupports: [], buildings: [],
+      pierPolys: [
+        // Floating marina pier inside basin
+        {
+          osmId: 9001, pierKind: 'pier', floating: true,
+          outer: [[-2.0, 30.5], [2.0, 30.5], [2.0, 38.0], [-2.0, 38.0]], holes: [],
+          tags: { man_made: 'pier', floating: 'yes' },
+        },
+      ],
+      pierLines: [], bridgePolys: [],
+      roads: [
+        // Harbour promenade along dry bank y = 29.85 (long way, gangway hits its midpoint at 90 degrees!)
+        { osmId: 9101, pts: [[-14, 29.85], [14, 29.85]], width: 3.5 * mToU, isBridge: false, isPath: true, layer: 0, hasExplicitLayer: false, tags: { highway: 'footway' } },
+        // Marina pier gangway (highway=footway, bridge=yes, layer=1) from promenade onto floating pier
+        { osmId: 9102, name: 'Marina Gangway', pts: [[0, 29.85], [0, 30.55]], width: 2.5 * mToU, isBridge: true, isPath: true, layer: 1, hasExplicitLayer: true, tags: { highway: 'footway', bridge: 'yes', layer: '1' } },
+
+        // Short 42m canal road bridge + approach roads
+        { osmId: 9201, pts: [[-32.0, 19.0], [-28.4, 19.0]], width: 8.0 * mToU, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'residential' } },
+        { osmId: 9202, name: 'Short Canal Bridge', pts: [[-28.4, 19.0], [-27.8, 19.0]], width: 8.0 * mToU, isBridge: true, layer: 1, hasExplicitLayer: true, tags: { highway: 'residential', bridge: 'yes', layer: '1' } },
+        { osmId: 9203, pts: [[-27.8, 19.0], [-24.0, 19.0]], width: 8.0 * mToU, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'residential' } },
+
+        // Mainline layer=1 canal motorway bridge + shore quay street + Y-branch slip ramp
+        { osmId: 9299, pts: [[-12.0, 1.6], [12.0, 1.6]], width: 8.0 * mToU, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'secondary' } },
+        { osmId: 9300, pts: [[0, -10.0], [0, -4.5]], width: 14.0 * mToU, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'motorway' } },
+        { osmId: 9301, name: 'Main Canal Viaduct', pts: [[0, -4.5], [0, 4.5]], width: 14.0 * mToU, isBridge: true, layer: 1, hasExplicitLayer: true, tags: { highway: 'motorway', bridge: 'yes', layer: '1' } },
+        { osmId: 9302, pts: [[0, 4.5], [0, 10.0]], width: 14.0 * mToU, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'motorway' } },
+        { osmId: 9303, name: 'Viaduct Y Offramp', pts: [[0, 1.6], [2.4, 4.2], [4.5, 5.2]], width: 7.0 * mToU, isBridge: true, layer: 1, hasExplicitLayer: true, tags: { highway: 'motorway_link', bridge: 'yes', layer: '1' } },
+        { osmId: 9304, pts: [[4.5, 5.2], [7.5, 6.2]], width: 7.0 * mToU, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'motorway_link' } },
+
+        // 3-segment continuous flyover ramp (layer=1 -> layer=2 -> layer=1) crossing over Main Canal Viaduct
+        { osmId: 9400, pts: [[-8.5, -0.4], [-5.2, -0.4]], width: 7.5 * mToU, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'trunk_link' } },
+        { osmId: 9401, name: 'Flyover Approach West', pts: [[-5.2, -0.4], [-2.0, -0.4]], width: 7.5 * mToU, isBridge: true, layer: 1, hasExplicitLayer: true, tags: { highway: 'trunk_link', bridge: 'yes', layer: '1' } },
+        { osmId: 9402, name: 'Flyover Midspan Layer2', pts: [[-2.0, -0.4], [2.0, -0.4]], width: 7.5 * mToU, isBridge: true, layer: 2, hasExplicitLayer: true, tags: { highway: 'trunk_link', bridge: 'yes', layer: '2' } },
+        { osmId: 9403, name: 'Flyover Approach East', pts: [[2.0, -0.4], [5.2, -0.4]], width: 7.5 * mToU, isBridge: true, layer: 1, hasExplicitLayer: true, tags: { highway: 'trunk_link', bridge: 'yes', layer: '1' } },
+        { osmId: 9404, pts: [[5.2, -0.4], [8.5, -0.4]], width: 7.5 * mToU, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'trunk_link' } },
+      ],
+    };
+    const st50x100 = makeState({ targetWidthCm: 50, targetHeightCm: 100, bedSizeMm: 500, totalHeightMm: 1000, zScale: 1.25 });
+    const res = buildComplete3DModel(scene, st50x100);
+    assertCleanManifold(res.printMetrics, '50x100cm (12km) flyover, Y-split, short canal & marina gangway');
+    const audits = res.audit.bridgeAudits || [];
+    const gangway = audits.find(a => a.name === 'Marina Gangway');
+    const shortCanal = audits.find(a => a.name === 'Short Canal Bridge');
+    const mainViad = audits.find(a => a.name === 'Main Canal Viaduct');
+    const yRamp = audits.find(a => a.name === 'Viaduct Y Offramp');
+    const flyW = audits.find(a => a.name === 'Flyover Approach West');
+    const flyM = audits.find(a => a.name === 'Flyover Midspan Layer2');
+    const flyE = audits.find(a => a.name === 'Flyover Approach East');
+
+    check(
+      Boolean(gangway && gangway.zDeckTop <= Math.max(gangway.zStartDeck, gangway.zEndDeck) + 0.04 && gangway.syntheticWaterPiers === 0),
+      'Marina bridge=yes gangway welds flush from promenade onto floating pier without portal stilts',
+      `start=${gangway?.zStartDeck}, top=${gangway?.zDeckTop}, end=${gangway?.zEndDeck}, waterPiers=${gangway?.syntheticWaterPiers}`
+    );
+    check(
+      Boolean(shortCanal && shortCanal.zDeckTop - Math.max(shortCanal.zStartDeck, shortCanal.zEndDeck) <= 0.14),
+      '50x100cm short <52m canal bridge keeps gentle driveable camber (no 22m pyramid tent)',
+      `start=${shortCanal?.zStartDeck}, top=${shortCanal?.zDeckTop}, end=${shortCanal?.zEndDeck}`
+    );
+    check(
+      Boolean(res.printMetrics.multiDeckSeparationsOk === true && flyW && flyM && flyE &&
+        Math.abs(flyW.zEndDeck - flyM.zStartDeck) <= 0.03 &&
+        Math.abs(flyM.zEndDeck - flyE.zStartDeck) <= 0.03 &&
+        flyM.zStartDeck > flyW.zStartDeck + 0.04),
+      'Collinear layer=1 -> layer=2 -> layer=1 flyover ramp welds seamlessly across both butt-joints without ground nose-dive',
+      `multiDeckOk=${res.printMetrics.multiDeckSeparationsOk}, flyW=[${flyW?.zStartDeck}..${flyW?.zEndDeck}], flyM=[${flyM?.zStartDeck}..${flyM?.zDeckTop}..${flyM?.zEndDeck}], flyE=[${flyE?.zStartDeck}..${flyE?.zEndDeck}]`
+    );
+    check(
+      Boolean(yRamp && mainViad && yRamp.zStartDeck > yRamp.zEndDeck + 0.06 && mainViad.zPylonTop <= mainViad.zDeckTop + 0.01),
+      'Viaduct Y-offramp welds smoothly to elevated host viaduct deck at fork and cylindrical piers never poke above deck',
+      `yRamp=[${yRamp?.zStartDeck} -> ${yRamp?.zEndDeck}], mainDeckTop=${mainViad?.zDeckTop}, mainPylonTop=${mainViad?.zPylonTop}`
+    );
+  }
+
   console.log(`\nETAP 4 BRIDGES GLOBAL SUMMARY: ${passed} passed, ${failed} failed.`);
   if (failed > 0) process.exit(1);
 }

@@ -1,6 +1,6 @@
 // ============================================================================
 // src/mesh/bridges/bridge_specs_extract.js
-// OSM Area-Bridge & Linear-Bridge Graph Spec Extraction & Support Association
+// OSM Area-Bridge, Linear-Bridge & Pier-Gangway Spec Extraction & Supports
 // ============================================================================
 
 if (typeof _normalizeBridgeStructJS === 'undefined' && typeof require !== 'undefined') {
@@ -13,11 +13,107 @@ if (typeof _stationWaterFlagsJS === 'undefined' && typeof require !== 'undefined
   Object.assign(globalThis, require('./bridge_tin_sampler.js'));
 }
 
+function _collectPierAnchorsForBridgesJS(scene, terrainWater, ctx, toBed, s2b) {
+  const scaleMm = ctx.scaleMm || 1.89;
+  const laws = ctx.slaLaws || (typeof SLA_PRINT_LAWS !== 'undefined' ? SLA_PRINT_LAWS : null);
+  const deckThickMm = laws && typeof laws.minWallThicknessMm === 'function' ? Math.max(0.50, laws.minWallThicknessMm(0.55)) : 0.50;
+  const deckThickU = deckThickMm / scaleMm;
+  const anchors = [];
+  const seen = new Set();
+
+  const resolveHeights = (rec, pierKind, cx, cy) => {
+    const isSolidStone = pierKind === 'breakwater' || pierKind === 'groyne';
+    const inWater = terrainWater && terrainWater.isPointInWater(cx, cy);
+    const waterTop = inWater
+      ? ((terrainWater && typeof terrainWater.getNominalWaterTopZ === 'function')
+          ? terrainWater.getNominalWaterTopZ(cx, cy)
+          : ((!ctx.waterCutout && terrainWater && typeof terrainWater.getWaterTopZ === 'function')
+              ? terrainWater.getWaterTopZ(cx, cy)
+              : ctx.zWaterTop))
+      : ctx.zWaterTop;
+    const pileFloorZ = ctx.waterCutout
+      ? 0.0
+      : Math.max(0.0, (terrainWater && terrainWater.getWaterFloorZ ? terrainWater.getWaterFloorZ(cx, cy) : ctx.zWaterCarveFloor) - 0.15 / scaleMm);
+    if (typeof computePierDeckHeights === 'function') {
+      return computePierDeckHeights(ctx, laws, rec, pierKind, waterTop, pileFloorZ);
+    }
+    const isFloating = Boolean(rec.floating || (rec.tags && (rec.tags.floating === 'yes' || rec.tags.platform === 'floating')) || pierKind === 'pontoon');
+    const rawGapMm = isSolidStone ? 0 : ((ctx.supportlessMode || isFloating) ? 0.08 : 0.48);
+    const resolvedGapMm = rawGapMm < 0.24 ? 0 : Math.max(0.48, rawGapMm);
+    const needsPiles = !isSolidStone && resolvedGapMm >= 0.48;
+    const zDeckBot = needsPiles ? (waterTop + resolvedGapMm / scaleMm) : pileFloorZ;
+    const zDeckTop = needsPiles
+      ? (zDeckBot + deckThickU)
+      : (isSolidStone
+          ? Math.max(ctx.zLandDatum + 0.16 / scaleMm, waterTop + deckThickU, zDeckBot + deckThickU + 0.15 / scaleMm)
+          : Math.max(waterTop + deckThickU + (isFloating ? 0.08 / scaleMm : 0), zDeckBot + deckThickU + 0.15 / scaleMm));
+    return { isFloating, zDeckBot, zDeckTop };
+  };
+
+  const pushArea = (rec) => {
+    if (!rec || !rec.outer || rec.outer.length < 3) return;
+    const k = rec.osmId != null ? `A:${rec.osmId}` : null;
+    if (k && seen.has(k)) return;
+    if (k) seen.add(k);
+    const outer = rec.outer.map(toBed);
+    const bb = _bbox2DJS(outer);
+    const pierKind = rec.pierKind || (rec.tags && rec.tags.man_made) || 'pier';
+    const h = resolveHeights(rec, pierKind, (bb[0] + bb[2]) * 0.5, (bb[1] + bb[3]) * 0.5);
+    anchors.push({ isArea: true, outer, pts: null, halfW: 0, bb, zPierTop: h.zDeckTop, zPierBot: h.zDeckBot, isFloating: Boolean(h.isFloating) });
+  };
+
+  const pushLine = (rec) => {
+    if (!rec || !rec.pts || rec.pts.length < 2) return;
+    const k = rec.osmId != null ? `L:${rec.osmId}` : null;
+    if (k && seen.has(k)) return;
+    if (k) seen.add(k);
+    const pts = rec.pts.map(toBed);
+    const halfW = Math.max((ctx.minPrintU || 0.1) * 0.7, ((rec.width || 0.8) * 0.5) * s2b);
+    const bb = _bbox2DJS(pts);
+    const pierKind = rec.pierKind || (rec.tags && rec.tags.man_made) || rec.man_made || 'pier';
+    const mid = pts[pts.length >> 1];
+    const h = resolveHeights(rec, pierKind, mid[0], mid[1]);
+    anchors.push({
+      isArea: false, outer: null, pts, halfW,
+      bb: [bb[0] - halfW, bb[1] - halfW, bb[2] + halfW, bb[3] + halfW],
+      zPierTop: h.zDeckTop, zPierBot: h.zDeckBot, isFloating: Boolean(h.isFloating)
+    });
+  };
+
+  const lineOsmIds = new Set(((scene && scene.pierLines) || []).map(pl => pl && pl.osmId).filter(id => id != null));
+  for (const bp of (scene && scene.bridgePolys) || []) {
+    if (!bp || !bp.isPier) continue;
+    if (bp.isPierLine && bp.osmId != null && lineOsmIds.has(bp.osmId)) continue;
+    pushArea(bp);
+  }
+  for (const pp of (scene && scene.pierPolys) || []) if (pp && !pp._inBridgePolys) pushArea(pp);
+  for (const pl of (scene && scene.pierLines) || []) pushLine(pl);
+  return anchors;
+}
+
+function _matchPierAnchorAtPtJS(px, py, pierAnchors, snapTolU) {
+  let best = null, bestD = Infinity;
+  for (let i = 0; i < pierAnchors.length; i++) {
+    const pa = pierAnchors[i];
+    if (px < pa.bb[0] - snapTolU || px > pa.bb[2] + snapTolU || py < pa.bb[1] - snapTolU || py > pa.bb[3] + snapTolU) continue;
+    if (pa.isArea) {
+      if (_ptInRingJS(px, py, pa.outer)) return pa;
+      const d = _ptToPolyDist2DJS(px, py, pa.outer.concat([pa.outer[0]]));
+      if (d <= snapTolU && d < bestD) { bestD = d; best = pa; }
+    } else {
+      const d = Math.max(0, _ptToPolyDist2DJS(px, py, pa.pts) - pa.halfW);
+      if (d <= snapTolU && d < bestD) { bestD = d; best = pa; }
+    }
+  }
+  return best;
+}
+
 function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
   const s2b = ctx.scaleToBed || 1.0;
+  const scaleMm = ctx.scaleMm || 1.89;
   const toBed = typeof ctx.toBed === 'function' ? ctx.toBed : (p => [p[0] * s2b, p[1] * s2b]);
   const mToBedXY = ctx.mToU * s2b;
-  const minDeckU = (ctx.cfg ? ctx.cfg.bridgeDeckMinMm : 0.719) / ctx.scaleMm;
+  const minDeckU = (ctx.cfg ? ctx.cfg.bridgeDeckMinMm : 0.719) / scaleMm;
   const clipPad = 2.0, cMinX = -ctx.halfW - clipPad, cMaxX = ctx.halfW + clipPad, cMinY = -ctx.halfH - clipPad, cMaxY = ctx.halfH + clipPad;
 
   const rawPolys = (scene.bridgePolys || []).filter(bp => bp && !bp.isPier && bp.outer && bp.outer.length >= 3);
@@ -27,11 +123,12 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
     outer: sp.outer ? sp.outer.map(toBed) : null,
     pts: sp.pts ? sp.pts.map(toBed) : null
   }));
+  const pierAnchors = _collectPierAnchorsForBridgesJS(scene, terrainWater, ctx, toBed, s2b);
 
   const groundRoads = [];
   for (const rd of (scene.roads || [])) {
     if (!rd || rd.isBridge || rd.bridge || !rd.pts || rd.pts.length < 2) continue;
-    const hw = Math.max(0.18, ((rd.width || 0.7) * 0.5) * s2b);
+    const hw = Math.max(0.24 / scaleMm, ((rd.width || 0.7) * 0.5) * s2b);
     const lyr = rd.hasExplicitLayer ? (rd.layer ?? 0) : 0;
     for (const pc of _clipPolylineToRectJS(rd.pts.map(toBed), cMinX, cMinY, cMaxX, cMaxY)) {
       const bb = _bbox2DJS(pc.pts);
@@ -46,6 +143,7 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
   const allSceneRoadByOsmId = new Map();
   for (const rd of (scene.roads || [])) if (rd && rd.osmId != null) allSceneRoadByOsmId.set(rd.osmId, rd);
 
+  const stepStationU = Math.max(0.06, Math.min(0.80, 1.25 / scaleMm));
   const roadLinkedPolyList = new Map();
   const specs = [];
   for (const bp of rawPolys) {
@@ -66,10 +164,11 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
       .filter(rd => rd && !(rd.isBridge || rd.bridge) && rd.pts && rd.pts.length >= 2);
     const axisCandidates = linked.length > 0 ? linked : surfaceAcross;
     const axisRaw = _extractClippedAxisFromRoadsJS(outer, axisCandidates.map(r => r.pts.map(toBed)), mToBedXY) || _extractCurvedSpineFromPolyJS(outer);
-    const spanU = Math.max(0.4, _polyLenJS(axisRaw));
+    const spanU = Math.max(0.15, _polyLenJS(axisRaw));
+    const spanMetersPoly = spanU / Math.max(1e-5, mToBedXY);
     const obb = typeof computeMinAreaOBB2D === 'function' ? computeMinAreaOBB2D(outer) : null;
     const estW = typeof _estimatePolyRibbonWidthJS === 'function' ? _estimatePolyRibbonWidthJS(outer, axisRaw, obb) : 1.5;
-    const widthU = Math.max(minDeckU * 1.3, Number.isFinite(estW) ? estW : 1.5);
+    const widthU = Math.max(minDeckU * 1.15, Number.isFinite(estW) ? estW : 1.5);
     const rawBpStruct = bp.bridgeStructure || (bp.tags && bp.tags['bridge:structure']);
     const rawBpTrim = String(rawBpStruct || '').trim().toLowerCase();
     const hasExplicitBpStruct = Boolean(rawBpTrim && !['yes', 'viaduct', 'bridge', 'movable'].includes(rawBpTrim));
@@ -96,21 +195,29 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
     const inferredPolyLayer = (!hasExplicitBpLayer && linked.length > 0)
       ? Math.max(bp.layer ?? 1, ...linked.map(r => r.layer ?? 1))
       : (bp.layer ?? 1);
-    const nSt = Math.max(7, Math.min(160, Math.ceil(spanU / 0.80) + 1));
+    const nSt = Math.max(13, Math.min(200, Math.ceil(spanU / stepStationU) + 1));
+    const resampledPolyPts = _resamplePolyJS(axisRaw, nSt);
+    const pierSnapU = Math.max(widthU * 0.55, Math.min(0.55 / scaleMm, 3.5 * mToBedXY));
+    const joinPierStart = pierAnchors.length ? _matchPierAnchorAtPtJS(resampledPolyPts[0][0], resampledPolyPts[0][1], pierAnchors, pierSnapU) : null;
+    const joinPierEnd = pierAnchors.length ? _matchPierAnchorAtPtJS(resampledPolyPts[nSt - 1][0], resampledPolyPts[nSt - 1][1], pierAnchors, pierSnapU) : null;
+    const isPierGangway = Boolean((joinPierStart || joinPierEnd) && spanMetersPoly < 75.0);
+    if (isPierGangway) { structNorm = 'beam'; expThrough = false; isHumpback = false; }
+
     specs.push({
-      isAreaPoly: true, outer, holes, pts: _resamplePolyJS(axisRaw, nSt),
+      isAreaPoly: true, outer, holes, pts: resampledPolyPts, scaleMm,
       width: widthU, deckThick: Math.max(minDeckU, Math.min(widthU * 0.35, minDeckU * (structNorm === 'beam' ? 1.15 : 1.22))),
       deckLayer: inferredPolyLayer, name: bp.name || 'Most', structNorm, explicitThroughArch: expThrough, isHumpback,
       isRail: allAcross.length > 0 && allAcross.every(rd => rd.tags && rd.tags.railway),
       isPath: false, isBoardwalk: false, level: bp.level || '',
       clippedStart: false, clippedEnd: false, joinPolyStart: false, joinPolyEnd: false,
+      joinPierStart, joinPierEnd, isPierGangway, joinBridgeStart: null, joinBridgeEnd: null,
       acrossOsmIdSet, carriedVerts, linkedPolyOsmIds: [],
       heightM, minHeightM: bp.minHeightM, clearanceM, covered: bp.covered, supportIds: bp.supportIds || [], osmId: bp.osmId
     });
   }
 
-  const polyOverlapU = Math.max(0.25, 0.6 * mToBedXY);
-  const minOutsideSubU = Math.max(0.10, 0.8 * mToBedXY);
+  const polyOverlapU = Math.min(0.22 / scaleMm, Math.max(0.06 / scaleMm, 0.8 * mToBedXY));
+  const minOutsideSubU = Math.max(0.08 / scaleMm, 0.8 * mToBedXY);
   const freeRoadPieces = [];
   for (const rd of rawRoads) {
     const linkedEntries = roadLinkedPolyList.get(rd) || [];
@@ -135,6 +242,9 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
     const effLayer = rd.hasExplicitLayer !== undefined
       ? (rd.hasExplicitLayer ? rd.layer : (linkedEntries.length > 0 ? (linkedEntries[0].bp.layer ?? 1) : 1))
       : (rd.layer ?? 1);
+    const minPieceW = (isRail || rd.isPath)
+      ? Math.max(0.45 / scaleMm, (ctx.minPrintU || 0) * 0.65)
+      : Math.max(ctx.minPrintU || 0, 0.62 / scaleMm);
     for (const sub of sourcePolylines) {
       for (const pc of _clipPolylineToRectJS(sub.pts, cMinX, cMinY, cMaxX, cMaxY)) {
         freeRoadPieces.push({
@@ -144,7 +254,7 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
           joinPolyStart: Boolean(sub.entersRingAtStart && !pc.clippedStart),
           joinPolyEnd: Boolean(sub.entersRingAtEnd && !pc.clippedEnd),
           linkedPolyOsmIds,
-          width: Math.max(isRail || rd.isPath ? 0.20 : 0.28, (rd.width || 0.8) * s2b),
+          width: Math.max(minPieceW, (rd.width || 0.8) * s2b),
           layer: effLayer,
           parentBridgeRelId: rd.parentBridgeRelId, name: rd.name || '',
           isRail, isPath: Boolean(rd.isPath), isBoardwalk, level: rd.level || (rd.tags && rd.tags.level) || '',
@@ -157,28 +267,55 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
     }
   }
 
-  for (const r of _stitchAndMergeLinearBridgesJS(freeRoadPieces, { mToBedXY, scaleMm: ctx.scaleMm })) {
-    const spanU = Math.max(0.4, _polyLenJS(r.pts));
-    const spanMetersLinear = spanU / Math.max(1e-5, mToBedXY);
+  for (const r of _stitchAndMergeLinearBridgesJS(freeRoadPieces, { mToBedXY, scaleMm })) {
+    const rawSpanU = Math.max(0.12, _polyLenJS(r.pts));
+    const spanMetersLinear = rawSpanU / Math.max(1e-5, mToBedXY);
+    const slender = Boolean(r.isRail || r.isPath);
+    const minW = slender ? Math.max(0.50 / scaleMm, minDeckU * 0.72) : Math.max(0.68 / scaleMm, minDeckU * 0.95);
+    const widthU = Math.max(minW, r.width);
+
+    const pierSnapU = Math.max(widthU * 0.75, Math.min(0.55 / scaleMm, 3.5 * mToBedXY));
+    const joinPierStart = (!r.clippedStart && !r.joinPolyStart && pierAnchors.length)
+      ? _matchPierAnchorAtPtJS(r.pts[0][0], r.pts[0][1], pierAnchors, pierSnapU) : null;
+    const joinPierEnd = (!r.clippedEnd && !r.joinPolyEnd && pierAnchors.length)
+      ? _matchPierAnchorAtPtJS(r.pts[r.pts.length - 1][0], r.pts[r.pts.length - 1][1], pierAnchors, pierSnapU) : null;
+    const isPierGangway = Boolean((joinPierStart || joinPierEnd) && spanMetersLinear < 75.0);
+
+    let ptsUse = r.pts;
+    if (isPierGangway && ptsUse.length >= 2) {
+      ptsUse = ptsUse.map(p => [p[0], p[1]]);
+      const extU = Math.min(0.20 / scaleMm, rawSpanU * 0.16);
+      if (joinPierStart) {
+        const dx = ptsUse[0][0] - ptsUse[1][0], dy = ptsUse[0][1] - ptsUse[1][1], dl = Math.hypot(dx, dy) || 1;
+        ptsUse[0] = [ptsUse[0][0] + (dx / dl) * extU, ptsUse[0][1] + (dy / dl) * extU];
+      }
+      if (joinPierEnd) {
+        const last = ptsUse.length - 1;
+        const dx = ptsUse[last][0] - ptsUse[last - 1][0], dy = ptsUse[last][1] - ptsUse[last - 1][1], dl = Math.hypot(dx, dy) || 1;
+        ptsUse[last] = [ptsUse[last][0] + (dx / dl) * extU, ptsUse[last][1] + (dy / dl) * extU];
+      }
+    }
+
+    const spanU = Math.max(0.12, _polyLenJS(ptsUse));
     const isShortPolyStub = Boolean((r.joinPolyStart || r.joinPolyEnd) && spanMetersLinear < 25.0);
-    const effStruct = (isShortPolyStub || (spanMetersLinear < 14.0 && !r.explicitThroughArch && r.structNorm === 'arch'))
+    const effStruct = (isPierGangway || isShortPolyStub || (spanMetersLinear < 14.0 && !r.explicitThroughArch && r.structNorm === 'arch'))
       ? 'beam'
       : r.structNorm;
-    const slender = Boolean(r.isRail || r.isPath);
-    const minW = slender ? Math.max(0.54 / ctx.scaleMm, minDeckU * 0.78) : minDeckU * 1.12;
-    const widthU = Math.max(minW, r.width);
-    const deckThick = Math.max(slender ? Math.max(0.56 / ctx.scaleMm, minDeckU * 0.82) : minDeckU, Math.min(widthU * 0.40, minDeckU * 1.15));
-    const nSt = Math.max(7, Math.min(160, Math.ceil(spanU / 0.80) + 1));
-    const resampledPts = _resamplePolyJS(r.pts, nSt);
+    const deckThick = isPierGangway
+      ? Math.max(0.46 / scaleMm, minDeckU * 0.72)
+      : Math.max(slender ? Math.max(0.56 / scaleMm, minDeckU * 0.82) : minDeckU, Math.min(widthU * 0.40, minDeckU * 1.15));
+    const nSt = Math.max(13, Math.min(200, Math.ceil(spanU / stepStationU) + 1));
+    const resampledPts = _resamplePolyJS(ptsUse, nSt);
     specs.push({
-      isAreaPoly: false, outer: null, holes: [], pts: resampledPts,
+      isAreaPoly: false, outer: null, holes: [], pts: resampledPts, scaleMm,
       width: widthU, deckThick, deckLayer: r.layer ?? 1, name: r.name, structNorm: effStruct,
-      explicitThroughArch: Boolean(!isShortPolyStub && r.explicitThroughArch),
-      isHumpback: Boolean(!isShortPolyStub && r.isHumpback),
+      explicitThroughArch: Boolean(!isPierGangway && !isShortPolyStub && r.explicitThroughArch),
+      isHumpback: Boolean(!isPierGangway && !isShortPolyStub && r.isHumpback),
       isRail: Boolean(r.isRail),
       isPath: Boolean(r.isPath), isBoardwalk: Boolean(r.isBoardwalk), level: r.level || '',
       clippedStart: Boolean(r.clippedStart), clippedEnd: Boolean(r.clippedEnd),
       joinPolyStart: Boolean(r.joinPolyStart), joinPolyEnd: Boolean(r.joinPolyEnd),
+      joinPierStart, joinPierEnd, isPierGangway, joinBridgeStart: null, joinBridgeEnd: null,
       acrossOsmIdSet: null, carriedVerts: [resampledPts[0], resampledPts[resampledPts.length - 1]],
       linkedPolyOsmIds: r.linkedPolyOsmIds || [],
       heightM: r.heightM, minHeightM: r.minHeightM, clearanceM: r.clearanceM, covered: r.covered, supportIds: [], osmId: r.osmId
@@ -188,14 +325,17 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
   return { specs, groundRoads, rawSupports, mToBedXY, minDeckU };
 }
 
-function _attachExplicitSupportsToSpecsJS(specs, rawSupports, mToBedXY) {
-  for (const sp of specs) {
-    sp.explicitSupports = [];
-    const maxDist = Math.max(sp.width * 0.85, Math.min(2.2, 12.0 * mToBedXY + 0.6));
-    for (const sup of rawSupports) {
-      if (!sup.pt) continue;
+function _attachExplicitSupportsToSpecsJS(specs, rawSupports, mToBedXY, scaleMm = 1.89) {
+  for (const sp of specs) sp.explicitSupports = [];
+  for (const sup of rawSupports) {
+    if (!sup.pt) continue;
+    let attachedExplicit = false;
+    const proxMatches = [];
+    for (const sp of specs) {
+      if (sp.isPierGangway) continue;
       const byId = sup.osmId != null && sp.supportIds.includes(sup.osmId);
       const inside = sp.isAreaPoly && _ptInRingJS(sup.pt[0], sup.pt[1], sp.outer);
+      const maxDist = Math.max(sp.width * 0.75, Math.min(1.6 / scaleMm, 10.0 * mToBedXY + 0.30 / scaleMm));
       let bestS = 0, bestD = Infinity;
       for (let i = 0; i < sp.pts.length - 1; i++) {
         const a = sp.pts[i], b = sp.pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1e-9;
@@ -203,10 +343,20 @@ function _attachExplicitSupportsToSpecsJS(specs, rawSupports, mToBedXY) {
         const d = Math.hypot(sup.pt[0] - (a[0] + dx * t), sup.pt[1] - (a[1] + dy * t));
         if (d < bestD) { bestD = d; bestS = sp.sArr[i] + Math.sqrt(l2) * t; }
       }
-      if (byId || inside || bestD <= maxDist) sp.explicitSupports.push({ ...sup, sProj: bestS, distToAxis: bestD });
+      if (byId || inside) {
+        sp.explicitSupports.push({ ...sup, sProj: bestS, distToAxis: bestD });
+        attachedExplicit = true;
+      } else if (bestD <= maxDist) {
+        proxMatches.push({ sp, bestS, bestD });
+      }
     }
-    sp.explicitSupports.sort((a, b) => a.sProj - b.sProj);
+    if (!attachedExplicit && proxMatches.length > 0) {
+      proxMatches.sort((a, b) => (a.bestD - b.bestD) || (a.sp.deckLayer - b.sp.deckLayer));
+      const win = proxMatches[0];
+      win.sp.explicitSupports.push({ ...sup, sProj: win.bestS, distToAxis: win.bestD });
+    }
   }
+  for (const sp of specs) sp.explicitSupports.sort((a, b) => a.sProj - b.sProj);
 }
 
 const _BRIDGE_SPECS_EXTRACT_EXPORTS = { _extractBridgeSpecsFromSceneJS, _attachExplicitSupportsToSpecsJS };

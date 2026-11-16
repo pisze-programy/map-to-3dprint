@@ -5,7 +5,8 @@
 
 (function (root) {
   function _ensureBridgeDeps() {
-    if ((typeof solveBridgeGraph === 'undefined' || typeof buildBridgeSuperstructure === 'undefined') && typeof require !== 'undefined') {
+    if ((typeof solveBridgeGraph === 'undefined' || typeof buildBridgeSuperstructure === 'undefined' || typeof computePierDeckHeights === 'undefined') && typeof require !== 'undefined') {
+      Object.assign(root, require('../../Water/water_piers_solver.js'));
       Object.assign(root, require('./bridge_geom_2d.js'));
       Object.assign(root, require('./bridge_spine_stitch.js'));
       Object.assign(root, require('./bridge_tin_sampler.js'));
