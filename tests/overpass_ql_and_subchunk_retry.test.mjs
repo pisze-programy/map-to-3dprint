@@ -95,15 +95,14 @@ function buildLegacyExpandedOverpassQL(south, west, north, east, lodTier = 'deta
   if (lodTier === 'urban') {
     const bldWay = minBldM <= 0
       ? 'way.bw["building"];way.bw["building:part"];'
-      : 'way.bw["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|sty|greenhouse|static_caravan|ger)$"];way.bw["building:part"];';
+      : 'way.bw["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|allotment_house|sty|greenhouse|static_caravan|ger)$"];way.bw["building:part"];';
     const hwyFilter = roadDetail === 'major'
-      ? majorHwyFilter
+      ? `${majorHwyFilter}way.bw["highway"]["bridge"~"${bridgeValRegex}"];`
       : 'way.bw["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|service|cycleway|footway|path|steps|track|bridleway|corridor)$"];';
-    const extraBridge = roadDetail === 'major' ? `way.bw["highway"]["bridge"~"${bridgeValRegex}"];` : '';
     const ways =
-      bldWay + wheelFilter + hwyFilter + extraBridge +
+      bldWay + wheelFilter + hwyFilter +
       'way.bw["natural"~"^(water|coastline|wood|scrub|grassland|heath|tree_row|beach|wetland|shingle|shoal|mud|bare_rock)$"];' +
-      'way.bw["waterway"];way.bw["water"];way.bw["area:highway"];' +
+      'way.bw["waterway"];way.bw["water"];way.bw["area:highway"];way.bw["amenity"="fountain"];' +
       'way.bw["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];' +
       'way.bw["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground|dog_park|marina|swimming_pool)$"];' +
       'way.bw["place"~"^(square|island|islet)$"];way.bw["railway"~"^(rail|light_rail|tram|narrow_gauge|funicular|platform)$"];' +
@@ -111,57 +110,28 @@ function buildLegacyExpandedOverpassQL(south, west, north, east, lodTier = 'deta
       _BUILD_QL_LAYER2_WAY;
     return assemble(bbox, timeoutSec, _MP_STD_CLAUSES, ways, nodeClause);
   }
-  if (lodTier === 'regional') {
-    const regNodes = (lodOptions && lodOptions.wantTrees === true) ? `node["natural"="tree"];${_BUILD_QL_LAYER2_NODE}` : _BUILD_QL_LAYER2_NODE;
-    const natRegex = (lodOptions && lodOptions.wantTrees === true)
-      ? '^(water|coastline|wood|scrub|grassland|heath|beach|shingle|shoal|mud|tree_row)$'
-      : '^(water|coastline|wood|scrub|grassland|heath|beach|shingle|shoal|mud)$';
-    const exclBld = minBldM <= 0
-      ? '^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|sty|greenhouse|static_caravan|ger)$'
-      : '^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|greenhouse|house|detached|terrace|semidetached_house|bungalow|farm_auxiliary|barn)$';
-    const regHwyFilter = roadDetail === 'major'
-      ? majorHwyFilter
-      : 'way.bw["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|service|path|cycleway|steps|track)$"];' +
-        'way.bw["highway"="footway"][footway!~"^(sidewalk|crossing|access_aisle|island)$"];';
-    const ways =
-      `way.bw["building"][building!~"${exclBld}"];way.bw["building"]["height"];way.bw["building"]["building:levels"~"^([3-9]|[1-9][0-9])"];way.bw["building"]["name"];way.bw["building:part"];` +
-      wheelFilter +
-      `way.bw["natural"~"${natRegex}"];way.bw["waterway"~"^(river|riverbank|canal|stream|dock)$"];way.bw["water"];way.bw["area:highway"];way.bw["place"~"^(square|island|islet)$"];` +
-      'way.bw["landuse"~"^(reservoir|basin|forest|meadow|grass|park|recreation_ground|cemetery|village_green)$"];' +
-      'way.bw["leisure"~"^(park|nature_reserve|garden|golf_course|pitch|common|recreation_ground|marina)$"];' +
-      regHwyFilter +
-      `way.bw["highway"]["bridge"~"${bridgeValRegex}"];way.bw["railway"~"^(rail|light_rail|tram|narrow_gauge|platform)$"];` +
-      elevatedTransitFilter + 'way.bw["public_transport"="platform"];' +
-      _BUILD_QL_LAYER2_WAY;
-    return assemble(bbox, timeoutSec, _MP_STD_CLAUSES, ways, regNodes);
-  }
-  const midLatRad = ((south + north) * 0.5) * Math.PI / 180;
-  const chunkSpanM = Math.max(
-    Math.abs(north - south) * 111320,
-    Math.abs(east - west) * 111320 * Math.max(0.2, Math.cos(midLatRad))
-  );
-  const isWideMetropolisScale = (lodOptions && Number(lodOptions.fetchSpanMeters) > 15500) || chunkSpanM > 5200;
-  if (isWideMetropolisScale) {
-    return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];way->.bw;` +
-      `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["place"~"^(island|islet)$"]->.isl;way(r.isl)->.islw;` +
-      `(${_MP_MTN_CLAUSES})->.mp;way(r.mp)(${bbox})->.mpw;` +
-      `(way.bw["building:levels"~"^(1[2-9]|[2-9][0-9])"]["building"];way.bw["building"~"^(church|cathedral|chapel|castle|palace|tower|stadium)$"];way.bw["natural"~"^(water|coastline)$"];way.bw["waterway"~"^(river|riverbank|canal)$"];way.bw["water"];way.bw["place"~"^(island|islet)$"];way.bw["landuse"~"^(reservoir|basin)$"];way.bw["leisure"="park"];way.bw["highway"~"^(motorway|trunk|primary|motorway_link|trunk_link)$"];.islw;.mpw;)->.wbox;` +
-      `(.isl;.mp;.wbox;);out body qt;node(w.wbox);out skel qt;`;
-  }
-  const mtnWays =
-    'way.bw["building"]["height"];way.bw["building"]["building:levels"~"^([5-9]|[1-9][0-9])"];way.bw["building"]["name"];' +
-    'way.bw["building"~"^(church|cathedral|chapel|castle|palace|public|civic|commercial|industrial|apartments|hotel|hospital|university|train_station|tower|stadium)$"];' +
-    'way.bw["natural"~"^(water|coastline|wood|scrub)$"];way.bw["waterway"~"^(river|riverbank|canal|dock)$"];way.bw["water"];way.bw["place"~"^(island|islet)$"];' +
-    'way.bw["landuse"~"^(reservoir|basin|forest)$"];way.bw["leisure"~"^(park|nature_reserve|marina)$"];' +
-    'way.bw["highway"~"^(motorway|trunk|primary|secondary|tertiary|motorway_link|trunk_link)$"];' +
-    'way.bw["highway"]["bridge"~"^(yes|viaduct|suspension)$"];way.bw["railway"="rail"];' +
+  // Regional & wide-span ('mountain') unstripped oracle: zero artificial stripping of buildings, building:part, streets, squares, or parks
+  const regNodes = (lodOptions && lodOptions.wantTrees === true) ? `node["natural"="tree"];${_BUILD_QL_LAYER2_NODE}` : _BUILD_QL_LAYER2_NODE;
+  const natRegex = (lodOptions && lodOptions.wantTrees === true)
+    ? '^(water|coastline|wood|scrub|grassland|heath|beach|wetland|shingle|shoal|mud|bare_rock|tree_row)$'
+    : '^(water|coastline|wood|scrub|grassland|heath|beach|wetland|shingle|shoal|mud|bare_rock)$';
+  const bldWayWide = minBldM <= 0
+    ? 'way.bw["building"];way.bw["building:part"];'
+    : 'way.bw["building"][building!~"^(shed|garage|garages|hut|cabin|kiosk|allotment_house|sty|greenhouse|static_caravan|ger)$"];way.bw["building:part"];';
+  const regHwyFilter = roadDetail === 'major'
+    ? majorHwyFilter
+    : 'way.bw["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|service|path|cycleway|steps|track|bridleway|corridor)$"];' +
+      'way.bw["highway"="footway"][footway!~"^(sidewalk|crossing|access_aisle|island)$"];';
+  const ways =
+    bldWayWide + wheelFilter +
+    `way.bw["natural"~"${natRegex}"];way.bw["waterway"];way.bw["water"];way.bw["area:highway"];way.bw["amenity"="fountain"];way.bw["place"~"^(square|island|islet)$"];` +
+    'way.bw["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];' +
+    'way.bw["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground|dog_park|marina|swimming_pool)$"];' +
+    regHwyFilter +
+    `way.bw["highway"]["bridge"~"${bridgeValRegex}"];way.bw["railway"~"^(rail|light_rail|tram|narrow_gauge|funicular|platform)$"];` +
+    elevatedTransitFilter + 'way.bw["public_transport"="platform"];' +
     _BUILD_QL_LAYER2_WAY;
-  return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];way->.bw;` +
-    _BUILD_QL_REL_BRIDGE_BLD +
-    `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["place"~"^(island|islet)$"]->.isl;way(r.isl)->.islw;` +
-    `(${_MP_MTN_CLAUSES})->.mp;way(r.mp)(${bbox})->.mpw;` +
-    `(${mtnWays}.brw;.islw;.mpw;)->.wbox;` +
-    `(rel.br;rel.brs;.isl;.mp;.wbox;node["bridge:support"];node(r.br););out body qt;node(w.wbox);out skel qt;`;
+  return assemble(bbox, timeoutSec, _MP_STD_CLAUSES, ways, regNodes);
 }
 
 function resolveOverpassV2CacheDir() {
@@ -653,6 +623,63 @@ async function runTests() {
       !partialCalledAfterFinal && scene.buildings.length === 4 && scene._partialIncomplete === false,
       'streamCompleted prevents late onPartialScene from firing after final scene resolves',
       `partialCalledAfterFinal=${partialCalledAfterFinal}, buildings=${scene.buildings.length}`
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 6. Proxy timeout remark (generator="Map3D Overpass Proxy") immediately triggers 2x2 split (0 secondary mirror waste) + 12km dynamic grid
+  // ---------------------------------------------------------------------------
+  console.log('\n6) Map3D Overpass Proxy timeout remark immediately triggers 2x2 split + dynamic 12km spatial tiling:');
+  {
+    const grid12km = buildSpatialChunkGrid(25.1400, 55.2110, 25.2543, 55.3373, 12000, { fetchSpanMeters: 12720 });
+    check(
+      grid12km.rows === 6 && grid12km.cols === 6 && grid12km.chunks.length === 36,
+      '12km metropolis fetch (12.72km envelope) splits into 6x6 = 36 tiles (~2.1km each) instead of 3x3 (4.37km)',
+      `grid=${grid12km.rows}x${grid12km.cols} (${grid12km.chunks.length} tiles)`
+    );
+
+    const south = 25.1900, west = 55.2680, north = 25.2020, east = 55.2800;
+    const dataset = makeQuadrantBuildingsDataset(south, west, north, east);
+    const evaluator = new LocalOverpassEvaluator(dataset);
+    const runtime = createPipelineRuntime({ offlineOnly: true, offlineFallbackDem: true, silent: true });
+    runtime.sandbox.window.location.protocol = 'http:';
+    runtime.sandbox.clearOverpassChunkCache();
+
+    const parentGrid = buildSpatialChunkGrid(south, west, north, east, 1400, { fetchSpanMeters: 1400 });
+    const pChunk = parentGrid.chunks[0];
+    const parentKey = `${pChunk.south.toFixed(5)},${pChunk.west.toFixed(5)},${pChunk.north.toFixed(5)},${pChunk.east.toFixed(5)}`;
+
+    const parentEndpointsHit = [];
+    runtime.sandbox._overpassCustomFetch = async (ep, init) => {
+      const { ql, bboxKey } = parseQueryBBox(init && init.body);
+      if (bboxKey === parentKey) {
+        parentEndpointsHit.push(ep);
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              version: 0.6,
+              generator: 'Map3D Overpass Proxy',
+              elements: [],
+              remark: 'runtime error: Query timed out after 14s',
+            });
+          },
+        };
+      }
+      const data = evaluator.evaluateQL(ql);
+      return { ok: true, status: 200, async text() { return JSON.stringify(data); } };
+    };
+
+    const sc = await runtime.sandbox.fetchChunkedGISInBrowser(south, west, north, east, 'PROXY_INSTANT_SPLIT', {
+      targetSpanMeters: 1400,
+      subRetryDelayMs: 10,
+      retryDelayMs: 10,
+    });
+    check(
+      parentEndpointsHit.length === 1 && parentEndpointsHit[0] === '/api/interpreter' && sc.buildings.length === 4,
+      'Map3D Overpass Proxy timeout remark sets isQueryTooHeavy=true and immediately splits 2x2 without polling direct browser mirrors',
+      `parentEndpointsHit=${JSON.stringify(parentEndpointsHit)}, buildings=${sc.buildings.length}`
     );
   }
 

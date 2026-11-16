@@ -125,7 +125,8 @@
     if (ctx && ctx.state && ctx.state.layerVisible && ctx.state.layerVisible.buildings === false) return [];
     const buildings = (scene && scene.buildings) || [];
     if (buildings.length === 0) return [];
-    const { toBed } = ctx;
+    const { toBed, halfW: bedHalfW = 85, halfH: bedHalfH = 85 } = ctx;
+    const limX = bedHalfW + 1.0, limY = bedHalfH + 1.0;
     const rawBldRings = [];
     for (let i = 0; i < buildings.length; i++) {
       const b = buildings[i];
@@ -137,6 +138,13 @@
       // Allow streets/alleys to pass cleanly beneath elevated bridge-buildings, gatehouses & skybridges
       if (rawMinH > 2.5) continue;
       const oBed = b.outer.map(toBed);
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (let p = 0; p < oBed.length; p++) {
+        const px = oBed[p][0], py = oBed[p][1];
+        if (px < minX) minX = px; if (px > maxX) maxX = px;
+        if (py < minY) minY = py; if (py > maxY) maxY = py;
+      }
+      if (maxX < -limX || minX > limX || maxY < -limY || minY > limY) continue;
       const holesBed = (b.holes || []).filter(h => h && h.length >= 3).map(h => h.map(toBed));
       const clean = holesBed.length > 0 ? core.clipperDiffPolys([oBed], holesBed, 1e-5) : [oBed];
       for (let k = 0; k < clean.length; k++) rawBldRings.push(clean[k]);
@@ -205,7 +213,16 @@
         ? Math.max((fullMinMm * 0.5) / scaleMm, ((ctx.xyPixelMm || 0.017) * 6) / scaleMm)
         : Math.max(ctx.minPrintU * 0.5, (fullMinMm * 0.5) / scaleMm);
       const halfW = Math.max(minHalfW, ((rd.width || (isPath ? 0.30 : 0.70)) * 0.5) * scaleToBed);
+      const cullX = (ctx.halfW || 85) + halfW + 1.0;
+      const cullY = (ctx.halfH || 85) + halfW + 1.0;
       for (const bedPts of candidatePolylines) {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (let p = 0; p < bedPts.length; p++) {
+          const px = bedPts[p][0], py = bedPts[p][1];
+          if (px < minX) minX = px; if (px > maxX) maxX = px;
+          if (py < minY) minY = py; if (py > maxY) maxY = py;
+        }
+        if (maxX < -cullX || minX > cullX || maxY < -cullY || minY > cullY) continue;
         if (isQuay) openQuayLines.push({ pts: bedPts, halfW });
         else if (isPath) openFootpathLines.push({ pts: bedPts, halfW });
         else openStreetLines.push({ pts: bedPts, halfW });

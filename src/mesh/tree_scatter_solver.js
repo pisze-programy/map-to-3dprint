@@ -196,7 +196,7 @@
     const PCELL = Math.max(1.2, (1.8 / scaleMm));
     const placedGrid = new Map();
     const placedTrees = [];
-    const MAX_TREES = 6500;
+    const MAX_TREES = 25000;
 
     const tryAcceptTree = (bx, by, h_m, explicitCrownM = 0) => {
       if (placedTrees.length >= MAX_TREES) return;

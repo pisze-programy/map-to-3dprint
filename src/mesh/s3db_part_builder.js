@@ -131,21 +131,31 @@ function buildSupportlessCorbel(core, mf, sr, zBase, zGroundSeat, ctx) {
 
 function buildS3DBPartSolid(core, b, tags, metaP, groupDatumById, platePoly, scene, ctx, terrainWater) {
   const { mf, toBed, scaleToBed, mToU, zScale, scaleMm, maxZUnits, slaLaws } = ctx;
-  const outerBed = b.outer.map(toBed), holesBed = (b.holes || []).filter(h => h && h.length >= 3).map(h => h.map(toBed));
-  let cleanOuters = core.clipperIntersectPolys([outerBed], platePoly, 1e-5).map(r => core.ensureWinding(r, true, 6e-4)).filter(r => r.length >= 3);
+  const outerBed = (metaP && metaP.outerBed) ? metaP.outerBed : b.outer.map(toBed);
+  const holesBed = (b.holes && b.holes.length > 0) ? b.holes.filter(h => h && h.length >= 3).map(h => h.map(toBed)) : [];
+  const strictlyInPlate = Boolean(metaP && metaP.strictlyInsidePlate);
+  let cleanOuters;
+  if (strictlyInPlate) {
+    const w = core.ensureWinding(outerBed, true, 6e-4);
+    cleanOuters = w.length >= 3 ? [w] : [];
+  } else {
+    cleanOuters = core.clipperIntersectPolys([outerBed], platePoly, 1e-5).map(r => core.ensureWinding(r, true, 6e-4)).filter(r => r.length >= 3);
+  }
   if (cleanOuters.length === 0) return null;
 
-  const isGroupedPart = b.groupId !== undefined && b.groupId !== null;
-  let adjOuters = cleanOuters, adjHoles = holesBed.map(h => core.ensureWinding(h, true, 6e-4)).filter(h => h.length >= 3);
-  try {
-    const pad = isGroupedPart ? 4.5e-4 : 3.5e-4;
-    const grown = core.clipperOffsetPolys(cleanOuters, pad, 'Miter', 1e-5);
-    if (grown.length > 0) {
-      const valid = (isGroupedPart ? grown : core.clipperOffsetPolys(grown, -pad, 'Miter', 1e-5)).map(r => core.ensureWinding(r, true, 6e-4)).filter(r => r.length >= 3);
-      if (valid.length > 0) adjOuters = core.clipperIntersectPolys(valid, platePoly, 1e-5);
-    }
-    if (isGroupedPart && adjHoles.length > 0) adjHoles = core.clipperOffsetPolys(adjHoles, -4.5e-4, 'Miter', 1e-5).map(r => core.ensureWinding(r, true, 6e-4)).filter(r => r.length >= 3);
-  } catch (_) {}
+  const isGroupedPart = metaP ? Boolean(metaP.isMultiGroup) : (b.groupId !== undefined && b.groupId !== null);
+  let adjOuters = cleanOuters, adjHoles = holesBed.length > 0 ? holesBed.map(h => core.ensureWinding(h, true, 6e-4)).filter(h => h.length >= 3) : [];
+  if (isGroupedPart || !strictlyInPlate) {
+    try {
+      const pad = isGroupedPart ? 4.5e-4 : 3.5e-4;
+      const grown = core.clipperOffsetPolys(cleanOuters, pad, 'Miter', 1e-5);
+      if (grown.length > 0) {
+        const valid = (isGroupedPart ? grown : core.clipperOffsetPolys(grown, -pad, 'Miter', 1e-5)).map(r => core.ensureWinding(r, true, 6e-4)).filter(r => r.length >= 3);
+        if (valid.length > 0) adjOuters = strictlyInPlate ? valid : core.clipperIntersectPolys(valid, platePoly, 1e-5);
+      }
+      if (isGroupedPart && adjHoles.length > 0) adjHoles = core.clipperOffsetPolys(adjHoles, -4.5e-4, 'Miter', 1e-5).map(r => core.ensureWinding(r, true, 6e-4)).filter(r => r.length >= 3);
+    } catch (_) {}
+  }
   if (adjOuters.length === 0) adjOuters = cleanOuters;
 
   const preNormShape = _normalizeRoofShape(tags['roof:shape'] || b.roof || 'flat');
@@ -171,17 +181,24 @@ function buildS3DBPartSolid(core, b, tags, metaP, groupDatumById, platePoly, sce
     }
   }
   const isSpireOrPart = Boolean(b.part || b.fromBuildingRel || isLatticePart || (metaP && metaP.bodyTopM > 0) || ['cone', 'onion', 'pyramidal'].includes(roofShape));
+  let wasWidened = false;
   if (slaLaws && isSpireOrPart && adjOuters.length > 0 && adjHoles.length === 0) {
     const isBracedFlush = Boolean(metaP && metaP.bracedTopM >= rawH_m - 1.5);
     const protMm = Math.max(0.5, (metaP && metaP.bodyTopM > 0 ? Math.max(0.5, rawH_m - metaP.bodyTopM) : (rawH_m - rawMinH_m)) * mToMm);
     const reqDiaMm = isBracedFlush ? slaLaws.minWallThicknessMm(0) : slaLaws.minPinDiameterMm(protMm);
+    const prevRef = adjOuters;
     adjOuters = widenNarrowSpirePolys(core, adjOuters, adjHoles, platePoly, reqDiaMm, scaleMm);
+    if (adjOuters !== prevRef) wasWidened = true;
   }
 
-  const structured = core.ringsToOutersWithHoles(adjHoles.length > 0 ? core.clipperDiffPolys(adjOuters, adjHoles, 1e-5) : adjOuters, 6e-4);
+  const structured = (adjHoles.length === 0 && adjOuters.length === 1 && strictlyInPlate && !wasWidened && !isGroupedPart)
+    ? [{ outer: adjOuters[0], holes: [] }]
+    : core.ringsToOutersWithHoles(adjHoles.length > 0 ? core.clipperDiffPolys(adjOuters, adjHoles, 1e-5) : adjOuters, 6e-4);
   if (structured.length === 0) return null;
 
-  const terr = sampleFootprintTerrainZ(structured, ctx, terrainWater);
+  const terr = (metaP && metaP.terr && strictlyInPlate && !wasWidened && structured.length === 1)
+    ? metaP.terr
+    : sampleFootprintTerrainZ(structured, ctx, terrainWater);
   const embedU = terr.touchesWaterCutout ? 0.0 : Math.min(0.45 / scaleMm, Math.max(0.18 / scaleMm, (terr.maxZ - terr.minZ) * 0.25));
   const zGroundSeat = terr.touchesWaterCutout ? 0.0 : Math.max(0.15 / scaleMm, terr.minZ - embedU);
   const grpKey = (b.groupId !== undefined && b.groupId !== null) ? String(b.groupId) : null;

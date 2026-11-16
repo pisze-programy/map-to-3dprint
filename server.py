@@ -43,14 +43,14 @@ OVERPASS_USER_AGENT = (
     "contact@piszeprogramy.pl)"
 )
 OVERPASS_CONNECT_TIMEOUT_SEC = 2.6
-OVERPASS_ATTEMPT_TIMEOUT_SEC = 18.0
-OVERPASS_MIRROR_PHASE_BUDGET_SEC = 22.0
-OVERPASS_TOTAL_BUDGET_SEC = 38.0
+OVERPASS_ATTEMPT_TIMEOUT_SEC = 8.5
+OVERPASS_MIRROR_PHASE_BUDGET_SEC = 11.0
+OVERPASS_TOTAL_BUDGET_SEC = 32.0
 OVERPASS_CACHE_TTL_SEC = 600.0
-OVERPASS_CACHE_MAX = 64
+OVERPASS_CACHE_MAX = 256
 OVERPASS_DISK_CACHE_DIR = os.path.join(ROOT_DIR, "cache", "overpass_v2")
 OVERPASS_DISK_CACHE_TTL_SEC = 86400.0
-OVERPASS_DISK_CACHE_MAX = 128
+OVERPASS_DISK_CACHE_MAX = 1024
 
 OVERPASS_UPSTREAM_MIRRORS = [
     "https://overpass-api.de/api/interpreter",
@@ -67,11 +67,11 @@ _ALL_OVERPASS_MIRROR_URLS = list(
 
 _LOG_LOCK = threading.Lock()
 _MIRROR_LOCK = threading.Lock()
-_UPSTREAM_SEMAPHORE = threading.Semaphore(3)
-_OSM_V06_SEMAPHORE = threading.Semaphore(1)
+_UPSTREAM_SEMAPHORE = threading.Semaphore(6)
+_OSM_V06_SEMAPHORE = threading.Semaphore(3)
 _OSM_V06_TIME_LOCK = threading.Lock()
 _OSM_V06_LAST_REQ_TS = 0.0
-_OSM_V06_MIN_INTERVAL_SEC = 0.4
+_OSM_V06_MIN_INTERVAL_SEC = 0.15
 _MIRROR_STATE = {
     url: {
         "ewma_ms": 950.0 + idx * 150.0,
@@ -231,11 +231,13 @@ def _record_mirror_failure(url, cooldown_sec=40.0, is_query_timeout=False):
         st["fail"] += 1
         st["consec_fail"] += 1
         if is_query_timeout:
-            # Never cooldown-poison a proven mirror on isolated heavy-query timeouts,
-            # and keep query-timeout cooldowns short (<= 12s) so mirrors recover rapidly.
+            # Never cooldown-poison a proven mirror on a single isolated heavy-query timeout;
+            # on consecutive timeouts across tiles, apply exponential backoff (15s..120s) so
+            # overloaded upstream mirrors step aside immediately in favor of healthy mirrors / OSM v0.6.
             if st["ok"] > 0 and st["consec_fail"] < 2:
                 return
-            cooldown_sec = min(cooldown_sec, 12.0)
+            exp_step = min(3, max(0, st["consec_fail"] - 2))
+            cooldown_sec = min(120.0, 15.0 * (2 ** exp_step))
         st["cooldown_until"] = max(st["cooldown_until"], now + cooldown_sec)
         st["ewma_ms"] = min(15000.0, st["ewma_ms"] * 1.3 + 600.0)
 
@@ -740,9 +742,9 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
         float(m.group(4)),
     )
     area_deg2 = abs(north - south) * abs(east - west)
-    if area_deg2 > 0.0036:
+    if area_deg2 > 0.0014:
         raise OverpassQueryTimeoutError(
-            "osm-api-v0.6: bbox area > 0.0036 deg^2; split 2x2"
+            "osm-api-v0.6: bbox area > 0.0014 deg^2; split 2x2"
         )
 
     fallback_deadline = time.monotonic() + max(0.5, timeout_budget_sec)
@@ -871,7 +873,8 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
             return True
         return False
 
-    want_trees = '"tree"' in (query_str or "")
+    q_raw = query_str or ""
+    want_trees = ('"tree"' in q_raw) or ("natural=tree" in q_raw)
     ref_node_ids = set()
     for el in by_key.values():
         et = el.get("type")

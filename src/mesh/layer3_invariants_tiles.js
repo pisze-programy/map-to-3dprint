@@ -73,9 +73,9 @@
     let floatingBuildingsCount = 0, globalMaxZUnits = 0, zCapApplied = Boolean(ctx.zCapApplied);
     const embossStats = { engravedTiles: 0, minStrokeWidthMm: Infinity, minCarveDepthMm: Infinity, minRoofClearanceMm: Infinity, ribPitchMm: null, ribThickMm: null };
 
-    const recordSolids = (man, tid, checkCap = true) => {
+    const recordSolids = (man, tid, checkCap = true, knownBb = null) => {
       if (!man || man.numTri() === 0) return 0;
-      const bb = man.boundingBox();
+      const bb = knownBb || man.boundingBox();
       if (bb.max[2] > globalMaxZUnits) globalMaxZUnits = bb.max[2];
       if (bb.max[2] > tileMaxZUnits[tid]) tileMaxZUnits[tid] = bb.max[2];
       if (checkCap && bb.max[2] >= zTopCap - 0.02) zCapApplied = true;
@@ -151,13 +151,26 @@
     };
 
     const allBldItems = allNormalBuildings.concat(allHiBuildings);
-    const dryBldSolids = [];
+    const DRY_CELL = 4.0;
+    const dryBldGrid = new Map();
     if (waterCutout && terrainWater && typeof terrainWater.isPointInWater === 'function') {
       for (const bi of allBldItems) {
         if (!bi || !bi.manifold || bi.manifold.numTri() === 0 || bi.isFloatingPart) continue;
         const bbb = bi.manifold.boundingBox();
         const bcx = (bbb.min[0] + bbb.max[0]) * 0.5, bcy = (bbb.min[1] + bbb.max[1]) * 0.5;
-        if (!terrainWater.isPointInWater(bcx, bcy)) dryBldSolids.push({ man: bi.manifold, bb: bbb });
+        if (!terrainWater.isPointInWater(bcx, bcy)) {
+          const rec = { man: bi.manifold, bb: bbb };
+          const gx0 = Math.floor((bbb.min[0] - 0.06) / DRY_CELL), gx1 = Math.floor((bbb.max[0] + 0.06) / DRY_CELL);
+          const gy0 = Math.floor((bbb.min[1] - 0.06) / DRY_CELL), gy1 = Math.floor((bbb.max[1] + 0.06) / DRY_CELL);
+          for (let gx = gx0; gx <= gx1; gx++) {
+            for (let gy = gy0; gy <= gy1; gy++) {
+              const ck = `${gx}:${gy}`;
+              let arr = dryBldGrid.get(ck);
+              if (!arr) { arr = []; dryBldGrid.set(ck, arr); }
+              arr.push(rec);
+            }
+          }
+        }
       }
     }
 
@@ -169,16 +182,28 @@
             bb.max[1] < rs.bb.min[1] - 0.05 || bb.min[1] > rs.bb.max[1] + 0.05) continue;
         if (_manifoldsTouch3D(comp, rs.man, -0.20 / scaleMm) && _isRoadSolidAnchored(ri)) return true;
       }
-      for (let di = 0; di < dryBldSolids.length; di++) {
-        const db = dryBldSolids[di];
-        if (db.man === comp) continue;
-        if (bb.max[0] < db.bb.min[0] - 0.05 || bb.min[0] > db.bb.max[0] + 0.05 ||
-            bb.max[1] < db.bb.min[1] - 0.05 || bb.min[1] > db.bb.max[1] + 0.05) continue;
-        if (_manifoldsTouch3D(comp, db.man, 0) ||
-            _manifoldsTouch3D(comp, db.man, [0.02, 0, 0]) ||
-            _manifoldsTouch3D(comp, db.man, [-0.02, 0, 0]) ||
-            _manifoldsTouch3D(comp, db.man, [0, 0.02, 0]) ||
-            _manifoldsTouch3D(comp, db.man, [0, -0.02, 0])) return true;
+      if (dryBldGrid.size > 0) {
+        const gx0 = Math.floor((bb.min[0] - 0.06) / DRY_CELL), gx1 = Math.floor((bb.max[0] + 0.06) / DRY_CELL);
+        const gy0 = Math.floor((bb.min[1] - 0.06) / DRY_CELL), gy1 = Math.floor((bb.max[1] + 0.06) / DRY_CELL);
+        const tested = new Set();
+        for (let gx = gx0; gx <= gx1; gx++) {
+          for (let gy = gy0; gy <= gy1; gy++) {
+            const arr = dryBldGrid.get(`${gx}:${gy}`);
+            if (!arr) continue;
+            for (let di = 0; di < arr.length; di++) {
+              const db = arr[di];
+              if (db.man === comp || tested.has(db)) continue;
+              tested.add(db);
+              if (bb.max[0] < db.bb.min[0] - 0.05 || bb.min[0] > db.bb.max[0] + 0.05 ||
+                  bb.max[1] < db.bb.min[1] - 0.05 || bb.min[1] > db.bb.max[1] + 0.05) continue;
+              if (_manifoldsTouch3D(comp, db.man, 0) ||
+                  _manifoldsTouch3D(comp, db.man, [0.02, 0, 0]) ||
+                  _manifoldsTouch3D(comp, db.man, [-0.02, 0, 0]) ||
+                  _manifoldsTouch3D(comp, db.man, [0, 0.02, 0]) ||
+                  _manifoldsTouch3D(comp, db.man, [0, -0.02, 0])) return true;
+            }
+          }
+        }
       }
       return false;
     };
@@ -199,6 +224,10 @@
 
     for (const item of allBldItems) {
       if (!item || !item.manifold || item.manifold.numTri() === 0) continue;
+      if (item.isSingleGroundedSolid && !waterCutout && item.bb) {
+        if (item.bb.max[2] >= zTopCap - 0.02) zCapApplied = true;
+        continue;
+      }
       let comps = null;
       try { comps = typeof item.manifold.decompose === 'function' ? item.manifold.decompose() : null; } catch (_) { comps = null; }
       const checkList = (Array.isArray(comps) && comps.length > 0) ? comps : [item.manifold];
@@ -292,18 +321,26 @@
         }
       }
       for (const item of allNormalBuildings) {
-        const bTile = _clipSolidToBox(core, mf, item.manifold, clipBox);
+        const bTile = _clipSolidToBox(core, mf, item.manifold, clipBox, item.bb || null);
         if (bTile) {
-          recordSolids(bTile, tid, true);
-          _emitDecomposed(core, bTile, meshes.buildings, 4, item.buildingId, tid, () => nextPosShellId++);
+          recordSolids(bTile, tid, true, bTile === item.manifold ? item.bb : null);
+          if (bTile === item.manifold && item.isSingleGroundedSolid) {
+            core.appendManifoldToTriangles(bTile, meshes.buildings, 4, item.buildingId, tid, nextPosShellId++);
+          } else {
+            _emitDecomposed(core, bTile, meshes.buildings, 4, item.buildingId, tid, () => nextPosShellId++);
+          }
           if (bTile !== item.manifold) core.safeDeleteManifold(bTile);
         }
       }
       for (const item of allHiBuildings) {
-        const hTile = _clipSolidToBox(core, mf, item.manifold, clipBox);
+        const hTile = _clipSolidToBox(core, mf, item.manifold, clipBox, item.bb || null);
         if (hTile) {
-          recordSolids(hTile, tid, true);
-          _emitDecomposed(core, hTile, meshes.highlighted, 5, item.buildingId, tid, () => nextPosShellId++);
+          recordSolids(hTile, tid, true, hTile === item.manifold ? item.bb : null);
+          if (hTile === item.manifold && item.isSingleGroundedSolid) {
+            core.appendManifoldToTriangles(hTile, meshes.highlighted, 5, item.buildingId, tid, nextPosShellId++);
+          } else {
+            _emitDecomposed(core, hTile, meshes.highlighted, 5, item.buildingId, tid, () => nextPosShellId++);
+          }
           if (hTile !== item.manifold) core.safeDeleteManifold(hTile);
         }
       }

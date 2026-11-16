@@ -508,8 +508,8 @@ function initMap3DApp(initialScene) {
 
     const INACTIVITY_TIMEOUT_MS = (typeof window !== 'undefined' && typeof window.__map3dInactivityTimeoutMs === 'number' && window.__map3dInactivityTimeoutMs > 0)
       ? window.__map3dInactivityTimeoutMs
-      : 45000;
-    const MAX_TOTAL_WALLCLOCK_MS = 180000;
+      : 60000;
+    const MAX_TOTAL_WALLCLOCK_MS = 600000;
     let isWatchdogTimeout = false;
     let watchdogTimer = null;
     const startTime = Date.now();
@@ -548,7 +548,7 @@ function initMap3DApp(initialScene) {
         lodSettings: options.lodSettings || state.lodSettings || null,
         onProgress: (info) => {
           const kind = (info && typeof info === 'object') ? info.progressKind : null;
-          if (typeof info === 'number' || !kind || kind === 'chunk' || kind === 'subchunk' || kind === 'assemble') {
+          if (typeof info === 'number' || !kind || kind === 'init' || kind === 'dem' || kind === 'split' || kind === 'chunk' || kind === 'subchunk' || kind === 'chunk-retry' || kind === 'assemble') {
             resetWatchdog();
           }
           let pct = 10;

@@ -28,7 +28,23 @@
         continue;
       }
       const edgeMap = new Map();
+      const batchIntEdges = new Map();
+      let curBatchKey = -1;
+      let curBatchSid = 0;
+      let curBatchTid = 0;
       let lOpen = 0, lNm = 0, lDup = 0, lDegen = 0, lVolU3 = 0;
+
+      const flushBatchEdges = () => {
+        if (batchIntEdges.size === 0) return;
+        for (const packed of batchIntEdges.values()) {
+          const fwd = packed >>> 16;
+          const rev = packed & 0xffff;
+          if (fwd === 1 && rev === 1) continue;
+          if (fwd + rev === 1) { openEdges++; lOpen++; }
+          else { nonManifoldEdges++; lNm++; if (fwd > 1 || rev > 1) { sameDirDupEdges++; lDup++; } }
+        }
+        batchIntEdges.clear();
+      };
 
       for (let i = 0; i < tris.length; i++) {
         const t = tris[i];
@@ -36,7 +52,8 @@
         lVolU3 += a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
         const tb = tbById.get(t.tileId);
         if (tb) {
-          for (const v of [a, b, c]) {
+          for (let vi = 0; vi < 3; vi++) {
+            const v = vi === 0 ? a : (vi === 1 ? b : c);
             if (v[0] < tb.minX - outOfTileEps || v[0] > tb.maxX + outOfTileEps ||
                 v[1] < tb.minY - outOfTileEps || v[1] > tb.maxY + outOfTileEps) {
               outOfTileTrisCount++;
@@ -44,14 +61,37 @@
             }
           }
         }
-        const hasBatch = t.mBatch !== undefined && t.vi0 !== undefined && t.vi1 !== undefined && t.vi2 !== undefined;
-        const k0 = hasBatch ? `${t.mBatch}:${t.vi0}` : pKey(a);
-        const k1 = hasBatch ? `${t.mBatch}:${t.vi1}` : pKey(b);
-        const k2 = hasBatch ? `${t.mBatch}:${t.vi2}` : pKey(c);
+        const sid = (t.shellId !== undefined && t.shellId !== -1) ? t.shellId : (t.buildingId !== undefined ? t.buildingId : 0);
+        const tid = t.tileId ?? 0;
+        const hasBatch = t.mBatch !== undefined && t.vi0 !== undefined && t.vi1 !== undefined && t.vi2 !== undefined &&
+          t.vi0 < 4194304 && t.vi1 < 4194304 && t.vi2 < 4194304;
+
+        if (hasBatch) {
+          const i0 = t.vi0, i1 = t.vi1, i2 = t.vi2;
+          if (i0 === i1 || i1 === i2 || i2 === i0) { lDegen++; degenerateTrisCount++; continue; }
+          if (t.mBatch !== curBatchKey || sid !== curBatchSid || tid !== curBatchTid) {
+            flushBatchEdges();
+            curBatchKey = t.mBatch;
+            curBatchSid = sid;
+            curBatchTid = tid;
+          }
+          for (let k = 0; k < 3; k++) {
+            const u = k === 0 ? i0 : (k === 1 ? i1 : i2);
+            const v = k === 0 ? i1 : (k === 1 ? i2 : i0);
+            const isFwd = u < v;
+            const eKey = isFwd ? (u * 4194304 + v) : (v * 4194304 + u);
+            const prev = batchIntEdges.get(eKey) || 0;
+            batchIntEdges.set(eKey, isFwd ? (prev + 0x10000) : (prev + 1));
+          }
+          continue;
+        }
+
+        flushBatchEdges();
+        curBatchKey = -1;
+        const k0 = pKey(a), k1 = pKey(b), k2 = pKey(c);
         if (k0 === k1 || k1 === k2 || k2 === k0) { lDegen++; degenerateTrisCount++; continue; }
 
-        const sid = (t.shellId !== undefined && t.shellId !== -1) ? t.shellId : (t.buildingId !== undefined ? t.buildingId : 0);
-        const prefix = `${t.tileId ?? 0}|${sid}|`;
+        const prefix = `${tid}|${sid}|`;
         const es = [[k0, k1], [k1, k2], [k2, k0]];
         for (let k = 0; k < 3; k++) {
           const p0 = es[k][0], p1 = es[k][1];
@@ -61,6 +101,7 @@
           if (p0 < p1) rec.fwd++; else rec.rev++;
         }
       }
+      flushBatchEdges();
 
       for (const rec of edgeMap.values()) {
         if (rec.fwd === 1 && rec.rev === 1) continue;

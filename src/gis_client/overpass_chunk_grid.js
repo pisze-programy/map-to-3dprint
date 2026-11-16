@@ -20,7 +20,7 @@ function getOverpassChunkCacheKey(chunk) {
   const lodKey = lo
     ? `t${lo.wantTrees === false ? 0 : 1}_b${Math.round(lo.minBuildingFootprintM || 0)}_r${lo.roadDetail || 'all'}`
     : 'def';
-  return `v13_${chunk.lodTier}_${lodKey}_${chunk.south.toFixed(5)}_${chunk.west.toFixed(5)}_${chunk.north.toFixed(5)}_${chunk.east.toFixed(5)}`;
+  return `v14_${chunk.lodTier}_${lodKey}_${chunk.south.toFixed(5)}_${chunk.west.toFixed(5)}_${chunk.north.toFixed(5)}_${chunk.east.toFixed(5)}`;
 }
 
 function storeOverpassChunkCache(chunk, elements) {
@@ -67,36 +67,20 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
     : 0;
   const roadDetail = (lodOptions && lodOptions.roadDetail) || 'all';
 
-  const midLatRad = ((south + north) * 0.5) * Math.PI / 180;
-  const chunkSpanM = Math.max(
-    Math.abs(north - south) * 111320,
-    Math.abs(east - west) * 111320 * Math.max(0.2, Math.cos(midLatRad))
-  );
-  const isWideMetropolisScale = (lodOptions && Number(lodOptions.fetchSpanMeters) > 15500) || chunkSpanM > 5200;
-  if (lodTier === 'mountain' && isWideMetropolisScale) {
-    return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];way->.bw;rel(bw.bw)->.a;rel.a[type=multipolygon]${_MP_EXCL_CONTINENTAL}->.mpr;` +
-      `(.bw;.mpr;)->.u;wr.u[place~"^isl"]->.i;rel.i->.isl;way(r.isl)->.islw;` +
-      `(wr.u[water];wr.u[landuse~"^(reser|basi)"];wr.u[leisure=park];rel.mpr[waterway];rel.mpr[~"^(natural|landuse|leisure)$"~"^(water$|wood$|scru|shin|shoa|fore|natu|mari)"];)->.x;` +
-      `(.i;.x;way.bw["building:levels"~"^(1[2-9]|[2-9][0-9])"][building];way.bw[~"^(building|natural|waterway|highway)$"~"^(church$|cathe|chape|castl|palac|tower$|stadi|water$|coastline$|rive|cana|(motorway|trunk)(_link)?$|primary$)"];.islw;way.bw(r.x);)->.w;` +
-      `.w;out body qt;node(w.w);out skel qt;`;
-  }
-
-  const islRe = lodTier === 'mountain' ? '^isl' : '^(isl|square$)';
   const head = `[out:json][timeout:${timeoutSec}][bbox:${bbox}];way->.bw;rel(bw.bw)->.a;(.bw;.a;)->.c;` +
     `nw["bridge:support"]->.s;` +
     `(rel.a[type~"^(building|bridge)$"];rel.a[~"^(building(:part)?$|bridge:s)"~"."];wr.c[~"^(man_|attr)"~"^(bridge$|.*_wheel$)"];)->.k;rel.k->.b;rel(r.b)->.r;` +
     `rel.a[type=multipolygon]${_MP_EXCL_CONTINENTAL}->.mpr;(.bw;.mpr;)->.u;` +
-    `wr.u[place~"${islRe}"]->.i;rel.i->.isl;way(r.isl)->.islw;`;
+    `wr.u[place~"^(isl|square$)"]->.i;rel.i->.isl;way(r.isl)->.islw;`;
 
-  if (lodTier === 'mountain') {
-    const shared = `(wr.u[water];wr.u[~"^(natural|landuse|leisure)$"~"^(water$|wood$|scru|reser|basi|fore|park$|natu|mari)"];rel.mpr[waterway];rel.mpr[natural~"^(shin|shoa)"];)->.x;`;
-    const ways = `(.i;.x;.s;way.bw[man_made=bridge];way.bw[building][~"^(height|name)$"~"."];way.bw[building]["building:levels"~"^([5-9]|[1-9][0-9])"];way.bw[~"^(building|natural|waterway|highway|railway|power|man_made)$"~"^(church$|cathe|chape|castl|palac|publi|civic$|comme|indus|apart|hotel$|hospi|unive|train_s|tower$|stadi|coastline$|rive|cana|dock$|(motorway|trunk)(_link)?$|primary$|secondary$|tertiary$|rail$|gener|quay|pier|pont|brea|groy|jett|(comm.*_|cooling_)?tower$|mast$|light|chim|storage_|silo$|cran|wind_)"];way.bw[highway][bridge~"^(yes|via|sus)"];way(r.b);way(r.r);.islw;way.bw(r.x);)->.w;`;
-    return head + shared + ways + `(.b;.r;.w;node(r.b););out body qt;node(w.w);out skel qt;`;
-  }
-
-  const treeN = (lodTier === 'regional' ? (lodOptions && lodOptions.wantTrees === true) : wantTrees) ? 'node[natural=tree];' : '';
+  const treeN = ((lodTier === 'regional' || lodTier === 'mountain') ? (lodOptions && lodOptions.wantTrees === true) : wantTrees)
+    ? 'node[natural=tree];'
+    : '';
   const nwL2 = `nw[man_made][man_made~"^(wind_|(comm.*)?tower$|mast$|light|chim|cran)"]->.n;`;
   const foot = `(.r;.w;${treeN}node[power=generator][~":source$"~"^wind$"];node(r.b););out body qt;node(w.w);out skel qt;`;
+  const bldClause = minBldM <= 0
+    ? `way.bw[building];`
+    : `way.bw[building][building!~"^(shed$|gara|hut$|cabi|kios|(all.*|green)house$|sty$|static|ger$)"];`;
 
   if (lodTier === 'detail') {
     const hwy = roadDetail === 'major'
@@ -107,37 +91,49 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
     return head + nwL2 + shared + ways + foot;
   }
   if (lodTier === 'urban') {
-    const bld = minBldM <= 0
-      ? `way.bw[building];`
-      : `way.bw[building][building!~"^(shed$|gara|hut$|cabi|kios|roof$|(all.*|green)house$|sty$|static|ger$)"];`;
     const hwy = roadDetail === 'major'
-      ? `way.bw[highway~"^(${_MAJ_HWY_CORE})"];way.d[highway];`
-      : `way.bw[highway~"^(${_MAJ_HWY_CORE}|service$|cycl|foot|path$|step|trac|brid|corr)"];`;
+      ? `way.bw[highway~"^(${_MAJ_HWY_CORE}|pede)"];way.d[highway];`
+      : `way.bw[highway~"^(${_MAJ_HWY_CORE}|pede|service$|cycl|foot|path$|step|trac|brid|corr)"];`;
     const brd = `way.bw[bridge~"${_BR_VAL_RE}"]->.d;`;
     const shared = `(wr.u[~"^(water(way)?|area:highway|building:p)"~"."];wr.u[highway=pedestrian];wr.u[~"^(natural|landuse|leisure|man_made|railway|public_transport)$"~"^(water$|wood$|scru|grass|heat|wetl|beach$|shin|shoa|mud$|bare|reser|basi|fore|mead|(dog_)?park$|recr|ceme|vill|allo|farml|orch|vine|gard|natu|pitc|play|commo|golf|mari|swim.*p|quay|pier|pont|brea|groy|jett|platf)"];)->.x;`;
-    const ways = `${brd}(.k;.i;.x;.s;.n;${bld}${hwy}way.bw[~"^(natural|railway|power|man_made)$"~"^(coast|tree_|(light_)?rail$|tram$|narro|funic|gener|(cool|stor).*_|silo$)"];way.d[railway~"^(mono|subw)"];way(r.b);way(r.r);.islw;way.bw(r.x);)->.w;`;
+    const ways = `${brd}(.k;.i;.x;.s;.n;${bldClause}${hwy}way.bw[~"^(natural|amenity|railway|power|man_made)$"~"^(coast|tree_|fountain$|(light_)?rail$|tram$|narro|funic|gener|(cool|stor).*_|silo$)"];way.d[railway~"^(mono|subw)"];way(r.b);way(r.r);.islw;way.bw(r.x);)->.w;`;
     return head + nwL2 + shared + ways + foot;
   }
-  const exclBld = minBldM <= 0
-    ? `^(shed$|gara|hut$|cabi|kios|roof$|(all.*|green)house$|sty$|static|ger$)`
-    : `^(shed$|gara|hut$|cabi|kios|roof$|((all|sem).*|green)?house$|deta|terr|bung|farm_|barn$)`;
-  const natPart = (lodOptions && lodOptions.wantTrees === true) ? 'coast|tree_' : 'coastline$';
+
+  // Regional & wide-span ('mountain') tiers: zero artificial stripping of buildings, building:part, streets, or parks.
+  // Scale handling is achieved cleanly via finer spatial tiling in buildSpatialChunkGrid + recursive 2x2 splitting.
+  const natPart = (lodOptions && lodOptions.wantTrees === true) ? 'coast|tree_' : 'coast';
   const hwy = roadDetail === 'major'
     ? `way.bw[highway~"^(${_MAJ_HWY_CORE}|pede)"];`
-    : `way.bw[highway~"^(${_MAJ_HWY_CORE}|pede|service$|path$|cycl|step|trac)"];way.bw[highway=footway][footway!~"^(sid|cro|acc|isl)"];`;
+    : `way.bw[highway~"^(${_MAJ_HWY_CORE}|pede|service$|path$|cycl|step|trac|brid|corr)"];way.bw[highway=footway][footway!~"^(sid|cro|acc|isl)"];`;
   const brd = `way.bw[bridge~"${_BR_VAL_RE}"]->.d;`;
-  const shared = `(wr.u[~"^(water$|area:highway|building:p)"~"."];wr.u[~"^(nat|lan|lei|man_|railw|pub)"~"^(water$|wood$|scru|grass|heat|beach$|shin|shoa|mud$|reser|basi|fore|mead|park$|recr|ceme|vill|gard|natu|pitc|commo|golf|mari|quay|pier|pont|brea|groy|jett|platf)"];rel.mpr[waterway];rel.mpr[~"^(nat|lan|lei|hig)"~"^(wetl|bare|allo|farml|orch|vine|play|dog_|swim.*p|pede)"];)->.x;`;
-  const ways = `${brd}way.bw[building]->.g;(.k;.i;.x;.s;.n;way.g[building!~"${exclBld}"];way.g[~"^(height|name)$"~"."];way.g["building:levels"~"^([3-9]|[1-9][0-9])"];${hwy}way.d[highway];way.bw[~"^(nat|waterw|railw|pow|man_)"~"^(${natPart}|rive|cana|strea|dock$|(light_)?rail$|tram$|narro|gener|(cool|stor).*_|silo$)"];way.d[railway~"^(mono|subw)"];way(r.b);way(r.r);.islw;way.bw(r.x);)->.w;`;
+  const shared = `(wr.u[~"^(water(way)?|area:highway|building:p)"~"."];wr.u[~"^(nat|lan|lei|man_|railw|pub)"~"^(water$|wood$|scru|grass|heat|wetl|beach$|shin|shoa|mud$|bare|reser|basi|fore|mead|(dog_)?park$|recr|ceme|vill|allo|farml|orch|vine|gard|natu|pitc|play|commo|golf|mari|swim.*p|quay|pier|pont|brea|groy|jett|platf)"];rel.mpr[highway=pedestrian];)->.x;`;
+  const ways = `${brd}(.k;.i;.x;.s;.n;${bldClause}${hwy}way.d[highway];way.bw[~"^(nat|amen|railw|pow|man_)"~"^(${natPart}|fountain$|(light_)?rail$|tram$|narro|funic|gener|(cool|stor).*_|silo$)"];way.d[railway~"^(mono|subw)"];way(r.b);way(r.r);.islw;way.bw(r.x);)->.w;`;
   return head + nwL2 + shared + ways + foot;
 }
 
+const TARGET_CHUNK_SPAN_METERS = 2300;
+
 function buildSpatialChunkGrid(south, west, north, east, spanMeters, lodOptions = null) {
   const s = Number(spanMeters) || 1200;
-  const fetchSpan = (lodOptions && Number(lodOptions.fetchSpanMeters) > 0) ? Number(lodOptions.fetchSpanMeters) : s;
+  const midLat = (south + north) * 0.5;
+  const cosLat = Math.max(0.2, Math.cos(midLat * Math.PI / 180));
+  const bboxNsM = Math.abs(north - south) * 111320;
+  const bboxEwM = Math.abs(east - west) * 111320 * cosLat;
+  const fetchSpan = (lodOptions && Number(lodOptions.fetchSpanMeters) > 0)
+    ? Number(lodOptions.fetchSpanMeters)
+    : Math.max(s, bboxNsM, bboxEwM);
   const lodTier = selectLodTier(s);
   let rows = 1, cols = 1;
-  if (fetchSpan > 6800) { rows = 3; cols = 3; }
-  else if (fetchSpan > 1650) { rows = 2; cols = 2; }
+  if (fetchSpan > 3600) {
+    const effNs = bboxNsM > 10 ? bboxNsM : fetchSpan;
+    const effEw = bboxEwM > 10 ? bboxEwM : fetchSpan;
+    rows = Math.max(2, Math.ceil(effNs / TARGET_CHUNK_SPAN_METERS));
+    cols = Math.max(2, Math.ceil(effEw / TARGET_CHUNK_SPAN_METERS));
+  } else if (fetchSpan > 1650) {
+    rows = 2;
+    cols = 2;
+  }
   const dLat = (north - south) / rows;
   const dLon = (east - west) / cols;
   const padLat = rows > 1 ? dLat * 0.015 : 0;
@@ -235,7 +231,8 @@ async function fetchSingleOverpassQuery(query, timeoutMs = 12500, abortSignal = 
         if (isProxy) {
           remErr.isProxyTimeout = true;
           remErr.isTimeout = true;
-        } else if (/timed out|out of memory|runtime error/i.test(rem)) {
+        }
+        if (/timed out|out of memory|runtime error|split\s*2x2/i.test(rem)) {
           remErr.isQueryTooHeavy = true;
         }
         throw remErr;
@@ -396,7 +393,7 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, callbacks
       Math.abs(chunk.east - chunk.west) * 111320 * Math.max(0.2, Math.cos(midLat * Math.PI / 180))
     );
     const curDepth = Number(chunk.depth) || 0;
-    if (curDepth < 2 && !isFatalNetwork && chunkSpanM > 250) {
+    if (curDepth < 3 && !isFatalNetwork && chunkSpanM > 250) {
       if (onSubSplit) onSubSplit(chunk);
       const fallbackTier = chunk.lodTier;
       const parentTotalChunks = chunk.totalChunks || 1;
@@ -442,7 +439,7 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, callbacks
           }
         }
       };
-      const subConc = (chunk.totalChunks && chunk.totalChunks > 1) ? 1 : 2;
+      const subConc = 2;
       await Promise.all(Array.from({ length: subConc }, () => subWorker()));
       if (subCursor < subChunks.length) {
         for (let remIdx = subCursor; remIdx < subChunks.length; remIdx++) {
@@ -549,19 +546,7 @@ function mergeAndDeduplicateElements(elementArrays, maxSpanM = 1200, lodOptions 
     }
   }
 
-  let filteredWays = ways;
-  const minBldM = (lodOptions && typeof lodOptions.minBuildingFootprintM === 'number')
-    ? lodOptions.minBuildingFootprintM
-    : -1;
-  if (maxSpanM > 3900 && minBldM !== 0 && ways.length > 4800) {
-    const skipMinorTypes = new Set(['shed', 'garage', 'garages', 'hut', 'cabin', 'kiosk', 'roof', 'allotment_house', 'greenhouse', 'farm_auxiliary']);
-    filteredWays = ways.filter(w => {
-      const t = w.tags;
-      if (!t || !t.building || t.name || t.height || t['building:levels']) return true;
-      return !skipMinorTypes.has(String(t.building).toLowerCase());
-    });
-  }
-  return nodes.concat(filteredWays, relations);
+  return nodes.concat(ways, relations);
 }
 
 function filterPrintableBuildingsForScale(scene, maxBuildings = Infinity) {

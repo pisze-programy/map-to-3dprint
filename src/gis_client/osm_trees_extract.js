@@ -413,7 +413,7 @@ function populateParkTreesJS(wantTrees, treeNodes, greenPolys, metersToUnits, fe
   const trees = [];
   if (!wantTrees) return trees;
 
-  const MAX_TREES = isResin ? 6500 : 3200;
+  const MAX_TREES = isResin ? 25000 : 12000;
   const treeBuckets = new Map();
   const canPlaceTree = (tx, ty, minDistSq, cellSz) => {
     const bx = Math.floor(tx / cellSz), by = Math.floor(ty / cellSz);

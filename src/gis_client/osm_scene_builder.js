@@ -334,8 +334,8 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   }
 
   const project = (lon, lat) => [
-    Math.round((lon - centerLon) * 111320.0 * cosLat * metersToUnits * 1000) / 1000,
-    Math.round((lat - centerLat) * 111320.0 * metersToUnits * 1000) / 1000
+    Math.round((lon - centerLon) * 111320.0 * cosLat * metersToUnits * 10000) / 10000,
+    Math.round((lat - centerLat) * 111320.0 * metersToUnits * 10000) / 10000
   ];
 
   const nodeEls = new Map();
@@ -389,7 +389,11 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     checkMarineTags(rel.tags);
   }
 
-  const nodesToPts = (nids, tol = 0.015) => simplifyRingJS((nids || []).map(id => nodes.get(id)).filter(Boolean), tol);
+  const maxMetricSimpU = Math.max(0.0015, 0.20 * metersToUnits);
+  const nodesToPts = (nids, tol = 0.015) => simplifyRingJS(
+    (nids || []).map(id => nodes.get(id)).filter(Boolean),
+    Math.min(tol, maxMetricSimpU)
+  );
   const waterPolys = [], waterLines = [], greenPolys = [], roads = [], roadPolys = [], bridgePolys = [], coastWays = [];
   const usedWays = new Set();
   const consumedRels = new Set();
@@ -420,9 +424,9 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     for (let i = 0; i < maxLen; i++) out.push(arr[Math.floor(i * step)]);
     return out;
   };
-  const waterSamplePts = downsampleUniform(allWaterCandidates, 240);
-  const buildingSamplePts = downsampleUniform(allBldCandidates, 650);
-  const roadSamplePts = downsampleUniform(allRoadCandidates, 450);
+  const waterSamplePts = downsampleUniform(allWaterCandidates, 2400);
+  const buildingSamplePts = downsampleUniform(allBldCandidates, 5000);
+  const roadSamplePts = downsampleUniform(allRoadCandidates, 3500);
 
   const bridgeRelMeta = [];
   for (const rel of relations) {

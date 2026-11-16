@@ -66,10 +66,30 @@
     const grpIds = new Set(buildingLayerManifolds.map(x => x.groupId).filter(g => g != null));
     if (grpIds.size === 0) return;
     const s3dbNorm = (s3db && Array.isArray(s3db.buildingManifolds)) ? s3db.buildingManifolds : [];
+    const s3dbByGrp = new Map();
+    for (let i = 0; i < s3dbNorm.length; i++) {
+      const gid = s3dbNorm[i].groupId != null ? String(s3dbNorm[i].groupId) : null;
+      if (gid && grpIds.has(gid)) {
+        let arr = s3dbByGrp.get(gid);
+        if (!arr) { arr = []; s3dbByGrp.set(gid, arr); }
+        arr.push(s3dbNorm[i]);
+      }
+    }
+    const l2ByGrp = new Map();
+    for (let i = 0; i < buildingLayerManifolds.length; i++) {
+      const gid = buildingLayerManifolds[i].groupId;
+      if (gid != null) {
+        let arr = l2ByGrp.get(gid);
+        if (!arr) { arr = []; l2ByGrp.set(gid, arr); }
+        arr.push(i);
+      }
+    }
+    const removedS3dbSet = new Set();
+    const removedL2IdxSet = new Set();
+    const pidRemap = new Map();
     for (const gid of grpIds) {
-      const l2Idx = [], s1Items = [];
-      for (let i = 0; i < buildingLayerManifolds.length; i++) if (buildingLayerManifolds[i].groupId === gid) l2Idx.push(i);
-      for (let i = 0; i < s3dbNorm.length; i++) if (s3dbNorm[i].groupId != null && String(s3dbNorm[i].groupId) === gid) s1Items.push(s3dbNorm[i]);
+      const l2Idx = l2ByGrp.get(gid) || [];
+      const s1Items = s3dbByGrp.get(gid) || [];
       if (l2Idx.length + s1Items.length < 2 || (s1Items.length === 0 && l2Idx.length < 2)) continue;
       const allMans = [...s1Items.map(x => x.manifold), ...l2Idx.map(i => buildingLayerManifolds[i].manifold)];
       const keepId = (s1Items[0] || buildingLayerManifolds[l2Idx[0]]).buildingId;
@@ -155,12 +175,34 @@
           }
         }
       }
-      for (const bb of (buildingBounds || []).concat((s3db && s3db.buildingBounds) || [])) {
-        if (bb && mergedPids.has(bb.pickId)) bb.pickId = keepId;
+      for (const pid of mergedPids) {
+        if (pid !== keepId) pidRemap.set(pid, keepId);
       }
-      for (const s1 of s1Items) { const ix = s3dbNorm.indexOf(s1); if (ix >= 0) s3dbNorm.splice(ix, 1); }
-      for (let k = l2Idx.length - 1; k >= 0; k--) buildingLayerManifolds.splice(l2Idx[k], 1);
+      for (const s1 of s1Items) removedS3dbSet.add(s1);
+      for (let k = 0; k < l2Idx.length; k++) removedL2IdxSet.add(l2Idx[k]);
       buildingLayerManifolds.push({ buildingId: keepId, groupId: gid, manifold: unified, isFloatingPart: false });
+    }
+    if (pidRemap.size > 0) {
+      for (const bb of (buildingBounds || [])) {
+        if (bb && pidRemap.has(bb.pickId)) bb.pickId = pidRemap.get(bb.pickId);
+      }
+      for (const bb of ((s3db && s3db.buildingBounds) || [])) {
+        if (bb && pidRemap.has(bb.pickId)) bb.pickId = pidRemap.get(bb.pickId);
+      }
+    }
+    if (removedS3dbSet.size > 0) {
+      let w = 0;
+      for (let i = 0; i < s3dbNorm.length; i++) {
+        if (!removedS3dbSet.has(s3dbNorm[i])) s3dbNorm[w++] = s3dbNorm[i];
+      }
+      s3dbNorm.length = w;
+    }
+    if (removedL2IdxSet.size > 0) {
+      let w = 0;
+      for (let i = 0; i < buildingLayerManifolds.length; i++) {
+        if (!removedL2IdxSet.has(i)) buildingLayerManifolds[w++] = buildingLayerManifolds[i];
+      }
+      buildingLayerManifolds.length = w;
     }
   }
 
@@ -181,37 +223,72 @@
     };
 
     const els = (scene && scene.osmElements) || [];
+    const bldOsmIds = new Set();
+    for (const b of (scene && scene.buildings) || []) {
+      if (b && b.osmId !== undefined && b.osmId !== null) bldOsmIds.add(b.osmId);
+    }
     const rawTagMap = new Map();
-    const nodeCoords = new Map();
+    const l2Candidates = [];
+    const neededNodeIds = new Set();
     for (let i = 0; i < els.length; i++) {
       const el = els[i];
-      if (!el) continue;
-      if (el.tags) rawTagMap.set(el.id, el.tags);
-      if (el.type === 'node' && Number.isFinite(el.lat) && Number.isFinite(el.lon)) nodeCoords.set(el.id, el);
+      if (!el || !el.tags) continue;
+      if (bldOsmIds.has(el.id)) rawTagMap.set(el.id, el.tags);
+      const tags = el.tags;
+      if (tags.building) continue;
+      const mm = String(tags.man_made || '').toLowerCase().trim();
+      const tc = String(tags['tower:construction'] || '').toLowerCase().trim();
+      const isWind = mm === 'wind_turbine' || (tags.power === 'generator' && tags['generator:source'] === 'wind');
+      const isWheel = WHEEL_ATTR.has(String(tags.attraction || '').toLowerCase().trim()) || tags['tower:type'] === 'observation_wheel';
+      const isLat = tc === 'lattice' || tc === 'guyed_lattice';
+      if (isWind || isWheel || isLat || TOWER_SET.has(mm) || IND_SET.has(mm)) {
+        l2Candidates.push(el);
+        if (el.type === 'way' && Array.isArray(el.nodes)) {
+          for (let k = 0; k < el.nodes.length; k++) neededNodeIds.add(el.nodes[k]);
+        }
+      }
+    }
+    const nodeCoords = new Map();
+    if (neededNodeIds.size > 0) {
+      for (let i = 0; i < els.length; i++) {
+        const el = els[i];
+        if (el && el.type === 'node' && neededNodeIds.has(el.id) && Number.isFinite(el.lat) && Number.isFinite(el.lon)) {
+          nodeCoords.set(el.id, el);
+        }
+      }
     }
 
+    const hasTrees = Array.isArray(scene && scene.trees) && scene.trees.length > 0;
     const buildingFootprints2D = [];
+    const limX = halfW + 2.0, limY = halfH + 2.0;
     for (const b of (scene && scene.buildings) || []) {
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) continue;
+      const tags = Object.assign({}, rawTagMap.get(b.osmId) || {}, b.tags || {});
+      const mm = String(tags.man_made || '').toLowerCase().trim();
+      const attr = String(tags.attraction || '').toLowerCase().trim();
+      const tt = String(tags['tower:type'] || '').toLowerCase().trim();
+      const tc = String(tags['tower:construction'] || b.towerConstruction || '').toLowerCase().trim();
+      const isWheel = b.archType === 'ferris_wheel' || b.btype === 'observation_wheel' || WHEEL_ATTR.has(attr) || tt === 'observation_wheel';
+      const isWind = mm === 'wind_turbine' || (tags.power === 'generator' && tags['generator:source'] === 'wind');
+      const isLattice = tc === 'lattice' || tc === 'guyed_lattice';
+      const isL2Bld = isWheel || isWind || isLattice || TOWER_SET.has(mm) || IND_SET.has(mm);
+      if (!isL2Bld && !hasTrees) continue;
+
       const oBed = b.outer.map(toBed);
-      const holesBed = (b.holes || []).filter(h => h && h.length >= 3).map(h => h.map(toBed));
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const p of oBed) {
         if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
         if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
       }
-      const tags = Object.assign({}, rawTagMap.get(b.osmId) || {}, b.tags || {});
-      const minHM = Math.max(0, Number(b.minH !== undefined ? b.minH : (tags.min_height || 0)) || 0);
-      buildingFootprints2D.push({ outer: oBed, holes: holesBed, bb: [minX, minY, maxX, maxY], minH: minHM });
+      if (maxX < -limX || minX > limX || maxY < -limY || minY > limY) continue;
+      if (hasTrees) {
+        const holesBed = (b.holes || []).filter(h => h && h.length >= 3).map(h => h.map(toBed));
+        const minHM = Math.max(0, Number(b.minH !== undefined ? b.minH : (tags.min_height || 0)) || 0);
+        buildingFootprints2D.push({ outer: oBed, holes: holesBed, bb: [minX, minY, maxX, maxY], minH: minHM });
+      }
+      if (!isL2Bld) continue;
 
-      const mm = String(tags.man_made || '').toLowerCase().trim();
-      const attr = String(tags.attraction || '').toLowerCase().trim();
-      const tt = String(tags['tower:type'] || '').toLowerCase().trim();
-      const tc = String(tags['tower:construction'] || b.towerConstruction || '').toLowerCase().trim();
       const hM = Number(b.h !== undefined ? b.h : (b.height || tags.height || 0)) || 0;
-      const isWheel = b.archType === 'ferris_wheel' || b.btype === 'observation_wheel' || WHEEL_ATTR.has(attr) || tt === 'observation_wheel';
-      const isWind = mm === 'wind_turbine' || (tags.power === 'generator' && tags['generator:source'] === 'wind');
-      const isLattice = tc === 'lattice' || tc === 'guyed_lattice';
       let solid = null;
 
       if (isWheel) {
@@ -262,8 +339,8 @@
       }
     }
 
-    for (let i = 0; i < els.length; i++) {
-      const el = els[i];
+    for (let i = 0; i < l2Candidates.length; i++) {
+      const el = l2Candidates[i];
       if (!el || !el.tags || handledOsmIds.has(el.id)) continue;
       const tags = el.tags, mm = String(tags.man_made || '').toLowerCase().trim(), tc = String(tags['tower:construction'] || '').toLowerCase().trim();
       const isWind = mm === 'wind_turbine' || (tags.power === 'generator' && tags['generator:source'] === 'wind');

@@ -52,7 +52,7 @@ if (typeof window !== 'undefined' && window.fetch) {
   };
 }
 
-async function buildSceneFromPreloadedGis(south, west, north, east, title, dem, osmElements, maxBuildings = 1850, sceneOptions = {}) {
+async function buildSceneFromPreloadedGis(south, west, north, east, title, dem, osmElements, maxBuildings = Infinity, sceneOptions = {}) {
   const prevPayload = _injectedGisPayload;
   _injectedGisPayload = { dem, osmElements };
   try {
@@ -130,8 +130,9 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   let loadedChunks = 0, failedChunks = 0, totalLoadedEls = 0, partialRendered = false;
   let partialPreviewPromise = null;
 
+  const demGridSize = effectiveSpanM > 5500 ? 96 : 72;
   const demPromise = fetchAdaptiveTerrariumDem(
-    centerLat - sqDLat, centerLon - sqDLon, centerLat + sqDLat, centerLon + sqDLon, 72, null, abortSignal
+    centerLat - sqDLat, centerLon - sqDLon, centerLat + sqDLat, centerLon + sqDLon, demGridSize, null, abortSignal
   );
   demPromise.then((demData) => {
     if (abortSignal && abortSignal.aborted) return;
@@ -148,7 +149,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     }
   }).catch(() => {});
 
-  const concurrency = Math.min(2, totalChunks);
+  const concurrency = Math.min(4, totalChunks);
   const subRetryDelayMs = (options && typeof options.subRetryDelayMs === 'number') ? options.subRetryDelayMs : 1200;
   const pass2RetryDelayMs = (options && typeof options.retryDelayMs === 'number') ? options.retryDelayMs : 1800;
   const partialPreviewDelayMs = (options && typeof options.partialPreviewDelayMs === 'number') ? options.partialPreviewDelayMs : 400;
@@ -288,7 +289,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
             if (streamCompleted || loadedChunks + failedChunks >= totalChunks || (abortSignal && abortSignal.aborted)) return;
             const partialElements = mergeAndDeduplicateElements(snapshotArrays, effectiveSpanM, lodQueryOpts);
             const partialScene = await buildSceneFromPreloadedGis(
-              south, west, north, east, `${title} (${snapLoaded}/${totalChunks})`, demNow, partialElements, 4500, sceneOptions
+              south, west, north, east, `${title} (${snapLoaded}/${totalChunks})`, demNow, partialElements, Infinity, sceneOptions
             );
             partialScene._isPartialPreview = true;
             if (!streamCompleted && loadedChunks < totalChunks && !(abortSignal && abortSignal.aborted)) {
@@ -494,10 +495,9 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     });
   }
 
-  const isResin = true;
-  const maxBlds = ((minBldFootprintM === 0 && effectiveSpanM <= 7500) || (isResin && effectiveSpanM <= 5500))
-    ? (effectiveSpanM <= 2600 ? 12000 : 8500)
-    : (effectiveSpanM > 12000 ? 2500 : 6000);
+  const maxBlds = (options && Number.isFinite(options.maxBuildings) && options.maxBuildings > 0)
+    ? options.maxBuildings
+    : Infinity;
   const finalScene = await buildSceneFromPreloadedGis(south, west, north, east, title, dem, mergedElements, maxBlds, sceneOptions);
   const effectiveFailedCount = (failedChunks > 0 || allMissingSubChunkIds.length > 0)
     ? Math.max(1, failedChunks)

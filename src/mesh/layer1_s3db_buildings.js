@@ -192,21 +192,42 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
   function buildLayer1S3DBBuildings(ctx, scene, terrainWater) {
     const core = _getCore();
     const { mf, halfW, halfH, toBed, mToU, scaleMm, maxZUnits } = ctx;
+    const buildingsList = (scene && scene.buildings) || [];
+    const bldOsmIds = new Set();
+    for (let i = 0; i < buildingsList.length; i++) {
+      const b = buildingsList[i];
+      if (b && b.osmId !== undefined && b.osmId !== null) bldOsmIds.add(b.osmId);
+    }
     const rawTagById = new Map();
-    for (const el of ((scene && scene.osmElements) || [])) if (el && el.id !== undefined && el.tags) rawTagById.set(el.id, el.tags);
+    if (bldOsmIds.size > 0) {
+      for (const el of ((scene && scene.osmElements) || [])) {
+        if (el && el.tags && bldOsmIds.has(el.id)) rawTagById.set(el.id, el.tags);
+      }
+    }
     const padClip = 0.25, platePoly = [[[-halfW - padClip, -halfH - padClip], [halfW + padClip, -halfH - padClip], [halfW + padClip, halfH + padClip], [-halfW - padClip, halfH + padClip]]];
     const normalGroups = new Map(), highlightGroups = new Map(), boundsOut = [], consumedArchBuildingIds = new Set(), consumedArchGroups = new Set();
 
-    const buildingsList = (scene && scene.buildings) || [];
+    const clipLimX = halfW + padClip, clipLimY = halfH + padClip;
     const _prepMeta = buildingsList.map((b, idx) => {
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) return null;
       const tags = Object.assign({}, rawTagById.get(b.osmId) || {}, b.tags || {});
       if (isLayer2ArchetypeRecord(b, tags)) return null;
+      const outerBed = b.outer.map(toBed);
+      let bMinX = Infinity, bMaxX = -Infinity, bMinY = Infinity, bMaxY = -Infinity;
+      for (let k = 0; k < outerBed.length; k++) {
+        const px = outerBed[k][0], py = outerBed[k][1];
+        if (px < bMinX) bMinX = px; if (px > bMaxX) bMaxX = px;
+        if (py < bMinY) bMinY = py; if (py > bMaxY) bMaxY = py;
+      }
+      if (bMaxX <= -clipLimX || bMinX >= clipLimX || bMaxY <= -clipLimY || bMinY >= clipLimY) return null;
       let cx = 0, cy = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const pt of b.outer) { cx += pt[0]; cy += pt[1]; if (pt[0] < minX) minX = pt[0]; if (pt[0] > maxX) maxX = pt[0]; if (pt[1] < minY) minY = pt[1]; if (pt[1] > maxY) maxY = pt[1]; }
-      const terr = sampleFootprintTerrainZ([b.outer.map(toBed)], ctx, terrainWater);
+      const terr = sampleFootprintTerrainZ([outerBed], ctx, terrainWater);
       return {
-        idx, b, tags, terr, areaM2: Math.abs(_ringAreaSigned(b.outer)) / Math.max(1e-8, mToU * mToU),
+        idx, b, tags, terr, outerBed,
+        strictlyInsidePlate: bMinX >= -clipLimX + 1e-3 && bMaxX <= clipLimX - 1e-3 && bMinY >= -clipLimY + 1e-3 && bMaxY <= clipLimY - 1e-3,
+        isMultiGroup: false,
+        areaM2: Math.abs(_ringAreaSigned(b.outer)) / Math.max(1e-8, mToU * mToU),
         cx: cx / b.outer.length, cy: cy / b.outer.length, minX, maxX, minY, maxY, bodyTopM: 0, bracedTopM: 0,
         rawH: Number((b.h !== undefined && b.h !== null) ? b.h : (b.height !== undefined ? b.height : 9.0)),
         rawMinH: Math.max(0, Number(b.minH !== undefined ? b.minH : (tags.min_height || 0)) || 0),
@@ -225,10 +246,64 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
     for (const [k, v] of groupGroundedMinEle) groupDatumById.set(k, v);
 
     const spireRoofSet = new Set(['dome', 'onion', 'cone', 'pyramidal']);
+    const META_CELL = 4.0;
+    const metaGrid = new Map();
+    const metaByGroup = new Map();
+    for (let idx = 0; idx < _prepMeta.length; idx++) {
+      const pm = _prepMeta[idx];
+      if (!pm) continue;
+      if (pm.b.groupId !== undefined && pm.b.groupId !== null) {
+        const gk = String(pm.b.groupId);
+        let gArr = metaByGroup.get(gk);
+        if (!gArr) { gArr = []; metaByGroup.set(gk, gArr); }
+        gArr.push(idx);
+      }
+      const gx0 = Math.floor(pm.minX / META_CELL), gx1 = Math.floor(pm.maxX / META_CELL);
+      const gy0 = Math.floor(pm.minY / META_CELL), gy1 = Math.floor(pm.maxY / META_CELL);
+      for (let gx = gx0; gx <= gx1; gx++) {
+        for (let gy = gy0; gy <= gy1; gy++) {
+          const ck = `${gx}:${gy}`;
+          let cArr = metaGrid.get(ck);
+          if (!cArr) { cArr = []; metaGrid.set(ck, cArr); }
+          cArr.push(idx);
+        }
+      }
+    }
+    for (const gArr of metaByGroup.values()) {
+      if (gArr.length > 1) {
+        for (let k = 0; k < gArr.length; k++) _prepMeta[gArr[k]].isMultiGroup = true;
+      }
+    }
+    const seenStamp = new Int32Array(_prepMeta.length);
+    let stampToken = 0;
     for (let i = 0; i < _prepMeta.length; i++) {
       const m = _prepMeta[i]; if (!m) continue;
-      for (let j = 0; j < _prepMeta.length; j++) {
-        if (i === j) continue;
+      const tok = ++stampToken;
+      const candIdx = [];
+      if (m.b.groupId !== undefined && m.b.groupId !== null) {
+        const gArr = metaByGroup.get(String(m.b.groupId));
+        if (gArr) {
+          for (let k = 0; k < gArr.length; k++) {
+            const j = gArr[k];
+            if (j !== i && seenStamp[j] !== tok) { seenStamp[j] = tok; candIdx.push(j); }
+          }
+        }
+      }
+      const gx0 = Math.floor(m.minX / META_CELL), gx1 = Math.floor(m.maxX / META_CELL);
+      const gy0 = Math.floor(m.minY / META_CELL), gy1 = Math.floor(m.maxY / META_CELL);
+      for (let gx = gx0; gx <= gx1; gx++) {
+        for (let gy = gy0; gy <= gy1; gy++) {
+          const cArr = metaGrid.get(`${gx}:${gy}`);
+          if (!cArr) continue;
+          for (let k = 0; k < cArr.length; k++) {
+            const j = cArr[k];
+            if (j !== i && seenStamp[j] !== tok) { seenStamp[j] = tok; candIdx.push(j); }
+          }
+        }
+      }
+      if (candIdx.length > 1) candIdx.sort((a, b) => a - b);
+      for (let ci = 0; ci < candIdx.length; ci++) {
+        const j = candIdx[ci];
         const o = _prepMeta[j]; if (!o || o.skip) continue;
         const sameGroup = m.b.groupId !== undefined && m.b.groupId !== null && m.b.groupId === o.b.groupId;
         const overlapsBox = !(m.maxX < o.minX || m.minX > o.maxX || m.maxY < o.minY || m.minY > o.maxY);
@@ -283,7 +358,8 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
       const tags = Object.assign({}, rawTagById.get(b.osmId) || {}, b.tags || {});
       if (isLayer2ArchetypeRecord(b, tags)) { if (b.id !== undefined) consumedArchBuildingIds.add(b.id); if (b.groupId != null) consumedArchGroups.add(String(b.groupId)); continue; }
       const metaP = _prepMeta[i];
-      if (metaP && metaP.skip) {
+      if (!metaP) continue;
+      if (metaP.skip) {
         ctx.audit.preparedList.push({ id: b.id ?? (i + 1), osmId: b.osmId || null, groupId: b.groupId ?? null, name: b.name || '', btype: b.btype || 'yes', isPart: Boolean(b.part || tags['building:part']), part: Boolean(b.part), skip: true, skipReason: metaP.skipReason, preRoofShape: metaP.normRoof, roofShape: metaP.normRoof, roof: metaP.normRoof, h: metaP.rawH, minH: metaP.rawMinH, zBase: metaP.rawMinH, zTop: metaP.rawH, area: metaP.areaM2 });
         continue;
       }
@@ -322,16 +398,44 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
       src.mergedOut = true;
     };
 
+    const CLUSTER_CELL = 4.0;
     for (let pass = 0; pass < 16; pass++) {
       let mergedAny = false;
+      const hasUnanchored = allClusters.some(c => !c.mergedOut && !c.hasGrounded && c.records.length > 0);
+      if (!hasUnanchored) break;
+      const groundedGrid = new Map();
+      for (const g of allClusters) {
+        if (g.mergedOut || !g.hasGrounded) continue;
+        const gx0 = Math.floor(g.minX / CLUSTER_CELL), gx1 = Math.floor(g.maxX / CLUSTER_CELL);
+        const gy0 = Math.floor(g.minY / CLUSTER_CELL), gy1 = Math.floor(g.maxY / CLUSTER_CELL);
+        for (let gx = gx0; gx <= gx1; gx++) {
+          for (let gy = gy0; gy <= gy1; gy++) {
+            const ck = `${gx}:${gy}`;
+            let arr = groundedGrid.get(ck);
+            if (!arr) { arr = []; groundedGrid.set(ck, arr); }
+            arr.push(g);
+          }
+        }
+      }
       for (const c of allClusters) {
         if (c.mergedOut || c.hasGrounded || c.records.length === 0) continue;
         const hits = [];
         for (const [xyTol, zTol] of [[xyTouchPad, zTouchTol], [nearBridgeXY, nearBridgeZ]]) {
-          for (const g of allClusters) {
-            if (g === c || g.mergedOut || !g.hasGrounded) continue;
-            if (c.maxX < g.minX - xyTol || c.minX > g.maxX + xyTol || c.maxY < g.minY - xyTol || c.minY > g.maxY + xyTol) continue;
-            if (c.records.some(rc => g.records.some(rg => recordsTouch3D(rc, rg, xyTol, zTol, core)))) hits.push(g);
+          const gx0 = Math.floor((c.minX - xyTol) / CLUSTER_CELL), gx1 = Math.floor((c.maxX + xyTol) / CLUSTER_CELL);
+          const gy0 = Math.floor((c.minY - xyTol) / CLUSTER_CELL), gy1 = Math.floor((c.maxY + xyTol) / CLUSTER_CELL);
+          const seenG = new Set();
+          for (let gx = gx0; gx <= gx1; gx++) {
+            for (let gy = gy0; gy <= gy1; gy++) {
+              const arr = groundedGrid.get(`${gx}:${gy}`);
+              if (!arr) continue;
+              for (let k = 0; k < arr.length; k++) {
+                const g = arr[k];
+                if (g === c || g.mergedOut || !g.hasGrounded || seenG.has(g)) continue;
+                seenG.add(g);
+                if (c.maxX < g.minX - xyTol || c.minX > g.maxX + xyTol || c.maxY < g.minY - xyTol || c.minY > g.maxY + xyTol) continue;
+                if (c.records.some(rc => g.records.some(rg => recordsTouch3D(rc, rg, xyTol, zTol, core)))) hits.push(g);
+              }
+            }
           }
           if (hits.length > 0) break;
         }
@@ -409,8 +513,18 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
         for (const r of c.records) if (r.b) r.b._pickId = pickId;
         const merged = c.records.length === 1 ? c.records[0].solid : core.batchUnionManifolds(mf, c.records.map(r => r.solid));
         if (!merged || merged.numTri() === 0) { core.safeDeleteManifold(merged); continue; }
-        const mbb = merged.boundingBox();
-        out.push({ buildingId: pickId, sourceBuildingId: primary.bId, groupId: primary.groupId ?? null, manifold: merged, isFloatingPart: false });
+        const mbb = c.records.length === 1 ? c.records[0].bb : merged.boundingBox();
+        const isSingleGroundedSolid = c.records.length === 1 && !c.records[0].isElevated &&
+          c.records[0].roofShape === 'flat' && c.records[0].structured.length === 1;
+        out.push({
+          buildingId: pickId,
+          sourceBuildingId: primary.bId,
+          groupId: primary.groupId ?? null,
+          manifold: merged,
+          bb: mbb,
+          isSingleGroundedSolid,
+          isFloatingPart: false,
+        });
         for (const r of c.records) {
           const rCx = (r.bb.min[0] + r.bb.max[0]) * 0.5, rCy = (r.bb.min[1] + r.bb.max[1]) * 0.5;
           boundsOut.push({
