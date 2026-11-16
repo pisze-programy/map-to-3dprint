@@ -8,6 +8,10 @@ if (typeof createS3DBClientCollector === 'undefined' && typeof require !== 'unde
   Object.assign(global, require('./overpass_dem_fetch.js'));
   Object.assign(global, require('./s3db_client_matcher.js'));
 }
+if (typeof fetchHedgedOverpassJson === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('../gis_fetch/osm_element_merger.js'));
+  Object.assign(global, require('../gis_fetch/overpass_mirror_router.js'));
+}
 if (typeof processOsmWaterWayJS === 'undefined' && typeof require !== 'undefined') {
   Object.assign(global, require('./osm_water_extract.js'));
 }
@@ -27,195 +31,9 @@ if (typeof finalizeOsmBuildingsLayerJS === 'undefined' && typeof require !== 'un
   Object.assign(global, require('./osm_buildings_extract.js'));
 }
 
-const OVERPASS_ENDPOINTS_BUILDER = [
-  '/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-  'https://overpass-api.de/api/interpreter'
-];
-
-let _overpassMirrorRoundRobin = 0;
-
-function _getOrderedBuilderMirrors() {
-  const isHttp = typeof window === 'undefined' || !window.location || /^https?:$/i.test(window.location.protocol);
-  const primary = [];
-  if (isHttp) primary.push('/api/interpreter');
-  const rest = OVERPASS_ENDPOINTS_BUILDER.filter(m => !primary.includes(m));
-  const startIdx = (_overpassMirrorRoundRobin++) % Math.max(1, rest.length);
-  const rotatedRest = rest.map((_, i) => rest[(startIdx + i) % rest.length]);
-  return primary.concat(rotatedRest);
-}
-
-function fetchHedgedOverpassJson(query, options = {}) {
-  const signal = options.signal || null;
-  const timeoutMs = options.timeoutMs || 23000;
-  const mirrors = _getOrderedBuilderMirrors();
-  const staggerDelays = mirrors[0] === '/api/interpreter'
-    ? [0, 21500, 24000, 26500]
-    : [0, 2200, 4500, 7200, 9800];
-
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let completedCount = 0;
-    const errors = [];
-    const abortControllers = [];
-    const timers = [];
-    const launched = new Set();
-
-    function cleanup() {
-      for (const t of timers) clearTimeout(t);
-      for (const c of abortControllers) {
-        try { c.abort(); } catch (_) {}
-      }
-    }
-
-    if (signal) {
-      if (signal.aborted) {
-        return reject(new Error('Aborted'));
-      }
-      signal.addEventListener('abort', () => {
-        if (!settled) {
-          settled = true;
-          cleanup();
-          reject(new Error('Aborted'));
-        }
-      }, { once: true });
-    }
-
-    const overallTimer = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        cleanup();
-        reject(new Error(`Overpass fetch timeout after ${timeoutMs}ms`));
-      }
-    }, timeoutMs);
-    timers.push(overallTimer);
-
-    function launchMirror(slotIdx) {
-      if (settled || slotIdx >= mirrors.length || launched.has(slotIdx)) return;
-      launched.add(slotIdx);
-      const ep = mirrors[slotIdx];
-      const ctrl = new AbortController();
-      abortControllers.push(ctrl);
-
-      (async () => {
-        const r = await fetch(ep, {
-          method: 'POST',
-          body: 'data=' + encodeURIComponent(query),
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-          signal: ctrl.signal
-        });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const text = await r.text();
-        const trimmed = text ? text.trim() : '';
-        if (!trimmed || trimmed.startsWith('<') || trimmed.startsWith('#')) {
-          throw new Error('Invalid non-JSON response');
-        }
-        const j = JSON.parse(trimmed);
-        if (!j || !Array.isArray(j.elements)) {
-          throw new Error('No elements array in Overpass JSON');
-        }
-        if (j.remark && String(j.remark).trim().length > 0) {
-          throw new Error(`Overpass remark: ${String(j.remark).trim()}`);
-        }
-        return j;
-      })().then(result => {
-        if (!settled) {
-          settled = true;
-          cleanup();
-          resolve(result);
-        }
-      }).catch(err => {
-        if (settled) return;
-        errors.push(`${ep}: ${err && err.message ? err.message : String(err)}`);
-        completedCount++;
-        if (slotIdx + 1 < mirrors.length) {
-          launchMirror(slotIdx + 1);
-        }
-        if (completedCount >= mirrors.length) {
-          if (!settled) {
-            settled = true;
-            cleanup();
-            reject(new Error(`All Overpass mirrors failed: ${errors.join('; ')}`));
-          }
-        }
-      });
-    }
-
-    launchMirror(0);
-
-    if (mirrors[0] !== '/api/interpreter') {
-      for (let i = 1; i < mirrors.length; i++) {
-        const t = setTimeout(() => {
-          if (!settled) launchMirror(i);
-        }, staggerDelays[i] || (i * 2500));
-        timers.push(t);
-      }
-    }
-  });
-}
-
-function _hasNonEmptyTagsJS(tags) {
-  if (!tags || typeof tags !== 'object') return false;
-  for (const k in tags) {
-    if (Object.prototype.hasOwnProperty.call(tags, k)) return true;
-  }
-  return false;
-}
-
-function mergeOsmElementJS(existing, incoming) {
-  if (!existing) return incoming;
-  if (!incoming) return existing;
-  const exHasTags = _hasNonEmptyTagsJS(existing.tags);
-  const inHasTags = _hasNonEmptyTagsJS(incoming.tags);
-  let mergedTags;
-  if (exHasTags && inHasTags) {
-    mergedTags = { ...incoming.tags, ...existing.tags };
-  } else if (exHasTags) {
-    mergedTags = existing.tags;
-  } else if (inHasTags) {
-    mergedTags = incoming.tags;
-  }
-
-  const out = { ...incoming, ...existing };
-  if (mergedTags !== undefined) {
-    out.tags = mergedTags;
-  } else {
-    delete out.tags;
-  }
-
-  const etype = existing.type || incoming.type;
-  if (etype === 'node') {
-    const exLatOk = Number.isFinite(existing.lat);
-    const exLonOk = Number.isFinite(existing.lon);
-    const inLatOk = Number.isFinite(incoming.lat);
-    const inLonOk = Number.isFinite(incoming.lon);
-    if (exLatOk && exLonOk) {
-      out.lat = existing.lat;
-      out.lon = existing.lon;
-    } else if (inLatOk && inLonOk) {
-      out.lat = incoming.lat;
-      out.lon = incoming.lon;
-    } else {
-      if (exLatOk || inLatOk) out.lat = exLatOk ? existing.lat : incoming.lat;
-      if (exLonOk || inLonOk) out.lon = exLonOk ? existing.lon : incoming.lon;
-    }
-  } else if (etype === 'way') {
-    const exNodes = Array.isArray(existing.nodes) ? existing.nodes : [];
-    const inNodes = Array.isArray(incoming.nodes) ? incoming.nodes : [];
-    out.nodes = inNodes.length > exNodes.length ? inNodes : exNodes;
-  } else if (etype === 'relation') {
-    const exMembers = Array.isArray(existing.members) ? existing.members : [];
-    const inMembers = Array.isArray(incoming.members) ? incoming.members : [];
-    out.members = inMembers.length > exMembers.length ? inMembers : exMembers;
-  }
-
-  return out;
-}
-
 if (typeof window !== 'undefined') {
-  window.fetchHedgedOverpassJson = fetchHedgedOverpassJson;
-  window.mergeOsmElementJS = mergeOsmElementJS;
+  if (typeof fetchHedgedOverpassJson === 'function') window.fetchHedgedOverpassJson = fetchHedgedOverpassJson;
+  if (typeof mergeOsmElementJS === 'function') window.mergeOsmElementJS = mergeOsmElementJS;
 }
 
 async function fetchRealGISInBrowser(south, west, north, east, title, options = {}) {
@@ -277,20 +95,29 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   const demHalfUnits = Math.round((halfM * metersToUnits) * 100) / 100;
   const sqDLat = halfM / 111320.0;
   const sqDLon = halfM / (111320.0 * cosLat);
-  const demPromise = fetchTerrariumDemInBrowser(centerLat - sqDLat, centerLon - sqDLon, centerLat + sqDLat, centerLon + sqDLon, 72, null);
+  const hasPreloadedOsm = Boolean(options && Array.isArray(options._preloadedOsmElements));
+  const hasPreloadedDem = Boolean(options && options._preloadedDem && Array.isArray(options._preloadedDem.grid));
+
+  const demPromise = hasPreloadedDem
+    ? Promise.resolve(options._preloadedDem)
+    : fetchTerrariumDemInBrowser(centerLat - sqDLat, centerLon - sqDLon, centerLat + sqDLat, centerLon + sqDLon, 72, null);
 
   let osmRaw = null;
   let overpassError = null;
 
-  try {
-    osmRaw = await fetchHedgedOverpassJson(query, {
-      signal: options && options.signal,
-      timeoutMs: (options && options.timeoutMs) || 18000
-    });
-  } catch (err) {
-    overpassError = err;
-    if (options && options.throwOnError) {
-      throw err;
+  if (hasPreloadedOsm) {
+    osmRaw = { elements: options._preloadedOsmElements };
+  } else {
+    try {
+      osmRaw = await fetchHedgedOverpassJson(query, {
+        signal: options && options.signal,
+        timeoutMs: (options && options.timeoutMs) || 18000
+      });
+    } catch (err) {
+      overpassError = err;
+      if (options && options.throwOnError) {
+        throw err;
+      }
     }
   }
 
@@ -345,18 +172,29 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   const treeNodes = [];
   const bridgeSupports = [];
   let hasMarineTags = false;
+  const skipRedundantDedup = Boolean(options && options._alreadyDeduplicated);
 
-  for (const el of (osmRaw.elements || [])) {
-    if (!el || el.id === undefined || el.id === null) continue;
-    if (el.type === 'node') {
-      const prev = nodeEls.get(el.id);
-      nodeEls.set(el.id, prev ? mergeOsmElementJS(prev, el) : el);
-    } else if (el.type === 'way') {
-      const prev = ways.get(el.id);
-      ways.set(el.id, prev ? mergeOsmElementJS(prev, el) : el);
-    } else if (el.type === 'relation') {
-      const prev = relById.get(el.id);
-      relById.set(el.id, prev ? mergeOsmElementJS(prev, el) : el);
+  if (skipRedundantDedup) {
+    for (let i = 0, list = osmRaw.elements, len = list.length; i < len; i++) {
+      const el = list[i];
+      if (!el || el.id === undefined || el.id === null) continue;
+      if (el.type === 'node') nodeEls.set(el.id, el);
+      else if (el.type === 'way') ways.set(el.id, el);
+      else if (el.type === 'relation') relById.set(el.id, el);
+    }
+  } else {
+    for (const el of (osmRaw.elements || [])) {
+      if (!el || el.id === undefined || el.id === null) continue;
+      if (el.type === 'node') {
+        const prev = nodeEls.get(el.id);
+        nodeEls.set(el.id, prev ? mergeOsmElementJS(prev, el) : el);
+      } else if (el.type === 'way') {
+        const prev = ways.get(el.id);
+        ways.set(el.id, prev ? mergeOsmElementJS(prev, el) : el);
+      } else if (el.type === 'relation') {
+        const prev = relById.get(el.id);
+        relById.set(el.id, prev ? mergeOsmElementJS(prev, el) : el);
+      }
     }
   }
 

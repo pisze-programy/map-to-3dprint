@@ -16,28 +16,84 @@
     return out;
   }
 
-  function stitchWayRingsJS(wayNodeLists) {
-    const rings = [];
-    const openSegs = (wayNodeLists || []).filter(w => w && w.length >= 2).map(w => w.slice());
-    while (openSegs.length > 0) {
-      let curr = openSegs.shift();
-      if (curr[0] === curr[curr.length - 1]) {
-        if (curr.length >= 4) rings.push(curr);
-        continue;
-      }
-      let changed = true;
-      while (changed && curr[0] !== curr[curr.length - 1]) {
-        changed = false;
-        for (let i = 0; i < openSegs.length; i++) {
-          const seg = openSegs[i];
-          let joined = null;
-          if (seg[0] === curr[curr.length - 1]) joined = curr.concat(seg.slice(1));
-          else if (seg[seg.length - 1] === curr[curr.length - 1]) joined = curr.concat(seg.slice(0, -1).reverse());
-          else if (seg[seg.length - 1] === curr[0]) joined = seg.slice(0, -1).concat(curr);
-          else if (seg[0] === curr[0]) joined = seg.slice(1).reverse().concat(curr);
-          if (joined) { curr = joined; openSegs.splice(i, 1); changed = true; break; }
+  function _stitchNodeChainsLinear(wayNodeLists) {
+    const segs = [];
+    for (let i = 0, list = wayNodeLists || []; i < list.length; i++) {
+      const w = list[i];
+      if (w && w.length >= 2) segs.push(w);
+    }
+    const m = segs.length;
+    if (m === 0) return [];
+    const used = new Uint8Array(m);
+    const epMap = new Map();
+    const addEp = (nid, idx) => {
+      let b = epMap.get(nid);
+      if (!b) { b = []; epMap.set(nid, b); }
+      b.push(idx);
+    };
+    for (let i = 0; i < m; i++) {
+      const s = segs[i];
+      if (s[0] === s[s.length - 1]) continue;
+      addEp(s[0], i);
+      addEp(s[s.length - 1], i);
+    }
+    const nextUnused = (nid) => {
+      const b = epMap.get(nid);
+      if (!b) return -1;
+      for (let k = 0; k < b.length; k++) if (!used[b[k]]) return b[k];
+      return -1;
+    };
+    const chains = [];
+    for (let sIdx = 0; sIdx < m; sIdx++) {
+      if (used[sIdx]) continue;
+      used[sIdx] = 1;
+      const s0 = segs[sIdx];
+      if (s0[0] === s0[s0.length - 1]) { chains.push(s0.slice()); continue; }
+      const headRev = [];
+      const tailFwd = s0.slice();
+      let headNode = tailFwd[0], tailNode = tailFwd[tailFwd.length - 1];
+      while (headNode !== tailNode) {
+        const tCand = nextUnused(tailNode);
+        const hCand = nextUnused(headNode);
+        if (tCand < 0 && hCand < 0) break;
+        if (tCand >= 0 && (hCand < 0 || tCand <= hCand)) {
+          used[tCand] = 1;
+          const seg = segs[tCand];
+          if (seg[0] === tailNode) {
+            for (let k = 1; k < seg.length; k++) tailFwd.push(seg[k]);
+          } else {
+            for (let k = seg.length - 2; k >= 0; k--) tailFwd.push(seg[k]);
+          }
+          tailNode = tailFwd[tailFwd.length - 1];
+        } else {
+          used[hCand] = 1;
+          const seg = segs[hCand];
+          if (seg[seg.length - 1] === headNode) {
+            for (let k = seg.length - 2; k >= 0; k--) headRev.push(seg[k]);
+          } else {
+            for (let k = 1; k < seg.length; k++) headRev.push(seg[k]);
+          }
+          headNode = headRev[headRev.length - 1];
         }
       }
+      if (headRev.length === 0) {
+        chains.push(tailFwd);
+      } else {
+        const merged = new Array(headRev.length + tailFwd.length);
+        let p = 0;
+        for (let k = headRev.length - 1; k >= 0; k--) merged[p++] = headRev[k];
+        for (let k = 0; k < tailFwd.length; k++) merged[p++] = tailFwd[k];
+        chains.push(merged);
+      }
+    }
+    return chains;
+  }
+
+  function stitchWayRingsJS(wayNodeLists) {
+    const rings = [];
+    const chains = _stitchNodeChainsLinear(wayNodeLists);
+    for (let i = 0; i < chains.length; i++) {
+      const curr = chains[i];
       if (curr.length >= 4) {
         if (curr[0] !== curr[curr.length - 1]) curr.push(curr[0]);
         rings.push(curr);
@@ -162,21 +218,9 @@
   }
 
   function _extractRoleChainsJS(wayNodeLists, role, nodesToPts, Cx, Cy, tol, closedLoops, openChains) {
-    const segs = (wayNodeLists || []).filter(w => w && w.length >= 2).map(w => w.slice());
-    while (segs.length > 0) {
-      let curr = segs.shift(), changed = true;
-      while (changed && curr[0] !== curr[curr.length - 1]) {
-        changed = false;
-        for (let i = 0; i < segs.length; i++) {
-          const seg = segs[i];
-          let joined = null;
-          if (seg[0] === curr[curr.length - 1]) joined = curr.concat(seg.slice(1));
-          else if (seg[seg.length - 1] === curr[curr.length - 1]) joined = curr.concat(seg.slice(0, -1).reverse());
-          else if (seg[seg.length - 1] === curr[0]) joined = seg.slice(0, -1).concat(curr);
-          else if (seg[0] === curr[0]) joined = seg.slice(1).reverse().concat(curr);
-          if (joined) { curr = joined; segs.splice(i, 1); changed = true; break; }
-        }
-      }
+    const stitched = _stitchNodeChainsLinear(wayNodeLists);
+    for (let si = 0; si < stitched.length; si++) {
+      const curr = stitched[si];
       if (curr[0] === curr[curr.length - 1]) {
         if (curr.length >= 4) {
           const pts = nodesToPts(curr, tol);

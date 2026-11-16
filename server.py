@@ -544,13 +544,19 @@ def _get_cached_overpass(q_hash):
     return None
 
 
+_OVERPASS_DISK_PUT_COUNTER = 0
+
+
 def _put_cached_overpass(q_hash, payload, elem_count):
+    global _OVERPASS_DISK_PUT_COUNTER
     expires_at = time.monotonic() + OVERPASS_CACHE_TTL_SEC
     with _OVERPASS_CACHE_LOCK:
         _OVERPASS_CACHE[q_hash] = (expires_at, payload, elem_count)
         _OVERPASS_CACHE.move_to_end(q_hash)
         while len(_OVERPASS_CACHE) > OVERPASS_CACHE_MAX:
             _OVERPASS_CACHE.popitem(last=False)
+        _OVERPASS_DISK_PUT_COUNTER += 1
+        should_prune_disk = (_OVERPASS_DISK_PUT_COUNTER % 32) == 0
 
     if elem_count <= 0:
         return
@@ -566,21 +572,22 @@ def _put_cached_overpass(q_hash, payload, elem_count):
             fh.write(gz_bytes)
         os.replace(tmp_path, disk_path)
 
-        entries = []
-        for fn in os.listdir(OVERPASS_DISK_CACHE_DIR):
-            if fn.endswith(".json.gz"):
-                fp = os.path.join(OVERPASS_DISK_CACHE_DIR, fn)
-                try:
-                    entries.append((os.stat(fp).st_mtime, fp))
-                except OSError:
-                    pass
-        if len(entries) > OVERPASS_DISK_CACHE_MAX:
-            entries.sort(key=lambda it: it[0])
-            for _, old_fp in entries[: len(entries) - OVERPASS_DISK_CACHE_MAX]:
-                try:
-                    os.remove(old_fp)
-                except OSError:
-                    pass
+        if should_prune_disk:
+            entries = []
+            for fn in os.listdir(OVERPASS_DISK_CACHE_DIR):
+                if fn.endswith(".json.gz"):
+                    fp = os.path.join(OVERPASS_DISK_CACHE_DIR, fn)
+                    try:
+                        entries.append((os.stat(fp).st_mtime, fp))
+                    except OSError:
+                        pass
+            if len(entries) > OVERPASS_DISK_CACHE_MAX:
+                entries.sort(key=lambda it: it[0])
+                for _, old_fp in entries[: len(entries) - OVERPASS_DISK_CACHE_MAX]:
+                    try:
+                        os.remove(old_fp)
+                    except OSError:
+                        pass
     except Exception:
         pass
 
@@ -943,8 +950,7 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
         },
         separators=(",", ":"),
     ).encode("utf-8")
-    validated_bytes, elem_count = _validate_overpass_json_bytes(raw_out)
-    return validated_bytes, elem_count, "api.openstreetmap.org"
+    return raw_out, len(compacted), "api.openstreetmap.org"
 
 
 def forward_overpass_query(query_str):

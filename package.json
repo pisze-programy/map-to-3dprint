@@ -19,7 +19,7 @@
     "build:app": "python3 build_app.py",
     "build": "npm run build:vendor && npm run build:app",
     "benchmark:3layer": "node tests/benchmark_3layer_invariants.test.mjs",
-    "test:headless": "node tests/sla_print_laws.test.mjs && node tests/s3db_17roofs_and_spires.test.mjs && node tests/bridges_global_invariants.test.mjs && node tests/waterfronts_and_archetypes.test.mjs && node tests/ordinary_roads_regression.test.mjs && node tests/audit_section5_regressions.test.mjs && node tests/export_stl_3mf_vault_audit.test.mjs && node tests/benchmark_3layer_invariants.test.mjs && node tests/tree_placement_parity.test.js && node tests/water_cutout_feature_complete.test.js && node tests/mcp_map3d_inspector.test.js",
+    "test:headless": "node tests/sla_print_laws.test.mjs && node tests/s3db_17roofs_and_spires.test.mjs && node tests/bridges_global_invariants.test.mjs && node tests/waterfronts_and_archetypes.test.mjs && node tests/ordinary_roads_regression.test.mjs && node tests/audit_section5_regressions.test.mjs && node tests/export_stl_3mf_vault_audit.test.mjs && node tests/benchmark_3layer_invariants.test.mjs && node tests/tree_placement_parity.test.js && node tests/water_cutout_feature_complete.test.js && node tests/mcp_map3d_inspector.test.js && node --test tests/gis_fetch_modular_dag_and_bigo.test.mjs",
     "verify:15scenes": "node tests/verify_15scenes_invariants.mjs"
   },
   "dependencies": {

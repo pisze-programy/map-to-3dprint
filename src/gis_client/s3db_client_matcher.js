@@ -179,7 +179,14 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       parentHeightM: (parentHeightHint !== null && parentHeightHint !== undefined) ? Math.round(parentHeightHint * 10) / 10 : null,
       landmark: Boolean(tags.name || tags.wikidata || tags.heritage || isChurch || isTower || isFerrisWheel),
       isLandmark: isFerrisWheel,
-      isVessel: Boolean(/^(ship|boat|houseboat|floating_home|barge|boathouse)$/.test(btype) || tags.historic === 'ship' || tags['ship:type'] || tags.floating === 'yes'),
+      isVessel: Boolean(
+        /^(ship|boat|houseboat|floating_home|barge|boathouse)$/.test(btype) ||
+        tags.historic === 'ship' ||
+        tags['ship:type'] ||
+        tags.floating === 'yes' ||
+        tags.platform === 'floating' ||
+        (tags.ferry === 'yes' && tags.public_transport === 'platform')
+      ),
     };
     if (roofDir !== null) rec.roofDir = roofDir;
     buildings.push(rec);
@@ -194,6 +201,26 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       }
     }
     const sortedParentsByMinX = candidateParents.slice().sort((a, b) => a.bbox[0] - b.bbox[0]);
+    const PAR_CELL = 4.0;
+    const parentSpatialGrid = new Map();
+    for (let pi = 0; pi < sortedParentsByMinX.length; pi++) {
+      const par = sortedParentsByMinX[pi];
+      par._sortIdx = pi;
+      const [x0, y0, x1, y1] = par.bbox;
+      const gx0 = Math.floor(x0 / PAR_CELL), gx1 = Math.floor(x1 / PAR_CELL);
+      const gy0 = Math.floor(y0 / PAR_CELL), gy1 = Math.floor(y1 / PAR_CELL);
+      for (let gx = gx0; gx <= gx1; gx++) {
+        for (let gy = gy0; gy <= gy1; gy++) {
+          const ck = `${gx}:${gy}`;
+          let bucket = parentSpatialGrid.get(ck);
+          if (!bucket) { bucket = []; parentSpatialGrid.set(ck, bucket); }
+          bucket.push(par);
+        }
+      }
+    }
+    const parSeenStamp = new Int32Array(sortedParentsByMinX.length);
+    let parStamp = 0;
+
     for (const part of candidateParts) {
       let bestParent = null;
       const enclosingParents = [];
@@ -207,10 +234,27 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
         bestParent = useCands.reduce((b, p) => (Math.abs(p.interiorPt[0] - pix) + Math.abs(p.interiorPt[1] - piy) < Math.abs(b.interiorPt[0] - pix) + Math.abs(b.interiorPt[1] - piy) ? p : b), useCands[0]);
       }
       let bestArea = Infinity;
-      for (const parent of sortedParentsByMinX) {
-        const [parMinX, parMinY, parMaxX, parMaxY] = parent.bbox;
-        if (parMinX > pMaxX + 0.12) break;
-        if (pMinX > parMaxX + 0.12 || pMinY > parMaxY + 0.12 || pMaxY < parMinY - 0.12) continue;
+      const nearParents = [];
+      parStamp++;
+      const qx0 = Math.floor((pMinX - 0.12) / PAR_CELL), qx1 = Math.floor((pMaxX + 0.12) / PAR_CELL);
+      const qy0 = Math.floor((pMinY - 0.12) / PAR_CELL), qy1 = Math.floor((pMaxY + 0.12) / PAR_CELL);
+      for (let gx = qx0; gx <= qx1; gx++) {
+        for (let gy = qy0; gy <= qy1; gy++) {
+          const bucket = parentSpatialGrid.get(`${gx}:${gy}`);
+          if (!bucket) continue;
+          for (let bi = 0; bi < bucket.length; bi++) {
+            const par = bucket[bi];
+            if (parSeenStamp[par._sortIdx] === parStamp) continue;
+            parSeenStamp[par._sortIdx] = parStamp;
+            const [parMinX, parMinY, parMaxX, parMaxY] = par.bbox;
+            if (parMinX > pMaxX + 0.12 || pMinX > parMaxX + 0.12 || pMinY > parMaxY + 0.12 || pMaxY < parMinY - 0.12) continue;
+            nearParents.push(par);
+          }
+        }
+      }
+      if (nearParents.length > 1) nearParents.sort((a, b) => a._sortIdx - b._sortIdx);
+      for (let ni = 0; ni < nearParents.length; ni++) {
+        const parent = nearParents[ni];
         if (isPartEnclosedByParentS3DB(part, parent)) {
           if (!enclosingParents.includes(parent)) enclosingParents.push(parent);
           if (!bestParent || (part.groupId === null && parent.area < bestArea)) { bestArea = parent.area; bestParent = parent; }

@@ -72,6 +72,38 @@
     const structured = core.ringsToOutersWithHoles(unioned, 6e-4);
     if (structured.length === 0) return null;
 
+    const allCrossRings = [];
+    for (let i = 0; i < structured.length; i++) {
+      const cleanOuter = core.ensureWinding(structured[i].outer, true, 6e-4);
+      if (cleanOuter.length < 3) continue;
+      allCrossRings.push(cleanOuter);
+      for (const h of (structured[i].holes || [])) {
+        const cwHole = core.ensureWinding(h, false, 6e-4);
+        if (cwHole.length >= 3) allCrossRings.push(cwHole);
+      }
+    }
+    if (allCrossRings.length === 0) return null;
+
+    // Extrude all planar-disjoint Clipper2 polygons in ONE single CrossSection.extrude() call
+    // instead of thousands of 3D Manifold extrusions + 3D CSG union tree.
+    let cs = null;
+    try {
+      cs = mf.CrossSection.ofPolygons(allCrossRings, 'Positive');
+      if (cs && (!cs.isEmpty || !cs.isEmpty())) {
+        let man = cs.extrude(zTop - zBot);
+        if (Math.abs(zBot) > 1e-7) {
+          const shifted = man.translate([0, 0, zBot]);
+          man.delete();
+          man = shifted;
+        }
+        if (man && man.numTri() > 0) return man;
+        core.safeDeleteManifold(man);
+      }
+    } catch (_) {
+    } finally {
+      core.safeDeleteManifold(cs);
+    }
+
     const solids = [];
     for (let i = 0; i < structured.length; i++) {
       const cleanOuter = core.ensureWinding(structured[i].outer, true, 6e-4);

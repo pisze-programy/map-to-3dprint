@@ -43,17 +43,9 @@
 
   function _emitDecomposed(core, man, outArr, layerId, buildingId, tid, nextSidFn) {
     if (!man || man.numTri() === 0) return;
-    if (typeof man.decompose === 'function') {
-      let comps = null;
-      try { comps = man.decompose(); } catch (_) { comps = null; }
-      if (Array.isArray(comps) && comps.length > 0) {
-        for (let ci = 0; ci < comps.length; ci++) {
-          const comp = comps[ci];
-          if (comp && comp.numTri() > 0) core.appendManifoldToTriangles(comp, outArr, layerId, buildingId, tid, nextSidFn());
-          core.safeDeleteManifold(comp);
-        }
-        return;
-      }
+    if (typeof core.appendManifoldComponentsToTriangles === 'function') {
+      core.appendManifoldComponentsToTriangles(man, outArr, layerId, buildingId, tid, nextSidFn);
+      return;
     }
     core.appendManifoldToTriangles(man, outArr, layerId, buildingId, tid, nextSidFn());
   }
@@ -256,7 +248,11 @@
     const emitGreenTurf = !ctx.state || !ctx.state.layerVisible || ctx.state.layerVisible.greenery !== false;
 
     let maxTreeShellId = 0;
-    for (const tr of allTrees) if (tr && tr.shellId > maxTreeShellId) maxTreeShellId = tr.shellId;
+    for (const tr of allTrees) {
+      if (!tr) continue;
+      if (tr.shellId > maxTreeShellId) maxTreeShellId = tr.shellId;
+      if (!tr.bb && tr.manifold) tr.bb = tr.manifold.boundingBox();
+    }
     let nextPosShellId = maxTreeShellId + 1, nextTurfShellId = -2;
 
     for (let tIdx = 0; tIdx < tileBounds.length; tIdx++) {
@@ -300,7 +296,7 @@
         }
       }
       for (const tr of allTrees) {
-        const tClip = _clipSolidToBox(core, mf, tr.manifold, clipBox);
+        const tClip = _clipSolidToBox(core, mf, tr.manifold, clipBox, tr.bb || null);
         if (tClip) {
           recordSolids(tClip, tid, false);
           let firstTree = true;

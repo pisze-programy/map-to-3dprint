@@ -197,8 +197,9 @@ async function run() {
   // [2/6] Waterfront Quays & Pedestrian Areas Preservation
   console.log('\n[2/6] man_made=quay & highway=pedestrian (area=yes) Preservation vs Water');
   {
-    const ovChunkTxt = fs.readFileSync(path.join(ROOT, 'src/gis_client/overpass_chunk_grid.js'), 'utf8');
-    check(ovChunkTxt.includes('quay') && ovChunkTxt.includes('area:highway'), 'OverpassQL query requests quay and area:highway');
+    const { buildAdaptiveOverpassQL } = require(path.join(ROOT, 'src/gis_client/overpass_chunk_grid.js'));
+    const ovSampleQl = buildAdaptiveOverpassQL(45.43, 12.33, 45.44, 12.34, 'urban', 20);
+    check(ovSampleQl.includes('quay') && ovSampleQl.includes('area:highway'), 'OverpassQL query requests quay and area:highway');
 
     const cLat = 45.438, cLon = 12.335;
     const els = [];

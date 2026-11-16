@@ -604,6 +604,123 @@
     return added;
   }
 
+  // Pure-JS O(T) connected-component triangle emitter over a single getMesh() call.
+  // Eliminates C++ Manifold._Decompose() WASM OOM/abort on scenes with thousands of islands/forest patches.
+  function appendManifoldComponentsToTriangles(manifoldObj, outArr, layerId, buildingId = -1, tileId = 0, nextSidFn = null) {
+    if (!manifoldObj) return 0;
+    const numTri = manifoldObj.numTri();
+    if (numTri <= 0) return 0;
+    const m = manifoldObj.getMesh();
+    const vp = m.vertProperties;
+    const tv = m.triVerts;
+    const np = m.numProp || 3;
+    const nTri = Math.floor(tv.length / 3);
+    const nv = Math.floor(vp.length / np);
+    if (nTri <= 0 || nv <= 0) return 0;
+
+    const parent = new Int32Array(nv);
+    for (let i = 0; i < nv; i++) parent[i] = i;
+    const find = (x) => {
+      while (parent[x] !== x) {
+        parent[x] = parent[parent[x]];
+        x = parent[x];
+      }
+      return x;
+    };
+
+    for (let t = 0; t < nTri; t++) {
+      const i0 = tv[t * 3], i1 = tv[t * 3 + 1], i2 = tv[t * 3 + 2];
+      if (i0 === i1 || i1 === i2 || i2 === i0) continue;
+      const r0 = find(i0), r1 = find(i1);
+      if (r0 !== r1) parent[r1] = r0;
+      const r2 = find(i2), r0b = find(r0);
+      if (r0b !== r2) parent[r2] = r0b;
+    }
+
+    const rootToComp = new Int32Array(nv).fill(-1);
+    const triComp = new Int32Array(nTri).fill(-1);
+    const compCounts = [];
+    let nComps = 0;
+
+    for (let t = 0; t < nTri; t++) {
+      const i0 = tv[t * 3], i1 = tv[t * 3 + 1], i2 = tv[t * 3 + 2];
+      if (i0 === i1 || i1 === i2 || i2 === i0) continue;
+      const r = find(i0);
+      let cid = rootToComp[r];
+      if (cid < 0) {
+        cid = nComps++;
+        rootToComp[r] = cid;
+        compCounts.push(0);
+      }
+      triComp[t] = cid;
+      compCounts[cid]++;
+    }
+    if (nComps === 0) return 0;
+
+    // Fast path when the entire Manifold is already 1 connected component
+    if (nComps === 1) {
+      const sid = typeof nextSidFn === 'function' ? nextSidFn() : 1;
+      const mBatch = ++_nextManifoldBatchId;
+      let added = 0;
+      for (let t = 0; t < nTri; t++) {
+        if (triComp[t] < 0) continue;
+        const i0 = tv[t * 3], i1 = tv[t * 3 + 1], i2 = tv[t * 3 + 2];
+        const b0 = i0 * np, b1 = i1 * np, b2 = i2 * np;
+        const x0 = vp[b0], y0 = vp[b0 + 1], z0 = vp[b0 + 2];
+        const x1 = vp[b1], y1 = vp[b1 + 1], z1 = vp[b1 + 2];
+        const x2 = vp[b2], y2 = vp[b2 + 1], z2 = vp[b2 + 2];
+        const ux = x1 - x0, uy = y1 - y0, uz = z1 - z0;
+        const vx = x2 - x0, vy = y2 - y0, vz = z2 - z0;
+        let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const nl = Math.hypot(nx, ny, nz);
+        if (nl >= 1e-18 && Number.isFinite(nl)) { nx /= nl; ny /= nl; nz /= nl; } else { nx = 0; ny = 0; nz = 1; }
+        outArr.push({
+          v0: [x0, y0, z0], v1: [x1, y1, z1], v2: [x2, y2, z2], n: [nx, ny, nz],
+          layerId, buildingId, tileId, shellId: sid, mBatch, vi0: i0, vi1: i1, vi2: i2,
+        });
+        added++;
+      }
+      return added;
+    }
+
+    // Multi-component counting-sort bucket so every component is emitted contiguously in O(T)
+    const offsets = new Int32Array(nComps + 1);
+    for (let c = 0; c < nComps; c++) offsets[c + 1] = offsets[c] + compCounts[c];
+    const cursor = offsets.slice(0, nComps);
+    const orderedTris = new Int32Array(offsets[nComps]);
+    for (let t = 0; t < nTri; t++) {
+      const cid = triComp[t];
+      if (cid >= 0) orderedTris[cursor[cid]++] = t;
+    }
+
+    let added = 0;
+    for (let c = 0; c < nComps; c++) {
+      const start = offsets[c], end = offsets[c + 1];
+      if (end <= start) continue;
+      const sid = typeof nextSidFn === 'function' ? nextSidFn() : (c + 1);
+      const mBatch = ++_nextManifoldBatchId;
+      for (let p = start; p < end; p++) {
+        const t = orderedTris[p];
+        const i0 = tv[t * 3], i1 = tv[t * 3 + 1], i2 = tv[t * 3 + 2];
+        const b0 = i0 * np, b1 = i1 * np, b2 = i2 * np;
+        const x0 = vp[b0], y0 = vp[b0 + 1], z0 = vp[b0 + 2];
+        const x1 = vp[b1], y1 = vp[b1 + 1], z1 = vp[b1 + 2];
+        const x2 = vp[b2], y2 = vp[b2 + 1], z2 = vp[b2 + 2];
+        const ux = x1 - x0, uy = y1 - y0, uz = z1 - z0;
+        const vx = x2 - x0, vy = y2 - y0, vz = z2 - z0;
+        let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const nl = Math.hypot(nx, ny, nz);
+        if (nl >= 1e-18 && Number.isFinite(nl)) { nx /= nl; ny /= nl; nz /= nl; } else { nx = 0; ny = 0; nz = 1; }
+        outArr.push({
+          v0: [x0, y0, z0], v1: [x1, y1, z1], v2: [x2, y2, z2], n: [nx, ny, nz],
+          layerId, buildingId, tileId, shellId: sid, mBatch, vi0: i0, vi1: i1, vi2: i2,
+        });
+        added++;
+      }
+    }
+    return added;
+  }
+
   // Convert a Manifold to STL triangles while separating pinched/near-coincident vertices
   // so Float32 serialization preserves strict 0-open, 0-non-manifold, 0-degenerate topology.
   function extractDePinchedStlTriangles(mf, man, tid = 0, scaleMm = 1) {
@@ -989,6 +1106,7 @@
     boxManifoldFromBounds,
     beamManifoldBetween,
     appendManifoldToTriangles,
+    appendManifoldComponentsToTriangles,
     extractDePinchedStlTriangles,
     createBuildContext,
   };
