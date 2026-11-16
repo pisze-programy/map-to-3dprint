@@ -251,6 +251,18 @@ console.log('\n[5/7] Narrow Spire Pin Widening, roof:height=40, Mono 4 Cap & Lat
   check(Boolean(spB) && protMm > 0.5 && protMm <= 4.55, 'Spire protrusion capped by Mono 4 law (0 < protMm <= 4.5)', `protMm=${protMm.toFixed(2)}`);
   check(spSpanMm >= reqPinMm * 0.96, 'Narrow spire widened >= minPinDiameterMm', `spanMm=${spSpanMm.toFixed(2)}, reqPin=${reqPinMm.toFixed(2)}`);
   check(Boolean(latB), 'tower:construction=lattice as building:part emitted non-zero geometry');
+
+  // Border-clipped 258m skyscraper (One Manhattan Square) above a 9m podium keeps full 258m height (not squashed as a spire!)
+  const resBorderTower = buildComplete3DModel({
+    spanMeters: 1500, dem: { grid: [[2, 2], [2, 2]], minElev: 2, maxElev: 2 },
+    waterPolys: [], waterLines: [], greenPolys: [], trees: [], roads: [], bridgePolys: [],
+    buildings: [
+      { id: 7020, osmId: 17246617, groupId: 17246617, part: false, outer: makeRect(83.5, 0, 5.0, 5.0), holes: [], h: 9, minH: 0, roof: 'flat', tags: { building: 'residential', height: '9' } },
+      { id: 7021, osmId: 611246737, groupId: 17246617, part: true, outer: makeRect(85.2, 0, 2.8, 1.6), holes: [], h: 258, minH: 0, roof: 'flat', tags: { 'building:part': 'yes', height: '258' } },
+    ],
+  }, makeState());
+  const btPrep = resBorderTower.audit.preparedList.find(p => p.osmId === 611246737);
+  check(btPrep && btPrep.h >= 250, 'Border-clipped 258m skyscraper above 9m podium preserves full 258m height', `h=${btPrep?.h?.toFixed(1)}`);
 }
 
 // ---------------------------------------------------------------------------

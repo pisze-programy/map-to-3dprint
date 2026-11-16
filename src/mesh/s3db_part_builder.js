@@ -156,9 +156,13 @@ function buildS3DBPartSolid(core, b, tags, metaP, groupDatumById, platePoly, sce
   const hMult = (b.heightMult || 1.0) * zScale * scaleToBed, mToMm = mToU * hMult * scaleMm;
   const spireObb = adjOuters.length > 0 ? _computeOBB(adjOuters[0], null, 'along', 0) : null;
   const minorBedMm = spireObb ? Math.min(spireObb.spanU, spireObb.spanV) * scaleMm : 999;
+  const fullObb = outerBed.length >= 3 ? _computeOBB(outerBed, null, 'along', 0) : spireObb;
+  const unclippedMinorM = fullObb ? (Math.min(fullObb.spanU, fullObb.spanV) / Math.max(1e-6, mToU * scaleToBed)) : 999;
+  const isTrueNeedleSpire = minorBedMm <= 1.65 && unclippedMinorM <= 3.8 && !(metaP && metaP.areaM2 > 14.5);
 
-  // Only saturate slender spire/needle protrusions (minor span <= 2.4 mm); never flatten wide towers/rotundas/domes above a podium.
-  if (slaLaws && minorBedMm <= 2.4 && metaP && metaP.bodyTopM > 0 && rawH_m > metaP.bodyTopM + 1.5 && rawMinH_m <= metaP.bodyTopM + 2.0) {
+  // Only saturate true slender spire/needle/antenna protrusions (<= 3.8 m real width & <= 1.65 mm bed width);
+  // never squash church bell towers, apartment wings, or border-clipped skyscrapers above a preserved podium.
+  if (slaLaws && isTrueNeedleSpire && metaP && metaP.bodyTopM > 0 && rawH_m > metaP.bodyTopM + 1.5 && rawMinH_m <= metaP.bodyTopM + 2.0) {
     const bodyTopMm = metaP.bodyTopM * mToMm, rawDeltaMm = (rawH_m - metaP.bodyTopM) * mToMm;
     const cappedDeltaMm = slaLaws.capSpireProtrusionMm(rawDeltaMm, bodyTopMm);
     if (cappedDeltaMm > 0 && cappedDeltaMm < rawDeltaMm) {
