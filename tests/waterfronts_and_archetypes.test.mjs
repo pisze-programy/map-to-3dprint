@@ -541,6 +541,43 @@ async function run() {
       'Emaar Beachfront Sunrise Bay podium + 2 twin tower parts emits all 3 records cleanly',
       `count=${emaarOut.length}`
     );
+
+    // 8e. Asymmetric P-shaped marina-loop areal pier (long narrow walkway + looped yacht basin hole)
+    //     places 0 stray piles in open water south of walkway or inside the central yacht-basin hole
+    const pLoopOuter = [
+      [-45, 9], [25, 9], [25, -25], [-5, -25], [-5, 7], [-45, 7]
+    ];
+    const pLoopHole = [
+      [-1, 5], [-1, -21], [21, -21], [21, 5]
+    ];
+    const pLoopScene = {
+      widthM: 1200, heightM: 1200, metersToUnits: 169.2 / 1200,
+      centerLat: 54.447, centerLon: 18.574,
+      elevGrid: { rows: 4, cols: 4, minElev: 0, maxElev: 1.5, values: new Float32Array(16).fill(1.2) },
+      osmElements: [],
+      waterPolys: [{ outer: rectRing(5, 0, 62, 62), holes: [] }],
+      waterLines: [], greenPolys: [], trees: [], roads: [], roadPolys: [],
+      bridgePolys: [{ osmId: 9101, isPier: true, isPierLine: false, pierKind: 'pier', outer: pLoopOuter, holes: [pLoopHole], tags: { man_made: 'pier', area: 'yes' } }],
+      pierPolys: [{ osmId: 9101, isPier: true, pierKind: 'pier', _inBridgePolys: true, outer: pLoopOuter, holes: [pLoopHole], tags: { man_made: 'pier', area: 'yes' } }],
+      pierLines: [], bridgeSupports: [], buildings: [],
+    };
+    const pLoopModel = buildComplete3DModel(pLoopScene, makeState({ waterCutout: true, targetWidthCm: 18, targetHeightCm: 18 }), {});
+    let strayOpenSeaTris = 0, strayBasinHoleTris = 0, groundedPileVerts = 0;
+    for (const tri of pLoopModel.meshes.roads) {
+      for (const v of [tri.v0, tri.v1, tri.v2]) {
+        if (v[2] <= 0.02) groundedPileVerts++;
+      }
+      const cx = (tri.v0[0] + tri.v1[0] + tri.v2[0]) / 3;
+      const cy = (tri.v0[1] + tri.v1[1] + tri.v2[1]) / 3;
+      if (cx > -42 && cx < -8 && cy < 4.5) strayOpenSeaTris++;
+      if (cx > 1.5 && cx < 18.5 && cy > -18.5 && cy < 2.5) strayBasinHoleTris++;
+    }
+    check(
+      groundedPileVerts > 0 && strayOpenSeaTris === 0 && strayBasinHoleTris === 0 &&
+      pLoopModel.printMetrics.openEdgesCount === 0 && pLoopModel.printMetrics.nonManifoldEdgesCount === 0,
+      'P-shaped marina-loop areal pier places Z=0 medial piles strictly under deck (0 stray open-sea or basin-hole piles)',
+      `groundedVerts=${groundedPileVerts}, openSeaStray=${strayOpenSeaTris}, holeStray=${strayBasinHoleTris}`
+    );
   }
 
   console.log(`\nSUMMARY: ${passed} passed, ${failed} failed`);

@@ -115,23 +115,26 @@
     if (items.length === 0) return { solids: [], pierCount: 0 };
 
     const minStrutMm = laws && typeof laws.minStrutDiameterMm === 'function' ? laws.minStrutDiameterMm(4.0) : 0.52;
-    const pierR = Math.max(minPrintU * 0.75, (minStrutMm * 0.5) / scaleMm, 0.35 / scaleMm);
+    const minPileR = Math.max(minPrintU * 0.55, (minStrutMm * 0.5) / scaleMm, 0.27 / scaleMm);
+    const pierR = Math.max(minPrintU * 0.75, minPileR, 0.35 / scaleMm);
     const deckThickMm = laws && typeof laws.minWallThicknessMm === 'function' ? Math.max(0.50, laws.minWallThicknessMm(0.55)) : 0.50;
     const deckThickU = deckThickMm / scaleMm;
     const solids = [];
     const placedPilePts = [];
     if (!ctx.audit.pierAudits) ctx.audit.pierAudits = [];
 
-    const addSinglePile = (px, py, floorZ, topZ, forceAnchor = false) => {
+    const addSinglePile = (px, py, floorZ, topZ, customR = pierR, forceAnchor = false) => {
       const pileH = topZ - floorZ;
+      const rUse = Math.max(minPileR, customR || pierR);
       if (pileH <= 1e-4 || !Number.isFinite(px) || !Number.isFinite(py)) return false;
       if (!forceAnchor) {
+        const minSep = Math.max(rUse, pierR * 0.85) * 1.65;
         for (let i = 0; i < placedPilePts.length; i++) {
-          if (Math.hypot(placedPilePts[i][0] - px, placedPilePts[i][1] - py) < pierR * 1.5) return false;
+          if (Math.hypot(placedPilePts[i][0] - px, placedPilePts[i][1] - py) < minSep) return false;
         }
       }
       placedPilePts.push([px, py]);
-      const rawCyl = mf.Manifold.cylinder(pileH, pierR, pierR, 8, false);
+      const rawCyl = mf.Manifold.cylinder(pileH, rUse, rUse, 8, false);
       const rotCyl = rawCyl.rotate([0, 0, 22.5]);
       rawCyl.delete();
       const cyl = rotCyl.translate([px, py, floorZ]);
@@ -144,22 +147,79 @@
       if (!pts || pts.length < 2 || topZ - floorZ <= 1e-4) return 0;
       let total = 0, added = 0;
       for (let i = 0; i < pts.length - 1; i++) total += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+      const rLine = Math.max(minPileR, Math.min(pierR, halfW * 0.88));
+      const endInset = Math.min(rLine * 0.95, total * 0.22);
+      const effLen = Math.max(0, total - 2 * endInset);
       const step = Math.max(minPrintU * 3.5, Math.min(halfW * 4.5, 4.5 / scaleMm));
-      const nPiles = Math.max(2, Math.min(18, Math.round(total / step) + 1));
+      const nPiles = effLen <= 1e-5 ? 1 : Math.max(2, Math.min(18, Math.round(effLen / step) + 1));
       for (let k = 0; k < nPiles; k++) {
-        const target = (k / Math.max(1, nPiles - 1)) * total;
+        const target = nPiles === 1 ? (total * 0.5) : (endInset + (k / (nPiles - 1)) * effLen);
         let acc = 0, px = pts[0][0], py = pts[0][1];
         for (let i = 0; i < pts.length - 1; i++) {
           const s = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
           if (acc + s >= target || i === pts.length - 2) {
-            const f = s > 1e-6 ? (target - acc) / s : 0;
+            const f = s > 1e-6 ? Math.max(0, Math.min(1, (target - acc) / s)) : 0;
             px = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f;
             py = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f;
             break;
           }
           acc += s;
         }
-        if (addSinglePile(px, py, floorZ, topZ)) added++;
+        if (addSinglePile(px, py, floorZ, topZ, rLine)) added++;
+      }
+      return added;
+    };
+
+    const addAreaMedialPiles = (outerRing, holeRings, obb, floorZ, topZ) => {
+      if (!outerRing || outerRing.length < 3 || topZ - floorZ <= 1e-4) return 0;
+      const uvRings = [outerRing, ...(holeRings || [])]
+        .filter(r => r && r.length >= 3)
+        .map(r => r.map(p => [
+          (p[0] - obb.cx) * obb.ux + (p[1] - obb.cy) * obb.uy,
+          (p[0] - obb.cx) * obb.vx + (p[1] - obb.cy) * obb.vy,
+        ]));
+      const toWorld = (u, v) => [obb.cx + obb.ux * u + obb.vx * v, obb.cy + obb.uy * u + obb.vy * v];
+      const step = Math.max(minPrintU * 3.8, 4.2 / scaleMm);
+      let added = 0, fallbackPt = null;
+
+      const scanAxis = (axisIdx, lo, hi) => {
+        const otherIdx = 1 - axisIdx;
+        const pad = Math.min(pierR * 0.95, (hi - lo) * 0.22);
+        const a0 = lo + pad, a1 = hi - pad;
+        const span = Math.max(0, a1 - a0);
+        const nS = span <= 1e-5 ? 1 : Math.max(2, Math.min(22, Math.round(span / step) + 1));
+        for (let s = 0; s < nS; s++) {
+          const pos = nS === 1 ? (lo + hi) * 0.5 : (a0 + (s / (nS - 1)) * span);
+          const hits = [];
+          for (const r of uvRings) {
+            for (let i = 0, n = r.length; i < n; i++) {
+              const pA = r[i], pB = r[(i + 1) % n];
+              if ((pA[axisIdx] <= pos && pB[axisIdx] > pos) || (pB[axisIdx] <= pos && pA[axisIdx] > pos)) {
+                hits.push(pA[otherIdx] + ((pos - pA[axisIdx]) / (pB[axisIdx] - pA[axisIdx])) * (pB[otherIdx] - pA[otherIdx]));
+              }
+            }
+          }
+          hits.sort((a, b) => a - b);
+          for (let m = 0; m + 1 < hits.length; m += 2) {
+            const segLo = hits[m], segHi = hits[m + 1], segW = segHi - segLo;
+            if (segW <= minPileR * 0.35) continue;
+            const rLocal = Math.max(minPileR, Math.min(pierR, segW * 0.43));
+            const margin = Math.min(rLocal * 0.95, segW * 0.45);
+            const nAcross = segW > step * 1.85 ? Math.min(6, Math.floor((segW - 2 * margin) / step) + 1) : 1;
+            for (let j = 0; j < nAcross; j++) {
+              const tVal = nAcross === 1 ? (segLo + segHi) * 0.5 : (segLo + margin + (j / (nAcross - 1)) * (segW - 2 * margin));
+              const [wx, wy] = axisIdx === 0 ? toWorld(pos, tVal) : toWorld(tVal, pos);
+              if (!fallbackPt) fallbackPt = [wx, wy, rLocal];
+              if (addSinglePile(wx, wy, floorZ, topZ, rLocal)) added++;
+            }
+          }
+        }
+      };
+
+      scanAxis(0, obb.uMin, obb.uMax);
+      if (obb.spanV > minPileR * 2.4) scanAxis(1, obb.vMin, obb.vMax);
+      if (added === 0 && fallbackPt) {
+        if (addSinglePile(fallbackPt[0], fallbackPt[1], floorZ, topZ, fallbackPt[2], true)) added++;
       }
       return added;
     };
@@ -187,23 +247,14 @@
         ? (zDeckBot + deckThickU)
         : (isSolidStone
             ? Math.max(ctx.zLandDatum + 0.16 / scaleMm, waterTop + deckThickU, zDeckBot + deckThickU + 0.15 / scaleMm)
-            : Math.max(waterTop + deckThickU, zDeckBot + deckThickU + 0.15 / scaleMm));
+            : Math.max(waterTop + deckThickU + (isFloating ? 0.08 / scaleMm : 0), zDeckBot + deckThickU + 0.15 / scaleMm));
       const zPileTop = zDeckBot + 0.08 / scaleMm;
 
       if (isArea) {
         const deckM = core.extrudeRingSolid(mf, ptsOrRing, holesBed, zDeckBot, zDeckTop);
         if (deckM) solids.push(deckM);
         if (needsPiles) {
-          let itemPiles = addPilesAlongPts(
-            [[obb.cx + obb.ux * obb.uMin * 0.85, obb.cy + obb.uy * obb.uMin * 0.85],
-             [obb.cx + obb.ux * obb.uMax * 0.85, obb.cy + obb.uy * obb.uMax * 0.85]],
-            obb.spanV * 0.4, pileFloorZ, zPileTop
-          );
-          const stride = Math.max(1, Math.floor(ptsOrRing.length / 12));
-          for (let vi = 0; vi < ptsOrRing.length; vi += stride) {
-            if (addSinglePile(ptsOrRing[vi][0], ptsOrRing[vi][1], pileFloorZ, zPileTop)) itemPiles++;
-          }
-          if (itemPiles === 0 && ptsOrRing.length > 0) addSinglePile(ptsOrRing[0][0], ptsOrRing[0][1], pileFloorZ, zPileTop, true);
+          addAreaMedialPiles(ptsOrRing, holesBed, obb, pileFloorZ, zPileTop);
         }
       } else {
         const rings = core.clipperBufferOpenPaths([{ pts: ptsOrRing, halfW: widthU, squareEnd: true }], 'Miter', 1e-5);
@@ -215,7 +266,7 @@
           const itemPiles = addPilesAlongPts(ptsOrRing, widthU, pileFloorZ, zPileTop);
           if (itemPiles === 0 && ptsOrRing.length > 0) {
             const midPt = ptsOrRing[ptsOrRing.length >> 1];
-            addSinglePile(midPt[0], midPt[1], pileFloorZ, zPileTop, true);
+            addSinglePile(midPt[0], midPt[1], pileFloorZ, zPileTop, Math.max(minPileR, Math.min(pierR, widthU * 0.88)), true);
           }
         }
       }
