@@ -111,11 +111,12 @@
     const allHiBuildings = (s3db && s3db.highlightedManifolds) || [];
     const allTrees = (archetypes && archetypes.greeneryTreeManifolds) || [];
 
-    const _manifoldsTouch3D = (mA, mB, zShiftA = 0) => {
+    const _manifoldsTouch3D = (mA, mB, shiftA = 0) => {
       if (!mA || !mB || mA.numTri() === 0 || mB.numTri() === 0) return false;
+      const vec = Array.isArray(shiftA) ? shiftA : [0, 0, shiftA];
       let probe = mA, owns = false, hit = null;
       try {
-        if (Math.abs(zShiftA) > 1e-6) { probe = mA.translate([0, 0, zShiftA]); owns = true; }
+        if (Math.hypot(vec[0], vec[1], vec[2]) > 1e-6) { probe = mA.translate(vec); owns = true; }
         hit = probe.intersect(mB);
         return Boolean(hit && hit.numTri() > 0);
       } catch (_) { return false; }
@@ -173,7 +174,11 @@
         if (db.man === comp) continue;
         if (bb.max[0] < db.bb.min[0] - 0.05 || bb.min[0] > db.bb.max[0] + 0.05 ||
             bb.max[1] < db.bb.min[1] - 0.05 || bb.min[1] > db.bb.max[1] + 0.05) continue;
-        if (_manifoldsTouch3D(comp, db.man, 0)) return true;
+        if (_manifoldsTouch3D(comp, db.man, 0) ||
+            _manifoldsTouch3D(comp, db.man, [0.02, 0, 0]) ||
+            _manifoldsTouch3D(comp, db.man, [-0.02, 0, 0]) ||
+            _manifoldsTouch3D(comp, db.man, [0, 0.02, 0]) ||
+            _manifoldsTouch3D(comp, db.man, [0, -0.02, 0])) return true;
       }
       return false;
     };
@@ -200,15 +205,18 @@
       for (const comp of checkList) {
         if (!comp || comp.numTri() === 0) continue;
         const bb = comp.boundingBox();
+        if (bb.min[0] >= ctx.halfW - 1e-3 || bb.max[0] <= -ctx.halfW + 1e-3 ||
+            bb.min[1] >= ctx.halfH - 1e-3 || bb.max[1] <= -ctx.halfH + 1e-3) continue;
         if (bb.max[2] >= zTopCap - 0.02) zCapApplied = true;
         if (!item.isFloatingPart) {
+          const touchesFrameBorder = (bb.min[0] <= -ctx.halfW + 0.02 || bb.max[0] >= ctx.halfW - 0.02 || bb.min[1] <= -ctx.halfH + 0.02 || bb.max[1] >= ctx.halfH - 0.02);
           const cx = (bb.min[0] + bb.max[0]) * 0.5, cy = (bb.min[1] + bb.max[1]) * 0.5;
           const dx = (bb.max[0] - bb.min[0]) * 0.32, dy = (bb.max[1] - bb.min[1]) * 0.32;
           const samples = [[cx, cy], [cx - dx, cy - dy], [cx + dx, cy - dy], [cx + dx, cy + dy], [cx - dx, cy + dy]];
           const allInCutoutSea = waterCutout && terrainWater && typeof terrainWater.isPointInWater === 'function' &&
             samples.every(([px, py]) => terrainWater.isPointInWater(px, py)) && !_isMooredZ0Vessel(item, bb);
           const aboveSurf = bb.min[2] > terrainWater.getSurfaceZ(cx, cy) + (0.65 / scaleMm);
-          if ((aboveSurf || allInCutoutSea) && !_isCompPhysicallyAnchored(comp, bb)) {
+          if ((aboveSurf || (allInCutoutSea && !touchesFrameBorder)) && !_isCompPhysicallyAnchored(comp, bb)) {
             floatingBuildingsCount++;
           }
         }
