@@ -13,6 +13,7 @@ import hashlib
 import http.client
 import importlib
 import json
+import math
 import os
 import re
 import socket
@@ -592,6 +593,142 @@ def _pace_osm_v06_request():
         _OSM_V06_LAST_REQ_TS = time.monotonic()
 
 
+def _is_finite_num(val):
+    return isinstance(val, (int, float)) and not isinstance(val, bool) and math.isfinite(val)
+
+
+def _merge_osm_element(existing, incoming):
+    """Merges duplicate OSM elements by (type, id), preserving tags and geometry."""
+    if not existing:
+        return incoming
+    if not incoming:
+        return existing
+
+    ex_tags = existing.get("tags")
+    in_tags = incoming.get("tags")
+    ex_has_tags = isinstance(ex_tags, dict) and len(ex_tags) > 0
+    in_has_tags = isinstance(in_tags, dict) and len(in_tags) > 0
+
+    merged = {**incoming, **existing}
+    if ex_has_tags and in_has_tags:
+        merged["tags"] = {**in_tags, **ex_tags}
+    elif ex_has_tags:
+        merged["tags"] = dict(ex_tags)
+    elif in_has_tags:
+        merged["tags"] = dict(in_tags)
+    else:
+        merged.pop("tags", None)
+
+    etype = existing.get("type") or incoming.get("type")
+    if etype == "node":
+        ex_ok = _is_finite_num(existing.get("lat")) and _is_finite_num(existing.get("lon"))
+        in_ok = _is_finite_num(incoming.get("lat")) and _is_finite_num(incoming.get("lon"))
+        if ex_ok:
+            merged["lat"] = existing["lat"]
+            merged["lon"] = existing["lon"]
+        elif in_ok:
+            merged["lat"] = incoming["lat"]
+            merged["lon"] = incoming["lon"]
+        else:
+            if _is_finite_num(existing.get("lat")) or _is_finite_num(incoming.get("lat")):
+                merged["lat"] = existing["lat"] if _is_finite_num(existing.get("lat")) else incoming["lat"]
+            if _is_finite_num(existing.get("lon")) or _is_finite_num(incoming.get("lon")):
+                merged["lon"] = existing["lon"] if _is_finite_num(existing.get("lon")) else incoming["lon"]
+    elif etype == "way":
+        ex_nodes = existing.get("nodes") if isinstance(existing.get("nodes"), list) else []
+        in_nodes = incoming.get("nodes") if isinstance(incoming.get("nodes"), list) else []
+        merged["nodes"] = in_nodes if len(in_nodes) > len(ex_nodes) else ex_nodes
+    elif etype == "relation":
+        ex_members = existing.get("members") if isinstance(existing.get("members"), list) else []
+        in_members = incoming.get("members") if isinstance(incoming.get("members"), list) else []
+        merged["members"] = in_members if len(in_members) > len(ex_members) else ex_members
+
+    return merged
+
+
+def _merge_osm_v06_elements(raw_elements, extra_rel_elements):
+    """Deduplicates (type, id) across raw_elements and extra_rel_elements without losing tags or geometry."""
+    by_key = {}
+    for el in (raw_elements or []):
+        if isinstance(el, dict) and el.get("type") is not None and el.get("id") is not None:
+            k = (el["type"], el["id"])
+            by_key[k] = _merge_osm_element(by_key[k], el) if k in by_key else el
+    for rel_el in (extra_rel_elements or []):
+        if isinstance(rel_el, dict) and rel_el.get("type") is not None and rel_el.get("id") is not None:
+            k = (rel_el["type"], rel_el["id"])
+            by_key[k] = _merge_osm_element(by_key[k], rel_el) if k in by_key else rel_el
+    return by_key
+
+
+def _select_osm_v06_relations_to_complete(raw_elements, ways_present=None, max_count=24):
+    """Selects and prioritizes incomplete OSM relations for v0.6 /full.json completion."""
+    if ways_present is None:
+        ways_present = {
+            el.get("id")
+            for el in (raw_elements or [])
+            if isinstance(el, dict) and el.get("type") == "way"
+        }
+    rels_to_complete = []
+    for el in (raw_elements or []):
+        if not isinstance(el, dict) or el.get("type") != "relation":
+            continue
+        tags = el.get("tags") or {}
+        rtype = tags.get("type")
+        members = el.get("members") or []
+        nat = str(tags.get("natural") or "")
+        plc = str(tags.get("place") or "")
+        if nat in ("bay", "strait", "peninsula", "cape", "mountain_range", "massif", "desert", "valley", "sea", "ridge"):
+            continue
+        if plc in ("sea", "ocean", "peninsula", "archipelago", "continent", "country", "state", "region"):
+            continue
+        is_island_rel = bool(rtype in (None, "", "multipolygon", "boundary") and plc in ("island", "islet"))
+        is_water_mp = bool(
+            rtype == "multipolygon"
+            and (
+                nat in ("water", "shingle", "shoal")
+                or tags.get("water")
+                or tags.get("waterway") in ("riverbank", "dock", "canal")
+                or tags.get("landuse") in ("reservoir", "basin")
+                or tags.get("leisure") == "marina"
+            )
+        )
+        max_members = 450 if (is_island_rel or is_water_mp) else 100
+        if len(members) > max_members:
+            continue
+        is_core_3d = bool(
+            rtype in ("building", "bridge")
+            or tags.get("building")
+            or tags.get("building:part")
+            or tags.get("man_made") == "bridge"
+            or tags.get("bridge:support")
+        )
+        is_local_mp = bool(
+            rtype == "multipolygon"
+            and (
+                is_island_rel
+                or is_water_mp
+                or plc == "square"
+                or nat in ("water", "wood", "scrub", "beach", "shingle", "shoal")
+                or tags.get("water")
+                or tags.get("waterway")
+                or tags.get("landuse") in ("reservoir", "basin")
+                or tags.get("leisure") in ("marina", "park", "garden")
+                or tags.get("man_made") in ("pier", "pontoon", "breakwater", "groyne", "jetty", "quay")
+            )
+        )
+        if not (is_island_rel or is_water_mp or is_core_3d or is_local_mp):
+            continue
+        if any(
+            mem.get("type") == "way" and mem.get("ref") not in ways_present
+            for mem in members
+        ):
+            priority = 0 if (is_island_rel or is_water_mp) else (1 if is_core_3d else 2)
+            rels_to_complete.append((priority, len(members), el.get("id")))
+
+    rels_to_complete.sort(key=lambda item: (item[0], item[1]))
+    return rels_to_complete[:max_count] if max_count is not None else rels_to_complete
+
+
 def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
     m = _BBOX_QL_RE.search(query_str or "")
     if not m:
@@ -666,52 +803,10 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
             for el in raw_elements
             if isinstance(el, dict) and el.get("type") == "way"
         }
-        rels_to_complete = []
-        for el in raw_elements:
-            if not isinstance(el, dict) or el.get("type") != "relation":
-                continue
-            tags = el.get("tags") or {}
-            rtype = tags.get("type")
-            members = el.get("members") or []
-            if len(members) > 100:
-                continue
-            nat = str(tags.get("natural") or "")
-            plc = str(tags.get("place") or "")
-            if nat in ("bay", "strait", "peninsula", "cape", "mountain_range", "massif", "desert", "valley", "sea", "ridge"):
-                continue
-            if plc in ("sea", "ocean", "peninsula", "archipelago", "continent", "country", "state", "region"):
-                continue
-            is_island_rel = plc in ("island", "islet")
-            is_core_3d = bool(
-                rtype in ("building", "bridge")
-                or tags.get("building")
-                or tags.get("building:part")
-                or tags.get("man_made") == "bridge"
-                or tags.get("bridge:support")
-            )
-            is_local_mp = bool(
-                rtype == "multipolygon"
-                and (
-                    is_island_rel
-                    or plc == "square"
-                    or nat in ("water", "wood", "scrub", "beach", "shingle", "shoal")
-                    or tags.get("water")
-                    or tags.get("waterway")
-                    or tags.get("leisure") in ("marina", "park", "garden")
-                    or tags.get("man_made") in ("pier", "pontoon", "breakwater", "groyne", "jetty", "quay")
-                )
-            )
-            if not (is_island_rel or is_core_3d or is_local_mp):
-                continue
-            if any(
-                mem.get("type") == "way" and mem.get("ref") not in ways_present
-                for mem in members
-            ):
-                priority = 0 if is_island_rel else (1 if is_core_3d else 2)
-                rels_to_complete.append((priority, len(members), el.get("id")))
-
-        rels_to_complete.sort(key=lambda item: (item[0], item[1]))
-        for _, _, rid in rels_to_complete[:18]:
+        rels_to_complete = _select_osm_v06_relations_to_complete(
+            raw_elements, ways_present=ways_present, max_count=24
+        )
+        for _, _, rid in rels_to_complete:
             rem = fallback_deadline - time.monotonic()
             if rem <= 2.5:
                 break
@@ -727,13 +822,7 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
             except Exception:
                 pass
 
-    by_key = {}
-    for el in raw_elements:
-        if isinstance(el, dict) and el.get("type") is not None and el.get("id") is not None:
-            by_key[(el["type"], el["id"])] = el
-    for rel_el in extra_rel_elements:
-        if rel_el.get("type") is not None and rel_el.get("id") is not None:
-            by_key[(rel_el["type"], rel_el["id"])] = rel_el
+    by_key = _merge_osm_v06_elements(raw_elements, extra_rel_elements)
 
     def _is_relevant_3d_relation(tags):
         if not tags or not isinstance(tags, dict):

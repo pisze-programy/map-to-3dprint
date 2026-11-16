@@ -178,7 +178,14 @@ function collectOsmWaterSampleCandidateJS(w, wt, wn, isBrWay, isTunWay, nodes, f
   return false;
 }
 
+function isOsmArealRelationTypeJS(tags) {
+  if (!tags || !tags.type) return true;
+  const rt = String(tags.type).trim().toLowerCase();
+  return rt === '' || rt === 'multipolygon' || rt === 'boundary';
+}
+
 function isOsmWaterMultipolygonJS(tags) {
+  if (!tags || !isOsmArealRelationTypeJS(tags)) return false;
   return Boolean(
     tags.natural === 'water' ||
     ['riverbank', 'dock', 'canal'].includes(tags.waterway) ||
@@ -193,6 +200,7 @@ function isOsmWaterMultipolygonJS(tags) {
 function processOsmWaterMultipolygonJS(rel, tags, raw, ctx, extraFlags = null) {
   if (!ctx._standaloneIslands) ctx._standaloneIslands = [];
   if (!ctx._shinglePolys) ctx._shinglePolys = [];
+  if (!isOsmArealRelationTypeJS(tags)) return false;
 
   if (isOsmWaterMultipolygonJS(tags)) {
     if (isNonSurfaceWaterTagsJS(tags)) {

@@ -10,6 +10,14 @@ from .geometry import parse_float_tag, simplify_ring, point_in_poly, poly_area_s
 from .s3db_models import add_building_record
 
 
+def is_areal_multipolygon_relation_tags(tags):
+    """Returns True if relation tags represent an areal multipolygon/boundary (or untyped tag dict)."""
+    if not tags or not isinstance(tags, dict):
+        return False
+    rtype = str(tags.get("type") or "").strip().lower()
+    return rtype in ("", "multipolygon", "boundary")
+
+
 def process_multipolygon_terrain_feature(
     tags,
     outer_polys,
@@ -22,19 +30,22 @@ def process_multipolygon_terrain_feature(
     road_polys,
 ):
     """Classifies non-building OSM multipolygons into water, greenery, bridge decks, or plazas."""
-    is_water = (
+    rtype = str((tags or {}).get("type") or "").strip().lower()
+    is_areal_rel = is_areal_multipolygon_relation_tags(tags)
+    is_water = is_areal_rel and (
         tags.get("natural") == "water"
         or tags.get("waterway") in ("riverbank", "dock", "canal")
-        or "water" in tags
+        or bool(tags.get("water"))
         or tags.get("landuse") in ("reservoir", "basin")
+        or tags.get("leisure") == "marina"
     )
-    is_green = (
+    is_green = is_areal_rel and (
         tags.get("leisure") in ("park", "garden", "nature_reserve", "pitch", "playground", "common", "golf_course", "recreation_ground")
         or tags.get("landuse") in ("forest", "grass", "meadow", "village_green", "recreation_ground", "cemetery", "allotments", "farmland", "orchard", "vineyard")
         or tags.get("natural") in ("wood", "scrub", "grassland", "heath")
     )
-    is_bridge_area = tags.get("man_made") == "bridge"
-    is_plaza = (
+    is_bridge_area = (is_areal_rel or rtype == "bridge") and tags.get("man_made") == "bridge"
+    is_plaza = is_areal_rel and (
         (tags.get("highway") in ("pedestrian", "footway", "living_street") and tags.get("area") != "no")
         or tags.get("place") == "square"
     )

@@ -155,8 +155,67 @@ function fetchHedgedOverpassJson(query, options = {}) {
   });
 }
 
+function _hasNonEmptyTagsJS(tags) {
+  if (!tags || typeof tags !== 'object') return false;
+  for (const k in tags) {
+    if (Object.prototype.hasOwnProperty.call(tags, k)) return true;
+  }
+  return false;
+}
+
+function mergeOsmElementJS(existing, incoming) {
+  if (!existing) return incoming;
+  if (!incoming) return existing;
+  const exHasTags = _hasNonEmptyTagsJS(existing.tags);
+  const inHasTags = _hasNonEmptyTagsJS(incoming.tags);
+  let mergedTags;
+  if (exHasTags && inHasTags) {
+    mergedTags = { ...incoming.tags, ...existing.tags };
+  } else if (exHasTags) {
+    mergedTags = existing.tags;
+  } else if (inHasTags) {
+    mergedTags = incoming.tags;
+  }
+
+  const out = { ...incoming, ...existing };
+  if (mergedTags !== undefined) {
+    out.tags = mergedTags;
+  } else {
+    delete out.tags;
+  }
+
+  const etype = existing.type || incoming.type;
+  if (etype === 'node') {
+    const exLatOk = Number.isFinite(existing.lat);
+    const exLonOk = Number.isFinite(existing.lon);
+    const inLatOk = Number.isFinite(incoming.lat);
+    const inLonOk = Number.isFinite(incoming.lon);
+    if (exLatOk && exLonOk) {
+      out.lat = existing.lat;
+      out.lon = existing.lon;
+    } else if (inLatOk && inLonOk) {
+      out.lat = incoming.lat;
+      out.lon = incoming.lon;
+    } else {
+      if (exLatOk || inLatOk) out.lat = exLatOk ? existing.lat : incoming.lat;
+      if (exLonOk || inLonOk) out.lon = exLonOk ? existing.lon : incoming.lon;
+    }
+  } else if (etype === 'way') {
+    const exNodes = Array.isArray(existing.nodes) ? existing.nodes : [];
+    const inNodes = Array.isArray(incoming.nodes) ? incoming.nodes : [];
+    out.nodes = inNodes.length > exNodes.length ? inNodes : exNodes;
+  } else if (etype === 'relation') {
+    const exMembers = Array.isArray(existing.members) ? existing.members : [];
+    const inMembers = Array.isArray(incoming.members) ? incoming.members : [];
+    out.members = inMembers.length > exMembers.length ? inMembers : exMembers;
+  }
+
+  return out;
+}
+
 if (typeof window !== 'undefined') {
   window.fetchHedgedOverpassJson = fetchHedgedOverpassJson;
+  window.mergeOsmElementJS = mergeOsmElementJS;
 }
 
 async function fetchRealGISInBrowser(south, west, north, east, title, options = {}) {
@@ -279,15 +338,29 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     Math.round((lat - centerLat) * 111320.0 * metersToUnits * 1000) / 1000
   ];
 
-  const nodes = new Map();
+  const nodeEls = new Map();
   const ways = new Map();
-  const relations = [];
+  const relById = new Map();
+  const nodes = new Map();
   const treeNodes = [];
   const bridgeSupports = [];
   let hasMarineTags = false;
 
   for (const el of (osmRaw.elements || [])) {
-    const et = el.tags;
+    if (!el || el.id === undefined || el.id === null) continue;
+    if (el.type === 'node') {
+      const prev = nodeEls.get(el.id);
+      nodeEls.set(el.id, prev ? mergeOsmElementJS(prev, el) : el);
+    } else if (el.type === 'way') {
+      const prev = ways.get(el.id);
+      ways.set(el.id, prev ? mergeOsmElementJS(prev, el) : el);
+    } else if (el.type === 'relation') {
+      const prev = relById.get(el.id);
+      relById.set(el.id, prev ? mergeOsmElementJS(prev, el) : el);
+    }
+  }
+
+  const checkMarineTags = (et) => {
     if (et && (
       et.place === 'sea' ||
       et.place === 'ocean' ||
@@ -296,18 +369,24 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     )) {
       hasMarineTags = true;
     }
-    if (el.type === 'node') {
-      const pt = project(el.lon, el.lat);
-      nodes.set(el.id, pt);
-      collectOsmTreeNodeJS(el, pt, wantTrees, fetchHalfW, fetchHalfH, treeNodes);
-      if (typeof collectOsmBridgeSupportNodeJS === 'function') {
-        collectOsmBridgeSupportNodeJS(el, pt, bridgeSupports);
-      }
-    } else if (el.type === 'way') {
-      ways.set(el.id, el);
-    } else if (el.type === 'relation') {
-      relations.push(el);
+  };
+
+  for (const el of nodeEls.values()) {
+    checkMarineTags(el.tags);
+    if (!Number.isFinite(el.lon) || !Number.isFinite(el.lat)) continue;
+    const pt = project(el.lon, el.lat);
+    nodes.set(el.id, pt);
+    collectOsmTreeNodeJS(el, pt, wantTrees, fetchHalfW, fetchHalfH, treeNodes);
+    if (typeof collectOsmBridgeSupportNodeJS === 'function') {
+      collectOsmBridgeSupportNodeJS(el, pt, bridgeSupports);
     }
+  }
+  for (const w of ways.values()) {
+    checkMarineTags(w.tags);
+  }
+  const relations = Array.from(relById.values());
+  for (const rel of relations) {
+    checkMarineTags(rel.tags);
   }
 
   const nodesToPts = (nids, tol = 0.015) => simplifyRingJS((nids || []).map(id => nodes.get(id)).filter(Boolean), tol);
@@ -316,7 +395,6 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
   const consumedRels = new Set();
 
   const s3db = createS3DBClientCollector(fetchHalfW, fetchHalfH, metersToUnits);
-  const relById = new Map(relations.map(r => [r.id, r]));
   const rawRelWays = new Map();
   const stitchedRelPolys = new Map();
 
@@ -423,6 +501,9 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
     if (processOsmBuildingMultipolygonJS(rel, tags, raw, osmExtractCtx)) continue;
     if (processOsmBridgeMultipolygonJS(rel, tags, raw, osmExtractCtx)) continue;
 
+    const relTypeNorm = tags.type ? String(tags.type).trim().toLowerCase() : '';
+    if (relTypeNorm && relTypeNorm !== 'multipolygon' && relTypeNorm !== 'boundary') continue;
+
     const extraFlags = {
       isGreen: isOsmGreeneryMultipolygonJS(tags),
       isPlaza: isOsmPlazaMultipolygonJS(tags)
@@ -503,6 +584,7 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     fetchHedgedOverpassJson,
-    fetchRealGISInBrowser
+    fetchRealGISInBrowser,
+    mergeOsmElementJS
   };
 }

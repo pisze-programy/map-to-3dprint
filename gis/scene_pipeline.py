@@ -32,6 +32,59 @@ from .terrain_features import (
 )
 
 
+def _is_finite_coord(val):
+    return isinstance(val, (int, float)) and not isinstance(val, bool) and math.isfinite(val)
+
+
+def merge_osm_element(existing, incoming):
+    """Merges duplicate OSM elements with the same (type, id), preserving tags and geometry."""
+    if not existing:
+        return incoming
+    if not incoming:
+        return existing
+
+    ex_tags = existing.get("tags")
+    in_tags = incoming.get("tags")
+    ex_has_tags = isinstance(ex_tags, dict) and len(ex_tags) > 0
+    in_has_tags = isinstance(in_tags, dict) and len(in_tags) > 0
+
+    merged = {**incoming, **existing}
+    if ex_has_tags and in_has_tags:
+        merged["tags"] = {**in_tags, **ex_tags}
+    elif ex_has_tags:
+        merged["tags"] = dict(ex_tags)
+    elif in_has_tags:
+        merged["tags"] = dict(in_tags)
+    else:
+        merged.pop("tags", None)
+
+    etype = existing.get("type") or incoming.get("type")
+    if etype == "node":
+        ex_ok = _is_finite_coord(existing.get("lat")) and _is_finite_coord(existing.get("lon"))
+        in_ok = _is_finite_coord(incoming.get("lat")) and _is_finite_coord(incoming.get("lon"))
+        if ex_ok:
+            merged["lat"] = existing["lat"]
+            merged["lon"] = existing["lon"]
+        elif in_ok:
+            merged["lat"] = incoming["lat"]
+            merged["lon"] = incoming["lon"]
+        else:
+            if _is_finite_coord(existing.get("lat")) or _is_finite_coord(incoming.get("lat")):
+                merged["lat"] = existing["lat"] if _is_finite_coord(existing.get("lat")) else incoming["lat"]
+            if _is_finite_coord(existing.get("lon")) or _is_finite_coord(incoming.get("lon")):
+                merged["lon"] = existing["lon"] if _is_finite_coord(existing.get("lon")) else incoming["lon"]
+    elif etype == "way":
+        ex_nodes = existing.get("nodes") if isinstance(existing.get("nodes"), list) else []
+        in_nodes = incoming.get("nodes") if isinstance(incoming.get("nodes"), list) else []
+        merged["nodes"] = in_nodes if len(in_nodes) > len(ex_nodes) else ex_nodes
+    elif etype == "relation":
+        ex_members = existing.get("members") if isinstance(existing.get("members"), list) else []
+        in_members = incoming.get("members") if isinstance(incoming.get("members"), list) else []
+        merged["members"] = in_members if len(in_members) > len(ex_members) else ex_members
+
+    return merged
+
+
 def haversine_m(lat1, lon1, lat2, lon2):
     """Calculates ground distance in meters between two lat/lon points."""
     R = 6371000.0
@@ -153,26 +206,36 @@ def build_scene_from_bbox(south, west, north, east, title_hint="", force_rebuild
         my = (lat - center_lat) * 111320.0 * meters_to_units
         return [round(mx, 3), round(my, 3)]
 
-    nodes = {}
+    node_els = {}
     ways = {}
-    relations = []
+    rel_by_id = {}
+    nodes = {}
     tree_nodes = []
 
     for el in elements:
+        if not isinstance(el, dict) or el.get("id") is None:
+            continue
         etype = el.get("type")
+        eid = el["id"]
         if etype == "node":
-            nid = el["id"]
-            pt = project(el["lon"], el["lat"])
-            nodes[nid] = pt
-            tags = el.get("tags")
-            if tags and tags.get("natural") == "tree":
-                if -half_w - 0.5 <= pt[0] <= half_w + 0.5 and -half_h - 0.5 <= pt[1] <= half_h + 0.5:
-                    h_m = parse_float_tag(tags.get("height"), 9.5)
-                    tree_nodes.append([round(pt[0], 2), round(pt[1], 2), round(min(18.0, max(5.0, h_m)), 1)])
+            node_els[eid] = merge_osm_element(node_els[eid], el) if eid in node_els else el
         elif etype == "way":
-            ways[el["id"]] = el
+            ways[eid] = merge_osm_element(ways[eid], el) if eid in ways else el
         elif etype == "relation":
-            relations.append(el)
+            rel_by_id[eid] = merge_osm_element(rel_by_id[eid], el) if eid in rel_by_id else el
+
+    relations = list(rel_by_id.values())
+
+    for nid, el in node_els.items():
+        if not (_is_finite_coord(el.get("lon")) and _is_finite_coord(el.get("lat"))):
+            continue
+        pt = project(el["lon"], el["lat"])
+        nodes[nid] = pt
+        tags = el.get("tags")
+        if tags and tags.get("natural") == "tree":
+            if -half_w - 0.5 <= pt[0] <= half_w + 0.5 and -half_h - 0.5 <= pt[1] <= half_h + 0.5:
+                h_m = parse_float_tag(tags.get("height"), 9.5)
+                tree_nodes.append([round(pt[0], 2), round(pt[1], 2), round(min(18.0, max(5.0, h_m)), 1)])
 
     def nodes_to_pts(nid_list, tol=0.015):
         pts = [nodes[nid] for nid in nid_list if nid in nodes]
@@ -183,7 +246,6 @@ def build_scene_from_bbox(south, west, north, east, title_hint="", force_rebuild
     used_way_ids_in_rel, consumed_rel_ids = set(), set()
 
     # Pass 1A: Pre-stitch all multipolygon geometries
-    rel_by_id = {r["id"]: r for r in relations}
     stitched_rel_polys = {}
 
     for rel in relations:
