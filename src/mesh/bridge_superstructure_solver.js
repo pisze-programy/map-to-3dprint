@@ -15,7 +15,7 @@ function _beamOverlapJS(mf, p0, p1, radius) {
 }
 
 function _anchorFloorZJS(x, y, terrainWater, ctx) {
-  if (terrainWater.isPointInWater(x, y)) return ctx.waterCutout ? 0.0 : Math.max(0.0, terrainWater.getWaterFloorZ() - 0.35);
+  if (terrainWater.isPointInWater(x, y)) return ctx.waterCutout ? 0.0 : Math.max(0.0, terrainWater.getWaterFloorZ(x, y) - 0.35);
   return Math.max(0.0, terrainWater.getSurfaceZ(x, y) - 0.55);
 }
 
@@ -88,17 +88,19 @@ function _addBridgeSupportSolidsJS(spec, terrainWater, ctx, strutRU, parts, supp
   if (!spec.explicitSupports.length && spec.structNorm === 'floating') {
     for (let i = 0; i < spec.pts.length - 1; i++) {
       if (!spec.inWater[i] && !spec.inWater[i + 1]) continue;
-      const a = spec.pts[i], b = spec.pts[i + 1], zB = Math.max(0.0, ctx.zWaterTop - 0.35), zT = Math.min(spec.zBotArr[i], spec.zBotArr[i + 1]) + 0.12;
+      const a = spec.pts[i], b = spec.pts[i + 1], zB = ctx.waterCutout ? 0.0 : Math.max(0.0, ctx.zWaterTop - 0.35), zT = Math.min(spec.zBotArr[i], spec.zBotArr[i + 1]) + 0.12;
       const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy);
       if (l < 0.05 || zT <= zB + 0.05) continue;
       const nx = (-dy / l) * Math.max(minColR, halfW * 0.72), ny = (dx / l) * Math.max(minColR, halfW * 0.72);
       const pm = extrudeRingSolid(mf, [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]], [], zB, zT);
       if (pm) parts.push(pm);
     }
-  } else if (!spec.explicitSupports.length && !channelProtected && spec.spanU > 3.6 / ctx.scaleMm) {
+  } else if (!channelProtected && spec.structNorm !== 'floating' && spec.spanU > 3.6 / ctx.scaleMm) {
     const step = Math.max(3.2 / ctx.scaleMm, spec.width * 2.3);
     for (let s = step; s < spec.spanU - step * 0.45; s += step) {
+      if (spec.explicitSupports.some(es => Math.abs(es.sProj - s) < step * 0.72)) continue;
       const { pt } = _samplePtAtSJS(spec, s), zFloor = _anchorFloorZJS(pt[0], pt[1], terrainWater, ctx), zBot = _lerpArrAtSJS(spec.sArr, spec.zBotArr, s);
+      if (zBot + 0.12 <= zFloor + 0.05) continue;
       const inWater = terrainWater.isPointInWater(pt[0], pt[1]), colR = (ctx.waterCutout && inWater) ? minColR * 1.25 : minColR;
       if (inWater) metrics.syntheticWaterPiers++;
       metrics.pierMinZ = Math.min(metrics.pierMinZ, zFloor);

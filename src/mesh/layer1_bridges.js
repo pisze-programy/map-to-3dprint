@@ -20,7 +20,9 @@
 
   function _computeMidspanClearanceU(sp, terrainWater, ctx) {
     let minC = Infinity, count = 0;
-    const n = sp.pts.length, start = sp.crossesWater ? 0 : (n >= 3 ? 1 : 0), end = sp.crossesWater ? n : (n >= 3 ? n - 1 : n);
+    const n = sp.pts.length;
+    const start = sp.crossesWater ? 0 : (n >= 6 ? Math.max(1, Math.floor(n * 0.22)) : (n >= 3 ? 1 : 0));
+    const end = sp.crossesWater ? n : (n >= 6 ? Math.min(n - 1, Math.ceil(n * 0.78)) : (n >= 3 ? n - 1 : n));
     for (let i = start; i < end; i++) {
       if (sp.crossesWater && !sp.inWater[i]) continue;
       const floor = sp.inWater[i] ? ctx.zWaterTop : terrainWater.getSurfaceZ(sp.pts[i][0], sp.pts[i][1]);

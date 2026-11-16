@@ -424,8 +424,8 @@ async function runSuite() {
     );
   }
 
-  // [9/9] man_made=bridge With 3 Short Disconnected Midspan Roads Keeps Full Span
-  console.log('\n[9/9] man_made=bridge With 3 Short Disconnected Roads Keeps Full Bank-to-Bank Span');
+  // [9/11] man_made=bridge With 3 Short Disconnected Midspan Roads Keeps Full Span
+  console.log('\n[9/11] man_made=bridge With 3 Short Disconnected Roads Keeps Full Bank-to-Bank Span');
   {
     const polyLenU = 120.0;
     const scene = {
@@ -460,6 +460,87 @@ async function runSuite() {
       Boolean(a && spanU >= 0.85 * polyLenU && deckSpanX >= 0.85 * polyLenU),
       'Short disconnected midspan roads do not truncate bridge axis or sloped deck (span >= 0.85 * polyLen)',
       `axisSpanU=${spanU.toFixed(2)} vs polyLenU=${polyLenU.toFixed(2)}, deckSpanX=${deckSpanX.toFixed(2)}`
+    );
+  }
+
+  // [10/11] Palm Jumeirah / Red Line Metro Regression: Curved 6km Twin-Track Viaduct & 27km Way Clip
+  console.log('\n[10/11] Curved 6km Twin-Track Monorail & 27km Metro Way (No Chord-Sagitta Slab or 5.55x Ski-Jump)');
+  {
+    const track1 = [], track2 = [];
+    for (let k = 0; k <= 24; k++) {
+      const u = k / 24;
+      const x = -68 + u * 136;
+      const y = 16.0 * Math.sin(Math.PI * u);
+      track1.push([x, y - 0.07]);
+      track2.push([x, y + 0.07]);
+    }
+    const metro1 = [[-420, -310], [-180, -140], [45, -62], [78, -25], [260, 190], [440, 380]];
+    const metro2 = metro1.map(([x, y]) => [x + 0.12, y - 0.12]);
+    const scene = {
+      spanMeters: 6000,
+      metersToUnits: 169.2 / 6000,
+      dem: { grid: [[3, 3, 3], [3, 3, 3]], minElev: 3, maxElev: 3 },
+      waterPolys: [{ outer: [[-56, -40], [-46, -40], [-46, 40], [-56, 40]], holes: [] }],
+      waterLines: [], greenPolys: [], trees: [], bridgeSupports: [], bridgePolys: [], buildings: [],
+      roads: [
+        { osmId: 32596320, name: 'Palm Jumeirah Monorail', hwy: 'monorail', pts: track1, width: 0.24, isBridge: true, layer: 2, hasExplicitLayer: true, tags: { railway: 'monorail', bridge: 'yes', layer: '2' } },
+        { osmId: 47660188, name: 'Palm Jumeirah Monorail', hwy: 'monorail', pts: track2, width: 0.24, isBridge: true, layer: 2, hasExplicitLayer: true, tags: { railway: 'monorail', bridge: 'yes', layer: '2' } },
+        { osmId: 206373167, name: 'Red Line Metro', hwy: 'subway', pts: metro1, width: 0.24, isBridge: true, layer: 3, hasExplicitLayer: true, tags: { railway: 'subway', bridge: 'yes', layer: '3' } },
+        { osmId: 700726320, name: 'Red Line Metro', hwy: 'subway', pts: metro2, width: 0.24, isBridge: true, layer: 3, hasExplicitLayer: true, tags: { railway: 'subway', bridge: 'yes', layer: '3' } },
+      ],
+    };
+    const res = buildComplete3DModel(scene, makeState({ zScale: 1.25 }));
+    assertCleanManifold(res.printMetrics, '6km curved twin-track Monorail + 27km Metro');
+    const mono = (res.audit.bridgeAudits || []).find(a => a.name === 'Palm Jumeirah Monorail');
+    const metro = (res.audit.bridgeAudits || []).find(a => a.name === 'Red Line Metro');
+    check(
+      Boolean(mono && mono.width < 0.9 && maxChordDeviation(mono.axisPts) > 12.0),
+      'Curved twin-track Monorail merges locally (<0.9u width, ~15m) while preserving 16u curve sagitta',
+      `monoWidth=${mono?.width?.toFixed(2)}u, curveDev=${maxChordDeviation(mono?.axisPts || []).toFixed(2)}u`
+    );
+    check(
+      Boolean(mono && mono.zDeckTop < 2.85),
+      'Off-center water crossing at u=0.10..0.15 does NOT trigger 5.55x ski-jump over dry trunk',
+      `monoZBot=${mono?.zDeckBot}, monoZTop=${mono?.zDeckTop}`
+    );
+    check(
+      Boolean(metro && metro.width < 0.9),
+      '27km Red Line Metro clips to print bed before solving and keeps slender <0.9u width (no 43u slab)',
+      `metroWidth=${metro?.width?.toFixed(2)}u`
+    );
+  }
+
+  // [11/11] Dry-Land layer=1 Overpass Over layer=0 Street + Non-Zero cropCenterX/Y (ctx.toBed)
+  console.log('\n[11/11] Dry-Land layer=1 Overpass Over layer=0 Street + Cropped Bed (ctx.toBed) Alignment');
+  {
+    const cxScene = 25.0, cyScene = -18.0;
+    const scene = {
+      spanMeters: 1200,
+      metersToUnits: 169.2 / 1200,
+      halfW: 84.6,
+      halfH: 84.6,
+      _fetchedCropRatio: 1.0,
+      dem: { grid: [[6, 6], [6, 6]], minElev: 6, maxElev: 6 },
+      waterPolys: [], waterLines: [], greenPolys: [], trees: [], bridgePolys: [], buildings: [],
+      bridgeSupports: [{ kind: 'pier', isPoint: true, pt: [cxScene - 6, cyScene], osmId: 501, tags: { 'bridge:support': 'pier' } }],
+      roads: [
+        { osmId: 601, pts: [[cxScene, cyScene - 28], [cxScene, cyScene + 28]], width: 1.5, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'primary' } },
+        { osmId: 602, name: 'Dry Overpass', pts: [[cxScene - 26, cyScene], [cxScene + 26, cyScene]], width: 1.4, isBridge: true, layer: 1, hasExplicitLayer: true, tags: { highway: 'primary', bridge: 'yes', layer: '1' } },
+      ],
+    };
+    const res = buildComplete3DModel(scene, makeState({
+      cropRatio: 0.5,
+      cropCenterX: cxScene / 84.6,
+      cropCenterY: cyScene / 84.6,
+    }));
+    assertCleanManifold(res.printMetrics, 'Dry-land layer=1 overpass with non-zero cropCenterX/Y');
+    const ov = (res.audit.bridgeAudits || [])[0];
+    const midX = ov ? (ov.bbox[0] + ov.bbox[2]) * 0.5 : 999;
+    const midY = ov ? (ov.bbox[1] + ov.bbox[3]) * 0.5 : 999;
+    check(
+      Boolean(ov && ov.midspanClearanceU >= 0.28 && ov.explicitSupportsUsed === 1 && Math.abs(midX) < 1.5 && Math.abs(midY) < 1.5),
+      'Dry-land layer=1 overpass clears layer=0 road (>=0.28u) and honors ctx.toBed cropCenterX/Y',
+      `clearU=${ov?.midspanClearanceU}, supports=${ov?.explicitSupportsUsed}, bedCenter=[${midX.toFixed(2)}, ${midY.toFixed(2)}]`
     );
   }
 

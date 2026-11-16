@@ -61,6 +61,16 @@ function _buildSegmentUnionTubeJS(pts, halfW, zBotArr, zTopArr, mf) {
     const m = _buildClosedStationTubeJS(segPts, halfW, [zBotArr[i], zBotArr[i + 1]], [zTopArr[i], zTopArr[i + 1]], mf);
     if (m) parts.push(m);
   }
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
+    const l1 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1, l2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) || 1;
+    const dot = ((p1[0] - p0[0]) / l1) * ((p2[0] - p1[0]) / l2) + ((p1[1] - p0[1]) / l1) * ((p2[1] - p1[1]) / l2);
+    if (dot < 0.992) {
+      const zb = zBotArr[i], zt = Math.max(zb + 0.05, zTopArr[i]);
+      const jc = mf.Manifold.cylinder(zt - zb, halfW, halfW, 12, false).translate([p1[0], p1[1], zb]);
+      parts.push(jc);
+    }
+  }
   return parts.length ? batchUnionManifolds(mf, parts) : null;
 }
 
@@ -127,16 +137,37 @@ function buildBankAbutments(spec, terrainWater, ctx) {
   const mf = ctx.mf, parts = [];
   const wHalf = Math.max(0.25, spec.width * 0.46), padL = Math.max(0.35, Math.min(1.1, spec.spanU * 0.08));
   for (const idx of [0, spec.pts.length - 1]) {
-    const sPos = idx === 0 ? 0 : spec.spanU;
     const isStart = idx === 0;
+    if ((isStart && spec.clippedStart) || (!isStart && spec.clippedEnd)) continue;
+    const sPos = isStart ? 0 : spec.spanU;
     const { pt, tx, ty } = _samplePtAtSJS(spec, sPos);
+    if (Math.abs(pt[0]) > ctx.halfW + 0.05 || Math.abs(pt[1]) > ctx.halfH + 0.05) continue;
     const surfZ = terrainWater.getSurfaceZ(pt[0], pt[1]);
     const floorZ = ctx.waterCutout && terrainWater.isPointInWater(pt[0], pt[1]) ? 0.0 : Math.max(0.0, Math.min(surfZ, spec.zBotArr[idx]) - 0.55);
     const meetZ = Math.min(spec.zTopArr[idx] - 0.05, spec.zBotArr[idx] + 0.14);
     if (meetZ <= floorZ + 0.05) continue;
+    if (spec.isElevatedViaduct) {
+      const colR = Math.max(0.24 / ctx.scaleMm, Math.min(spec.width * 0.34, 0.55 / ctx.scaleMm));
+      const px = pt[0] + (isStart ? 1 : -1) * tx * Math.min(colR * 1.2, spec.spanU * 0.1);
+      const py = pt[1] + (isStart ? 1 : -1) * ty * Math.min(colR * 1.2, spec.spanU * 0.1);
+      const col = beamManifoldBetween(mf, [px, py, floorZ], [px, py, meetZ], colR);
+      if (col) parts.push(col);
+      continue;
+    }
     const pA = isStart ? [pt[0] - tx * padL * 0.3, pt[1] - ty * padL * 0.3] : [pt[0] - tx * padL, pt[1] - ty * padL];
     const pB = isStart ? [pt[0] + tx * padL, pt[1] + ty * padL] : [pt[0] + tx * padL * 0.3, pt[1] + ty * padL * 0.3];
-    const blk = _buildSlopedWedgeCorbelJS(pA, pB, wHalf, floorZ, floorZ, meetZ, meetZ, mf);
+    let blk = _buildSlopedWedgeCorbelJS(pA, pB, wHalf, floorZ, floorZ, meetZ, meetZ, mf);
+    if (blk && spec.isAreaPoly && spec.outer && spec.outer.length >= 3) {
+      const mask = extrudeRingSolid(mf, spec.outer, spec.holes || [], floorZ - 0.1, meetZ + 0.1);
+      if (mask) {
+        try {
+          const clipped = blk.intersect(mask);
+          mask.delete();
+          if (clipped && clipped.numTri() > 0) { blk.delete(); blk = clipped; }
+          else if (clipped) clipped.delete();
+        } catch (_) { mask.delete(); }
+      }
+    }
     if (blk) parts.push(blk);
   }
   return parts;

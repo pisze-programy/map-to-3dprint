@@ -297,7 +297,11 @@ class PackedTriangleSoup {
 }
 
 function resolveRenderState(meshes, rawState = {}, highlightIds = null) {
-  const pal = PALETTES[rawState.palette || 'white'] || PALETTES.white;
+  const palId = rawState.palette || 'white';
+  const palEntry = Array.isArray(PALETTES)
+    ? (PALETTES.find(p => p && p.id === palId) || PALETTES[0])
+    : (PALETTES[palId] || PALETTES.white);
+  const pal = (palEntry && palEntry.colors) ? palEntry.colors : (palEntry || {});
   const dimW = rawState.bedSizeMm || (rawState.targetWidthCm ? rawState.targetWidthCm * 10 : 500);
   const dimH = rawState.totalHeightMm || (rawState.targetHeightCm ? rawState.targetHeightCm * 10 : dimW);
   const maxDim = Math.max(dimW, dimH) || 500;
