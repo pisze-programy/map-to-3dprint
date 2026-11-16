@@ -14,37 +14,25 @@ function _normalizeBridgeStructJS(raw, covered, tags) {
   return 'beam';
 }
 
-function _structRankJS(st) {
-  return { 'cable-stayed': 5, 'suspension': 5, 'arch': 4, 'truss': 3, 'floating': 2, 'beam': 1 }[st] || 1;
-}
-
-function _polyLenJS(pts) {
-  let l = 0;
-  for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-  return l;
-}
-
+function _structRankJS(st) { return { 'cable-stayed': 5, 'suspension': 5, 'arch': 4, 'truss': 3, 'floating': 2, 'beam': 1 }[st] || 1; }
+function _polyLenJS(pts) { let l = 0; for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; }
 function _dedupPtsJS(pts, minD = 0.02) {
   const out = [];
-  for (const p of (pts || [])) {
-    if (!out.length || Math.hypot(p[0] - out[out.length - 1][0], p[1] - out[out.length - 1][1]) >= minD) out.push([p[0], p[1]]);
-  }
+  for (const p of (pts || [])) if (!out.length || Math.hypot(p[0] - out[out.length - 1][0], p[1] - out[out.length - 1][1]) >= minD) out.push([p[0], p[1]]);
   return out.length >= 2 ? out : (pts || []).slice(0, 2);
 }
 
 function _resamplePolyJS(pts, nOut) {
   const clean = _dedupPtsJS(pts, 0.005);
   if (clean.length < 2 || nOut < 2) return clean;
-  const cum = [0];
+  const cum = [0], out = [];
   for (let i = 1; i < clean.length; i++) cum.push(cum[i - 1] + Math.hypot(clean[i][0] - clean[i - 1][0], clean[i][1] - clean[i - 1][1]));
   const total = cum[cum.length - 1] || 1e-6;
-  const out = [];
   for (let k = 0; k < nOut; k++) {
     const s = (k / (nOut - 1)) * total;
     let i = 0;
     while (i < cum.length - 2 && cum[i + 1] < s) i++;
-    const seg = (cum[i + 1] - cum[i]) || 1e-6;
-    const t = Math.max(0, Math.min(1, (s - cum[i]) / seg));
+    const t = Math.max(0, Math.min(1, (s - cum[i]) / ((cum[i + 1] - cum[i]) || 1e-6)));
     out.push([clean[i][0] + (clean[i + 1][0] - clean[i][0]) * t, clean[i][1] + (clean[i + 1][1] - clean[i][1]) * t]);
   }
   return out;
@@ -52,10 +40,7 @@ function _resamplePolyJS(pts, nOut) {
 
 function _bbox2DJS(pts) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of pts) {
-    if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
-    if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
-  }
+  for (const p of pts) { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; }
   return [minX, minY, maxX, maxY];
 }
 
@@ -68,33 +53,87 @@ function _ptInRingJS(px, py, ring) {
   return inside;
 }
 
-function _extractClippedAxisFromRoadsJS(outer, roadChains) {
-  if (!roadChains.length) return null;
-  const clipped = [];
-  for (const rc of roadChains) {
-    const dense = _resamplePolyJS(rc, 24);
-    const keep = [];
-    for (let i = 0; i < dense.length; i++) {
-      const p = dense[i];
-      if (_ptInRingJS(p[0], p[1], outer) ||
-          (i > 0 && _ptInRingJS(dense[i - 1][0], dense[i - 1][1], outer)) ||
-          (i + 1 < dense.length && _ptInRingJS(dense[i + 1][0], dense[i + 1][1], outer))) {
-        keep.push(p);
+function _outTan2DJS(pts, atStart) {
+  const a = atStart ? pts[0] : pts[pts.length - 1], b = atStart ? pts[1] : pts[pts.length - 2];
+  const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+  return [dx / l, dy / l];
+}
+
+function _stitchEndpointsJS(chains, minDot, canPairFn, onPairFn) {
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < chains.length && !merged; i++) for (let j = i + 1; j < chains.length && !merged; j++) {
+      const a = chains[i], b = chains[j];
+      if (canPairFn && !canPairFn(a, b)) continue;
+      for (const [pa, pb, mode] of [[a.pts[a.pts.length - 1], b.pts[0], 0], [a.pts[a.pts.length - 1], b.pts[b.pts.length - 1], 1], [a.pts[0], b.pts[0], 2], [a.pts[0], b.pts[b.pts.length - 1], 3]]) {
+        if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) > 0.45) continue;
+        const tA = _outTan2DJS(a.pts, mode >= 2), tB = _outTan2DJS(b.pts, mode === 0 || mode === 2);
+        if (-(tA[0] * tB[0] + tA[1] * tB[1]) < minDot) continue;
+        const newPts = mode === 0 ? a.pts.concat(b.pts.slice(1)) : mode === 1 ? a.pts.concat(b.pts.slice(0, -1).reverse()) : mode === 2 ? b.pts.slice().reverse().concat(a.pts.slice(1)) : b.pts.concat(a.pts.slice(1));
+        a.pts = _dedupPtsJS(newPts);
+        if (onPairFn) onPairFn(a, b);
+        chains.splice(j, 1); merged = true; break;
       }
     }
-    if (keep.length >= 2) clipped.push(keep);
   }
-  if (!clipped.length) return null;
-  const ref = clipped[0], rx = ref[ref.length - 1][0] - ref[0][0], ry = ref[ref.length - 1][1] - ref[0][1];
-  const nStations = 13;
-  const accum = Array.from({ length: nStations }, () => [0, 0]);
-  for (const ch of clipped) {
-    const dx = ch[ch.length - 1][0] - ch[0][0], dy = ch[ch.length - 1][1] - ch[0][1];
-    const aligned = (dx * rx + dy * ry < 0) ? ch.slice().reverse() : ch;
-    const rs = _resamplePolyJS(aligned, nStations);
+  return chains;
+}
+
+function _bisectRingCrossingJS(pA, pB, outer, aIsIn) {
+  let t0 = 0, t1 = 1;
+  for (let k = 0; k < 5; k++) {
+    const tm = 0.5 * (t0 + t1);
+    if (_ptInRingJS(pA[0] + (pB[0] - pA[0]) * tm, pA[1] + (pB[1] - pA[1]) * tm, outer) === aIsIn) t0 = tm; else t1 = tm;
+  }
+  const t = aIsIn ? t0 : t1;
+  return [pA[0] + (pB[0] - pA[0]) * t, pA[1] + (pB[1] - pA[1]) * t];
+}
+
+function _clipChainToRingJS(rc, outer) {
+  const dense = _resamplePolyJS(rc, Math.max(24, Math.min(160, Math.ceil(_polyLenJS(rc) / 0.8) + 1)));
+  const inR = dense.map(p => _ptInRingJS(p[0], p[1], outer));
+  let best = [], cur = [];
+  for (let i = 0; i < dense.length; i++) {
+    if (inR[i]) {
+      if (!cur.length && i > 0) cur.push(_bisectRingCrossingJS(dense[i - 1], dense[i], outer, false));
+      cur.push(dense[i]);
+    } else if (cur.length) {
+      cur.push(_bisectRingCrossingJS(dense[i - 1], dense[i], outer, true));
+      if (_polyLenJS(cur) > _polyLenJS(best)) best = cur;
+      cur = [];
+    }
+  }
+  if (cur.length && _polyLenJS(cur) > _polyLenJS(best)) best = cur;
+  return best.length >= 2 ? best : null;
+}
+
+function _averageAlignedChainsJS(chains, refVec) {
+  const nStations = 13, accum = Array.from({ length: nStations }, () => [0, 0]);
+  for (const ch of chains) {
+    const pts = ch.pts || ch, dx = pts[pts.length - 1][0] - pts[0][0], dy = pts[pts.length - 1][1] - pts[0][1];
+    const rs = _resamplePolyJS((dx * refVec[0] + dy * refVec[1] < 0) ? pts.slice().reverse() : pts, nStations);
     for (let k = 0; k < nStations; k++) { accum[k][0] += rs[k][0]; accum[k][1] += rs[k][1]; }
   }
-  return accum.map(a => [a[0] / clipped.length, a[1] / clipped.length]);
+  return accum.map(a => [a[0] / chains.length, a[1] / chains.length]);
+}
+
+function _extractClippedAxisFromRoadsJS(outer, roadChains) {
+  const polySpine = _extractCurvedSpineFromPolyJS(outer), spineLen = _polyLenJS(polySpine);
+  if (!roadChains || !roadChains.length) return polySpine;
+  const raw = roadChains.map(rc => ({ pts: _dedupPtsJS(rc, 0.01) }))
+    .filter(c => c.pts.length >= 2 && _polyLenJS(c.pts) >= 0.12)
+    .sort((a, b) => _polyLenJS(b.pts) - _polyLenJS(a.pts));
+  if (!raw.length) return polySpine;
+  const longClipped = [];
+  for (const ch of _stitchEndpointsJS(raw, 0.15)) {
+    const keep = _clipChainToRingJS(ch.pts, outer);
+    if (keep && _polyLenJS(keep) >= 0.75 * spineLen) longClipped.push(keep);
+  }
+  if (!longClipped.length) return polySpine;
+  longClipped.sort((a, b) => _polyLenJS(b) - _polyLenJS(a));
+  const ref = longClipped[0];
+  return _averageAlignedChainsJS(longClipped, [ref[ref.length - 1][0] - ref[0][0], ref[ref.length - 1][1] - ref[0][1]]);
 }
 
 function _extractCurvedSpineFromPolyJS(outer) {
@@ -109,17 +148,13 @@ function _extractCurvedSpineFromPolyJS(outer) {
     const uk = minU + (0.015 + 0.97 * (k / (nSlices - 1))) * spanU;
     let minV = Infinity, maxV = -Infinity;
     for (let i = 0; i < uv.length; i++) {
-      const a = uv[i], b = uv[(i + 1) % uv.length];
+      const a = uv[i], b = uv[(i + 1) % uv.length], du = b[0] - a[0];
       if ((a[0] <= uk && b[0] >= uk) || (b[0] <= uk && a[0] >= uk)) {
-        const du = b[0] - a[0];
         const t = Math.abs(du) < 1e-8 ? 0.5 : (uk - a[0]) / du;
         if (t >= 0 && t <= 1) { const vi = a[1] + (b[1] - a[1]) * t; if (vi < minV) minV = vi; if (vi > maxV) maxV = vi; }
       }
     }
-    if (minV <= maxV) {
-      const mv = (minV + maxV) * 0.5;
-      spine.push([uk * ux + mv * vx, uk * uy + mv * vy]);
-    }
+    if (minV <= maxV) { const mv = (minV + maxV) * 0.5; spine.push([uk * ux + mv * vx, uk * uy + mv * vy]); }
   }
   const hL = Number.isFinite(obb.halfL) ? obb.halfL : 1;
   return spine.length >= 2 ? spine : [[obb.cx - ux * hL, obb.cy - uy * hL], [obb.cx + ux * hL, obb.cy + uy * hL]];
@@ -136,13 +171,11 @@ function _estimatePolyRibbonWidthJS(outer, axisPts, obb) {
     const nx = -ty / tl, ny = tx / tl, ux = tx / tl, uy = ty / tl;
     let negMax = -Infinity, posMin = Infinity;
     for (let i = 0; i < n; i++) {
-      const a = outer[i], b = outer[(i + 1) % n];
-      const ua = (a[0] - p[0]) * ux + (a[1] - p[1]) * uy, ub = (b[0] - p[0]) * ux + (b[1] - p[1]) * uy;
+      const a = outer[i], b = outer[(i + 1) % n], ua = (a[0] - p[0]) * ux + (a[1] - p[1]) * uy, ub = (b[0] - p[0]) * ux + (b[1] - p[1]) * uy;
       if ((ua <= 0 && ub >= 0) || (ub <= 0 && ua >= 0)) {
         const du = ub - ua, t = Math.abs(du) < 1e-8 ? 0.5 : -ua / du;
         if (t >= 0 && t <= 1) {
-          const sx = a[0] + (b[0] - a[0]) * t - p[0], sy = a[1] + (b[1] - a[1]) * t - p[1];
-          const d = sx * nx + sy * ny;
+          const d = (a[0] + (b[0] - a[0]) * t - p[0]) * nx + (a[1] + (b[1] - a[1]) * t - p[1]) * ny;
           if (d <= 0.05 && d > negMax) negMax = d;
           if (d >= -0.05 && d < posMin) posMin = d;
         }
@@ -157,49 +190,32 @@ function _estimatePolyRibbonWidthJS(outer, axisPts, obb) {
 
 function _stitchAndMergeLinearBridgesJS(roadBridges) {
   const chains = roadBridges.map(r => ({ ...r, pts: _dedupPtsJS(r.pts) })).filter(r => r.pts.length >= 2 && _polyLenJS(r.pts) >= 0.12);
-  let merged = true;
-  while (merged) {
-    merged = false;
-    for (let i = 0; i < chains.length && !merged; i++) {
-      const a = chains[i];
-      for (let j = i + 1; j < chains.length && !merged; j++) {
-        const b = chains[j];
-        if ((a.layer ?? 1) !== (b.layer ?? 1) || (a.parentBridgeRelId || null) !== (b.parentBridgeRelId || null)) continue;
-        const sa = a.structNorm, sb = b.structNorm;
-        if (sa !== sb && sa !== 'beam' && sb !== 'beam') continue;
-        const eps = [[a.pts[a.pts.length - 1], b.pts[0], 0], [a.pts[a.pts.length - 1], b.pts[b.pts.length - 1], 1], [a.pts[0], b.pts[0], 2], [a.pts[0], b.pts[b.pts.length - 1], 3]];
-        for (const [pa, pb, mode] of eps) {
-          if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) > 0.45) continue;
-          const newPts = mode === 0 ? a.pts.concat(b.pts.slice(1)) : mode === 1 ? a.pts.concat(b.pts.slice(0, -1).reverse()) : mode === 2 ? b.pts.slice().reverse().concat(a.pts.slice(1)) : b.pts.concat(a.pts.slice(1));
-          a.pts = _dedupPtsJS(newPts); a.width = Math.max(a.width, b.width);
-          if (_structRankJS(sb) > _structRankJS(sa)) { a.structNorm = sb; a.explicitThroughArch = a.explicitThroughArch || b.explicitThroughArch; }
-          if (a.heightM == null) a.heightM = b.heightM;
-          chains.splice(j, 1); merged = true; break;
-        }
-      }
+  _stitchEndpointsJS(
+    chains, -0.2,
+    (a, b) => (a.layer ?? 1) === (b.layer ?? 1) && (a.parentBridgeRelId || null) === (b.parentBridgeRelId || null) && (a.structNorm === b.structNorm || a.structNorm === 'beam' || b.structNorm === 'beam'),
+    (a, b) => {
+      a.width = Math.max(a.width, b.width);
+      if (_structRankJS(b.structNorm) > _structRankJS(a.structNorm)) { a.structNorm = b.structNorm; a.explicitThroughArch = a.explicitThroughArch || b.explicitThroughArch; }
+      if (a.heightM == null) a.heightM = b.heightM;
     }
-  }
+  );
   const out = [], used = new Set();
   for (let i = 0; i < chains.length; i++) {
     if (used.has(i)) continue;
-    const base = chains[i], group = [base];
-    const [bax0, bay0] = base.pts[0], [bax1, bay1] = base.pts[base.pts.length - 1];
+    const base = chains[i], group = [base], [bax0, bay0] = base.pts[0], [bax1, bay1] = base.pts[base.pts.length - 1];
     const blen = Math.hypot(bax1 - bax0, bay1 - bay0) || 1, btx = (bax1 - bax0) / blen, bty = (bay1 - bay0) / blen;
     for (let j = i + 1; j < chains.length; j++) {
       if (used.has(j)) continue;
       const c = chains[j];
       if ((base.layer ?? 1) !== (c.layer ?? 1)) continue;
-      const [cx0, cy0] = c.pts[0], [cx1, cy1] = c.pts[c.pts.length - 1];
-      const clen = Math.hypot(cx1 - cx0, cy1 - cy0) || 1;
+      const [cx0, cy0] = c.pts[0], [cx1, cy1] = c.pts[c.pts.length - 1], clen = Math.hypot(cx1 - cx0, cy1 - cy0) || 1;
       const dot = Math.abs(btx * ((cx1 - cx0) / clen) + bty * ((cy1 - cy0) / clen));
       if (dot < 0.85 || Math.min(blen, clen) / Math.max(blen, clen) < 0.55) continue;
       const mx = (cx0 + cx1) * 0.5 - (bax0 + bax1) * 0.5, my = (cy0 + cy1) * 0.5 - (bay0 + bay1) * 0.5;
-      const perp = Math.abs(-bty * mx + btx * my), para = Math.abs(btx * mx + bty * my);
-      if (perp <= Math.max(base.width + c.width + 2.2, 4.5) && para <= Math.max(blen, clen) * 0.35) { used.add(j); group.push(c); }
+      if (Math.abs(-bty * mx + btx * my) <= Math.max(base.width + c.width + 2.2, 4.5) && Math.abs(btx * mx + bty * my) <= Math.max(blen, clen) * 0.35) { used.add(j); group.push(c); }
     }
     if (group.length > 1) {
-      const rs = group.map(g => { const d = (g.pts[g.pts.length - 1][0] - g.pts[0][0]) * btx + (g.pts[g.pts.length - 1][1] - g.pts[0][1]) * bty; return _resamplePolyJS(d < 0 ? g.pts.slice().reverse() : g.pts, 13); });
-      base.pts = rs[0].map((_, k) => [rs.reduce((s, r) => s + r[k][0], 0) / rs.length, rs.reduce((s, r) => s + r[k][1], 0) / rs.length]);
+      base.pts = _averageAlignedChainsJS(group, [btx, bty]);
       let minP = Infinity, maxP = -Infinity;
       for (const g of group) for (const p of g.pts) { const pr = -bty * (p[0] - bax0) + btx * (p[1] - bay0); minP = Math.min(minP, pr - g.width * 0.5); maxP = Math.max(maxP, pr + g.width * 0.5); }
       base.width = Math.max(base.width, maxP - minP);

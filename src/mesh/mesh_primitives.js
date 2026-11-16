@@ -1,32 +1,12 @@
 // ============================================================================
 // src/mesh/mesh_primitives.js
-// Core 3D Triangle/Quad Emitters, Watertight Prisms/Slabs with Holes,
-// Recessed Underside Tile ID Patches, Sculpted Canopy Trees & Scalar Cell Clipping
+// Core 3D Triangle/Quad Emitters, Watertight Prisms/Slabs with Holes & Trees
 // ============================================================================
 
 if (typeof cleanPolygonRing === 'undefined' && typeof require !== 'undefined') {
   Object.assign(global, require('../geometry/polygon_2d.js'));
   Object.assign(global, require('../geometry/obb_medial_2d.js'));
 }
-
-const BITMAP_FONT_5X3 = {
-  'R': [[1,1,0],[1,0,1],[1,1,0],[1,0,1],[1,0,1]],
-  'C': [[0,1,1],[1,0,0],[1,0,0],[1,0,0],[0,1,1]],
-  '1': [[0,1,0],[1,1,0],[0,1,0],[0,1,0],[1,1,1]],
-  '2': [[1,1,0],[0,0,1],[0,1,0],[1,0,0],[1,1,1]],
-  '3': [[1,1,0],[0,0,1],[0,1,0],[0,0,1],[1,1,0]],
-  '4': [[1,0,1],[1,0,1],[1,1,1],[0,0,1],[0,0,1]],
-  '5': [[1,1,1],[1,0,0],[1,1,0],[0,0,1],[1,1,0]],
-  '6': [[0,1,1],[1,0,0],[1,1,0],[1,0,1],[0,1,0]],
-  '7': [[1,1,1],[0,0,1],[0,1,0],[0,0,1],[0,1,0]],
-  '8': [[0,1,0],[1,0,1],[0,1,0],[1,0,1],[0,1,0]],
-  '9': [[0,1,0],[1,0,1],[0,1,1],[0,0,1],[1,1,0]],
-  '0': [[0,1,0],[1,0,1],[1,0,1],[1,0,1],[0,1,0]],
-  '-': [[0,0,0],[0,0,0],[1,1,1],[0,0,0],[0,0,0]],
-  ' ': [[0,0],[0,0],[0,0],[0,0],[0,0]],
-  '^': [[0,1,0],[1,1,1],[0,1,0],[0,1,0],[0,1,0]],
-  '↑': [[0,1,0],[1,1,1],[0,1,0],[0,1,0],[0,1,0]]
-};
 
 function pushTri(out, v0, v1, v2, n, layerId, buildingId = -1, tileId = 0, shellId = undefined) {
   out.push({ v0, v1, v2, n, layerId, buildingId, tileId, shellId: shellId !== undefined ? shellId : buildingId });
@@ -146,89 +126,6 @@ function emitPolygonWithHolesSlab3D(outerInput, holesInput, zBot, zTop, layerId,
   for (let h = 0; h < actualHoles.length; h++) emitWallLoop(actualHoles[h]);
 }
 
-function emitUndersideIdPatch(x0, y0, x1, y1, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12) {
-  let fz00, fz10, fz11, fz01, label, maxDebossDepth, tileId, outTris;
-  if (typeof arg6 === 'number' && typeof arg7 === 'number' && typeof arg8 === 'number') {
-    fz00 = arg5; fz10 = arg6; fz11 = arg7; fz01 = arg8;
-    label = arg9; maxDebossDepth = arg10; tileId = arg11; outTris = arg12;
-  } else {
-    fz00 = arg5; fz10 = arg5; fz11 = arg5; fz01 = arg5;
-    label = arg6; maxDebossDepth = arg7; tileId = arg8; outTris = arg9;
-  }
-  const isSingle = (label.length === 1);
-  const Nx = isSingle ? 7 : 26;
-  const Ny = isSingle ? 7 : 10;
-  const grid = Array.from({ length: Ny }, () => new Uint8Array(Nx));
-
-  if (isSingle) {
-    const glyph = BITMAP_FONT_5X3[label] || BITMAP_FONT_5X3[' '];
-    const gw = glyph[0].length;
-    const startX = Math.max(1, Math.floor((Nx - gw) * 0.5));
-    const startY = Math.max(1, Math.floor((Ny - 5) * 0.5));
-    for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < gw; c++) {
-        if (glyph[r][c]) {
-          const gy = startY + (4 - r), gx = startX + c;
-          if (gy >= 1 && gy < Ny - 1 && gx >= 1 && gx < Nx - 1) grid[gy][gx] = 1;
-        }
-      }
-    }
-  } else {
-    let totalW = 0;
-    for (const ch of label) {
-      const glyph = BITMAP_FONT_5X3[ch] || BITMAP_FONT_5X3[' '];
-      totalW += glyph[0].length + 1;
-    }
-    totalW--;
-    let startX = Math.max(1, Math.floor((Nx - totalW) * 0.5));
-    const startY = Math.max(1, Math.floor((Ny - 5) * 0.5));
-    for (const ch of label) {
-      const glyph = BITMAP_FONT_5X3[ch] || BITMAP_FONT_5X3[' '];
-      const gw = glyph[0].length;
-      for (let r = 0; r < 5; r++) {
-        for (let c = 0; c < gw; c++) {
-          if (glyph[r][c]) {
-            const gy = startY + (4 - r), gx = startX + c;
-            if (gy >= 1 && gy < Ny - 1 && gx >= 1 && gx < Nx - 1) grid[gy][gx] = 1;
-          }
-        }
-      }
-      startX += gw + 1;
-    }
-  }
-
-  const P = [];
-  for (let j = 0; j <= Ny; j++) {
-    P[j] = [];
-    const v = j / Ny;
-    const py = y0 + 0.12 * (y1 - y0) + v * 0.76 * (y1 - y0);
-    for (let i = 0; i <= Nx; i++) {
-      const u = i / Nx;
-      const px = x0 + 0.12 * (x1 - x0) + u * 0.76 * (x1 - x0);
-      const isStroke = (j < Ny && i < Nx && grid[j][i] === 1);
-      const fBaseGrid = (1 - u) * (1 - v) * fz00 + u * (1 - v) * fz10 + u * v * fz11 + (1 - u) * v * fz01;
-      P[j][i] = [px, py, isStroke ? (fBaseGrid + maxDebossDepth) : fBaseGrid];
-    }
-  }
-
-  const C00 = [x0, y0, fz00], C10 = [x1, y0, fz10], C11 = [x1, y1, fz11], C01 = [x0, y1, fz01];
-  for (let j = 0; j < Ny; j++) {
-    for (let i = 0; i < Nx; i++) {
-      const p00 = P[j][i], p01 = P[j + 1][i], p11 = P[j + 1][i + 1], p10 = P[j][i + 1];
-      pushTri(outTris, p00, p01, p11, computeFaceNormal(p00, p01, p11), 1, -1, tileId);
-      pushTri(outTris, p00, p11, p10, computeFaceNormal(p00, p11, p10), 1, -1, tileId);
-    }
-  }
-  for (let i = 0; i < Nx; i++) pushTri(outTris, C00, P[0][i], P[0][i + 1], computeFaceNormal(C00, P[0][i], P[0][i + 1]), 1, -1, tileId);
-  pushTri(outTris, C00, P[0][Nx], C10, computeFaceNormal(C00, P[0][Nx], C10), 1, -1, tileId);
-  for (let j = 0; j < Ny; j++) pushTri(outTris, C10, P[j][Nx], P[j + 1][Nx], computeFaceNormal(C10, P[j][Nx], P[j + 1][Nx]), 1, -1, tileId);
-  pushTri(outTris, C10, P[Ny][Nx], C11, computeFaceNormal(C10, P[Ny][Nx], C11), 1, -1, tileId);
-  for (let i = Nx; i > 0; i--) pushTri(outTris, C11, P[Ny][i], P[Ny][i - 1], computeFaceNormal(C11, P[Ny][i], P[Ny][i - 1]), 1, -1, tileId);
-  pushTri(outTris, C11, P[Ny][0], C01, computeFaceNormal(C11, P[Ny][0], C01), 1, -1, tileId);
-  for (let j = Ny; j > 0; j--) pushTri(outTris, C01, P[j][0], P[j - 1][0], computeFaceNormal(C01, P[j][0], P[j - 1][0]), 1, -1, tileId);
-  pushTri(outTris, C01, P[0][0], C00, computeFaceNormal(C01, P[0][0], C00), 1, -1, tileId);
-}
-
 // Closed watertight 8-sided rounded organic cushion canopy anchored flush at zGround (0 overhangs, 0 open edges)
 function addTreeCrown3D(tx, ty, zGround, radius, height, layerId, outTris, tileId = 0, shellId = -1) {
   const sides = 8;
@@ -268,46 +165,6 @@ function addTreeCrown3D(tx, ty, zGround, radius, height, layerId, outTris, tileI
   }
 }
 
-function interpCellEdgeCanonical(a, b, threshold) {
-  const eA = a.isCut ? a.edgeA : (b.isCut ? b.edgeA : a);
-  const eB = a.isCut ? a.edgeB : (b.isCut ? b.edgeB : b);
-  const ax = eA.x, ay = eA.y, av = eA.v;
-  const bx = eB.x, by = eB.y, bv = eB.v;
-
-  const swap = (ax > bx) || (ax === bx && ay > by);
-  const x0 = swap ? bx : ax, y0 = swap ? by : ay, v0 = swap ? bv : av;
-  const x1 = swap ? ax : bx, y1 = swap ? ay : by, v1 = swap ? av : bv;
-  const t = (threshold - v0) / ((v1 - v0) || 1e-9);
-  return { x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t, v: threshold, edgeA: eA, edgeB: eB, isCut: true };
-}
-
-function clipCellPolyByScalar(poly, threshold, keepGreater) {
-  const out = [];
-  const cutSegments = [];
-  const n = poly.length;
-  if (n < 3) return { poly: out, cuts: cutSegments };
-
-  for (let i = 0; i < n; i++) {
-    const curr = poly[i];
-    const prev = poly[(i + n - 1) % n];
-    const currIn = keepGreater ? (curr.v >= threshold) : (curr.v <= threshold);
-    const prevIn = keepGreater ? (prev.v >= threshold) : (prev.v <= threshold);
-
-    if (currIn) {
-      if (!prevIn) out.push(interpCellEdgeCanonical(prev, curr, threshold));
-      out.push(curr);
-    } else if (prevIn) {
-      out.push(interpCellEdgeCanonical(prev, curr, threshold));
-    }
-  }
-
-  for (let i = 0; i < out.length; i++) {
-    const a = out[i], b = out[(i + 1) % out.length];
-    if (a.isCut && b.isCut) cutSegments.push([a, b]);
-  }
-  return { poly: out, cuts: cutSegments };
-}
-
 function getTileIdForCentroid(cx, cy, halfW, halfH, tileCols, tileRows) {
   if (tileCols <= 1 && tileRows <= 1) return 0;
   const tileStepX = (2 * halfW) / tileCols;
@@ -319,17 +176,13 @@ function getTileIdForCentroid(cx, cy, halfW, halfH, tileCols, tileRows) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    BITMAP_FONT_5X3,
     pushTri,
     pushQuad,
     computeFaceNormal,
     isDegenerateTri3D,
     emitClosedPrism,
     emitPolygonWithHolesSlab3D,
-    emitUndersideIdPatch,
     addTreeCrown3D,
-    interpCellEdgeCanonical,
-    clipCellPolyByScalar,
     getTileIdForCentroid
   };
 }

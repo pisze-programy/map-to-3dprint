@@ -396,6 +396,73 @@ async function runSuite() {
     );
   }
 
+  // [8/9] Long 280mm Viaduct Strut Scale Regression (baySpanMm, No 10mm Strut Explosion)
+  console.log('\n[8/9] Long 280mm Viaduct Strut Scale Regression (minStrutMm <= 1.0)');
+  {
+    const scene = {
+      spanMeters: 2500,
+      dem: { grid: [[18, 2, 18], [18, 2, 18]], minElev: 2, maxElev: 18 },
+      waterPolys: [{ outer: [[-18, -80], [18, -80], [18, 80], [-18, 80]], holes: [] }],
+      waterLines: [], greenPolys: [], trees: [], bridgeSupports: [], bridgePolys: [], buildings: [],
+      roads: [{
+        pts: [[-84.5, 0], [84.5, 0]],
+        width: 3.5,
+        isBridge: true,
+        layer: 1,
+        structure: 'cable-stayed',
+        heightM: 90,
+        tags: { bridge: 'yes', 'bridge:structure': 'cable-stayed', height: '90' },
+      }],
+    };
+    const res = buildComplete3DModel(scene, makeState({ bedSizeMm: 280, totalHeightMm: 280 }));
+    assertCleanManifold(res.printMetrics, 'Long 280mm cable-stayed viaduct');
+    const a = (res.audit.bridgeAudits || [])[0];
+    check(
+      Boolean(a && a.minStrutMm >= 0.48 && a.minStrutMm <= 1.0),
+      'Long 280mm viaduct maintains minStrutMm <= 1.0 mm (no 10mm strut bloat)',
+      `minStrutMm=${a?.minStrutMm}, minStayGapMm=${a?.minStayGapMm}`
+    );
+  }
+
+  // [9/9] man_made=bridge With 3 Short Disconnected Midspan Roads Keeps Full Span
+  console.log('\n[9/9] man_made=bridge With 3 Short Disconnected Roads Keeps Full Bank-to-Bank Span');
+  {
+    const polyLenU = 120.0;
+    const scene = {
+      spanMeters: 800,
+      dem: { grid: [[16, 2, 8], [16, 2, 8]], minElev: 2, maxElev: 16 },
+      waterPolys: [{ outer: [[-45, -80], [45, -80], [45, 80], [-45, 80]], holes: [] }],
+      waterLines: [], greenPolys: [], trees: [], bridgeSupports: [], buildings: [],
+      bridgePolys: [{
+        osmId: 901,
+        outer: [[-60, -4], [60, -4], [60, 4], [-60, 4]],
+        holes: [],
+        layer: 1,
+        bridgeStructure: 'suspension',
+        acrossRoadIds: [911, 912, 913],
+        tags: { man_made: 'bridge', 'bridge:structure': 'suspension', layer: '1' },
+      }],
+      roads: [
+        { osmId: 911, _bridgePolyOsmId: 901, pts: [[-20, -0.5], [-10, -0.5]], width: 2.5, isBridge: true, layer: 1, structure: 'suspension', tags: { bridge: 'yes', 'bridge:structure': 'suspension' } },
+        { osmId: 912, _bridgePolyOsmId: 901, pts: [[-4, 0.5], [6, 0.5]], width: 2.5, isBridge: true, layer: 1, structure: 'suspension', tags: { bridge: 'yes', 'bridge:structure': 'suspension' } },
+        { osmId: 913, _bridgePolyOsmId: 901, pts: [[12, 0.0], [22, 0.0]], width: 2.5, isBridge: true, layer: 1, structure: 'suspension', tags: { bridge: 'yes', 'bridge:structure': 'suspension' } },
+      ],
+    };
+    const res = buildComplete3DModel(scene, makeState());
+    assertCleanManifold(res.printMetrics, 'man_made=bridge crossed by 3 short disconnected roads');
+    const a = (res.audit.bridgeAudits || [])[0];
+    let spanU = 0;
+    for (let i = 1; i < ((a && a.axisPts) || []).length; i++) {
+      spanU += Math.hypot(a.axisPts[i][0] - a.axisPts[i - 1][0], a.axisPts[i][1] - a.axisPts[i - 1][1]);
+    }
+    const deckSpanX = a ? (a.bbox[2] - a.bbox[0]) : 0;
+    check(
+      Boolean(a && spanU >= 0.85 * polyLenU && deckSpanX >= 0.85 * polyLenU),
+      'Short disconnected midspan roads do not truncate bridge axis or sloped deck (span >= 0.85 * polyLen)',
+      `axisSpanU=${spanU.toFixed(2)} vs polyLenU=${polyLenU.toFixed(2)}, deckSpanX=${deckSpanX.toFixed(2)}`
+    );
+  }
+
   console.log(`\nETAP 4 BRIDGES GLOBAL SUMMARY: ${passed} passed, ${failed} failed.`);
   if (failed > 0) process.exit(1);
 }

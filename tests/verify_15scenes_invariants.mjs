@@ -192,18 +192,29 @@ function audit3mfXmlTopology(modelXml) {
 }
 
 async function run() {
+  const supportlessOnly = process.argv.includes('--supportless');
+  const includeAll = process.argv.includes('--all');
+  const supportlessSlugs = new Set([
+    'porto', 'millau_viaduct', 'brooklyn_bridge', 'eiffel_seine',
+    'london_eye', 'venice_rialto', 'landwasser',
+  ]);
   const scenePaths = loadAllSceneFiles();
   assert.equal(scenePaths.length, 15, `Expected 15 scene JSON files, found ${scenePaths.length}`);
 
-  const sceneRecords = scenePaths.map(p => ({
+  let sceneRecords = scenePaths.map(p => ({
     path: p,
     json: JSON.parse(fs.readFileSync(p, 'utf8')),
   }));
   const cacheStats = ensureOfflineDemCache15(sceneRecords);
   console.log(`DEM cache ready (${DEM_CACHE_DIR}): z14Tiles=${cacheStats.z14Tiles}, new14=${cacheStats.written14}, new15=${cacheStats.written15}`);
 
+  if (supportlessOnly && !includeAll) {
+    sceneRecords = sceneRecords.filter(r => supportlessSlugs.has(r.json.slug));
+    console.log(`\nRunning supportlessMode=true verification on ${sceneRecords.length} architectural/bridge scenes...`);
+  }
+
   const results = [];
-  const threeMfCheckSlugs = new Set(['porto', 'frankfurt', 'singapore', 'millau_viaduct', 'eiffel_seine']);
+  const threeMfCheckSlugs = supportlessOnly ? new Set() : new Set(['porto', 'frankfurt', 'singapore', 'millau_viaduct', 'eiffel_seine']);
   let failures = 0;
 
   for (const { json } of sceneRecords) {
@@ -230,6 +241,7 @@ async function run() {
       cropRatio: 1.0,
       waterCutout: false,
       hollowBase: false,
+      supportlessMode: supportlessOnly,
       showFrame: false,
       wantTrees: true,
       isResin: true,
@@ -243,6 +255,9 @@ async function run() {
 
     const okTopo = pm.openEdgesCount === 0 && pm.nonManifoldEdgesCount === 0 && pm.sameDirDupEdgesCount === 0 && pm.degenerateTrisCount === 0 && pm.floatingBuildingsCount === 0;
     if (!okTopo) failures++;
+    if (supportlessOnly) {
+      assert.equal(pm.supportlessMode, true, `${slug} expected supportlessMode === true`);
+    }
     if (slug === 'eiffel_seine') {
       assert.ok((pm.archetypeCounts?.latticeTowers || 0) >= 1, `eiffel_seine expected arch.latticeTowers >= 1, got ${JSON.stringify(pm.archetypeCounts)}`);
     }
@@ -296,47 +311,47 @@ async function run() {
     );
   }
 
-  // Also test hollowBase telemetry on Porto (2x2 tiles)
-  const portoJson = sceneRecords.find(r => r.json.slug === 'porto').json;
-  const [pw, ps, pe, pn] = portoJson.bbox;
-  const pCos = Math.max(0.2, Math.cos((portoJson.center.lat * Math.PI) / 180.0));
-  const pW = (pe - pw) * 111320.0 * pCos;
-  const pH = (pn - ps) * 111320.0;
-  const pMax = Math.max(pW, pH);
-  const hollowBuilt = await loadSceneAndBuildModel({
-    title: 'PORTO_HOLLOW',
-    osmElements: portoJson.osmElements,
-    demCacheDir: DEM_CACHE_DIR,
-    offlineOnly: true,
-    offlineFallbackDem: true,
-    lat: portoJson.center.lat,
-    lon: portoJson.center.lon,
-    spanMeters: pMax / 1.045,
-    rotationDeg: 0,
-    targetWidthCm: 32.0 * (pW / pMax),
-    targetHeightCm: 32.0 * (pH / pMax),
-    tileCols: 2,
-    tileRows: 2,
-    cropRatio: 1.0,
-    waterCutout: false,
-    hollowBase: true,
-    showFrame: false,
-    wantTrees: true,
-    isResin: true,
-    zScale: 1.0,
-    terrainScale: 1.0,
-    skipTopologyAudit: false,
-    silent: true,
-  });
-  const hpm = hollowBuilt.printMetrics;
-  console.log(`\n[HOLLOW 2x2] porto | tris=${hpm.totalTriangles} | open=${hpm.openEdgesCount} nm=${hpm.nonManifoldEdgesCount} dup=${hpm.sameDirDupEdgesCount} | drainCount=${hpm.drainCount} chambersKept=${hpm.hollowChambersKept} hasDrainChannels=${hpm.hasDrainChannels} savings=${hpm.hollowSavingsPct}%`);
-  assert.equal(hpm.openEdgesCount, 0, 'Porto hollow 2x2 openEdges');
-  assert.equal(hpm.nonManifoldEdgesCount, 0, 'Porto hollow 2x2 nonManifoldEdges');
-  assert.equal(hpm.sameDirDupEdgesCount, 0, 'Porto hollow 2x2 sameDirDupEdges');
-  assert.ok(hpm.hollowChambersKept >= 1 && hpm.drainCount >= 2 && hpm.hasDrainChannels === true, `Expected chambersKept>=1 and real drainCount >= 2, got kept=${hpm.hollowChambersKept} drains=${hpm.drainCount}`);
-
-  if (process.env.OUT_JSON) {
-    fs.writeFileSync(process.env.OUT_JSON, JSON.stringify({ results, portoHollow2x2: {
+  let portoHollow2x2 = null;
+  if (!supportlessOnly) {
+    // Also test hollowBase telemetry on Porto (2x2 tiles)
+    const portoJson = sceneRecords.find(r => r.json.slug === 'porto').json;
+    const [pw, ps, pe, pn] = portoJson.bbox;
+    const pCos = Math.max(0.2, Math.cos((portoJson.center.lat * Math.PI) / 180.0));
+    const pW = (pe - pw) * 111320.0 * pCos;
+    const pH = (pn - ps) * 111320.0;
+    const pMax = Math.max(pW, pH);
+    const hollowBuilt = await loadSceneAndBuildModel({
+      title: 'PORTO_HOLLOW',
+      osmElements: portoJson.osmElements,
+      demCacheDir: DEM_CACHE_DIR,
+      offlineOnly: true,
+      offlineFallbackDem: true,
+      lat: portoJson.center.lat,
+      lon: portoJson.center.lon,
+      spanMeters: pMax / 1.045,
+      rotationDeg: 0,
+      targetWidthCm: 32.0 * (pW / pMax),
+      targetHeightCm: 32.0 * (pH / pMax),
+      tileCols: 2,
+      tileRows: 2,
+      cropRatio: 1.0,
+      waterCutout: false,
+      hollowBase: true,
+      showFrame: false,
+      wantTrees: true,
+      isResin: true,
+      zScale: 1.0,
+      terrainScale: 1.0,
+      skipTopologyAudit: false,
+      silent: true,
+    });
+    const hpm = hollowBuilt.printMetrics;
+    console.log(`\n[HOLLOW 2x2] porto | tris=${hpm.totalTriangles} | open=${hpm.openEdgesCount} nm=${hpm.nonManifoldEdgesCount} dup=${hpm.sameDirDupEdgesCount} | drainCount=${hpm.drainCount} chambersKept=${hpm.hollowChambersKept} hasDrainChannels=${hpm.hasDrainChannels} savings=${hpm.hollowSavingsPct}%`);
+    assert.equal(hpm.openEdgesCount, 0, 'Porto hollow 2x2 openEdges');
+    assert.equal(hpm.nonManifoldEdgesCount, 0, 'Porto hollow 2x2 nonManifoldEdges');
+    assert.equal(hpm.sameDirDupEdgesCount, 0, 'Porto hollow 2x2 sameDirDupEdges');
+    assert.ok(hpm.hollowChambersKept >= 1 && hpm.drainCount >= 2 && hpm.hasDrainChannels === true, `Expected chambersKept>=1 and real drainCount >= 2, got kept=${hpm.hollowChambersKept} drains=${hpm.drainCount}`);
+    portoHollow2x2 = {
       totalTriangles: hpm.totalTriangles,
       openEdges: hpm.openEdgesCount,
       nonManifoldEdges: hpm.nonManifoldEdgesCount,
@@ -344,11 +359,15 @@ async function run() {
       drainCount: hpm.drainCount,
       hasDrainChannels: hpm.hasDrainChannels,
       hollowSavingsPct: hpm.hollowSavingsPct,
-    } }, null, 2));
+    };
   }
 
-  assert.equal(failures, 0, `${failures}/15 scenes failed 2-manifold or floating invariants`);
-  console.log('\nALL 15 SCENES PASSED 0 open / 0 non-manifold / 0 dup / 0 float invariants!');
+  if (process.env.OUT_JSON) {
+    fs.writeFileSync(process.env.OUT_JSON, JSON.stringify({ results, portoHollow2x2, supportlessMode: supportlessOnly }, null, 2));
+  }
+
+  assert.equal(failures, 0, `${failures}/${sceneRecords.length} scenes failed 2-manifold or floating invariants`);
+  console.log(`\nALL ${sceneRecords.length} SCENES${supportlessOnly ? ' (supportlessMode=true)' : ''} PASSED 0 open / 0 non-manifold / 0 dup / 0 float invariants!`);
 }
 
 run().catch(err => {

@@ -14,6 +14,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { createHeadlessCanvas } = require('../tools/headless_scene_harness.js');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -141,7 +142,7 @@ function createSandbox() {
           c.width = 512;
           c.height = 512;
           c.getContext = () => {
-            if (!c._sw) c._sw = sandbox.createSoftwareMaskCanvas(c.width, c.height);
+            if (!c._sw) c._sw = createHeadlessCanvas(c.width, c.height);
             return c._sw.getContext('2d');
           };
           return c;

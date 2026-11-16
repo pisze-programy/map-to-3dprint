@@ -140,8 +140,11 @@ function buildS3DBPartSolid(core, b, tags, metaP, groupDatumById, platePoly, sce
   let rawH_m = Number((b.h !== undefined && b.h !== null) ? b.h : (b.height !== undefined ? b.height : 9.0));
   let rawMinH_m = Math.max(0, Number(b.minH !== undefined ? b.minH : (tags.min_height || 0)) || 0);
   const hMult = (b.heightMult || 1.0) * zScale * scaleToBed, mToMm = mToU * hMult * scaleMm;
+  const spireObb = adjOuters.length > 0 ? _computeOBB(adjOuters[0], null, 'along', 0) : null;
+  const minorBedMm = spireObb ? Math.min(spireObb.spanU, spireObb.spanV) * scaleMm : 999;
 
-  if (slaLaws && metaP && metaP.bodyTopM > 0 && rawH_m > metaP.bodyTopM + 1.5 && rawMinH_m <= metaP.bodyTopM + 2.0) {
+  // Only saturate slender spire/needle protrusions (minor span <= 2.4 mm); never flatten wide towers/rotundas/domes above a podium.
+  if (slaLaws && minorBedMm <= 2.4 && metaP && metaP.bodyTopM > 0 && rawH_m > metaP.bodyTopM + 1.5 && rawMinH_m <= metaP.bodyTopM + 2.0) {
     const bodyTopMm = metaP.bodyTopM * mToMm, rawDeltaMm = (rawH_m - metaP.bodyTopM) * mToMm;
     const cappedDeltaMm = slaLaws.capSpireProtrusionMm(rawDeltaMm, bodyTopMm);
     if (cappedDeltaMm > 0 && cappedDeltaMm < rawDeltaMm) {

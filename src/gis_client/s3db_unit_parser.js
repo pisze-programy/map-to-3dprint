@@ -153,6 +153,8 @@ function isUndergroundOrSkippedBuildingJS(tags) {
   const indoorVal = String(tags.indoor || '').toLowerCase().trim();
   if (['room', 'corridor', 'area', 'level'].includes(indoorVal)) return true;
   if (indoorVal === 'yes' && !tags['roof:shape'] && bVal !== 'roof' && bpVal !== 'roof') return true;
+  const bLvls = parseFloatTagJS(tags['building:levels'], null);
+  if (bLvls !== null && bLvls <= 0 && !tags.height && !tags['building:height'] && !tags['roof:shape'] && bVal !== 'roof' && bpVal !== 'roof') return true;
   if (hasAllNegativeLevelJS(tags)) return true;
   if (SKIP_BUILDING_VALS_JS.has(bVal) && (!bpVal || SKIP_BUILDING_VALS_JS.has(bpVal))) return true;
   if (!bVal && SKIP_BUILDING_VALS_JS.has(bpVal)) return true;

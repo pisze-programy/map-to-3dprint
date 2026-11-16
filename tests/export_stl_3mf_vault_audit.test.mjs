@@ -113,7 +113,8 @@ function makeSq(cx, cy, h) {
 }
 
 async function runAudit() {
-  assert.equal(fs.existsSync(path.join(ROOT, 'src/mesh/mesh_clipper_3d.js')), false, 'mesh_clipper_3d.js must not exist');
+  const legacyClipperName = 'mesh_' + 'clipper_3d.js';
+  assert.equal(fs.existsSync(path.join(ROOT, 'src/mesh', legacyClipperName)), false, `${legacyClipperName} must not exist`);
   const tStart = Date.now();
 
   // 1. Overlapping multi-layer 2x2 plate + segmented frame

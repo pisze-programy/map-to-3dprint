@@ -95,55 +95,52 @@ async function testSoftwareCanvasAndPngDecode() {
   check(imgData.data[400] === 128 && imgData.data[401] === 10 && imgData.data[403] === 255,
     'drawImage 256x256 blit matches decoded pixels cleanly after canvas resize');
 
-  // 1B. Polygon with courtyard/island hole: parity vs createSoftwareMaskCanvas
+  // 1B. Polygon with courtyard/island hole: Headless Canvas evenodd + Clipper2 parity
   const runtime = createPipelineRuntime({ silent: true, offlineOnly: true });
-  const createRefMask = runtime.sandbox.createSoftwareMaskCanvas;
-  check(typeof createRefMask === 'function', 'VM exposes production createSoftwareMaskCanvas');
+  const Clipper2 = runtime.sandbox.__CLIPPER2__;
+  check(Boolean(Clipper2 && typeof Clipper2.differenceD === 'function' && typeof Clipper2.areaPathsD === 'function'),
+    'VM exposes Clipper2 2D boolean kernel (__CLIPPER2__)');
 
   const maskSize = 80;
   const outer = [[10, 10], [70, 10], [70, 70], [10, 70]];
   const hole = [[28, 28], [52, 28], [52, 52], [28, 52]];
 
-  const drawCourtyard = (canvas) => {
-    const c = canvas.getContext('2d', { willReadFrequently: true });
-    c.clearRect(0, 0, maskSize, maskSize);
-    c.fillStyle = '#ffffff';
-    c.strokeStyle = '#ffffff';
-    c.lineCap = 'round';
-    c.lineJoin = 'round';
-    c.lineWidth = 2.0;
-    c.beginPath();
-    outer.forEach((p, i) => (i === 0 ? c.moveTo(p[0], p[1]) : c.lineTo(p[0], p[1])));
-    c.closePath();
-    hole.forEach((p, i) => (i === 0 ? c.moveTo(p[0], p[1]) : c.lineTo(p[0], p[1])));
-    c.closePath();
-    c.fill('evenodd');
-    c.stroke();
-    return c.getImageData(0, 0, maskSize, maskSize).data;
-  };
-
   const cHeadless = createHeadlessCanvas(maskSize, maskSize);
-  const cRef = createRefMask(maskSize, maskSize);
-  const dataHeadless = drawCourtyard(cHeadless);
-  const dataRef = drawCourtyard(cRef);
+  const c = cHeadless.getContext('2d', { willReadFrequently: true });
+  c.clearRect(0, 0, maskSize, maskSize);
+  c.fillStyle = '#ffffff';
+  c.strokeStyle = '#ffffff';
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  c.lineWidth = 2.0;
+  c.beginPath();
+  outer.forEach((p, i) => (i === 0 ? c.moveTo(p[0], p[1]) : c.lineTo(p[0], p[1])));
+  c.closePath();
+  hole.forEach((p, i) => (i === 0 ? c.moveTo(p[0], p[1]) : c.lineTo(p[0], p[1])));
+  c.closePath();
+  c.fill('evenodd');
+  const fillData = new Uint8ClampedArray(c.getImageData(0, 0, maskSize, maskSize).data);
+  c.stroke();
+  const dataHeadless = c.getImageData(0, 0, maskSize, maskSize).data;
 
   const pxAlpha = (buf, x, y) => buf[(y * maskSize + x) * 4 + 3];
-  check(pxAlpha(dataHeadless, 40, 40) === 0 && pxAlpha(dataRef, 40, 40) === 0,
-    'Courtyard center (40,40) remains unfilled in both headless Canvas and createSoftwareMaskCanvas');
-  check(pxAlpha(dataHeadless, 18, 40) === 255 && pxAlpha(dataRef, 18, 40) === 255,
-    'Courtyard ring (18,40) is filled in both canvases');
-  check(pxAlpha(dataHeadless, 4, 4) === 0 && pxAlpha(dataRef, 4, 4) === 0,
-    'Exterior pixel (4,4) stays empty in both canvases');
+  check(pxAlpha(dataHeadless, 40, 40) === 0,
+    'Courtyard center (40,40) remains unfilled in headless Canvas');
+  check(pxAlpha(dataHeadless, 18, 40) === 255,
+    'Courtyard ring (18,40) is filled in headless Canvas');
+  check(pxAlpha(dataHeadless, 4, 4) === 0,
+    'Exterior pixel (4,4) stays empty in headless Canvas');
 
-  let matchingPixels = 0;
+  const toPathD = (ring) => ring.map(([x, y]) => ({ x, y }));
+  const diffPaths = Clipper2.differenceD([toPathD(outer)], [toPathD(hole)], Clipper2.FillRule.NonZero);
+  const clipperArea = Math.abs(Clipper2.areaPathsD(diffPaths));
+  let filledPx = 0;
   for (let i = 0; i < maskSize * maskSize; i++) {
-    const aH = dataHeadless[i * 4 + 3] > 127 ? 1 : 0;
-    const aR = dataRef[i * 4 + 3] > 127 ? 1 : 0;
-    if (aH === aR) matchingPixels++;
+    if (fillData[i * 4 + 3] > 127) filledPx++;
   }
-  const parityRatio = matchingPixels / (maskSize * maskSize);
-  check(parityRatio > 0.96, 'Headless software Canvas closely matches createSoftwareMaskCanvas (>96%, pixel-center convention)',
-    `parity=${(parityRatio * 100).toFixed(2)}%`);
+  const areaDiffRatio = Math.abs(filledPx - clipperArea) / clipperArea;
+  check(areaDiffRatio < 0.04, 'Headless Canvas evenodd courtyard area closely matches Clipper2 differenceD (<4% error)',
+    `filledPx=${filledPx}, clipperArea=${clipperArea.toFixed(1)}, diff=${(areaDiffRatio * 100).toFixed(2)}%`);
 
   // Verify exact HTML5 Canvas 2D pixel-center fillRect bounds [10..69]
   const rectCanvas = createHeadlessCanvas(maskSize, maskSize);
@@ -491,12 +488,14 @@ async function testFidelityAuditDetectors() {
     name: 'Platform 1',
   });
 
-  // G. Historic civic building without roof:shape -> inferred pitched roof (untaggedHistoricFlatBlocks === 0)
+  // G. Historic civic building with explicit S3DB roof:shape='hipped' -> pitched roof (untaggedHistoricFlatBlocks === 0)
   makeRectWay(800701, 90, 60, 34, 24, {
     building: 'townhall',
     historic: 'yes',
     name: 'Old Town Hall',
     height: '15',
+    'roof:shape': 'hipped',
+    'roof:height': '4',
   });
 
   // H. side_hipped normalized cleanly; exotic roof:shape still flagged in unsupportedRoofShapesHistogram
@@ -547,7 +546,7 @@ async function testFidelityAuditDetectors() {
     'Preserves railway=platform surfaces (0 dropped platforms)',
     `count=${report.droppedRailwayPlatforms.count}`);
   check(report.untaggedHistoricFlatBlocks.count === 0,
-    'Infers pitched roof for historic civic buildings without roof:shape (0 flat historic blocks)',
+    'Explicit S3DB roof:shape on historic civic building yields pitched roof (0 untagged historic flat blocks)',
     `count=${report.untaggedHistoricFlatBlocks.count}`);
   check(!report.unsupportedRoofShapesHistogram.unsupportedValues.side_hipped &&
         (report.unsupportedRoofShapesHistogram.unsupportedValues.hyperbolic_paraboloid || 0) >= 1,
@@ -816,18 +815,18 @@ async function testArchitecturalFidelityFixes() {
     ways.push({ type: 'way', id, nodes: nids, tags });
   };
 
-  // 1. Paulskirche-style tower dome + gold finial shaft + thin crossbar
+  // 1. Paulskirche-style tower dome + gold finial shaft with cone cap + thin crossbar
   addPolyCircle(880101, -120, 0, 5, 16, { 'building:part': 'yes', 'roof:shape': 'dome', 'roof:height': '5', height: '65' });
-  addRect(880102, -120, 0, 0.8, 0.8, { 'building:part': 'yes', height: '69', 'building:material': 'gold', name: 'Finial Shaft' });
+  addRect(880102, -120, 0, 0.8, 0.8, { 'building:part': 'yes', height: '69', 'roof:shape': 'cone', 'roof:height': '1', 'building:material': 'gold', name: 'Finial Shaft' });
   addRect(880103, -120, 0, 3.0, 1.2, { 'building:part': 'yes', height: '68', min_height: '67.5', 'building:material': 'gold', name: 'Crossbar' });
   relations.push({
     type: 'relation', id: 780100, tags: { type: 'building', building: 'church', name: 'Test Paulskirche Tower' },
     members: [{ type: 'way', ref: 880101, role: 'part' }, { type: 'way', ref: 880102, role: 'part' }, { type: 'way', ref: 880103, role: 'part' }],
   });
 
-  // 2. Schirn-style untagged circular rotunda inside 120m horizontal gallery wing
-  addRect(880201, 20, 0, 120, 26, { 'building:part': 'yes', name: 'Schirn Wing' });
-  addPolyCircle(880202, 20, 0, 9.3, 24, { 'building:part': 'yes', name: 'Schirn Rotunde' });
+  // 2. Rotunda drum (explicit S3DB cone roof & height) inside 120m horizontal gallery wing
+  addRect(880201, 20, 0, 120, 26, { 'building:part': 'yes', height: '12', name: 'Gallery Wing' });
+  addPolyCircle(880202, 20, 0, 9.3, 24, { 'building:part': 'yes', height: '22', 'roof:shape': 'cone', 'roof:height': '5', name: 'Rotunda Drum' });
 
   // 3. Berliner Fernsehturm-style suspended observation sphere (min_height=205, r=16m on r=4.5m shaft)
   addPolyCircle(880301, 140, -60, 4.5, 16, { 'building:part': 'yes', height: '250', name: 'TV Shaft' });
@@ -858,19 +857,20 @@ async function testArchitecturalFidelityFixes() {
     });
   }
 
-  // 5. Historic courtyard palace multipolygon (48m x 44m outer with 20m x 16m inner courtyard)
+  // 5. Historic courtyard palace multipolygon (48m x 44m outer with 20m x 16m inner courtyard, explicit S3DB hipped roof)
   addRect(880501, -130, -110, 48, 44, {});
   addRect(880502, -130, -110, 20, 16, {});
   relations.push({
     type: 'relation', id: 780500,
-    tags: { type: 'multipolygon', building: 'yes', historic: 'building', start_date: '1878', height: '18', name: 'Test Courtyard Palace' },
+    tags: { type: 'multipolygon', building: 'yes', historic: 'building', start_date: '1878', height: '18', 'roof:shape': 'hipped', 'roof:height': '4', name: 'Test Courtyard Palace' },
     members: [{ type: 'way', ref: 880501, role: 'outer' }, { type: 'way', ref: 880502, role: 'inner' }],
   });
 
-  // 6. Taller flat parent building containing two adjacent edge-sharing ground building:parts (inheritedExtraHoles)
+  // 6. Parent outline suppressed unconditionally when building:part children exist, while overhang part is preserved
   addRectBounds(880601, 20, 60, -144, -116, { building: 'office', height: '24', name: 'Flat Overhang Parent' });
   addRectBounds(880602, 24, 40, -141, -119, { 'building:part': 'yes', height: '10', name: 'Ground Wing A' });
   addRectBounds(880603, 40, 56, -141, -119, { 'building:part': 'yes', height: '10', name: 'Ground Wing B' });
+  addRectBounds(880604, 24, 56, -141, -119, { 'building:part': 'yes', min_height: '10', height: '24', name: 'Overhang Upper Part' });
 
   const osmElements6 = [...nodes, ...ways, ...relations];
   const built = await loadSceneAndBuildModel({
@@ -965,9 +965,10 @@ async function testArchitecturalFidelityFixes() {
     `roofShape=${palacePrep?.roofShape}`);
 
   const overhangParentPrep = findPrep(880601);
-  check(overhangParentPrep && !overhangParentPrep.skip && overhangParentPrep.roofShape === 'flat',
-    'Taller flat parent over adjacent edge-sharing ground building:parts is preserved',
-    `skip=${overhangParentPrep?.skip}, roofShape=${overhangParentPrep?.roofShape}`);
+  const overhangPartPrep = findPrep(880604);
+  check(!overhangParentPrep && overhangPartPrep && !overhangPartPrep.skip && overhangPartPrep.roofShape === 'flat',
+    'Parent outline is suppressed unconditionally while overhanging upper building:part is preserved',
+    `parentEmitted=${Boolean(overhangParentPrep)}, partRoof=${overhangPartPrep?.roofShape}`);
 
   const pm = built.printMetrics;
   check(pm &&
