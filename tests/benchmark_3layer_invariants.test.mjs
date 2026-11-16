@@ -103,6 +103,16 @@ async function runSuite() {
   {
     const targetFiles = [
       'src/geometry/manifold_core.js',
+      'src/Water/water_ring_geometry.js',
+      'src/Water/water_multipolygon_stitcher.js',
+      'src/Water/water_coastline_stitcher.js',
+      'src/Water/water_osm_tags.js',
+      'src/Water/water_osm_extractor.js',
+      'src/Water/water_elevation_sampler.js',
+      'src/Water/water_sloped_reaches.js',
+      'src/Water/water_carve_manifold.js',
+      'src/Water/water_pier_osm_helper.js',
+      'src/Water/water_piers_solver.js',
       'src/mesh/terrain_delatin_water.js',
       'src/mesh/terrain_surface_drape.js',
       'src/mesh/layer1_terrain_water.js',
