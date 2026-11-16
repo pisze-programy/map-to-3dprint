@@ -360,6 +360,7 @@ function resolveRenderState(meshes, rawState = {}, highlightIds = null) {
       water: true,
       base: true,
       greenery: true,
+      trees: true,
       roads: true,
       buildings: true,
       highlighted: true,
@@ -458,6 +459,8 @@ function buildPackedSoup(meshes, rs, eye) {
   for (const key of drawOrder) {
     if (key === 'frame') {
       if (!rs.showFrame || explode > 0.08 || tExplode > 0.03) continue;
+    } else if (key === 'greenery') {
+      if (rs.layerVisible.greenery === false && rs.layerVisible.trees === false) continue;
     } else if (!rs.layerVisible[key]) {
       continue;
     } else if (key === 'water' && rs.waterCutout) {
@@ -474,6 +477,11 @@ function buildPackedSoup(meshes, rs, eye) {
         const lid = Math.round(layerData[off + 6]);
         const bId = Math.round(layerData[off + 7]);
         const tileId = Math.round(layerData[off + 8]);
+        if (lid === 2) {
+          const isTree = (bId < -1.5) || (bId > -0.5 && nz > 0.03 && nz < 0.82);
+          if (isTree && rs.layerVisible.trees === false) continue;
+          if (!isTree && rs.layerVisible.greenery === false) continue;
+        }
         pushAdjusted(
           layerData[off], layerData[off + 1], layerData[off + 2],
           layerData[off + 9], layerData[off + 10], layerData[off + 11],
@@ -489,6 +497,11 @@ function buildPackedSoup(meshes, rs, eye) {
         const lid = (t.layerId !== undefined) ? t.layerId : defLid;
         const bId = t.buildingId ?? t.bId ?? -1;
         const tileId = (t.tileId !== undefined) ? t.tileId : -1;
+        if (lid === 2) {
+          const isTree = (bId < -1.5) || (bId > -0.5 && n[2] > 0.03 && n[2] < 0.82);
+          if (isTree && rs.layerVisible.trees === false) continue;
+          if (!isTree && rs.layerVisible.greenery === false) continue;
+        }
         pushAdjusted(
           t.v0[0], t.v0[1], t.v0[2],
           t.v1[0], t.v1[1], t.v1[2],
@@ -958,6 +971,7 @@ function shadeAndDownsample({
       const nLen = Math.hypot(nxRaw, nyRaw, nzRaw) || 1;
       const nx = nxRaw / nLen, ny = nyRaw / nLen, nz = nzRaw / nLen;
 
+      const bid = bIds[ti];
       let baseR = rs.rgb.buildings[0], baseG = rs.rgb.buildings[1], baseB = rs.rgb.buildings[2];
       if (lid === 0) {
         baseR = rs.rgb.water[0]; baseG = rs.rgb.water[1]; baseB = rs.rgb.water[2];
@@ -967,10 +981,12 @@ function shadeAndDownsample({
           baseR *= 0.82; baseG *= 0.82; baseB *= 0.82;
         }
       } else if (lid === 2) {
-        if (nz > 0.03 && nz < 0.82) {
-          baseR = rs.rgb.trees[0] * 0.92;
-          baseG = rs.rgb.trees[1] * 0.92;
-          baseB = rs.rgb.trees[2] * 0.92;
+        const isTree = (bid < -1.5) || (bid > -0.5 && nz > 0.03 && nz < 0.82);
+        if (isTree) {
+          const mul = nz > 0.03 ? 0.92 : 0.80;
+          baseR = rs.rgb.trees[0] * mul;
+          baseG = rs.rgb.trees[1] * mul;
+          baseB = rs.rgb.trees[2] * mul;
         } else {
           baseR = rs.rgb.greenery[0]; baseG = rs.rgb.greenery[1]; baseB = rs.rgb.greenery[2];
           if (nz < 0.88 && nz > -0.1) {
@@ -990,7 +1006,6 @@ function shadeAndDownsample({
         baseR = rs.boardCol[0]; baseG = rs.boardCol[1]; baseB = rs.boardCol[2];
       }
 
-      const bid = bIds[ti];
       if (bid > 0) {
         if (rs.hiSet.has(bid)) {
           baseR = rs.rgb.highlighted[0]; baseG = rs.rgb.highlighted[1]; baseB = rs.rgb.highlighted[2];

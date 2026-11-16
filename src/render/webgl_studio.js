@@ -435,12 +435,16 @@ function createWebGLStudio(canvas3d, state) {
       gl.uniform1f(gl.getUniformLocation(shadowProg, 'uTileExplode'), tExplode);
       gl.uniform1f(gl.getUniformLocation(shadowProg, 'uHalfW'), halfW);
       gl.uniform1f(gl.getUniformLocation(shadowProg, 'uHalfH'), halfH);
+      gl.uniform1f(gl.getUniformLocation(shadowProg, 'uShowGreenery'), state.layerVisible.greenery !== false ? 1.0 : 0.0);
+      gl.uniform1f(gl.getUniformLocation(shadowProg, 'uShowTrees'), state.layerVisible.trees !== false ? 1.0 : 0.0);
 
       const sLocPos = gl.getAttribLocation(shadowProg, 'aPos');
       const sLocLayer = gl.getAttribLocation(shadowProg, 'aLayerId');
+      const sLocBld = gl.getAttribLocation(shadowProg, 'aBuildingId');
       const sLocTile = gl.getAttribLocation(shadowProg, 'aTileId');
       gl.enableVertexAttribArray(sLocPos);
       gl.enableVertexAttribArray(sLocLayer);
+      if (sLocBld >= 0) gl.enableVertexAttribArray(sLocBld);
       if (sLocTile >= 0) gl.enableVertexAttribArray(sLocTile);
 
       drawOrder.forEach(key => {
@@ -460,6 +464,7 @@ function createWebGLStudio(canvas3d, state) {
             gl.bindBuffer(gl.ARRAY_BUFFER, c.buf);
             gl.vertexAttribPointer(sLocPos, 3, gl.FLOAT, false, stride, 0);
             gl.vertexAttribPointer(sLocLayer, 1, gl.FLOAT, false, stride, 24);
+            if (sLocBld >= 0) gl.vertexAttribPointer(sLocBld, 1, gl.FLOAT, false, stride, 28);
             if (sLocTile >= 0) gl.vertexAttribPointer(sLocTile, 1, gl.FLOAT, false, stride, 32);
             gl.drawArrays(gl.TRIANGLES, 0, c.count);
           }
@@ -467,10 +472,12 @@ function createWebGLStudio(canvas3d, state) {
           gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
           gl.vertexAttribPointer(sLocPos, 3, gl.FLOAT, false, stride, 0);
           gl.vertexAttribPointer(sLocLayer, 1, gl.FLOAT, false, stride, 24);
+          if (sLocBld >= 0) gl.vertexAttribPointer(sLocBld, 1, gl.FLOAT, false, stride, 28);
           if (sLocTile >= 0) gl.vertexAttribPointer(sLocTile, 1, gl.FLOAT, false, stride, 32);
           gl.drawArrays(gl.TRIANGLES, 0, b.count);
         }
       });
+      if (sLocBld >= 0) gl.disableVertexAttribArray(sLocBld);
     }
 
     // PASS 2: STUDIO CAMERA RENDER
@@ -533,6 +540,8 @@ function createWebGLStudio(canvas3d, state) {
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uHoveredBuildingId'), state.hoveredBuildingId || -999);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uShowLayerLines'), state.showLayerLines ? 1.0 : 0.0);
     gl.uniform1f(gl.getUniformLocation(mainProg, 'uStudioBg'), state.studioBg ? 1.0 : 0.0);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uShowGreenery'), state.layerVisible.greenery !== false ? 1.0 : 0.0);
+    gl.uniform1f(gl.getUniformLocation(mainProg, 'uShowTrees'), state.layerVisible.trees !== false ? 1.0 : 0.0);
 
     const locPos = gl.getAttribLocation(mainProg, 'aPos');
     const locNorm = gl.getAttribLocation(mainProg, 'aNorm');

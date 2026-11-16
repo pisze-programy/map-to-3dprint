@@ -8,6 +8,7 @@ const WEBGL_SHADOW_VS = `
   precision highp float;
   attribute vec3 aPos;
   attribute float aLayerId;
+  attribute float aBuildingId;
   attribute float aTileId;
   uniform mat4 uLightMatrix;
   uniform float uExplode;
@@ -18,6 +19,7 @@ const WEBGL_SHADOW_VS = `
   varying vec3 vWorldPos;
   varying vec3 vRawPos;
   varying float vLayerId;
+  varying float vBuildingId;
   varying float vTileId;
   void main() {
     float lift = (aLayerId >= 0.0 && aLayerId <= 5.0) ? (aLayerId * uExplode * 14.0) : 0.0;
@@ -34,6 +36,7 @@ const WEBGL_SHADOW_VS = `
     vRawPos = aPos;
     vWorldPos = pos;
     vLayerId = aLayerId;
+    vBuildingId = aBuildingId;
     vTileId = aTileId;
     vec4 clip = uLightMatrix * vec4(pos, 1.0);
     vDepth = clip.z * 0.5 + 0.5;
@@ -47,12 +50,15 @@ const WEBGL_SHADOW_FS = `
   varying vec3 vWorldPos;
   varying vec3 vRawPos;
   varying float vLayerId;
+  varying float vBuildingId;
   varying float vTileId;
   uniform float uTileCols;
   uniform float uTileRows;
   uniform float uTileExplode;
   uniform float uHalfW;
   uniform float uHalfH;
+  uniform float uShowGreenery;
+  uniform float uShowTrees;
   vec4 packDepth(const in float depth) {
     const vec4 bitShift = vec4(256.0*256.0*256.0, 256.0*256.0, 256.0, 1.0);
     const vec4 bitMask  = vec4(0.0, 1.0/256.0, 1.0/256.0, 1.0/256.0);
@@ -62,6 +68,11 @@ const WEBGL_SHADOW_FS = `
   }
   void main() {
     int lid = int(vLayerId + 0.5);
+    if (lid == 2) {
+      bool isTree = (vBuildingId < -1.5);
+      if (isTree && uShowTrees < 0.5) discard;
+      if (!isTree && uShowGreenery < 0.5) discard;
+    }
     if (lid < 6 && (abs(vRawPos.x) > uHalfW + 0.25 || abs(vRawPos.y) > uHalfH + 0.25)) {
       discard;
     }
@@ -188,6 +199,8 @@ const WEBGL_MAIN_FS = `
   uniform float uStudioBg;
   uniform float uHalfW;
   uniform float uHalfH;
+  uniform float uShowGreenery;
+  uniform float uShowTrees;
 
   float unpackDepth(const in vec4 rgbaDepth) {
     const vec4 bitShift = vec4(1.0/(256.0*256.0*256.0), 1.0/(256.0*256.0), 1.0/256.0, 1.0);
@@ -252,8 +265,11 @@ const WEBGL_MAIN_FS = `
         baseCol *= 0.82;
       }
     } else if (lid == 2) {
-      if (vNorm.z > 0.03 && vNorm.z < 0.82) {
-        baseCol = uColorTrees * 0.92;
+      bool isTree = (vBuildingId < -1.5) || (vBuildingId > -0.5 && vNorm.z > 0.03 && vNorm.z < 0.82);
+      if (isTree && uShowTrees < 0.5) discard;
+      if (!isTree && uShowGreenery < 0.5) discard;
+      if (isTree) {
+        baseCol = uColorTrees * ((vNorm.z > 0.03) ? 0.92 : 0.80);
       } else {
         baseCol = uColorGreenery;
         if (vNorm.z < 0.88 && vNorm.z > -0.1) {

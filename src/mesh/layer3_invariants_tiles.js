@@ -122,19 +122,77 @@
       finally { core.safeDeleteManifold(hit); if (owns) core.safeDeleteManifold(probe); }
     };
 
+    const roadAnchorCache = new Map();
+    const _isRoadSolidAnchored = (startIdx) => {
+      if (!waterCutout) return true;
+      if (roadAnchorCache.has(startIdx)) return roadAnchorCache.get(startIdx);
+      const visited = new Set([startIdx]), queue = [startIdx];
+      let anchored = false;
+      while (queue.length > 0) {
+        const idx = queue.shift(), cur = allRoadSolids[idx];
+        if (roadAnchorCache.get(idx) === true || _manifoldsTouch3D(cur.man, terrainWater.terrainManifold, -0.25 / scaleMm)) {
+          anchored = true;
+          break;
+        }
+        for (let j = 0; j < allRoadSolids.length; j++) {
+          if (visited.has(j)) continue;
+          const nxt = allRoadSolids[j];
+          if (cur.bb.max[0] < nxt.bb.min[0] - 0.08 || cur.bb.min[0] > nxt.bb.max[0] + 0.08 ||
+              cur.bb.max[1] < nxt.bb.min[1] - 0.08 || cur.bb.min[1] > nxt.bb.max[1] + 0.08) continue;
+          if (_manifoldsTouch3D(cur.man, nxt.man, -0.15 / scaleMm) || _manifoldsTouch3D(nxt.man, cur.man, -0.15 / scaleMm)) {
+            visited.add(j);
+            queue.push(j);
+          }
+        }
+      }
+      for (const v of visited) if (anchored || !roadAnchorCache.has(v)) roadAnchorCache.set(v, anchored);
+      return anchored;
+    };
+
+    const allBldItems = allNormalBuildings.concat(allHiBuildings);
+    const dryBldSolids = [];
+    if (waterCutout && terrainWater && typeof terrainWater.isPointInWater === 'function') {
+      for (const bi of allBldItems) {
+        if (!bi || !bi.manifold || bi.manifold.numTri() === 0 || bi.isFloatingPart) continue;
+        const bbb = bi.manifold.boundingBox();
+        const bcx = (bbb.min[0] + bbb.max[0]) * 0.5, bcy = (bbb.min[1] + bbb.max[1]) * 0.5;
+        if (!terrainWater.isPointInWater(bcx, bcy)) dryBldSolids.push({ man: bi.manifold, bb: bbb });
+      }
+    }
+
     const _isCompPhysicallyAnchored = (comp, bb) => {
       if (_manifoldsTouch3D(comp, terrainWater.terrainManifold, -0.25 / scaleMm)) return true;
-      for (const rs of allRoadSolids) {
+      for (let ri = 0; ri < allRoadSolids.length; ri++) {
+        const rs = allRoadSolids[ri];
         if (bb.max[0] < rs.bb.min[0] - 0.05 || bb.min[0] > rs.bb.max[0] + 0.05 ||
             bb.max[1] < rs.bb.min[1] - 0.05 || bb.min[1] > rs.bb.max[1] + 0.05) continue;
-        if (_manifoldsTouch3D(comp, rs.man, -0.20 / scaleMm)) {
-          if (!waterCutout || _manifoldsTouch3D(rs.man, terrainWater.terrainManifold, -0.25 / scaleMm)) return true;
-        }
+        if (_manifoldsTouch3D(comp, rs.man, -0.20 / scaleMm) && _isRoadSolidAnchored(ri)) return true;
+      }
+      for (let di = 0; di < dryBldSolids.length; di++) {
+        const db = dryBldSolids[di];
+        if (db.man === comp) continue;
+        if (bb.max[0] < db.bb.min[0] - 0.05 || bb.min[0] > db.bb.max[0] + 0.05 ||
+            bb.max[1] < db.bb.min[1] - 0.05 || bb.min[1] > db.bb.max[1] + 0.05) continue;
+        if (_manifoldsTouch3D(comp, db.man, 0)) return true;
       }
       return false;
     };
 
-    for (const item of allNormalBuildings.concat(allHiBuildings)) {
+    const VESSEL_BTYPE_RE = /^(ship|boat|houseboat|floating_home|barge|boathouse)$/;
+    const _isMooredZ0Vessel = (item, bb) => {
+      if (bb.min[2] > 0.05) return false;
+      const pInfo = ctx.pickIdMap && typeof ctx.pickIdMap.get === 'function' ? ctx.pickIdMap.get(item.buildingId) : null;
+      const recs = (pInfo && Array.isArray(pInfo.buildings)) ? pInfo.buildings : (pInfo && pInfo.primaryBuilding ? [pInfo.primaryBuilding] : []);
+      return recs.length > 0 && recs.every(b => {
+        if (!b) return false;
+        if (b.isVessel) return true;
+        const bt = String(b.btype || '').toLowerCase();
+        const t = b.tags || {};
+        return VESSEL_BTYPE_RE.test(bt) || t.historic === 'ship' || Boolean(t['ship:type']) || t.floating === 'yes';
+      });
+    };
+
+    for (const item of allBldItems) {
       if (!item || !item.manifold || item.manifold.numTri() === 0) continue;
       let comps = null;
       try { comps = typeof item.manifold.decompose === 'function' ? item.manifold.decompose() : null; } catch (_) { comps = null; }
@@ -148,7 +206,7 @@
           const dx = (bb.max[0] - bb.min[0]) * 0.32, dy = (bb.max[1] - bb.min[1]) * 0.32;
           const samples = [[cx, cy], [cx - dx, cy - dy], [cx + dx, cy - dy], [cx + dx, cy + dy], [cx - dx, cy + dy]];
           const allInCutoutSea = waterCutout && terrainWater && typeof terrainWater.isPointInWater === 'function' &&
-            samples.every(([px, py]) => terrainWater.isPointInWater(px, py));
+            samples.every(([px, py]) => terrainWater.isPointInWater(px, py)) && !_isMooredZ0Vessel(item, bb);
           const aboveSurf = bb.min[2] > terrainWater.getSurfaceZ(cx, cy) + (0.65 / scaleMm);
           if ((aboveSurf || allInCutoutSea) && !_isCompPhysicallyAnchored(comp, bb)) {
             floatingBuildingsCount++;
@@ -209,7 +267,7 @@
         if (tClip) {
           recordSolids(tClip, tid, false);
           let firstTree = true;
-          _emitDecomposed(core, tClip, meshes.greenery, 2, -1, tid, () => {
+          _emitDecomposed(core, tClip, meshes.greenery, 2, -2, tid, () => {
             if (firstTree && tr.shellId > 0) { firstTree = false; return tr.shellId; }
             firstTree = false;
             return nextPosShellId++;
