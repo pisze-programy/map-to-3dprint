@@ -122,7 +122,11 @@ function exportMultiColor3MF(state) {
       const tr = Math.floor(tid / tileCols);
       const northRow = tileRows - tr;
       exportLayers.forEach(layer => {
-        if (state && state.layerVisible && state.layerVisible[layer.key] === false) return;
+        if (state && state.layerVisible) {
+          if (layer.key === 'greenery') {
+            if (state.layerVisible.greenery === false && state.layerVisible.trees === false) return;
+          } else if (state.layerVisible[layer.key] === false) return;
+        }
         const rawTris = meshesObj[layer.key] || [];
         const tris = rawTris.filter(t => resolveTriangleTileId(t, halfW, halfH, tileCols, tileRows) === tid);
         if (tris.length === 0) return;
@@ -155,7 +159,11 @@ function exportMultiColor3MF(state) {
   } else {
     let componentsXml = '';
     exportLayers.forEach(layer => {
-      if (state && state.layerVisible && state.layerVisible[layer.key] === false) return;
+      if (state && state.layerVisible) {
+        if (layer.key === 'greenery') {
+          if (state.layerVisible.greenery === false && state.layerVisible.trees === false) return;
+        } else if (state.layerVisible[layer.key] === false) return;
+      }
       const rawTris = meshesObj[layer.key] || [];
       const tris = tileFilter >= 0
         ? rawTris.filter(t => resolveTriangleTileId(t, halfW, halfH, tileCols, tileRows) === tileFilter)

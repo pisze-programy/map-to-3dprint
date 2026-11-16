@@ -121,7 +121,11 @@
   function carveTileHollowVaultAndId(ctx, terrainWater, baseTile, tb, waterMarginRings2D) {
     const { core, poly, embossMod } = _getDeps();
     const { mf, scaleMm, hollowBase } = ctx;
-    const tShellMm = Math.max(2.0, ctx.hollowWallMm || 2.0), wallU = tShellMm / scaleMm;
+    const minShellMm = (ctx.slaLaws && typeof ctx.slaLaws.minWallThicknessMm === 'function')
+      ? Math.max(0.8, ctx.slaLaws.minWallThicknessMm(0))
+      : 0.8;
+    const rawWallMm = Number(ctx.hollowWallMm);
+    const tShellMm = Math.max(minShellMm, (Number.isFinite(rawWallMm) && rawWallMm > 0) ? rawWallMm : 1.8), wallU = tShellMm / scaleMm;
     const minColU = (tShellMm + 2.0) / scaleMm, ribPitchMm = 10.5;
     const markDepthU = Math.max(0.68 / scaleMm, Math.min(wallU * 0.42, 0.82 / scaleMm));
     const pad = embossMod.findSafeIdPad(ctx, terrainWater, tb, scaleMm, markDepthU, 0.78 / scaleMm);
@@ -188,7 +192,11 @@
         : ((isCutout && layerFilter === 'water') ? [] : [layerFilter]);
       const meshesObj = (state && (state.layerMeshes || state.meshes)) || {};
       for (const k of keys) {
-        if (layerFilter === 'all' && state && state.layerVisible && state.layerVisible[k] === false) continue;
+        if (layerFilter === 'all' && state && state.layerVisible) {
+          if (k === 'greenery') {
+            if (state.layerVisible.greenery === false && state.layerVisible.trees === false) continue;
+          } else if (state.layerVisible[k] === false) continue;
+        }
         for (const t of (meshesObj[k] || [])) {
           if (tileIdFilter >= 0 && cfgMod.resolveTriangleTileId(t, halfW, halfH, tileCols, tileRows) !== tileIdFilter) continue;
           filtered.push(t);

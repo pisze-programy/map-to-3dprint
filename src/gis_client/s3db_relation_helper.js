@@ -6,6 +6,9 @@
 if (typeof parseOsmLengthMetersJS === 'undefined' && typeof require !== 'undefined') {
   try { Object.assign(global, require('./s3db_unit_parser.js')); } catch (_) {}
 }
+if (typeof computeMinAreaOBB2D === 'undefined' && typeof require !== 'undefined') {
+  try { Object.assign(global, require('../geometry/obb_medial_2d.js')); } catch (_) {}
+}
 
 function _polyAreaSignedS3DB(pts) {
   if (!pts || pts.length < 3) return 0;
@@ -112,8 +115,18 @@ function computeRecordMetricsM(pts, mToU) {
     if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
     if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
   }
-  const dxM = (maxX - minX) / mToU, dyM = (maxY - minY) / mToU, areaU = Math.abs(_polyAreaSignedS3DB(pts));
-  return { minX, maxX, minY, maxY, rawMinSpanM: Math.min(dxM, dyM), rawMaxSpanM: Math.max(dxM, dyM), areaU, areaM2: areaU / (mToU * mToU) };
+  const effMToU = Math.max(1e-4, mToU);
+  let rawMinSpanM = Math.min(maxX - minX, maxY - minY) / effMToU;
+  let rawMaxSpanM = Math.max(maxX - minX, maxY - minY) / effMToU;
+  if (typeof computeMinAreaOBB2D === 'function' && pts.length >= 3) {
+    const obb = computeMinAreaOBB2D(pts);
+    if (obb && obb.halfL > 0) {
+      rawMinSpanM = (obb.halfW * 2) / effMToU;
+      rawMaxSpanM = (obb.halfL * 2) / effMToU;
+    }
+  }
+  const areaU = Math.abs(_polyAreaSignedS3DB(pts));
+  return { minX, maxX, minY, maxY, rawMinSpanM, rawMaxSpanM, areaU, areaM2: areaU / (effMToU * effMToU) };
 }
 
 function isPartEnclosedByParentS3DB(part, parent) {

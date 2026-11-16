@@ -107,7 +107,11 @@ function buildBinarySTLBytes(state, layerFilter = 'all', tileIdFilter = -1) {
       : ((isCutout && layerFilter === 'water') ? [] : [layerFilter]);
     const meshesObj = (state && (state.layerMeshes || state.meshes)) || {};
     for (const k of keys) {
-      if (layerFilter === 'all' && state && state.layerVisible && state.layerVisible[k] === false) continue;
+      if (layerFilter === 'all' && state && state.layerVisible) {
+        if (k === 'greenery') {
+          if (state.layerVisible.greenery === false && state.layerVisible.trees === false) continue;
+        } else if (state.layerVisible[k] === false) continue;
+      }
       for (const t of (meshesObj[k] || [])) {
         if (tileIdFilter >= 0 && resolveTriangleTileId(t, halfW, halfH, tileCols, tileRows) !== tileIdFilter) continue;
         allTris.push(t);

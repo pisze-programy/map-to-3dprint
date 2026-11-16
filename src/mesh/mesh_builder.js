@@ -30,7 +30,7 @@
   if (typeof cleanPolygonRing === 'undefined') {
     Object.assign(g, _req('../geometry/polygon_2d.js'));
   }
-  if (typeof computePolygonOBB === 'undefined') {
+  if (typeof computeMinAreaOBB2D === 'undefined') {
     Object.assign(g, _req('../geometry/obb_medial_2d.js'));
   }
   if (typeof emitPolygonWithHolesSlab3D === 'undefined') {

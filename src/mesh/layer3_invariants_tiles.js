@@ -70,7 +70,7 @@
     const tileMaxZUnits = new Float64Array(numTiles);
     const solidTerrainTotalVolU3 = terrainWater.terrainManifold ? Math.max(0, terrainWater.terrainManifold.volume()) : 0;
     let printedBaseTotalVolU3 = 0, drainCount = 0, hollowChambersKept = 0, hollowChambersFilledSolid = 0;
-    let floatingBuildingsCount = 0, globalMaxZUnits = 0, zCapApplied = false;
+    let floatingBuildingsCount = 0, globalMaxZUnits = 0, zCapApplied = Boolean(ctx.zCapApplied);
     const embossStats = { engravedTiles: 0, minStrokeWidthMm: Infinity, minCarveDepthMm: Infinity, minRoofClearanceMm: Infinity, ribPitchMm: null, ribThickMm: null };
 
     const recordSolids = (man, tid, checkCap = true) => {
@@ -84,7 +84,8 @@
       return v;
     };
 
-    const marginU = Math.max(2.0 / scaleMm, (ctx.hollowWallMm || 2.0) / scaleMm);
+    const rawWallMm = Number(ctx.hollowWallMm);
+    const marginU = Math.max(0.8, (Number.isFinite(rawWallMm) && rawWallMm > 0) ? rawWallMm : 1.8) / scaleMm;
     let waterMarginRings2D = [];
     if (hollowBase && terrainWater.waterMaskPolys2D.length > 0) {
       const oBuf = core.clipperOffsetPolys(terrainWater.waterMaskPolys2D.map(w => w.outer), marginU, 'Miter', 1e-5);
@@ -110,13 +111,54 @@
     const allHiBuildings = (s3db && s3db.highlightedManifolds) || [];
     const allTrees = (archetypes && archetypes.greeneryTreeManifolds) || [];
 
+    const _manifoldsTouch3D = (mA, mB, zShiftA = 0) => {
+      if (!mA || !mB || mA.numTri() === 0 || mB.numTri() === 0) return false;
+      let probe = mA, owns = false, hit = null;
+      try {
+        if (Math.abs(zShiftA) > 1e-6) { probe = mA.translate([0, 0, zShiftA]); owns = true; }
+        hit = probe.intersect(mB);
+        return Boolean(hit && hit.numTri() > 0);
+      } catch (_) { return false; }
+      finally { core.safeDeleteManifold(hit); if (owns) core.safeDeleteManifold(probe); }
+    };
+
+    const _isCompPhysicallyAnchored = (comp, bb) => {
+      if (_manifoldsTouch3D(comp, terrainWater.terrainManifold, -0.25 / scaleMm)) return true;
+      for (const rs of allRoadSolids) {
+        if (bb.max[0] < rs.bb.min[0] - 0.05 || bb.min[0] > rs.bb.max[0] + 0.05 ||
+            bb.max[1] < rs.bb.min[1] - 0.05 || bb.min[1] > rs.bb.max[1] + 0.05) continue;
+        if (_manifoldsTouch3D(comp, rs.man, -0.20 / scaleMm)) {
+          if (!waterCutout || _manifoldsTouch3D(rs.man, terrainWater.terrainManifold, -0.25 / scaleMm)) return true;
+        }
+      }
+      return false;
+    };
+
     for (const item of allNormalBuildings.concat(allHiBuildings)) {
       if (!item || !item.manifold || item.manifold.numTri() === 0) continue;
-      const bb = item.manifold.boundingBox();
-      if (bb.max[2] >= zTopCap - 0.02) zCapApplied = true;
-      const cx = (bb.min[0] + bb.max[0]) * 0.5, cy = (bb.min[1] + bb.max[1]) * 0.5;
-      if (!item.isFloatingPart && bb.min[2] > terrainWater.getSurfaceZ(cx, cy) + (0.65 / scaleMm)) floatingBuildingsCount++;
+      let comps = null;
+      try { comps = typeof item.manifold.decompose === 'function' ? item.manifold.decompose() : null; } catch (_) { comps = null; }
+      const checkList = (Array.isArray(comps) && comps.length > 0) ? comps : [item.manifold];
+      for (const comp of checkList) {
+        if (!comp || comp.numTri() === 0) continue;
+        const bb = comp.boundingBox();
+        if (bb.max[2] >= zTopCap - 0.02) zCapApplied = true;
+        if (!item.isFloatingPart) {
+          const cx = (bb.min[0] + bb.max[0]) * 0.5, cy = (bb.min[1] + bb.max[1]) * 0.5;
+          const dx = (bb.max[0] - bb.min[0]) * 0.32, dy = (bb.max[1] - bb.min[1]) * 0.32;
+          const samples = [[cx, cy], [cx - dx, cy - dy], [cx + dx, cy - dy], [cx + dx, cy + dy], [cx - dx, cy + dy]];
+          const allInCutoutSea = waterCutout && terrainWater && typeof terrainWater.isPointInWater === 'function' &&
+            samples.every(([px, py]) => terrainWater.isPointInWater(px, py));
+          const aboveSurf = bb.min[2] > terrainWater.getSurfaceZ(cx, cy) + (0.65 / scaleMm);
+          if ((aboveSurf || allInCutoutSea) && !_isCompPhysicallyAnchored(comp, bb)) {
+            floatingBuildingsCount++;
+          }
+        }
+      }
+      if (Array.isArray(comps)) for (const c of comps) core.safeDeleteManifold(c);
     }
+
+    const emitGreenTurf = !ctx.state || !ctx.state.layerVisible || ctx.state.layerVisible.greenery !== false;
 
     let maxTreeShellId = 0;
     for (const tr of allTrees) if (tr && tr.shellId > maxTreeShellId) maxTreeShellId = tr.shellId;
@@ -154,7 +196,7 @@
           if (wTile !== terrainWater.waterManifold) core.safeDeleteManifold(wTile);
         }
       }
-      if (terrainWater.greeneryManifold) {
+      if (emitGreenTurf && terrainWater.greeneryManifold) {
         const gTile = _clipSolidToBox(core, mf, terrainWater.greeneryManifold, clipBox);
         if (gTile) {
           recordSolids(gTile, tid, false);

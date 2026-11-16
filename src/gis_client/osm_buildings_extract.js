@@ -266,6 +266,10 @@ function finalizeOsmBuildingsLayerJS(ctx) {
     const minFootU = ctx.minBldFootprintM * ctx.metersToUnits;
     buildings = buildings.filter(b => {
       if (b.landmark || b.church || b.tower || b.part) return true;
+      if (typeof computeMinAreaOBB2D === 'function' && b.outer && b.outer.length >= 3) {
+        const obb = computeMinAreaOBB2D(b.outer);
+        if (obb && obb.halfL > 0) return (obb.halfL * 2) >= minFootU;
+      }
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const p of (b.outer || [])) {
         if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];

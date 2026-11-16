@@ -114,14 +114,44 @@
       }
 
       const gapMm = cfg.frameInnerGapMm || 0.47;
-      const innerHalfW = Math.min(halfW + gapMm / scaleMm, (bb.max[0] - bb.min[0]) * 0.48);
-      const innerHalfH = Math.min(halfH + gapMm / scaleMm, (bb.max[1] - bb.min[1]) * 0.48);
+      const outerHalfW = (bb.max[0] - bb.min[0]) * 0.5;
+      const outerHalfH = (bb.max[1] - bb.min[1]) * 0.5;
       const cx = (bb.min[0] + bb.max[0]) * 0.5;
       const cy = (bb.min[1] + bb.max[1]) * 0.5;
-      const inMinX = cx - innerHalfW, inMaxX = cx + innerHalfW;
-      const inMinY = cy - innerHalfH, inMaxY = cy + innerHalfH;
-      const hasHole = inMinX > bb.min[0] + 1e-4 && inMaxX < bb.max[0] - 1e-4 &&
-                      inMinY > bb.min[1] + 1e-4 && inMaxY < bb.max[1] - 1e-4;
+      const minRailU = Math.min(0.20 / scaleMm, outerHalfW * 0.05, outerHalfH * 0.05);
+
+      let inMinX = cx - (halfW + gapMm / scaleMm);
+      let inMaxX = cx + (halfW + gapMm / scaleMm);
+      let inMinY = cy - (halfH + gapMm / scaleMm);
+      let inMaxY = cy + (halfH + gapMm / scaleMm);
+
+      if (typeof frameMan.slice === 'function') {
+        let cs = null;
+        try {
+          cs = frameMan.slice((bb.min[2] + bb.max[2]) * 0.5);
+          const polys = cs.toPolygons();
+          let bestHoleArea = 0;
+          for (const ring of polys) {
+            if (!ring || ring.length < 3) continue;
+            const a = core.signedArea2D(ring);
+            if (a < -1e-4 && Math.abs(a) > bestHoleArea) {
+              bestHoleArea = Math.abs(a);
+              let hx0 = Infinity, hx1 = -Infinity, hy0 = Infinity, hy1 = -Infinity;
+              for (const p of ring) {
+                if (p[0] < hx0) hx0 = p[0]; if (p[0] > hx1) hx1 = p[0];
+                if (p[1] < hy0) hy0 = p[1]; if (p[1] > hy1) hy1 = p[1];
+              }
+              inMinX = hx0; inMaxX = hx1; inMinY = hy0; inMaxY = hy1;
+            }
+          }
+        } catch (_) {
+        } finally {
+          core.safeDeleteManifold(cs);
+        }
+      }
+
+      const hasHole = inMinX > bb.min[0] + minRailU && inMaxX < bb.max[0] - minRailU &&
+                      inMinY > bb.min[1] + minRailU && inMaxY < bb.max[1] - minRailU;
 
       const strips = hasHole
         ? [

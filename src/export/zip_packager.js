@@ -86,7 +86,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
     `Podział na kafle:            ${tileCols} kolumn x ${tileRows} wierszy (${numTiles} kafli ogółem)`,
     `Wymiar pojedynczego kafla:   ${tileW.toFixed(1)} x ${tileH.toFixed(1)} mm`,
     `Auto-rotacja dla Mono 4:     ${isAutoRotated ? `TAK (+90° XY: wymiar na stole ${tileH.toFixed(1)} x ${tileW.toFixed(1)} mm <= 153.4 x 87.0 mm)` : `NIE (mieści się w układzie standardowym <= 153.4 x 87.0 mm)`}`,
-    `Odchudzona baza (Hollow):    ${state && state.hollowBase ? `TAK (Ścianka >= ${Math.max(2.0, Number(state.hollowWallMm) || 2.0).toFixed(1)} mm + żebra 45° + kanały SLA, oszczędność ~${pm.hollowSavingsPct || 0}%)` : 'NIE (Pełna baza z=0 pod lity wydruk SLA/MSLA)'}`,
+    `Odchudzona baza (Hollow):    ${state && state.hollowBase ? `TAK (Ścianka >= ${Math.max(0.8, Number(state.hollowWallMm) || 1.8).toFixed(1)} mm + żebra 45° + kanały SLA, oszczędność ~${pm.hollowSavingsPct || 0}%)` : 'NIE (Pełna baza z=0 pod lity wydruk SLA/MSLA)'}`,
     `Wycięcie wody (Cutout):      ${waterCutout ? 'TAK (Woda wycięta do Z=0 pod czarny/drewniany podkład)' : 'NIE (Pełna tafla wody 3D)'}`,
     `Objętość żywicy całkowita:   ~${(pm.totalVolumeMl || 0).toFixed(1)} ml (~${pm.resinGrams || 0} g żywicy Mono 4)`,
     `Tolerancja montażowa (Kerf): ${kerfMm.toFixed(2)} mm (fabryczny luz kompensujący rozszerzalność światła UV)`,
