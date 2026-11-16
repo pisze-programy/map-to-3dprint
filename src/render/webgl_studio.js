@@ -447,6 +447,8 @@ function createWebGLStudio(canvas3d, state) {
         if (key === 'water' && state.waterCutout) return;
         if (key === 'frame') {
           if (!state.showFrame || state.explodeFactor > 0.08 || tExplode > 0.03) return;
+        } else if (key === 'greenery') {
+          if (state.layerVisible.greenery === false && state.layerVisible.trees === false) return;
         } else if (!state.layerVisible[key]) return;
         const b = glBuffers[key];
         if (!b) return;
@@ -570,6 +572,8 @@ function createWebGLStudio(canvas3d, state) {
       if (key === 'water' && state.waterCutout) return;
       if (key === 'frame') {
         if (!state.showFrame || state.explodeFactor > 0.08 || tExplode > 0.03) return;
+      } else if (key === 'greenery') {
+        if (state.layerVisible.greenery === false && state.layerVisible.trees === false) return;
       } else if (!state.layerVisible[key]) return;
       const b = glBuffers[key];
       if (!b) return;
@@ -642,8 +646,9 @@ function createWebGLStudio(canvas3d, state) {
     const bldByPickId = new Map();
     for (let i = 0; i < buildingBounds.length; i++) {
       const bb = buildingBounds[i];
-      const pid = bb.pickId || bb.building._pickId || bb.building.id;
-      const lift = bb.layerId * state.explodeFactor * 14.0;
+      const pid = bb.pickId || (bb.building && (bb.building._pickId || bb.building.id)) || bb.id;
+      if (!pid) continue;
+      const lift = (bb.layerId !== undefined ? bb.layerId : 4) * (state.explodeFactor || 0) * 14.0;
       const minZ = bb.minZ + lift;
       const maxZ = bb.maxZ + lift;
 
@@ -665,7 +670,11 @@ function createWebGLStudio(canvas3d, state) {
         candidatePickIds.add(pid);
         if (!bldByPickId.has(pid)) {
           const info = state.pickIdMap ? state.pickIdMap.get(pid) : null;
-          bldByPickId.set(pid, (info && info.primaryBuilding) ? info.primaryBuilding : bb.building);
+          const resolvedBld = (info && info.primaryBuilding)
+            || bb.building
+            || (state.sceneData && Array.isArray(state.sceneData.buildings) ? state.sceneData.buildings.find(x => x && (x._pickId === pid || x.id === bb.id)) : null)
+            || bb;
+          bldByPickId.set(pid, resolvedBld);
         }
       }
     }

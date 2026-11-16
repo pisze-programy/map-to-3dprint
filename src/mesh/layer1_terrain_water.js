@@ -96,18 +96,29 @@
     return false;
   }
 
-  function _buildIsletKeeper(core, ctx, scene) {
-    const { toBed, scaleMm, waterCutout } = ctx;
+  function _buildIsletKeeper(core, ctx, scene, bldFootprintPolys = []) {
+    const { toBed, halfW, halfH, scaleMm, waterCutout } = ctx;
     const seeds = [];
     for (const b of (scene && scene.buildings) || []) {
-      if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) continue;
+      if (!b || b.hidden || b.isOutline || b.btype === 'pier' || !b.outer || b.outer.length < 3) continue;
       let sx = 0, sy = 0;
-      for (const p of b.outer) { const bp = toBed(p); sx += bp[0]; sy += bp[1]; }
-      seeds.push([sx / b.outer.length, sy / b.outer.length]);
+      const n = b.outer.length;
+      const stride = Math.max(1, Math.floor(n / 8));
+      for (let i = 0; i < n; i++) {
+        const bp = toBed(b.outer[i]);
+        sx += bp[0]; sy += bp[1];
+        if (i % stride === 0) seeds.push(bp);
+      }
+      seeds.push([sx / n, sy / n]);
     }
     for (const rd of (scene && scene.roads) || []) {
       if (!rd || !rd.pts || rd.pts.length < 2 || !(rd.bridge || rd.isBridge || rd.man_made)) continue;
       for (const p of rd.pts) seeds.push(toBed(p));
+    }
+    for (const bs of (scene && scene.bridgeSupports) || []) {
+      if (!bs) continue;
+      if (bs.pt) seeds.push(toBed(bs.pt));
+      else if (bs.outer && bs.outer.length > 0) seeds.push(toBed(bs.outer[0]));
     }
     const minIsletU2 = ((ctx.cfg && ctx.cfg.minCutoutIsletMm2) || 6.0) / (scaleMm * scaleMm);
     return (h) => {
@@ -115,7 +126,17 @@
       const a = (h && h.length >= 3) ? Math.abs(core.signedArea2D(h)) : 0;
       if (a >= minIsletU2) return true;
       const bb = _ringBBox(h);
-      return seeds.some(pt => pt[0] >= bb[0] && pt[0] <= bb[2] && pt[1] >= bb[1] && pt[1] <= bb[3] && _ptInRing(pt[0], pt[1], h));
+      // Protect cape tips touching the model frame border (matching 6b7b61c border protection)
+      if (bb[0] <= -halfW + 0.05 || bb[2] >= halfW - 0.05 || bb[1] <= -halfH + 0.05 || bb[3] >= halfH - 0.05) return true;
+      if (seeds.some(pt => pt[0] >= bb[0] && pt[0] <= bb[2] && pt[1] >= bb[1] && pt[1] <= bb[3] && _ptInRing(pt[0], pt[1], h))) {
+        return true;
+      }
+      if (bldFootprintPolys && bldFootprintPolys.length > 0) {
+        try {
+          if (core.clipperIntersectPolys([h], bldFootprintPolys, 1e-6).length > 0) return true;
+        } catch (_) {}
+      }
+      return false;
     };
   }
 
@@ -130,7 +151,7 @@
 
     const rawTerrain = waterMod.buildDelatinTerrainManifold(ctx, minX, maxX, minY, maxY);
     const surfaceData = drapeMod.collectSurfacePolys(core, ctx, scene, plateClipPoly);
-    const keepIslet = _buildIsletKeeper(core, ctx, scene);
+    const keepIslet = _buildIsletKeeper(core, ctx, scene, surfaceData.bldFootprintPolys);
 
     const waterRes = waterMod.buildLayer1WaterAndCarve(
       core, mf, ctx, scene, rawTerrain, plateClipPoly, surfaceData.protectedWaterfrontPolys, keepIslet
@@ -154,15 +175,7 @@
     const footpathIdx = _indexStructuredPolys(footpathPolys2D || []);
     const greenIdx = _indexStructuredPolys(greenPolys2D);
 
-    const isPointInWater = (x, y) => {
-      if (waterIdx.length === 0) return false;
-      if (_pointInIndexedPolys(x, y, waterIdx)) return true;
-      let hits = 0;
-      for (const [dx, dy] of [[0.22, 0], [-0.22, 0], [0, 0.22], [0, -0.22]]) {
-        if (_pointInIndexedPolys(x + dx, y + dy, waterIdx)) hits++;
-      }
-      return hits >= 3;
-    };
+    const isPointInWater = (x, y) => waterIdx.length > 0 && _pointInIndexedPolys(x, y, waterIdx);
     const isPointOnRoad = (x, y) => _pointInIndexedPolys(x, y, roadIdx);
     const isPointOnStreet = (x, y) => _pointInIndexedPolys(x, y, streetIdx);
     const isPointOnFootpath = (x, y) => footpathIdx.length > 0 && _pointInIndexedPolys(x, y, footpathIdx);
@@ -177,8 +190,9 @@
       return z;
     };
 
-    const getWaterFloorZ = (x, y) => (Number.isFinite(x) && Number.isFinite(y) ? queryWaterZAt(x, y, true) : (waterCutout ? 0.0 : ctx.zWaterCarveFloor));
-    const getWaterTopZ = (x, y) => (Number.isFinite(x) && Number.isFinite(y) ? queryWaterZAt(x, y, false) : (waterCutout ? 0.0 : ctx.zWaterTop));
+    const getWaterFloorZ = (x, y) => (Number.isFinite(x) && Number.isFinite(y) ? queryWaterZAt(x, y, true, false) : (waterCutout ? 0.0 : ctx.zWaterCarveFloor));
+    const getWaterTopZ = (x, y) => (Number.isFinite(x) && Number.isFinite(y) ? queryWaterZAt(x, y, false, false) : (waterCutout ? 0.0 : ctx.zWaterTop));
+    const getNominalWaterTopZ = (x, y) => (Number.isFinite(x) && Number.isFinite(y) ? queryWaterZAt(x, y, false, true) : ctx.zWaterTop);
 
     ctx.audit.baseInfo = {
       isTopographicRelief: ctx.elevReliefM > 0.35,
@@ -199,7 +213,7 @@
     return {
       terrainManifold, waterManifold, greeneryManifold, roadManifold, frameManifold,
       waterMaskPolys2D, roadPolys2D, greenPolys2D, hGreenU, hRoadU,
-      isPointInWater, isPointOnRoad, isPointInGreen, getSurfaceZ, getWaterFloorZ, getWaterTopZ,
+      isPointInWater, isPointOnRoad, isPointInGreen, getSurfaceZ, getWaterFloorZ, getWaterTopZ, getNominalWaterTopZ,
     };
   }
 

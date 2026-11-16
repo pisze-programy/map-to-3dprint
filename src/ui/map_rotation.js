@@ -29,7 +29,11 @@ function ensureUnrotatedSceneSnapshot(scene) {
 
   scene._unrotatedSnapshot = {
     waterPolys: (scene.waterPolys || []).map(wp => ({
-      ...wp, outer: cloneRing(wp.outer), holes: cloneHoles(wp.holes)
+      ...wp,
+      outer: cloneRing(wp.outer),
+      holes: cloneHoles(wp.holes),
+      _unrotatedLandRings: Array.isArray(wp._unrotatedLandRings) ? cloneHoles(wp._unrotatedLandRings) : undefined,
+      _unrotatedShingleRings: Array.isArray(wp._unrotatedShingleRings) ? cloneHoles(wp._unrotatedShingleRings) : undefined
     })),
     waterLines: (scene.waterLines || []).map(wl => ({
       ...wl, pts: cloneRing(wl.pts)
@@ -47,9 +51,17 @@ function ensureUnrotatedSceneSnapshot(scene) {
     bridgePolys: (scene.bridgePolys || []).map(bp => ({
       ...bp, outer: cloneRing(bp.outer), holes: cloneHoles(bp.holes)
     })),
+    pierPolys: (scene.pierPolys || []).map(pp => ({
+      ...pp, outer: cloneRing(pp.outer), holes: cloneHoles(pp.holes)
+    })),
+    pierLines: (scene.pierLines || []).map(pl => ({
+      ...pl, pts: cloneRing(pl.pts)
+    })),
     bridgeSupports: (scene.bridgeSupports || []).map(bs => ({
       ...bs, pt: bs.pt ? [bs.pt[0], bs.pt[1]] : null, outer: bs.outer ? cloneRing(bs.outer) : null, pts: bs.pts ? cloneRing(bs.pts) : null
     })),
+    openSeaIslands: Array.isArray(scene._openSeaIslands) ? scene._openSeaIslands.map(cloneRing) : null,
+    openSeaRect: Array.isArray(scene._openSeaRect) ? cloneRing(scene._openSeaRect) : null,
     buildings: (scene.buildings || []).map(b => ({
       ...b, outer: cloneRing(b.outer), holes: cloneHoles(b.holes)
     })),
@@ -125,7 +137,8 @@ function applySceneRotation(scene, rotationDeg, bedHalfW = null, bedHalfH = null
     bStateById.set(b.id, {
       highlighted: b.highlighted,
       hidden: b.hidden,
-      heightMult: b.heightMult
+      heightMult: b.heightMult,
+      _pickId: b._pickId
     });
   }
 
@@ -140,7 +153,13 @@ function applySceneRotation(scene, rotationDeg, bedHalfW = null, bedHalfH = null
   const rotRing = r => (r || []).map(rotPt);
   const rotHoles = holes => (holes || []).map(rotRing);
 
-  scene.waterPolys = snap.waterPolys.map(wp => ({ ...wp, outer: rotRing(wp.outer), holes: rotHoles(wp.holes) }));
+  scene.waterPolys = snap.waterPolys.map(wp => ({
+    ...wp,
+    outer: rotRing(wp.outer),
+    holes: rotHoles(wp.holes),
+    _rotatedLandRings: Array.isArray(wp._unrotatedLandRings) ? rotHoles(wp._unrotatedLandRings) : undefined,
+    _rotatedShingleRings: Array.isArray(wp._unrotatedShingleRings) ? rotHoles(wp._unrotatedShingleRings) : undefined
+  }));
   scene.waterLines = snap.waterLines.map(wl => ({ ...wl, pts: rotRing(wl.pts) }));
   scene.greenPolys = snap.greenPolys.map(gp => ({ ...gp, outer: rotRing(gp.outer), holes: rotHoles(gp.holes) }));
   scene.trees = snap.trees.map(t => {
@@ -150,12 +169,20 @@ function applySceneRotation(scene, rotationDeg, bedHalfW = null, bedHalfH = null
   scene.roads = snap.roads.map(rd => ({ ...rd, pts: rotRing(rd.pts) }));
   scene.roadPolys = snap.roadPolys.map(rp => ({ ...rp, outer: rotRing(rp.outer), holes: rotHoles(rp.holes) }));
   scene.bridgePolys = (snap.bridgePolys || []).map(bp => ({ ...bp, outer: rotRing(bp.outer), holes: rotHoles(bp.holes) }));
+  scene.pierPolys = (snap.pierPolys || []).map(pp => ({ ...pp, outer: rotRing(pp.outer), holes: rotHoles(pp.holes) }));
+  scene.pierLines = (snap.pierLines || []).map(pl => ({ ...pl, pts: rotRing(pl.pts) }));
   scene.bridgeSupports = (snap.bridgeSupports || []).map(bs => ({
     ...bs,
     pt: bs.pt ? rotPt(bs.pt) : null,
     outer: bs.outer ? rotRing(bs.outer) : null,
     pts: bs.pts ? rotRing(bs.pts) : null
   }));
+  if (Array.isArray(snap.openSeaIslands)) {
+    scene._openSeaIslands = snap.openSeaIslands.map(rotRing);
+  }
+  if (Array.isArray(snap.openSeaRect)) {
+    scene._openSeaRect = rotRing(snap.openSeaRect);
+  }
 
   scene.buildings = snap.buildings.map(b => {
     const outer = rotRing(b.outer);
@@ -176,6 +203,7 @@ function applySceneRotation(scene, rotationDeg, bedHalfW = null, bedHalfH = null
       if (st.highlighted !== undefined) outB.highlighted = st.highlighted;
       if (st.hidden !== undefined) outB.hidden = st.hidden;
       if (st.heightMult !== undefined) outB.heightMult = st.heightMult;
+      if (st._pickId !== undefined) outB._pickId = st._pickId;
     }
     return outB;
   });

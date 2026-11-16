@@ -129,8 +129,11 @@
     if (isNarrowSpire && laws && typeof laws.capSpireProtrusionMm === 'function') {
       topOffsetU = rawMinH * mToU * zScale * scaleToBed + laws.capSpireProtrusionMm((rawH - rawMinH) * mToU * zScale * scaleToBed * scaleMm, rawMinH * mToU * zScale * scaleToBed * scaleMm) / scaleMm;
     }
-    const zBottom = Math.max(0.05 / scaleMm, zBotRaw - (rawMinH > 0 ? 0.45 / scaleMm : 0.20 / scaleMm));
-    const zTop = Math.min(maxZUnits - 0.3 / scaleMm, zDatum + topOffsetU + (b && b.part && !isNarrowSpire ? 0.25 / scaleMm : 0));
+    const compressZ = (ctx && typeof ctx.compressZUnits === 'function') ? ctx.compressZUnits : (zU => zU);
+    const zBotComp = compressZ(zBotRaw);
+    const zTopComp = compressZ(zDatum + topOffsetU);
+    const zBottom = Math.max(0.05 / scaleMm, zBotComp - (rawMinH > 0 ? 0.45 / scaleMm : 0.20 / scaleMm));
+    const zTop = Math.min(maxZUnits - 0.3 / scaleMm, zTopComp + (b && b.part && !isNarrowSpire ? 0.25 / scaleMm : 0));
     const partH = zTop - zBottom;
     if (partH <= 0.2 / scaleMm) return null;
 
@@ -158,6 +161,7 @@
     }
     for (let k = 0; k < rings.length; k++) {
       for (let i = 0; i < corners.length; i++) {
+        parts.push(mf.Manifold.sphere(legR * 1.06, 8).translate(rings[k][i]));
         const nxt = (i + 1) % corners.length;
         const g = core.beamManifoldBetween(mf, rings[k][i], rings[k][nxt], braceR);
         if (g) parts.push(g);
@@ -169,7 +173,16 @@
         }
       }
     }
-    if (!b || !b.part) parts.push(mf.Manifold.cylinder(partH * 0.12, legR * 0.9, minStrutR * 0.55, 8, false).translate([topCenter[0], topCenter[1], zTop - 0.1 / scaleMm]));
+    if (!b || !b.part) {
+      const topHub = [topCenter[0], topCenter[1], zTop];
+      const topRing = rings[rings.length - 1];
+      for (let i = 0; i < topRing.length; i++) {
+        const cb = core.beamManifoldBetween(mf, topRing[i], topHub, braceR);
+        if (cb) parts.push(cb);
+      }
+      parts.push(mf.Manifold.sphere(legR * 1.05, 8).translate(topHub));
+      parts.push(mf.Manifold.cylinder(partH * 0.12, legR * 0.9, minStrutR * 0.55, 8, false).translate([topCenter[0], topCenter[1], zTop - 0.1 / scaleMm]));
+    }
     return parts.length ? core.batchUnionManifolds(mf, parts) : null;
   }
 

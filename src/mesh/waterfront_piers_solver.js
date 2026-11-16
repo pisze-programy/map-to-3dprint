@@ -48,21 +48,21 @@
   }
 
   function _resolvePierClearance(ctx, laws, rec, pierKind, isSolidStone) {
-    if (isSolidStone) return { rawGapMm: 0, resolvedGapMm: 0 };
-    const { mToU, zScale, scaleToBed, scaleMm } = ctx;
+    if (isSolidStone) return { rawGapMm: 0, resolvedGapMm: 0, isFloating: false };
+    const { mToU, zScale, scaleToBed, scaleMm, supportlessMode } = ctx;
     const isFloating = Boolean(rec.floating || (rec.tags && (rec.tags.floating === 'yes' || rec.tags.platform === 'floating')) || pierKind === 'pontoon');
     let rawGapMm;
     if (rec.gapMm !== undefined && rec.gapMm !== null && Number.isFinite(Number(rec.gapMm))) {
       rawGapMm = Math.max(0, Number(rec.gapMm));
-    } else if (rec.minHeightM !== undefined && rec.minHeightM !== null && Number(rec.minHeightM) > 0) {
-      rawGapMm = Number(rec.minHeightM) * mToU * zScale * scaleToBed * scaleMm;
-    } else if (isFloating) {
+    } else if (supportlessMode || isFloating) {
       rawGapMm = 0.08;
+    } else if (rec.minHeightM !== undefined && rec.minHeightM !== null && Number(rec.minHeightM) > 0) {
+      rawGapMm = Math.max(0.26, Number(rec.minHeightM) * mToU * zScale * scaleToBed * scaleMm);
     } else if (Number(rec.layer) >= 1) {
       rawGapMm = Math.max(0.26, 1.6 * mToU * zScale * scaleToBed * scaleMm);
     } else {
       const clrM = Number(rec.clearanceM || rec.heightM || 0);
-      rawGapMm = clrM > 0.35 ? (clrM * 0.55 * mToU * zScale * scaleToBed * scaleMm) : (1.2 * mToU * zScale * scaleToBed * scaleMm);
+      rawGapMm = Math.max(0.26, (clrM > 0.35 ? clrM * 0.55 : 1.2) * mToU * zScale * scaleToBed * scaleMm);
     }
     const resolvedGapMm = laws && typeof laws.resolveAntiCapillaryGapMm === 'function'
       ? laws.resolveAntiCapillaryGapMm(rawGapMm, 0.48)
@@ -122,11 +122,13 @@
     const placedPilePts = [];
     if (!ctx.audit.pierAudits) ctx.audit.pierAudits = [];
 
-    const addSinglePile = (px, py, floorZ, topZ) => {
+    const addSinglePile = (px, py, floorZ, topZ, forceAnchor = false) => {
       const pileH = topZ - floorZ;
-      if (pileH <= 1e-4 || !Number.isFinite(px) || !Number.isFinite(py)) return;
-      for (let i = 0; i < placedPilePts.length; i++) {
-        if (Math.hypot(placedPilePts[i][0] - px, placedPilePts[i][1] - py) < pierR * 2.0) return;
+      if (pileH <= 1e-4 || !Number.isFinite(px) || !Number.isFinite(py)) return false;
+      if (!forceAnchor) {
+        for (let i = 0; i < placedPilePts.length; i++) {
+          if (Math.hypot(placedPilePts[i][0] - px, placedPilePts[i][1] - py) < pierR * 1.5) return false;
+        }
       }
       placedPilePts.push([px, py]);
       const rawCyl = mf.Manifold.cylinder(pileH, pierR, pierR, 8, false);
@@ -135,11 +137,12 @@
       const cyl = rotCyl.translate([px, py, floorZ]);
       rotCyl.delete();
       solids.push(cyl);
+      return true;
     };
 
     const addPilesAlongPts = (pts, halfW, floorZ, topZ) => {
-      if (!pts || pts.length < 2 || topZ - floorZ <= 1e-4) return;
-      let total = 0;
+      if (!pts || pts.length < 2 || topZ - floorZ <= 1e-4) return 0;
+      let total = 0, added = 0;
       for (let i = 0; i < pts.length - 1; i++) total += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
       const step = Math.max(minPrintU * 3.5, Math.min(halfW * 4.5, 4.5 / scaleMm));
       const nPiles = Math.max(2, Math.min(18, Math.round(total / step) + 1));
@@ -156,8 +159,9 @@
           }
           acc += s;
         }
-        addSinglePile(px, py, floorZ, topZ);
+        if (addSinglePile(px, py, floorZ, topZ)) added++;
       }
+      return added;
     };
 
     for (const item of items) {
@@ -166,8 +170,12 @@
       const obb = computeFootprintOBB(ptsOrRing);
       const inWater = terrainWater && terrainWater.isPointInWater(obb.cx, obb.cy);
       const waterTop = inWater
-        ? (terrainWater.getWaterTopZ ? terrainWater.getWaterTopZ(obb.cx, obb.cy) : (waterCutout ? 0.0 : ctx.zWaterTop))
-        : (waterCutout ? 0.0 : ctx.zWaterTop);
+        ? ((terrainWater && typeof terrainWater.getNominalWaterTopZ === 'function')
+            ? terrainWater.getNominalWaterTopZ(obb.cx, obb.cy)
+            : ((!waterCutout && terrainWater && typeof terrainWater.getWaterTopZ === 'function')
+                ? terrainWater.getWaterTopZ(obb.cx, obb.cy)
+                : ctx.zWaterTop))
+        : ctx.zWaterTop;
       const pileFloorZ = waterCutout
         ? 0.0
         : Math.max(0.0, (terrainWater && terrainWater.getWaterFloorZ ? terrainWater.getWaterFloorZ(obb.cx, obb.cy) : ctx.zWaterCarveFloor) - 0.15 / scaleMm);
@@ -177,19 +185,25 @@
       const zDeckBot = needsPiles ? (waterTop + resolvedGapMm / scaleMm) : pileFloorZ;
       const zDeckTop = needsPiles
         ? (zDeckBot + deckThickU)
-        : Math.max(waterTop + deckThickU, zDeckBot + deckThickU + 0.15 / scaleMm);
+        : (isSolidStone
+            ? Math.max(ctx.zLandDatum + 0.16 / scaleMm, waterTop + deckThickU, zDeckBot + deckThickU + 0.15 / scaleMm)
+            : Math.max(waterTop + deckThickU, zDeckBot + deckThickU + 0.15 / scaleMm));
+      const zPileTop = zDeckBot + 0.08 / scaleMm;
 
       if (isArea) {
         const deckM = core.extrudeRingSolid(mf, ptsOrRing, holesBed, zDeckBot, zDeckTop);
         if (deckM) solids.push(deckM);
         if (needsPiles) {
-          addPilesAlongPts(
+          let itemPiles = addPilesAlongPts(
             [[obb.cx + obb.ux * obb.uMin * 0.85, obb.cy + obb.uy * obb.uMin * 0.85],
              [obb.cx + obb.ux * obb.uMax * 0.85, obb.cy + obb.uy * obb.uMax * 0.85]],
-            obb.spanV * 0.4, pileFloorZ, zDeckBot + 0.08 / scaleMm
+            obb.spanV * 0.4, pileFloorZ, zPileTop
           );
           const stride = Math.max(1, Math.floor(ptsOrRing.length / 12));
-          for (let vi = 0; vi < ptsOrRing.length; vi += stride) addSinglePile(ptsOrRing[vi][0], ptsOrRing[vi][1], pileFloorZ, zDeckBot + 0.08 / scaleMm);
+          for (let vi = 0; vi < ptsOrRing.length; vi += stride) {
+            if (addSinglePile(ptsOrRing[vi][0], ptsOrRing[vi][1], pileFloorZ, zPileTop)) itemPiles++;
+          }
+          if (itemPiles === 0 && ptsOrRing.length > 0) addSinglePile(ptsOrRing[0][0], ptsOrRing[0][1], pileFloorZ, zPileTop, true);
         }
       } else {
         const rings = core.clipperBufferOpenPaths([{ pts: ptsOrRing, halfW: widthU, squareEnd: true }], 'Miter', 1e-5);
@@ -197,7 +211,13 @@
           const m = core.extrudeRingSolid(mf, r, [], zDeckBot, zDeckTop);
           if (m) solids.push(m);
         }
-        if (needsPiles) addPilesAlongPts(ptsOrRing, widthU, pileFloorZ, zDeckBot + 0.08 / scaleMm);
+        if (needsPiles) {
+          const itemPiles = addPilesAlongPts(ptsOrRing, widthU, pileFloorZ, zPileTop);
+          if (itemPiles === 0 && ptsOrRing.length > 0) {
+            const midPt = ptsOrRing[ptsOrRing.length >> 1];
+            addSinglePile(midPt[0], midPt[1], pileFloorZ, zPileTop, true);
+          }
+        }
       }
 
       ctx.audit.pierAudits.push({

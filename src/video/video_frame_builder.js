@@ -4,8 +4,30 @@
 // Passe-partout Mat, Engraved Plaque Texture & Acrylic Museum Glass Builder.
 // ============================================================================
 
+if (typeof VIDEO_MAT_STYLES === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(global, require('./video_config.js'));
+}
+
 function pushVideoQuadPrism(quad2d, zBot, zTop, layerId, subId, outList) {
-  extrudeBuildingLoD2(quad2d, [], zBot, zTop, zTop, false, layerId, -1, outList, subId, 'flat');
+  if (typeof emitClosedPrism === 'function') {
+    emitClosedPrism(quad2d, zBot, zTop, layerId, outList, 0, -1);
+  } else if (quad2d && quad2d.length >= 3 && zTop > zBot) {
+    const p = quad2d;
+    for (let i = 1; i < p.length - 1; i++) {
+      outList.push(
+        { v0: [p[0][0], p[0][1], zTop], v1: [p[i][0], p[i][1], zTop], v2: [p[i + 1][0], p[i + 1][1], zTop], n: [0, 0, 1], layerId, buildingId: -1, tileId: 0 },
+        { v0: [p[0][0], p[0][1], zBot], v1: [p[i + 1][0], p[i + 1][1], zBot], v2: [p[i][0], p[i][1], zBot], n: [0, 0, -1], layerId, buildingId: -1, tileId: 0 }
+      );
+    }
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+      const n = [dy / len, -dx / len, 0];
+      outList.push(
+        { v0: [a[0], a[1], zBot], v1: [b[0], b[1], zBot], v2: [b[0], b[1], zTop], n, layerId, buildingId: -1, tileId: 0 },
+        { v0: [a[0], a[1], zBot], v1: [b[0], b[1], zTop], v2: [a[0], a[1], zTop], n, layerId, buildingId: -1, tileId: 0 }
+      );
+    }
+  }
   for (let i = outList.length - 1; i >= 0; i--) {
     if (outList[i]._taggedSub) break;
     outList[i].subId = subId;

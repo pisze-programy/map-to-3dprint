@@ -52,12 +52,21 @@ function _buildRoofManifold(core, mf, outer, holes, zEaves, roofH, roofShape, ro
 
 function sampleFootprintTerrainZ(rings, ctx, terrainWater) {
   let minZ = Infinity, maxZ = -Infinity, sumZ = 0, cntZ = 0, touchesWaterCutout = false;
+  let dryMinZ = Infinity, waterSurfMinZ = Infinity;
   const samplePt = (px, py) => {
-    const inWater = terrainWater && terrainWater.isPointInWater(px, py);
+    const inWater = Boolean(terrainWater && terrainWater.isPointInWater(px, py));
     if (ctx.waterCutout && inWater) touchesWaterCutout = true;
     const z = (ctx.waterCutout && inWater) ? 0.0
       : (terrainWater && typeof terrainWater.getSurfaceZ === 'function' ? terrainWater.getSurfaceZ(px, py) : ctx.getTerrainZ(px, py));
     if (z < minZ) minZ = z; if (z > maxZ) maxZ = z; sumZ += z; cntZ++;
+    if (!inWater) {
+      if (z < dryMinZ) dryMinZ = z;
+    } else {
+      const wNom = (terrainWater && typeof terrainWater.getNominalWaterTopZ === 'function')
+        ? terrainWater.getNominalWaterTopZ(px, py)
+        : (ctx.waterCutout ? ctx.zWaterTop : z);
+      if (wNom < waterSurfMinZ) waterSurfMinZ = wNom;
+    }
   };
   for (const r of rings) {
     const outer = r.outer || r;
@@ -70,8 +79,13 @@ function sampleFootprintTerrainZ(rings, ctx, terrainWater) {
     }
     samplePt(cx / outer.length, cy / outer.length);
   }
+  const rawDatumMinZ = Number.isFinite(dryMinZ)
+    ? dryMinZ
+    : (Number.isFinite(waterSurfMinZ) ? Math.max(ctx.zLandDatum, waterSurfMinZ) : ctx.zLandDatum);
+  const datumMinZ = Math.max(ctx.zLandDatum, rawDatumMinZ);
   return {
     minZ: Number.isFinite(minZ) ? minZ : ctx.zLandDatum,
+    datumMinZ,
     maxZ: Number.isFinite(maxZ) ? maxZ : ctx.zLandDatum,
     avgZ: cntZ > 0 ? (sumZ / cntZ) : ctx.zLandDatum,
     touchesWaterCutout,
@@ -167,14 +181,28 @@ function buildS3DBPartSolid(core, b, tags, metaP, groupDatumById, platePoly, sce
   const embedU = terr.touchesWaterCutout ? 0.0 : Math.min(0.45 / scaleMm, Math.max(0.18 / scaleMm, (terr.maxZ - terr.minZ) * 0.25));
   const zGroundSeat = terr.touchesWaterCutout ? 0.0 : Math.max(0.15 / scaleMm, terr.minZ - embedU);
   const grpKey = (b.groupId !== undefined && b.groupId !== null) ? String(b.groupId) : null;
-  const zDatum = (grpKey && groupDatumById.has(grpKey)) ? groupDatumById.get(grpKey) : terr.minZ;
+  const zDatum = (grpKey && groupDatumById.has(grpKey)) ? groupDatumById.get(grpKey) : terr.datumMinZ;
 
   const totalHU = Math.max(0.4 / scaleMm, Math.max(2.0, rawH_m) * mToU * hMult);
   const minHU = rawMinH_m > 0.2 ? (rawMinH_m * mToU * hMult) : 0;
-  const zCapRatio = (zDatum + totalHU > maxZUnits && totalHU > 1e-6) ? Math.max(0.05, (maxZUnits - zDatum) / totalHU) : 1.0;
-  const zTop = Math.min(maxZUnits, zDatum + totalHU * zCapRatio);
-  const zBase = minHU > 0 ? Math.max(zGroundSeat, zDatum + minHU * zCapRatio - (0.04 / scaleMm)) : zGroundSeat;
+  const zRawTop = zDatum + totalHU;
+  const zRawBase = zDatum + minHU;
+  const compressZ = (ctx && typeof ctx.compressZUnits === 'function')
+    ? ctx.compressZUnits
+    : ((zU) => {
+        const maxSafeMm = maxZUnits * scaleMm;
+        const zMm = zU * scaleMm;
+        const zKneeMm = Math.min(maxSafeMm * 0.65, Math.max(maxSafeMm * 0.35, maxSafeMm - 35.0));
+        if (zMm <= zKneeMm) return zU;
+        const H = Math.max(1.0, maxSafeMm - zKneeMm);
+        const x = zMm - zKneeMm;
+        return Math.min(maxZUnits, (zKneeMm + (x / (1.0 + x / H))) / scaleMm);
+      });
+  if (zRawTop > maxZUnits && ctx) ctx.zCapApplied = true;
+  const zTop = Math.min(maxZUnits, compressZ(zRawTop));
+  const zBase = minHU > 0 ? Math.max(zGroundSeat, compressZ(zRawBase) - (0.04 / scaleMm)) : zGroundSeat;
   if (zTop <= zBase + (0.15 / scaleMm)) return null;
+  const effScaleRatio = totalHU > 1e-6 ? Math.max(0.05, (zTop - compressZ(zDatum)) / totalHU) : 1.0;
 
   let roofH_m = Number(b.roofH !== undefined ? b.roofH : (tags['roof:height'] || 0)) || 0;
   if (roofShape !== 'flat' && roofH_m <= 0) {
@@ -183,7 +211,8 @@ function buildS3DBPartSolid(core, b, tags, metaP, groupDatumById, platePoly, sce
   }
   const hasExplicitRoofH = Boolean(b.hasExplicitRoofH || tags['roof:height'] !== undefined);
   const availHU = Math.max(0.2 / scaleMm, zTop - zBase);
-  let roofHU = roofShape !== 'flat' ? Math.max(0.20 / scaleMm, roofH_m * mToU * hMult * zCapRatio) : 0;
+  const rawRoofHU = roofShape !== 'flat' ? Math.max(0.20 / scaleMm, roofH_m * mToU * hMult) : 0;
+  let roofHU = roofShape !== 'flat' ? Math.max(0.20 / scaleMm, zTop - compressZ(zRawTop - rawRoofHU)) : 0;
   if (!hasExplicitRoofH && roofHU > availHU * 0.72) roofHU = availHU * 0.65;
   roofHU = Math.min(roofHU, Math.max(0, availHU - (0.15 / scaleMm)));
   if (roofHU * scaleMm < 0.12) { roofShape = 'flat'; roofHU = 0; }
@@ -213,7 +242,7 @@ function buildS3DBPartSolid(core, b, tags, metaP, groupDatumById, platePoly, sce
   const bSolid = partSolids.length === 1 ? partSolids[0] : core.batchUnionManifolds(mf, partSolids);
   if (!bSolid || bSolid.numTri() === 0) { core.safeDeleteManifold(bSolid); return null; }
 
-  return { bSolid, structured, zGroundSeat, zDatum, zBase, zEaves, zTop, rawH_m, rawMinH_m, preNormShape, roofShape, effMinHU: minHU * zCapRatio, flattenedUnderSuperstructure: Boolean(metaP && metaP.flattened) };
+  return { bSolid, structured, zGroundSeat, zDatum, zBase, zEaves, zTop, rawH_m, rawMinH_m, preNormShape, roofShape, effMinHU: minHU * effScaleRatio, flattenedUnderSuperstructure: Boolean(metaP && metaP.flattened) };
 }
 
 const _s3dbPartExports = { isLayer2ArchetypeRecord, _normalizeRoofShape, _buildRoofManifold, sampleFootprintTerrainZ, buildS3DBPartSolid };

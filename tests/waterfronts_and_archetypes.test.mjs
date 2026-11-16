@@ -374,6 +374,175 @@ async function run() {
     }
   }
 
+  // [7/7] Pier/Island Rotation Invariance (±42°), Marina Pier Z-Height, Waterfront Building Datum, 3D Picking & Video Prism
+  console.log('\n[7/7] Pier/Island Rotation (±42°), Marina Z-Height, Waterfront Datum, 3D Picking & Video Frame');
+  {
+    const { applySceneRotation } = require(path.join(ROOT, 'src/ui/map_rotation.js'));
+    const { fastSwapHighlightedBuildings } = require(path.join(ROOT, 'src/ui/fast_render_manager.js'));
+    const { buildVideoProductFrameBuffers } = require(path.join(ROOT, 'src/video/video_frame_builder.js'));
+
+    // 7a. Linear floating piers (pierLines) + areal piers (pierPolys) + _openSeaIslands rotate identically with buildings at ±42°
+    const rotScene = {
+      center: [25.0775, 55.1298], spanMeters: 3800, halfW: 84.6, halfH: 84.6, metersToUnits: 169.2 / 3800,
+      _hasMarineTags: true,
+      _openSeaIslands: [rectRing(20, -25, 18, 12)],
+      dem: { minElev: 0, maxElev: 4, gridSize: 8, grid: Array.from({ length: 8 }, () => Array(8).fill(2.0)) },
+      waterPolys: [], waterLines: [], greenPolys: [], trees: [],
+      roads: [{ pts: [[12, -25], [28, -25]], width: 0.5, hwy: 'residential' }],
+      roadPolys: [],
+      bridgePolys: [{ outer: rectRing(20, -8, 4, 1.5), holes: [], isPier: true, isPierLine: true, pierKind: 'pier', floating: true, osmId: 5001 }],
+      pierLines: [
+        { pts: [[16, -8], [24, -8]], width: 0.45, pierKind: 'pier', floating: true, layer: 0, osmId: 5001, tags: { man_made: 'pier', floating: 'yes' } },
+        { pts: [[20, -13], [20, -4]], width: 0.40, pierKind: 'pier', floating: false, layer: 0, osmId: 5002, tags: { man_made: 'pier' } },
+      ],
+      pierPolys: [
+        { outer: rectRing(28, -10, 2.2, 1.2), holes: [], isPier: true, pierKind: 'pontoon', floating: true, osmId: 5003 }
+      ],
+      bridgeSupports: [],
+      buildings: [
+        { id: 1, osmId: 6001, cx: 20, cy: -22, outer: rectRing(20, -22, 2.5, 2.5), holes: [], h: 9, minH: 0, roof: 'flat', highlighted: false },
+        { id: 2, osmId: 6002, cx: 20, cy: -13.2, outer: rectRing(20, -13.2, 2.0, 1.5), holes: [], h: 8, minH: 0, roof: 'flat', highlighted: false }
+      ],
+      osmElements: []
+    };
+
+    const distPierToBld = (sc) => {
+      const pmx = (sc.pierLines[0].pts[0][0] + sc.pierLines[0].pts[1][0]) * 0.5;
+      const pmy = (sc.pierLines[0].pts[0][1] + sc.pierLines[0].pts[1][1]) * 0.5;
+      const b = sc.buildings[0];
+      return Math.hypot(pmx - b.cx, pmy - b.cy);
+    };
+    const d0 = distPierToBld(rotScene);
+    applySceneRotation(rotScene, 42, 84.6, 84.6);
+    const dPos42 = distPierToBld(rotScene);
+    applySceneRotation(rotScene, -42, 84.6, 84.6);
+    const dNeg42 = distPierToBld(rotScene);
+    check(Math.abs(dPos42 - d0) < 0.05 && Math.abs(dNeg42 - d0) < 0.05,
+      'pierLines rotate rigidly with shoreline buildings at +42° and -42° (0 angular drift)',
+      `d0=${d0.toFixed(3)}, d+42=${dPos42.toFixed(3)}, d-42=${dNeg42.toFixed(3)}`);
+
+    const rotState = makeState({ bedSizeMm: 150, totalHeightMm: 150, targetWidthCm: 15, targetHeightCm: 15, waterCutout: true, mapRotationDeg: -42 });
+    const rotBuilt = buildComplete3DModel(rotScene, rotState);
+    const rpm = rotBuilt.printMetrics;
+    check(rpm.isWatertightManifold && rpm.openEdgesCount === 0 && rpm.nonManifoldEdgesCount === 0 && rpm.floatingBuildingsCount === 0,
+      'Rotated -42° open-sea island + floating/pile piers + waterfront villa model is 100% 2-manifold (0 float)',
+      `open=${rpm.openEdgesCount}, nm=${rpm.nonManifoldEdgesCount}, float=${rpm.floatingBuildingsCount}`);
+
+    const scaleMm150 = 150 / 169.2;
+    const pAudits = rotBuilt.audit.pierAudits || [];
+    const floatAudit = pAudits.find(a => a.osmId === 5001);
+    const marinaPileAudit = pAudits.find(a => a.osmId === 5002);
+    check(floatAudit && floatAudit.deckTopZ * scaleMm150 >= 2.0,
+      'Floating pier/pontoon in waterCutout=true rises to nominal waterline height (>=2.0 mm, never collapsed to 0.65 mm)',
+      `topMm=${(floatAudit ? floatAudit.deckTopZ * scaleMm150 : 0).toFixed(2)}`);
+    check(marinaPileAudit && marinaPileAudit.hasPiles && marinaPileAudit.resolvedGapMm >= 0.48 && marinaPileAudit.deckTopZ * scaleMm150 >= 2.5,
+      'Regional-scale standard man_made=pier retains MSLA Z=0 piles & quay-level deck (>=2.5 mm)',
+      JSON.stringify(marinaPileAudit));
+
+    // 7b. Waterfront low-rise villa (8m) grazing waterCutout keeps zBase=0 AND roof proud above 2.35mm land datum
+    const wfVillaBounds = rotBuilt.buildingBounds.find(bb => bb.id === 2);
+    check(wfVillaBounds && wfVillaBounds.minZ <= 0.01 && wfVillaBounds.maxZ * scaleMm150 > 2.45,
+      'Waterfront 8m building grazing waterCutout anchors at Z=0 while roof rises above 2.35 mm land slab',
+      `minZMm=${(wfVillaBounds.minZ * scaleMm150).toFixed(2)}, maxZMm=${(wfVillaBounds.maxZ * scaleMm150).toFixed(2)}`);
+
+    // 7c. 3D picking metadata & fastSwapHighlightedBuildings
+    check(rotBuilt.buildingBounds.every(bb => bb.pickId > 0 && bb.layerId === 4 && bb.building && bb.building._pickId === bb.pickId),
+      'All buildingBounds populate pickId, layerId, and building._pickId for 3D raycast & highlight swap');
+    rotScene.buildings[0].highlighted = true;
+    const uiState = { ...rotState, sceneData: rotScene, layerMeshes: rotBuilt.meshes, buildingBounds: rotBuilt.buildingBounds, pickIdMap: rotBuilt.pickIdMap };
+    const swapped = fastSwapHighlightedBuildings(uiState);
+    check(swapped && uiState.layerMeshes.highlighted.length > 0, 'fastSwapHighlightedBuildings swaps highlighted building triangles cleanly', `hlTris=${uiState.layerMeshes.highlighted.length}`);
+
+    // 7d. Video Studio frame builder works without legacy extrudeBuildingLoD2
+    const vFrame = buildVideoProductFrameBuffers({ halfW: 84.6, halfH: 84.6, matStyle: 'gallery_white', frameStyle: 'black', showPlaque: true, showGlass: true, waterCutout: true }, true);
+    check(vFrame.frameTris.length >= 48 && vFrame.backingTris.length >= 12 && vFrame.matTris.length >= 48,
+      'Video Studio buildVideoProductFrameBuffers emits closed frame/backing/mat prisms cleanly',
+      `frame=${vFrame.frameTris.length}, backing=${vFrame.backingTris.length}, mat=${vFrame.matTris.length}`);
+  }
+
+  // ==========================================================================
+  // [8] Palm Jumeirah / Logo Island / Crescent / Emaar Regression Suite
+  // ==========================================================================
+  console.log('\n[8] Palm Jumeirah, Logo Island, C-Shaped Crescent & Overpass Resilience Regressions');
+  {
+    const { buildAdaptiveOverpassQL, buildSpatialChunkGrid } = require(path.join(ROOT, 'src/gis_client/overpass_chunk_grid.js'));
+    const { stitchCoastlineSeaPolysJS } = require(path.join(ROOT, 'src/gis_client/overpass_dem_fetch.js'));
+    const { createS3DBClientCollector } = require(path.join(ROOT, 'src/gis_client/s3db_client_matcher.js'));
+    const { buildLayer1TerrainAndWater } = require(path.join(ROOT, 'src/mesh/layer1_terrain_water.js'));
+    const { applySceneRotation } = require(path.join(ROOT, 'src/ui/map_rotation.js'));
+
+    // 8a. Overpass QL excludes continental natural=bay|peninsula and includes unclipped place=island|islet across all tiers
+    for (const tier of ['detail', 'urban', 'regional', 'mountain']) {
+      const ql = buildAdaptiveOverpassQL(25.09, 55.10, 25.14, 55.16, tier, 20, { wantTrees: false, minBuildingFootprintM: 0 });
+      check(
+        ql.includes('natural!~') && ql.includes('bay') && ql.includes('peninsula') && ql.includes('way(r.isl)->.islw;'),
+        `buildAdaptiveOverpassQL(${tier}) excludes continental bay/peninsula & fetches unclipped island ways`,
+      );
+    }
+    const grid22 = buildSpatialChunkGrid(25.10, 55.12, 25.12, 55.14, 2200, { fetchSpanMeters: 2200 });
+    check(grid22.rows === 2 && grid22.cols === 2, 'buildSpatialChunkGrid splits >1650m scenes into 2x2 sectors', `${grid22.rows}x${grid22.cols}`);
+
+    // 8b. Open 3-of-4 CCW coastline island chain (Logo Island missing 1 segment) closes into dry island
+    const openLogoChain = [[-18, -12], [18, -12], [18, 8], [-12, 12]]; // CCW open chain missing closing west segment
+    const wpLogo = [];
+    const metaLogo = {};
+    stitchCoastlineSeaPolysJS([openLogoChain], 84.6, 84.6, wpLogo, metaLogo);
+    check(
+      Array.isArray(metaLogo.openSeaIslands) && metaLogo.openSeaIslands.length === 1,
+      'stitchCoastlineSeaPolysJS closes open 3-of-4 CCW island coastline chain instead of dropping the island',
+      `openSeaIslands=${(metaLogo.openSeaIslands || []).length}`
+    );
+
+    // 8c. C-shaped concave Crescent island hole (centroid outside polygon!) + _unrotatedLandRings across overlapping waterPolys
+    const seaOuter = rectRing(0, 0, 75, 75);
+    // C-shaped Crescent ring (CW hole or CCW island): vertex centroid sits in the central lagoon around (0, 12), OUTSIDE the C-ring!
+    const cCrescent = [
+      [-40, 10], [-40, 42], [40, 42], [40, 10],
+      [30, 10], [30, 32], [-30, 32], [-30, 10]
+    ];
+    const unrotIslet = rectRing(22, -28, 7, 5);
+    const cScene = {
+      center: [25.12, 55.13], spanMeters: 5000, halfW: 84.6, halfH: 84.6, metersToUnits: 169.2 / 5000,
+      dem: { minElev: 0, maxElev: 3, gridSize: 8, grid: Array.from({ length: 8 }, () => Array(8).fill(2.0)) },
+      waterPolys: [
+        { outer: seaOuter, holes: [cCrescent], _unrotatedLandRings: [unrotIslet], name: 'Morze' },
+        { outer: rectRing(20, -25, 30, 25), holes: [], name: 'Nakładająca się Marina' }, // overlaps unrotIslet without hole!
+      ],
+      waterLines: [], greenPolys: [], trees: [], roads: [], roadPolys: [], bridgePolys: [], pierPolys: [], pierLines: [], bridgeSupports: [], buildings: [],
+    };
+    applySceneRotation(cScene, -35, 84.6, 84.6);
+    const cState = makeState({ waterCutout: true, mapRotationDeg: -35 });
+    const cCtx = core.createBuildContext(cScene, cState, {});
+    const cTw = buildLayer1TerrainAndWater(cCtx, cScene, {});
+    const rad35 = (-35 * Math.PI) / 180;
+    const rotPt35 = (x, y) => [x * Math.cos(rad35) - y * Math.sin(rad35), x * Math.sin(rad35) + y * Math.cos(rad35)];
+    const crescentTopApex = rotPt35(0, 37);
+    const lagoonCenter = rotPt35(0, 18);
+    const rotIsletCenter = rotPt35(22, -28);
+    check(
+      !cTw.isPointInWater(crescentTopApex[0], crescentTopApex[1]) && cTw.isPointInWater(lagoonCenter[0], lagoonCenter[1]),
+      'C-shaped Crescent island stays dry while its concave central lagoon stays water',
+      `apexInWater=${cTw.isPointInWater(crescentTopApex[0], crescentTopApex[1])}, lagoonInWater=${cTw.isPointInWater(lagoonCenter[0], lagoonCenter[1])}`
+    );
+    check(
+      !cTw.isPointInWater(rotIsletCenter[0], rotIsletCenter[1]),
+      '_unrotatedLandRings survives rotation and overlapping marina waterPolys without flooding',
+      `isletInWater=${cTw.isPointInWater(rotIsletCenter[0], rotIsletCenter[1])}`
+    );
+
+    // 8d. Emaar Beachfront Sunrise Bay podium (levels=6, h=18) with two elevated twin towers (min_height=18, h=102) keeps podium + both towers
+    const colEmaar = createS3DBClientCollector(84.6, 84.6, 169.2 / 4200);
+    colEmaar.registerCandidate(810426328, { building: 'apartments', 'building:levels': '6', height: '18', name: 'Sunrise Bay' }, rectRing(0, 0, 4.0, 2.5), [], false, null, false);
+    colEmaar.registerCandidate(1077704746, { 'building:part': 'apartments', 'building:levels': '34', height: '102', min_height: '18' }, rectRing(-2.0, 0, 1.1, 1.1), [], true, null, false);
+    colEmaar.registerCandidate(1077704747, { 'building:part': 'apartments', 'building:levels': '34', height: '102', min_height: '18' }, rectRing(2.0, 0, 1.1, 1.1), [], true, null, false);
+    const emaarOut = colEmaar.resolveAndEmitS3DBBuildings();
+    check(
+      emaarOut.length === 3 && emaarOut.some(b => b.osmId === 810426328 && !b.part),
+      'Emaar Beachfront Sunrise Bay podium + 2 twin tower parts emits all 3 records cleanly',
+      `count=${emaarOut.length}`
+    );
+  }
+
   console.log(`\nSUMMARY: ${passed} passed, ${failed} failed`);
   assert.equal(failed, 0, `${failed} Stage 5 waterfront/archetype tests failed`);
 }

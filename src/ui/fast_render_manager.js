@@ -20,8 +20,9 @@ function fastSwapHighlightedBuildings(state) {
 
   const hlPickIds = new Set();
   for (const b of (state.sceneData.buildings || [])) {
-    if (b.highlighted && !b.hidden && b._pickId) {
-      hlPickIds.add(b._pickId);
+    if (b.highlighted && !b.hidden) {
+      const pid = b._pickId || (typeof resolveBuildingPickId === 'function' ? resolveBuildingPickId(state, b) : null);
+      if (pid) hlPickIds.add(pid);
     }
   }
 

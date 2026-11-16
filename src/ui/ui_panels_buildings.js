@@ -10,7 +10,8 @@ function resolveBuildingPickId(state, bOrToken) {
     if (state.pickIdMap && state.pickIdMap.has(bOrToken)) return bOrToken;
     if (state.pickIdMap) {
       for (const [pid, info] of state.pickIdMap.entries()) {
-        if (info.groupId === bOrToken || info.buildings.some(x => x.id === bOrToken || x.osmId === bOrToken)) {
+        const bList = Array.isArray(info && info.buildings) ? info.buildings : [];
+        if ((info && (info.groupId === bOrToken || info.buildingId === bOrToken || info.osmId === bOrToken)) || bList.some(x => x && (x.id === bOrToken || x.osmId === bOrToken))) {
           return pid;
         }
       }
@@ -20,7 +21,8 @@ function resolveBuildingPickId(state, bOrToken) {
   if (bOrToken._pickId) return bOrToken._pickId;
   if (state.pickIdMap) {
     for (const [pid, info] of state.pickIdMap.entries()) {
-      if (info.buildings.includes(bOrToken) || info.groupId === (bOrToken.groupId || bOrToken.osmId)) {
+      const bList = Array.isArray(info && info.buildings) ? info.buildings : [];
+      if (bList.includes(bOrToken) || bList.some(x => x && x.id !== undefined && x.id === bOrToken.id) || (info && info.groupId != null && info.groupId === (bOrToken.groupId || bOrToken.osmId))) {
         return pid;
       }
     }
@@ -49,8 +51,11 @@ function createUIPanelsController(state, draw2DMap, onRebuildNeeded) {
       const pid = resolveBuildingPickId(state, tok);
       let members = [];
       if (pid && state.pickIdMap && state.pickIdMap.has(pid)) {
-        members = state.pickIdMap.get(pid).buildings;
-      } else {
+        const info = state.pickIdMap.get(pid);
+        const rawMembers = Array.isArray(info && info.buildings) ? info.buildings : [];
+        members = rawMembers.map(m => (m && m.outer) ? m : scene.buildings.find(x => x && (x.id === (m && m.id) || (m && m.osmId != null && x.osmId === m.osmId)))).filter(Boolean);
+      }
+      if (members.length === 0) {
         members = scene.buildings.filter(x => x._pickId === pid || x.id === tok || x.osmId === tok);
       }
       members.forEach(m => {
@@ -185,13 +190,14 @@ function createUIPanelsController(state, draw2DMap, onRebuildNeeded) {
     const named = [];
     if (state.pickIdMap && state.pickIdMap.size > 0) {
       for (const [pid, info] of state.pickIdMap.entries()) {
-        const b = info.primaryBuilding;
-        const nm = info.name || (b && b.name) || '';
+        const bList = Array.isArray(info && info.buildings) ? info.buildings : [];
+        const b = (info && info.primaryBuilding) || bList[0] || null;
+        const nm = (info && info.name) || (b && b.name) || '';
         if (!nm || nm.startsWith('Budynek OSM') || nm.startsWith('Część #')) continue;
-        if (!(b && b.landmark) && !info.buildings.some(x => x.landmark || x.church || x.tower)) continue;
+        if (!(b && (b.landmark || b.church || b.tower)) && !bList.some(x => x && (x.landmark || x.church || x.tower))) continue;
         if (seenPids.has(pid)) continue;
         seenPids.add(pid);
-        named.push({ pid, b, name: nm, highlighted: info.buildings.some(x => x.highlighted) });
+        named.push({ pid, b: b || pid, name: nm, highlighted: bList.some(x => x && x.highlighted) });
         if (named.length >= 8) break;
       }
     }
