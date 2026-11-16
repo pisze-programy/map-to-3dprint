@@ -578,6 +578,27 @@ async function run() {
       'P-shaped marina-loop areal pier places Z=0 medial piles strictly under deck (0 stray open-sea or basin-hole piles)',
       `groundedVerts=${groundedPileVerts}, openSeaStray=${strayOpenSeaTris}, holeStray=${strayBasinHoleTris}`
     );
+
+    // Closed loop of linear canals (Venice-style rii network) preserves enclosed dry island blocks (never inverts CW holes!)
+    const veniceGridScene = {
+      center: [45.438, 12.336], spanMeters: 800, halfW: 84.6, halfH: 84.6, metersToUnits: 169.2 / 800,
+      dem: { minElev: 1, maxElev: 2, gridSize: 6, grid: Array.from({ length: 6 }, () => Array(6).fill(1.5)) },
+      waterPolys: [],
+      waterLines: [
+        { pts: [[-30, -30], [30, -30]], width: 1.8, waterway: 'canal' },
+        { pts: [[30, -30], [30, 30]], width: 1.8, waterway: 'canal' },
+        { pts: [[30, 30], [-30, 30]], width: 1.8, waterway: 'canal' },
+        { pts: [[-30, 30], [-30, -30]], width: 1.8, waterway: 'canal' },
+      ],
+      greenPolys: [], trees: [], roads: [], roadPolys: [], bridgePolys: [], pierPolys: [], pierLines: [], bridgeSupports: [],
+      buildings: [{ id: 1, osmId: 9901, cx: 0, cy: 0, outer: rectRing(0, 0, 8, 8), holes: [], h: 14, minH: 0, roof: 'flat' }],
+    };
+    const vgBuilt = buildComplete3DModel(veniceGridScene, makeState({ waterCutout: true }));
+    check(
+      vgBuilt.printMetrics.isWatertightManifold && vgBuilt.printMetrics.floatingBuildingsCount === 0 && vgBuilt.meshes.base.length > 20,
+      'Closed loop of linear canals (Venice grid) preserves dry central island block under waterCutout=true',
+      `baseTris=${vgBuilt.meshes.base.length}, float=${vgBuilt.printMetrics.floatingBuildingsCount}`
+    );
   }
 
   console.log(`\nSUMMARY: ${passed} passed, ${failed} failed`);

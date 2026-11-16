@@ -179,6 +179,7 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       parentHeightM: (parentHeightHint !== null && parentHeightHint !== undefined) ? Math.round(parentHeightHint * 10) / 10 : null,
       landmark: Boolean(tags.name || tags.wikidata || tags.heritage || isChurch || isTower || isFerrisWheel),
       isLandmark: isFerrisWheel,
+      isVessel: Boolean(/^(ship|boat|houseboat|floating_home|barge|boathouse)$/.test(btype) || tags.historic === 'ship' || tags['ship:type'] || tags.floating === 'yes'),
     };
     if (roofDir !== null) rec.roofDir = roofDir;
     buildings.push(rec);

@@ -184,10 +184,13 @@
     return fromPaths64(sol, minArea);
   }
 
-  function clipperUnionPolys(polys, minArea = 1e-5) {
-    if (!polys || polys.length === 0) return [];
+  function clipperUnionPolys(polys, minArea = 1e-5, clipPolys = []) {
+    const hasSubj = Boolean(polys && polys.length > 0);
+    const hasClip = Boolean(clipPolys && clipPolys.length > 0);
+    if (!hasSubj && !hasClip) return [];
     const { Clipper2: C2 } = getVendorDeps();
-    return _runClipperOp(C2.ClipType.Union, polys, [], 'NonZero', minArea);
+    if (!hasSubj) return _runClipperOp(C2.ClipType.Union, clipPolys, [], 'NonZero', minArea);
+    return _runClipperOp(C2.ClipType.Union, polys, hasClip ? clipPolys : [], 'NonZero', minArea);
   }
 
   function clipperIntersectPolys(subjPolys, clipPolys, minArea = 1e-5) {

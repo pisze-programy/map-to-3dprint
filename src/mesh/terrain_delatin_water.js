@@ -243,30 +243,33 @@
     const allWlPaths = waterCutout
       ? ((scene && scene.waterLines) || []).filter(w => w && w.pts && w.pts.length >= 2).map(wl => ({ pts: wl.pts.map(toBed), halfW: Math.max(ctx.minPrintU * 0.65, ((wl.width || 0.7) * 0.5) * scaleToBed) }))
       : flatWlPaths;
-    if (allWlPaths.length > 0) {
-      for (const r of core.clipperBufferOpenPaths(allWlPaths, 'Round', 1e-5)) {
-        for (const cr of core.clipperIntersectPolys([r], plateClipPoly, 1e-5)) primaryWaterOuterList.push(cr);
-      }
-    }
+    // IMPORTANT: Clip the entire buffered waterway ring set together (never ring-by-ring!) so CW island holes enclosed by canal grids (e.g. Venice) are never inverted into solid water!
+    const bufferedWlRings = allWlPaths.length > 0
+      ? core.clipperIntersectPolys(core.clipperBufferOpenPaths(allWlPaths, 'Round', 1e-5), plateClipPoly, 1e-5)
+      : [];
     if (scene && Array.isArray(scene._openSeaIslands) && scene._openSeaIslands.length > 0) {
       primaryWaterOuterList.push(plateClipPoly[0]);
-    } else if (waterCutout && primaryWaterOuterList.length === 0 && nestedLakeOuters.length === 0 && scene && scene._hasMarineTags && (!scene.buildings || !scene.buildings.length) && (!scene.roads || !scene.roads.length) && Number((scene.dem && scene.dem.maxElev) || 0) <= 0.5) {
+    } else if (waterCutout && primaryWaterOuterList.length === 0 && bufferedWlRings.length === 0 && nestedLakeOuters.length === 0 && scene && scene._hasMarineTags && (!scene.buildings || !scene.buildings.length) && (!scene.roads || !scene.roads.length) && Number((scene.dem && scene.dem.maxElev) || 0) <= 0.5) {
       primaryWaterOuterList.push(plateClipPoly[0]);
     }
 
-    // 3. Three-pass Clipper2 topology: Union primary water -> Subtract ALL islands globally -> Re-apply nested ponds -> Subtract protected dry land
+    // 3. Three-pass Clipper2 topology: Union primary water + buffered canals -> Subtract ALL islands globally -> Re-apply nested ponds -> Subtract protected dry land
     let flatWaterRings = primaryWaterOuterList.length > 0 ? core.clipperUnionPolys(primaryWaterOuterList, 1e-5) : [];
+    if (bufferedWlRings.length > 0) {
+      flatWaterRings = core.clipperUnionPolys(flatWaterRings, 1e-5, bufferedWlRings);
+    }
     if (flatWaterRings.length > 0 && globalIslandPolys.length > 0) {
       flatWaterRings = core.clipperDiffPolys(flatWaterRings, globalIslandPolys, 1e-5);
     }
     if (nestedLakeOuters.length > 0) {
-      flatWaterRings = core.clipperUnionPolys([...flatWaterRings, ...nestedLakeOuters], 1e-5);
+      flatWaterRings = core.clipperUnionPolys(flatWaterRings, 1e-5, nestedLakeOuters);
     }
     if (flatWaterRings.length > 0 && protectedPolys.length > 0) {
       flatWaterRings = core.clipperDiffPolys(flatWaterRings, protectedPolys, 1e-5);
     }
-    let unionedWaterRings = (flatWaterRings.length || slopedRingList.length)
-      ? core.clipperUnionPolys([...flatWaterRings, ...slopedRingList], 1e-5)
+    const slopedUnioned = slopedRingList.length > 0 ? core.clipperUnionPolys(slopedRingList, 1e-5) : [];
+    let unionedWaterRings = (flatWaterRings.length || slopedUnioned.length)
+      ? core.clipperUnionPolys(flatWaterRings, 1e-5, slopedUnioned)
       : [];
     if (unionedWaterRings.length > 0 && protectedPolys.length > 0) {
       unionedWaterRings = core.clipperDiffPolys(unionedWaterRings, protectedPolys, 1e-5);
