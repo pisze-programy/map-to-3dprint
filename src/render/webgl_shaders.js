@@ -252,12 +252,12 @@ const WEBGL_MAIN_FS = `
         baseCol *= 0.82;
       }
     } else if (lid == 2) {
-      if (vNorm.z > 0.04 && vNorm.z < 0.98) {
+      if (vNorm.z > 0.03 && vNorm.z < 0.82) {
         baseCol = uColorTrees * 0.92;
       } else {
         baseCol = uColorGreenery;
         if (vNorm.z < 0.88 && vNorm.z > -0.1) {
-          baseCol *= 0.88;
+          baseCol *= 0.94;
         }
       }
     } else if (lid == 3) {

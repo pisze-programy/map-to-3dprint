@@ -967,14 +967,14 @@ function shadeAndDownsample({
           baseR *= 0.82; baseG *= 0.82; baseB *= 0.82;
         }
       } else if (lid === 2) {
-        if (nz > 0.04 && nz < 0.98) {
+        if (nz > 0.03 && nz < 0.82) {
           baseR = rs.rgb.trees[0] * 0.92;
           baseG = rs.rgb.trees[1] * 0.92;
           baseB = rs.rgb.trees[2] * 0.92;
         } else {
           baseR = rs.rgb.greenery[0]; baseG = rs.rgb.greenery[1]; baseB = rs.rgb.greenery[2];
           if (nz < 0.88 && nz > -0.1) {
-            baseR *= 0.88; baseG *= 0.88; baseB *= 0.88;
+            baseR *= 0.94; baseG *= 0.94; baseB *= 0.94;
           }
         }
       } else if (lid === 3) {

@@ -453,6 +453,20 @@ async function runTests() {
       roadPolys.every(rp => rp.isQuay && rp.isWaterfrontPromenade && rp.isSquare && rp.hwy === 'pedestrian'),
       'Both split pieces preserve isQuay, isWaterfrontPromenade, isSquare, and hwy flags'
     );
+
+    // 6) Hillside park turf shader threshold (found during NYC Central Park detail audit):
+    // Sloped DEM park turf (vNorm.z ~ 0.85..0.979, i.e. 11..31 deg) must NOT be misclassified as tree cones (< 0.82)
+    const fsModule = await import('node:fs');
+    const webglShaderSrc = fsModule.readFileSync(path.join(ROOT, 'src/render/webgl_shaders.js'), 'utf8');
+    const headlessRendererSrc = fsModule.readFileSync(path.join(ROOT, 'tools/headless_3d_renderer.js'), 'utf8');
+    check(
+      webglShaderSrc.includes('vNorm.z > 0.03 && vNorm.z < 0.82') && !webglShaderSrc.includes('vNorm.z < 0.98'),
+      'WebGL fragment shader preserves greenery color on sloped DEM park lawns up to ~35 deg (vNorm.z >= 0.82)'
+    );
+    check(
+      headlessRendererSrc.includes('nz > 0.03 && nz < 0.82') && !headlessRendererSrc.includes('nz < 0.98'),
+      'Headless 3D renderer preserves greenery color on sloped DEM park lawns up to ~35 deg (nz >= 0.82)'
+    );
   }
 
   console.log(`\n=== Summary: ${passed} passed, ${failed} failed ===`);
