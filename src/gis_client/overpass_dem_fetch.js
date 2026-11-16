@@ -263,6 +263,314 @@ function _buildPureLoopEntriesJS(closedLoops, Cx, Cy) {
   };
 }
 
+function _segmentsProperOrTouchIntersectJS(p1, p2, p3, p4) {
+  const minX1 = Math.min(p1[0], p2[0]), maxX1 = Math.max(p1[0], p2[0]);
+  const minY1 = Math.min(p1[1], p2[1]), maxY1 = Math.max(p1[1], p2[1]);
+  const minX2 = Math.min(p3[0], p4[0]), maxX2 = Math.max(p3[0], p4[0]);
+  const minY2 = Math.min(p3[1], p4[1]), maxY2 = Math.max(p3[1], p4[1]);
+  if (maxX1 < minX2 - 1e-6 || minX1 > maxX2 + 1e-6 || maxY1 < minY2 - 1e-6 || minY1 > maxY2 + 1e-6) {
+    return false;
+  }
+  const orient = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const onSeg = (a, b, c) => (
+    c[0] >= Math.min(a[0], b[0]) - 1e-7 && c[0] <= Math.max(a[0], b[0]) + 1e-7 &&
+    c[1] >= Math.min(a[1], b[1]) - 1e-7 && c[1] <= Math.max(a[1], b[1]) + 1e-7
+  );
+  const d1 = orient(p3, p4, p1);
+  const d2 = orient(p3, p4, p2);
+  const d3 = orient(p1, p2, p3);
+  const d4 = orient(p1, p2, p4);
+  if (((d1 > 1e-8 && d2 < -1e-8) || (d1 < -1e-8 && d2 > 1e-8)) &&
+      ((d3 > 1e-8 && d4 < -1e-8) || (d3 < -1e-8 && d4 > 1e-8))) {
+    return true;
+  }
+  if (Math.abs(d1) <= 1e-8 && onSeg(p3, p4, p1)) return true;
+  if (Math.abs(d2) <= 1e-8 && onSeg(p3, p4, p2)) return true;
+  if (Math.abs(d3) <= 1e-8 && onSeg(p1, p2, p3)) return true;
+  if (Math.abs(d4) <= 1e-8 && onSeg(p1, p2, p4)) return true;
+  return false;
+}
+
+function _bridgeSegHitsPolylinesJS(pA, pB, chainPtsList, skipChainA, skipChainB, closedLoops) {
+  const abx = pB[0] - pA[0], aby = pB[1] - pA[1];
+  const abLen = Math.hypot(abx, aby);
+  if (abLen < 1e-7) return false;
+
+  const isCollinearBacktrack = (origin, otherEnd, dirX, dirY) => {
+    const vx = otherEnd[0] - origin[0], vy = otherEnd[1] - origin[1];
+    const vLen = Math.hypot(vx, vy);
+    if (vLen < 1e-7) return false;
+    const dot = vx * dirX + vy * dirY;
+    if (dot <= 0) return false;
+    const cross = Math.abs(vx * dirY - vy * dirX);
+    return cross <= 1e-5 * abLen * vLen;
+  };
+
+  for (let ci = 0; ci < chainPtsList.length; ci++) {
+    const pts = chainPtsList[ci];
+    if (!pts || pts.length < 2) continue;
+    for (let k = 0; k < pts.length - 1; k++) {
+      const s0 = pts[k], s1 = pts[k + 1];
+      if (ci === skipChainA) {
+        if (Math.hypot(s0[0] - pA[0], s0[1] - pA[1]) < 1e-5) {
+          if (isCollinearBacktrack(pA, s1, abx, aby)) return true;
+          continue;
+        }
+        if (Math.hypot(s1[0] - pA[0], s1[1] - pA[1]) < 1e-5) {
+          if (isCollinearBacktrack(pA, s0, abx, aby)) return true;
+          continue;
+        }
+      }
+      if (ci === skipChainB) {
+        if (Math.hypot(s0[0] - pB[0], s0[1] - pB[1]) < 1e-5) {
+          if (isCollinearBacktrack(pB, s1, -abx, -aby)) return true;
+          continue;
+        }
+        if (Math.hypot(s1[0] - pB[0], s1[1] - pB[1]) < 1e-5) {
+          if (isCollinearBacktrack(pB, s0, -abx, -aby)) return true;
+          continue;
+        }
+      }
+      if (_segmentsProperOrTouchIntersectJS(pA, pB, s0, s1)) return true;
+    }
+  }
+  if (closedLoops) {
+    for (let li = 0; li < closedLoops.length; li++) {
+      const poly = closedLoops[li].poly || closedLoops[li];
+      if (!poly || poly.length < 3) continue;
+      for (let k = 0; k < poly.length; k++) {
+        if (_segmentsProperOrTouchIntersectJS(pA, pB, poly[k], poly[(k + 1) % poly.length])) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function _bridgeInteriorOpenChainsJS(openChains, closedLoops, Cx, Cy) {
+  if (!openChains || openChains.length === 0) return;
+  const maxGap = Math.min(4.5, Math.max(Cx, Cy) * 0.06);
+  const isInteriorPt = (pt) => Math.abs(pt[0]) < Cx - 1.8 && Math.abs(pt[1]) < Cy - 1.8;
+
+  let bridged = true;
+  while (bridged && openChains.length > 1) {
+    bridged = false;
+    const ends = [];
+    for (let ci = 0; ci < openChains.length; ci++) {
+      const pts = openChains[ci].pts;
+      if (!pts || pts.length < 2) continue;
+      const p0 = pts[0], pN = pts[pts.length - 1];
+      const selfSpan = Math.hypot(p0[0] - pN[0], p0[1] - pN[1]);
+      if (selfSpan < 0.85) continue;
+      if (isInteriorPt(p0)) ends.push({ ci, isEnd: false, pt: p0, role: openChains[ci].role, selfSpan });
+      if (isInteriorPt(pN)) ends.push({ ci, isEnd: true, pt: pN, role: openChains[ci].role, selfSpan });
+    }
+    if (ends.length < 2) break;
+
+    const nearestIdx = new Int32Array(ends.length).fill(-1);
+    const nearestDist = new Float64Array(ends.length).fill(Infinity);
+    for (let i = 0; i < ends.length; i++) {
+      for (let j = 0; j < ends.length; j++) {
+        if (ends[i].ci === ends[j].ci || ends[i].role !== ends[j].role) continue;
+        const d = Math.hypot(ends[i].pt[0] - ends[j].pt[0], ends[i].pt[1] - ends[j].pt[1]);
+        if (d < nearestDist[i]) {
+          nearestDist[i] = d;
+          nearestIdx[i] = j;
+        }
+      }
+    }
+
+    const cands = [];
+    for (let i = 0; i < ends.length; i++) {
+      const j = nearestIdx[i];
+      if (j <= i || nearestIdx[j] !== i) continue;
+      const gap = nearestDist[i];
+      if (gap > maxGap) continue;
+      if (ends[i].selfSpan <= gap * 1.5 || ends[j].selfSpan <= gap * 1.5) continue;
+      cands.push({ u: ends[i], v: ends[j], gap });
+    }
+    if (cands.length === 0) break;
+    cands.sort((a, b) => a.gap - b.gap);
+
+    const chainPtsList = openChains.map(c => c.pts);
+    for (const { u, v } of cands) {
+      if (_bridgeSegHitsPolylinesJS(u.pt, v.pt, chainPtsList, u.ci, v.ci, closedLoops)) continue;
+      const A = openChains[u.ci].pts;
+      const B = openChains[v.ci].pts;
+      let joined;
+      if (u.isEnd && !v.isEnd) joined = A.concat(B);
+      else if (u.isEnd && v.isEnd) joined = A.concat(B.slice().reverse());
+      else if (!u.isEnd && !v.isEnd) joined = A.slice().reverse().concat(B);
+      else joined = B.concat(A);
+
+      const keepIdx = Math.min(u.ci, v.ci);
+      const dropIdx = Math.max(u.ci, v.ci);
+      openChains[keepIdx] = { pts: joined, role: u.role };
+      openChains.splice(dropIdx, 1);
+      bridged = true;
+      break;
+    }
+  }
+
+  // Also close any boundary-crossing chain whose single missing micro-way left both endpoints
+  // strictly inside the clip interior within maxGap with no competing endpoints nearby.
+  const chainPtsList = openChains.map(c => c.pts);
+  for (let ci = 0; ci < openChains.length; ci++) {
+    const pts = openChains[ci].pts;
+    if (!pts || pts.length < 4) continue;
+    const p0 = pts[0], pN = pts[pts.length - 1];
+    if (!isInteriorPt(p0) || !isInteriorPt(pN)) continue;
+    const gap = Math.hypot(p0[0] - pN[0], p0[1] - pN[1]);
+    if (gap <= 1e-4 || gap > maxGap) continue;
+    let outIdx = -1;
+    for (let k = 0; k < pts.length; k++) {
+      if (Math.abs(pts[k][0]) > Cx - 0.02 || Math.abs(pts[k][1]) > Cy - 0.02) {
+        outIdx = k;
+        break;
+      }
+    }
+    if (outIdx === -1) continue;
+    let competing = false;
+    for (let oj = 0; oj < openChains.length; oj++) {
+      if (oj === ci) continue;
+      const op = openChains[oj].pts;
+      if (!op || op.length < 2) continue;
+      for (const ep of [op[0], op[op.length - 1]]) {
+        if (!isInteriorPt(ep)) continue;
+        if (Math.hypot(ep[0] - p0[0], ep[1] - p0[1]) < gap * 1.5 ||
+            Math.hypot(ep[0] - pN[0], ep[1] - pN[1]) < gap * 1.5) {
+          competing = true;
+          break;
+        }
+      }
+      if (competing) break;
+    }
+    if (competing) continue;
+    if (_bridgeSegHitsPolylinesJS(pN, p0, chainPtsList, ci, ci, closedLoops)) continue;
+    const rotPts = pts.slice(outIdx).concat(pts.slice(0, outIdx + 1));
+    openChains[ci] = { pts: rotPts, role: openChains[ci].role };
+    chainPtsList[ci] = rotPts;
+  }
+}
+
+function _bridgeDirectedCoastlineGapsJS(chains, Cx, Cy) {
+  if (!chains || chains.length === 0) return;
+  const maxCoastGap = 3.5;
+  const isInteriorPt = (pt) => Math.abs(pt[0]) < Cx - 1.8 && Math.abs(pt[1]) < Cy - 1.8;
+  const isClosedChain = (ch) => (
+    ch.length >= 4 &&
+    Math.hypot(ch[0][0] - ch[ch.length - 1][0], ch[0][1] - ch[ch.length - 1][1]) < 0.45
+  );
+
+  let bridged = true;
+  while (bridged && chains.length > 1) {
+    bridged = false;
+    const exits = [];
+    const entries = [];
+    const allOpenEnds = [];
+
+    for (let i = 0; i < chains.length; i++) {
+      const ch = chains[i];
+      if (!ch || ch.length < 2 || isClosedChain(ch)) continue;
+      const pStart = ch[0], pEnd = ch[ch.length - 1];
+      const selfSpan = Math.hypot(pStart[0] - pEnd[0], pStart[1] - pEnd[1]);
+      if (isInteriorPt(pEnd)) {
+        exits.push({ ci: i, pt: pEnd, selfSpan });
+        allOpenEnds.push({ ci: i, isExit: true, pt: pEnd });
+      }
+      if (isInteriorPt(pStart)) {
+        entries.push({ ci: i, pt: pStart, selfSpan });
+        allOpenEnds.push({ ci: i, isExit: false, pt: pStart });
+      }
+    }
+    if (exits.length === 0 || entries.length === 0) break;
+
+    const exitNearestEntry = new Int32Array(exits.length).fill(-1);
+    const exitNearestDist = new Float64Array(exits.length).fill(Infinity);
+    const entryNearestExit = new Int32Array(entries.length).fill(-1);
+    const entryNearestDist = new Float64Array(entries.length).fill(Infinity);
+
+    for (let ei = 0; ei < exits.length; ei++) {
+      for (let nj = 0; nj < entries.length; nj++) {
+        if (exits[ei].ci === entries[nj].ci) continue;
+        const d = Math.hypot(exits[ei].pt[0] - entries[nj].pt[0], exits[ei].pt[1] - entries[nj].pt[1]);
+        if (d < exitNearestDist[ei]) {
+          exitNearestDist[ei] = d;
+          exitNearestEntry[ei] = nj;
+        }
+        if (d < entryNearestDist[nj]) {
+          entryNearestDist[nj] = d;
+          entryNearestExit[nj] = ei;
+        }
+      }
+    }
+
+    const cands = [];
+    for (let ei = 0; ei < exits.length; ei++) {
+      const nj = exitNearestEntry[ei];
+      if (nj < 0 || entryNearestExit[nj] !== ei) continue;
+      const gap = exitNearestDist[ei];
+      if (gap > maxCoastGap) continue;
+      const ex = exits[ei], en = entries[nj];
+      if (ex.selfSpan <= gap * 1.5 || en.selfSpan <= gap * 1.5) continue;
+
+      let competing = false;
+      for (const ep of allOpenEnds) {
+        if ((ep.ci === ex.ci && ep.isExit) || (ep.ci === en.ci && !ep.isExit)) continue;
+        if (Math.hypot(ep.pt[0] - ex.pt[0], ep.pt[1] - ex.pt[1]) <= gap * 1.35 ||
+            Math.hypot(ep.pt[0] - en.pt[0], ep.pt[1] - en.pt[1]) <= gap * 1.35) {
+          competing = true;
+          break;
+        }
+      }
+      if (competing) continue;
+      cands.push({ ex, en, gap });
+    }
+    if (cands.length === 0) break;
+    cands.sort((a, b) => a.gap - b.gap);
+
+    for (const { ex, en } of cands) {
+      if (_bridgeSegHitsPolylinesJS(ex.pt, en.pt, chains, ex.ci, en.ci, null)) continue;
+      chains[ex.ci] = chains[ex.ci].concat(chains[en.ci]);
+      chains.splice(en.ci, 1);
+      bridged = true;
+      break;
+    }
+  }
+
+  for (let i = 0; i < chains.length; i++) {
+    const ch = chains[i];
+    if (!ch || ch.length < 4 || isClosedChain(ch)) continue;
+    const pStart = ch[0], pEnd = ch[ch.length - 1];
+    if (!isInteriorPt(pStart) || !isInteriorPt(pEnd)) continue;
+    const gap = Math.hypot(pStart[0] - pEnd[0], pStart[1] - pEnd[1]);
+    if (gap > maxCoastGap) continue;
+    let hasOutside = false;
+    for (let k = 0; k < ch.length; k++) {
+      if (Math.abs(ch[k][0]) > Cx + 0.05 || Math.abs(ch[k][1]) > Cy + 0.05) {
+        hasOutside = true;
+        break;
+      }
+    }
+    if (!hasOutside) continue;
+    let competing = false;
+    for (let j = 0; j < chains.length; j++) {
+      if (j === i || !chains[j] || chains[j].length < 2 || isClosedChain(chains[j])) continue;
+      for (const ep of [chains[j][0], chains[j][chains[j].length - 1]]) {
+        if (!isInteriorPt(ep)) continue;
+        if (Math.hypot(ep[0] - pStart[0], ep[1] - pStart[1]) <= gap * 1.35 ||
+            Math.hypot(ep[0] - pEnd[0], ep[1] - pEnd[1]) <= gap * 1.35) {
+          competing = true;
+          break;
+        }
+      }
+      if (competing) break;
+    }
+    if (competing) continue;
+    if (_bridgeSegHitsPolylinesJS(pEnd, pStart, chains, i, i, null)) continue;
+    chains[i] = ch.concat([pStart]);
+  }
+}
+
 function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, nodesToPts, halfW, halfH, opts = {}) {
   const tol = opts.tol || 0.018;
   const Cx = Math.max(4.0, (opts.clipHalfW || halfW) - 0.35);
@@ -284,6 +592,8 @@ function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, 
   if (openChains.length === 0) {
     return _buildPureLoopEntriesJS(closedLoops, Cx, Cy);
   }
+
+  _bridgeInteriorOpenChainsJS(openChains, closedLoops, Cx, Cy);
 
   const P = 4 * (Cx + Cy);
   const rectArea = 4 * Cx * Cy;
@@ -314,7 +624,7 @@ function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, 
     if (span < 1e-4) return [];
     return ccwCorners
       .map(c => [((c[0] - sFrom) % P + P) % P, c[1]])
-      .filter(c => c[0] > 0.04 && c[0] < span - 0.04)
+      .filter(c => c[0] > 0.012 && c[0] < span - 0.012)
       .sort((a, b) => a[0] - b[0])
       .map(c => c[1]);
   };
@@ -386,6 +696,32 @@ function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, 
     }
   }
 
+  // Filter out boundary-grazing micro-cap chords (e.g. 1-3m stone quay step-ins grazing clip edge)
+  // before constructing the planar half-edge arrangement so micro-slivers never abort face tracing.
+  for (let i = rawChords.length - 1; i >= 0; i--) {
+    const pts = rawChords[i].pts;
+    const sStart = ccwParam(pts[0]);
+    const sEnd = ccwParam(pts[pts.length - 1]);
+    const spanCCW = ((sStart - sEnd) % P + P) % P;
+    const spanRevCCW = P - spanCCW;
+    const capRaw = spanCCW <= spanRevCCW
+      ? pts.concat(ccwBoundaryArc(sEnd, sStart))
+      : pts.slice().reverse().concat(ccwBoundaryArc(sStart, sEnd));
+    const capPoly = [];
+    for (let k = 0; k < capRaw.length; k++) {
+      const p = capRaw[k];
+      const prev = capPoly[capPoly.length - 1];
+      if (!prev || Math.hypot(p[0] - prev[0], p[1] - prev[1]) > 0.01) capPoly.push(p);
+    }
+    if (capPoly.length >= 2 && Math.hypot(capPoly[0][0] - capPoly[capPoly.length - 1][0], capPoly[0][1] - capPoly[capPoly.length - 1][1]) < 0.02) {
+      capPoly.pop();
+    }
+    const capArea = capPoly.length >= 3 ? Math.abs(polyAreaSignedJS(capPoly)) : 0;
+    if (capPoly.length < 3 || capArea <= 0.02 || (capArea <= 0.05 && capArea < rectArea * 1e-4)) {
+      rawChords.splice(i, 1);
+    }
+  }
+
   const K = rawChords.length;
   if (K === 0) {
     return _buildPureLoopEntriesJS(closedLoops, Cx, Cy);
@@ -441,15 +777,19 @@ function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, 
       const rank = termRank[endTermId];
       const nextTerm = terminals[(rank + 1) % (2 * K)];
       const arcPts = ccwBoundaryArc(terminals[rank].s, nextTerm.s);
-      for (let k = 0; k < arcPts.length; k++) facePts.push(arcPts[k]);
+      for (let k = 0; k < arcPts.length; k++) {
+        const p = arcPts[k];
+        const prev = facePts[facePts.length - 1];
+        if (!prev || Math.hypot(p[0] - prev[0], p[1] - prev[1]) > 0.01) facePts.push(p);
+      }
       curHe = nextTerm.outHe;
     }
-    if (curHe !== startHe || facePts.length < 3) { validTopology = false; break; }
-    if (Math.hypot(facePts[0][0] - facePts[facePts.length - 1][0], facePts[0][1] - facePts[facePts.length - 1][1]) < 0.02) {
+    if (curHe !== startHe) { validTopology = false; break; }
+    while (facePts.length > 3 && Math.hypot(facePts[0][0] - facePts[facePts.length - 1][0], facePts[0][1] - facePts[facePts.length - 1][1]) < 0.02) {
       facePts.pop();
     }
-    const area = Math.abs(polyAreaSignedJS(facePts));
-    if (facePts.length >= 3 && area > 0.02) {
+    const area = facePts.length >= 3 ? Math.abs(polyAreaSignedJS(facePts)) : 0;
+    if (facePts.length >= 3 && area > 1e-4) {
       faces.push({ poly: facePts, area, chordTouchCount });
     } else {
       validTopology = false;
@@ -741,7 +1081,7 @@ function stitchClippedMultipolygonRingsJS(outerWayNodeLists, innerWayNodeLists, 
       if (!shell) innerPolys.push(sortedLoops[li].poly);
     }
 
-    if (faceActive) {
+    if (faceActive && faces[fi].area > 0.02) {
       const holes = [];
       for (const li of fLoops) {
         if (loopRelDepth[li] === 0 && !loopIsShell.get(li)) {
@@ -798,6 +1138,8 @@ function stitchCoastlineSeaPolysJS(coastWays, halfW, halfH, waterPolys, metaOut 
   const Cy = Math.max(4.0, halfH - 0.25);
   const P = 4 * (Cx + Cy);
   const rectArea = 4 * Cx * Cy;
+
+  _bridgeDirectedCoastlineGapsJS(chains, Cx, Cy);
 
   const isOnBoundary = (pt) => Math.abs(Math.abs(pt[0]) - Cx) < 0.08 || Math.abs(Math.abs(pt[1]) - Cy) < 0.08;
   const snapNearBoundary = (pt) => {
