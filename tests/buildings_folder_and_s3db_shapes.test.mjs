@@ -567,9 +567,15 @@ test('5) All 6 unusual S3DB shape fixes produce faithful geometry and strictly 2
     col.registerCandidate(6021, { building: 'church', height: '24', 'roof:shape': 'gabled', 'roof:height': '10' }, makeRect(45, 0, 10, 6), [], false, 6021);
     col.registerCandidate(6022, { 'building:part': 'yes', height: '22', 'roof:shape': 'cone', 'roof:height': '5' }, makeRect(38, 4.2, 1.5, 1.5), [], true, 6021);
 
+    // 30m historic palace/townhall with parts covering only East half (~40%) -> must preserve West Wing!
+    col.registerCandidate(6031, { building: 'civic', height: '30' }, makeRect(-30, 35, 16, 10), [makeRect(-38, 35, 3, 3)], false);
+    col.registerCandidate(6032, { 'building:part': 'yes', height: '26' }, makeRect(-20, 35, 5.5, 4.5), [], true);
+    col.registerCandidate(6033, { 'building:part': 'yes', height: '24' }, makeRect(-20, 29, 5.5, 3.0), [], true);
+
     const emitted = col.resolveAndEmitS3DBBuildings();
     assert.ok(emitted.some(b => b.osmId === 6001 && b.h === 395), '(f) 395m tower preserved despite 4% 10m interior booth');
     assert.ok(emitted.some(b => b.osmId === 6011 && b.h === 20) && emitted.some(b => b.osmId === 6012 && b.h === 80), '(f) 20m podium + 80m tower both preserved');
+    assert.ok(emitted.some(b => b.osmId === 6031 && b.h === 30), '(f) 30m partially-mapped historic townhall preserves unmapped wing');
 
     const res = runScene(emitted);
     assertWatertight2Manifold(res, '(f) Preserved tower, podium & gabled nave corner turret');

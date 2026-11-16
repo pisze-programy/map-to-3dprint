@@ -142,7 +142,7 @@
       return { suppress: true, maxDefaultHeightCap: null };
     }
 
-    if ((parExpH !== null || parLvls !== null) && parH >= 24.0 && parH >= maxPartH * 0.70 &&
+    if ((parExpH !== null || parLvls !== null) && parH >= 40.0 && parH >= maxPartH * 0.70 &&
         parent.partCount >= 2 && allCov >= 0.35) {
       return { suppress: true, maxDefaultHeightCap: null };
     }
