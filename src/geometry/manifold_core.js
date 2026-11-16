@@ -226,7 +226,7 @@
     for (let i = 0; i < linesAndWidths.length; i++) {
       const item = linesAndWidths[i];
       const pts = item.pts || item;
-      const halfW = Math.max(0.05, Number(item.halfW || item.width * 0.5 || 0.35));
+      const halfW = Math.max(0.01, Number(item.halfW || item.width * 0.5 || 0.35));
       if (!pts || pts.length < 2) continue;
       const path64 = [];
       for (let j = 0; j < pts.length; j++) {

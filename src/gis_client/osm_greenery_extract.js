@@ -543,7 +543,7 @@ function carveGreenIslandsFromRoadPolysJS(greenPolys, roadPolys) {
     rp.outer = rebuilt[0].outer;
     rp.holes = rebuilt[0].holes;
     for (let k = 1; k < rebuilt.length; k++) {
-      const extra = { outer: rebuilt[k].outer, holes: rebuilt[k].holes, name: rp.name || '' };
+      const extra = { ...rp, outer: rebuilt[k].outer, holes: rebuilt[k].holes, name: rp.name || '' };
       Object.defineProperty(extra, '_greenIslandsCarved', { value: true, enumerable: false, configurable: true });
       extraRoadPolys.push(extra);
     }

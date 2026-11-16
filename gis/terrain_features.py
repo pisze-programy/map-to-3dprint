@@ -219,6 +219,8 @@ def process_way_terrain_feature(
             road_w_m = 8.5
         elif hwy in ("tertiary", "primary_link", "secondary_link"):
             road_w_m = 7.2
+        elif hwy == "tertiary_link":
+            road_w_m = 6.4
         elif hwy in ("rail", "light_rail", "tram", "narrow_gauge"):
             if hwy in ("subway", "monorail") and not is_bridge:
                 return
@@ -236,7 +238,7 @@ def process_way_terrain_feature(
         if len(pts) >= 2:
             roads.append({
                 "pts": pts,
-                "width": round(max(0.24, road_w_m * meters_to_units), 3),
+                "width": round(max(0.03, road_w_m * meters_to_units), 3),
                 "hwy": hwy,
                 "isPath": bool(is_path and hwy != "pedestrian"),
                 "bridge": bool(is_bridge),

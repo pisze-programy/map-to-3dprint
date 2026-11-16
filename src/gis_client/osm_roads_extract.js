@@ -166,7 +166,7 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
     if ((!isBridge && layerVal < 0) || (tags.man_made === 'bridge' && isClosed)) return true;
 
     const hwy = tags.highway || tags.railway || (isRailPlatform ? 'platform' : '') || tags.man_made || 'bridge';
-    if (['proposed', 'construction', 'bus_stop', 'elevator', 'rest_area', 'raceway', 'escape'].includes(hwy)) return true;
+    if (['proposed', 'construction', 'abandoned', 'disused', 'razed', 'miniature', 'bus_stop', 'elevator', 'rest_area', 'raceway', 'escape'].includes(hwy)) return true;
     if (hwy === 'platform' && !isRailPlatform) return true;
     if (['subway', 'monorail'].includes(hwy) && !isBridge) return true;
 
@@ -186,7 +186,9 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
     else if (hwy === 'primary') { rwm = 10.5; }
     else if (['secondary', 'motorway_link', 'trunk_link'].includes(hwy)) { rwm = 8.5; }
     else if (['tertiary', 'primary_link', 'secondary_link'].includes(hwy)) { rwm = 7.2; }
-    else if (['rail', 'light_rail', 'tram', 'narrow_gauge', 'funicular'].includes(hwy)) { rwm = 4.2; }
+    else if (hwy === 'tertiary_link') { rwm = 6.4; }
+    else if (hwy === 'monorail') { rwm = 3.4; }
+    else if (['rail', 'light_rail', 'tram', 'subway', 'narrow_gauge', 'funicular'].includes(hwy)) { rwm = 4.2; }
     else if (hwy === 'service') { rwm = (!isBridge && ['parking_aisle', 'driveway', 'alley'].includes(tags.service)) ? 3.8 : 4.8; }
 
     const explicitW = parseFloatTagJS(tags.width, null);
@@ -198,7 +200,7 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
         ? parseOsmLengthMetersJS(tags[k], null) : parseFloatTagJS(tags[k], null);
       ctx.roads.push({
         pts,
-        width: Math.round(Math.max(0.24, rwm * ctx.metersToUnits) * 1000) / 1000,
+        width: Math.round(Math.max(0.03, rwm * ctx.metersToUnits) * 1000) / 1000,
         hwy, isPath: Boolean(isPath), bridge: Boolean(isBridge), isBridge: Boolean(isBridge), isQuay: Boolean(isQuayWay),
         bridgeStructure: tags['bridge:structure'] || (typeof tags.bridge === 'string' && !['yes', 'viaduct'].includes(tags.bridge) ? tags.bridge : ''),
         bridgeSupport: tags['bridge:support'] || '',

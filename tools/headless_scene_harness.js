@@ -977,6 +977,54 @@ class LocalOverpassEvaluator {
     }
   }
 
+  _compileBracketPredicates(clauseStr) {
+    const preds = [];
+    const re = /\[([^\]]+)\]/g;
+    let m;
+    while ((m = re.exec(clauseStr)) !== null) {
+      const body = m[1].trim();
+      let pm;
+      if ((pm = body.match(/^~\s*"([^"]+)"\s*~\s*"([^"]+)"$/))) {
+        const kRe = new RegExp(pm[1]), vRe = new RegExp(pm[2]);
+        preds.push(tags => Object.entries(tags).some(([k, v]) => kRe.test(k) && vRe.test(String(v))));
+      } else if ((pm = body.match(/^!\s*"?([^"\]]+)"?$/))) {
+        const key = pm[1].trim();
+        preds.push(tags => tags[key] === undefined);
+      } else if ((pm = body.match(/^"?([^"!=~]+)"?\s*(!=|!~|=|~)\s*"([^"]*)"$/))) {
+        const key = pm[1].trim(), op = pm[2], val = pm[3];
+        if (op === '=') preds.push(tags => tags[key] !== undefined && String(tags[key]) === val);
+        else if (op === '!=') preds.push(tags => tags[key] === undefined || String(tags[key]) !== val);
+        else if (op === '~') { const vRe = new RegExp(val); preds.push(tags => tags[key] !== undefined && vRe.test(String(tags[key]))); }
+        else if (op === '!~') { const vRe = new RegExp(val); preds.push(tags => tags[key] === undefined || !vRe.test(String(tags[key]))); }
+      } else if ((pm = body.match(/^"?([^"\]]+)"?$/))) {
+        const key = pm[1].trim();
+        preds.push(tags => tags[key] !== undefined);
+      }
+    }
+    return preds.length > 0 ? (tags => Boolean(tags) && preds.every(fn => fn(tags))) : null;
+  }
+
+  _compileQueryMatchers(qlText) {
+    const s = String(qlText || '');
+    const wayMatchers = [];
+    const wayRe = /\bway(?:\.bw)?((?:\[[^\]]+\])+)\s*;/g;
+    let m;
+    while ((m = wayRe.exec(s)) !== null) {
+      const fn = this._compileBracketPredicates(m[1]);
+      if (fn) wayMatchers.push(fn);
+    }
+    const mpMatchers = [];
+    const mpRe = /rel\(bw\.bw\)(\["type"="multipolygon"\](?:\[[^\]]+\])*)\s*(?:->\s*\.(?:mp|isl)\s*)?;/g;
+    while ((m = mpRe.exec(s)) !== null) {
+      const fn = this._compileBracketPredicates(m[1]);
+      if (fn) mpMatchers.push(fn);
+    }
+    return {
+      wayMatcher: wayMatchers.length > 0 ? (tags => Boolean(tags) && wayMatchers.some(fn => fn(tags))) : null,
+      mpMatcher: mpMatchers.length > 0 ? (tags => Boolean(tags) && mpMatchers.some(fn => fn(tags))) : null,
+    };
+  }
+
   _matchWayTags(tags, isDetail) {
     if (!tags) return false;
     if (tags['building:part']) return true;
@@ -996,16 +1044,17 @@ class LocalOverpassEvaluator {
     return false;
   }
 
-  _matchRelTags(tags) {
+  _matchRelTags(tags, mpMatcher = null) {
     if (!tags) return false;
-    if (tags.building || tags.type === 'building' || tags['building:part']) return true;
+    if (tags.building || tags.type === 'building' || tags['building:part'] || tags['bridge:support']) return true;
     if (tags.man_made === 'bridge' || tags.type === 'bridge') return true;
     if (tags.attraction && ATTRACTION_WHEEL_RE.test(tags.attraction)) return true;
     if (tags.type === 'multipolygon') {
+      if (mpMatcher) return mpMatcher(tags);
       if (tags.natural || tags.waterway || tags.water || tags.landuse || tags.leisure ||
-          tags.place === 'island' || tags.place === 'islet' ||
+          tags.place === 'island' || tags.place === 'islet' || tags.place === 'square' ||
           tags.highway === 'pedestrian' || tags['area:highway'] ||
-          tags.man_made === 'quay' || tags.man_made === 'pier' || tags.man_made === 'pontoon' ||
+          /^(quay|pier|pontoon|breakwater|groyne|jetty)$/.test(tags.man_made || '') ||
           tags.railway === 'platform' || tags.public_transport === 'platform') {
         return true;
       }
@@ -1028,6 +1077,7 @@ class LocalOverpassEvaluator {
                      String(qlText || '').includes('way.bw["highway"];') ||
                      String(qlText || '').includes('way["natural"];') ||
                      String(qlText || '').includes('way.bw["natural"];');
+    const { wayMatcher, mpMatcher } = this._compileQueryMatchers(qlText);
 
     const outNodes = new Map();
     const outWays = new Map();
@@ -1044,7 +1094,7 @@ class LocalOverpassEvaluator {
 
     for (const item of this.indexedRels) {
       if (item.maxLat < south || item.minLat > north || item.maxLon < west || item.minLon > east) continue;
-      if (!this._matchRelTags(item.rel.tags)) continue;
+      if (!this._matchRelTags(item.rel.tags, mpMatcher)) continue;
       outRels.set(item.rel.id, item.rel);
       for (const wid of item.memberWayIds) addWayWithNodes(this.waysById.get(wid));
       for (const nid of item.memberNodeIds) {
@@ -1062,7 +1112,8 @@ class LocalOverpassEvaluator {
 
     for (const item of this.indexedWays) {
       if (item.maxLat < south || item.minLat > north || item.maxLon < west || item.minLon > east) continue;
-      if (!this._matchWayTags(item.way.tags, isDetail)) continue;
+      const matched = wayMatcher ? wayMatcher(item.way.tags) : this._matchWayTags(item.way.tags, isDetail);
+      if (!matched) continue;
       addWayWithNodes(item.way);
     }
 
@@ -1204,9 +1255,10 @@ function computeBBoxFromParams({
   const rad = Math.abs(Number(rotationDeg) || 0) * Math.PI / 180.0;
   const absCos = Math.abs(Math.cos(rad));
   const absSin = Math.abs(Math.sin(rad));
-  const envPad = 1.045;
-  const envHalfMx = (halfMx * absCos + halfMy * absSin) * envPad;
-  const envHalfMy = (halfMx * absSin + halfMy * absCos) * envPad;
+  const envPad = 1.06;
+  const rotFreeRadiusM = baseSpan <= 8000 ? Math.hypot(halfMx, halfMy) * 1.04 : 0;
+  const envHalfMx = Math.max((halfMx * absCos + halfMy * absSin) * envPad, rotFreeRadiusM);
+  const envHalfMy = Math.max((halfMx * absSin + halfMy * absCos) * envPad, rotFreeRadiusM);
   const fetchDLat = envHalfMy / 111320.0;
   const fetchDLon = envHalfMx / (111320.0 * cosLat);
 

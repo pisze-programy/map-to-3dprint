@@ -140,9 +140,18 @@
     const drapeRes = drapeMod.buildSurfaceDrapesAndFrame(
       core, mf, ctx, terrainManifold, plateClipPoly, unionedWaterRings, surfaceData
     );
-    const { greeneryManifold, roadManifold, frameManifold, roadPolys2D, greenPolys2D, hGreenU, hRoadU } = drapeRes;
+    const {
+      greeneryManifold, roadManifold, frameManifold,
+      roadPolys2D, streetPolys2D, footpathPolys2D, greenPolys2D,
+      hGreenU, hRoadU, hFootpathU: rawHFootpathU
+    } = drapeRes;
+    const hFootpathU = rawHFootpathU !== undefined
+      ? rawHFootpathU
+      : Math.max(0.15 / ctx.scaleMm, ((ctx.cfg && ctx.cfg.footpathHeightMm) || 0.303) / ctx.scaleMm);
     const waterIdx = _indexStructuredPolys(waterMaskPolys2D);
     const roadIdx = _indexStructuredPolys(roadPolys2D);
+    const streetIdx = _indexStructuredPolys(streetPolys2D || roadPolys2D);
+    const footpathIdx = _indexStructuredPolys(footpathPolys2D || []);
     const greenIdx = _indexStructuredPolys(greenPolys2D);
 
     const isPointInWater = (x, y) => {
@@ -155,13 +164,16 @@
       return hits >= 3;
     };
     const isPointOnRoad = (x, y) => _pointInIndexedPolys(x, y, roadIdx);
+    const isPointOnStreet = (x, y) => _pointInIndexedPolys(x, y, streetIdx);
+    const isPointOnFootpath = (x, y) => footpathIdx.length > 0 && _pointInIndexedPolys(x, y, footpathIdx);
     const isPointInGreen = (x, y) => _pointInIndexedPolys(x, y, greenIdx);
 
     const getSurfaceZ = (x, y) => {
       if (isPointInWater(x, y)) return queryWaterZAt(x, y, false);
       let z = ctx.getTerrainZ(x, y);
-      if (isPointOnRoad(x, y)) z += hRoadU;
-      else if (isPointInGreen(x, y)) z += hGreenU;
+      if (isPointOnStreet(x, y)) z += hRoadU;
+      else if (isPointInGreen(x, y)) z += hGreenU + (isPointOnFootpath(x, y) ? hFootpathU : 0);
+      else if (isPointOnFootpath(x, y)) z += hFootpathU;
       return z;
     };
 
