@@ -72,6 +72,7 @@
         name: sp.name || 'Most',
         structure: sp.structNorm,
         deckLayer: sp.deckLayer,
+        isRail: Boolean(sp.isRail),
         zDeckBot: Math.round(Math.min(...sp.zBotArr) * 100) / 100,
         zDeckTop: Math.round(Math.max(...sp.zTopArr) * 100) / 100,
         zStartDeck: Math.round(sp.zTopArr[0] * 100) / 100,

@@ -88,9 +88,32 @@
         if (a.axisPts && b.axisPts && a.zBotArr && b.zBotArr && a.zTopArr && b.zTopArr) {
           const [lo, hi] = a.deckLayer < b.deckLayer ? [a, b] : [b, a];
           const hitRad = Math.max(0.8, ((lo.width || 1) + (hi.width || 1)) * 0.52);
+          const outTan = (pts, atS) => {
+            const p0 = atS ? pts[0] : pts[pts.length - 1], p1 = atS ? pts[1] : pts[pts.length - 2];
+            const dx = p1[0] - p0[0], dy = p1[1] - p0[1], l = Math.hypot(dx, dy) || 1;
+            return [dx / l, dy / l];
+          };
+          const cumLen = (pts) => { const s = [0]; for (let m = 1; m < pts.length; m++) s.push(s[m - 1] + Math.hypot(pts[m][0] - pts[m - 1][0], pts[m][1] - pts[m - 1][1])); return s; };
+          const sHi = cumLen(hi.axisPts), sLo = cumLen(lo.axisPts), lHi = sHi[sHi.length - 1] || 0, lLo = sLo[sLo.length - 1] || 0;
+          const hiMid = hi.axisPts[hi.axisPts.length >> 1];
+          let minMidD = Infinity;
+          for (let q = 0; q < lo.axisPts.length; q++) minMidD = Math.min(minMidD, Math.hypot(hiMid[0] - lo.axisPts[q][0], hiMid[1] - lo.axisPts[q][1]));
+          const bJoints = [];
+          if (Boolean(hi.isRail) === Boolean(lo.isRail) && hi.deckLayer - lo.deckLayer === 1 && minMidD > hitRad * 1.6 && hi.axisPts.length >= 2 && lo.axisPts.length >= 2) {
+            const jSnap = Math.max(1.1, ((hi.width || 1) + (lo.width || 1)) * 0.65);
+            for (const [hS, hI] of [[true, 0], [false, hi.axisPts.length - 1]]) {
+              const tH = outTan(hi.axisPts, hS), pH = hi.axisPts[hI];
+              for (const [lS, lI] of [[true, 0], [false, lo.axisPts.length - 1]]) {
+                const tL = outTan(lo.axisPts, lS), pL = lo.axisPts[lI];
+                if (Math.hypot(pH[0] - pL[0], pH[1] - pL[1]) <= jSnap && -(tH[0] * tL[0] + tH[1] * tL[1]) >= 0.68) bJoints.push({ hS, lS });
+              }
+            }
+          }
+          const jZone = Math.max(2.4, ((hi.width || 1) + (lo.width || 1)) * 1.15);
           for (let ki = 0; ki < hi.axisPts.length; ki++) {
             const hp = hi.axisPts[ki];
             for (let kj = 0; kj < lo.axisPts.length; kj++) {
+              if (bJoints.some(bj => (bj.hS ? sHi[ki] : lHi - sHi[ki]) <= jZone && (bj.lS ? sLo[kj] : lLo - sLo[kj]) <= jZone)) continue;
               if (Math.hypot(hp[0] - lo.axisPts[kj][0], hp[1] - lo.axisPts[kj][1]) <= hitRad && hi.zBotArr[ki] <= lo.zTopArr[kj] + 1e-3) return true;
             }
           }

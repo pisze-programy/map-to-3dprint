@@ -60,19 +60,20 @@ function _segClosestPair2DJS(a0, a1, b0, b1) {
 function _applyLocalSmoothLiftJS(zTopArr, zBotArr, sArr, spanU, needArr, baseRampU, pinStart, pinEnd) {
   const n = zTopArr.length;
   for (let k = 0; k < n; k++) {
-    if ((k === 0 && pinStart && needArr[0] <= 0) || (k === n - 1 && pinEnd && needArr[n - 1] <= 0)) continue;
-    let lift = needArr[k];
+    if ((k === 0 && pinStart) || (k === n - 1 && pinEnd)) continue;
     const sk = sArr[k];
+    const startTaper = pinStart ? Math.min(1.0, sk / Math.max(0.75, Math.min(spanU * 0.16, 2.2))) : 1.0;
+    const endTaper = pinEnd ? Math.min(1.0, (spanU - sk) / Math.max(0.75, Math.min(spanU * 0.16, 2.2))) : 1.0;
+    const pinEnv = Math.min(startTaper, endTaper);
+    let lift = needArr[k] * pinEnv;
     for (let m = 0; m < n; m++) {
       const nm = needArr[m];
-      if (nm <= lift) continue;
+      if (nm * pinEnv <= lift) continue;
       const ramp = Math.max(baseRampU, Math.min(18.0, nm * 8.5));
       const ds = Math.abs(sk - sArr[m]);
       if (ds >= ramp) continue;
       const u = 1.0 - ds / ramp;
-      let env = u * u * (3.0 - 2.0 * u);
-      if (pinStart && needArr[0] <= 0 && sk < ramp) env *= Math.min(1.0, sk / Math.max(0.8, Math.min(sArr[m], ramp * 0.55)));
-      if (pinEnd && needArr[n - 1] <= 0 && (spanU - sk) < ramp) env *= Math.min(1.0, (spanU - sk) / Math.max(0.8, Math.min(spanU - sArr[m], ramp * 0.55)));
+      let env = u * u * (3.0 - 2.0 * u) * pinEnv;
       if (nm * env > lift) lift = nm * env;
     }
     if (lift > 0) { zTopArr[k] += lift; zBotArr[k] += lift; }
@@ -117,13 +118,16 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     const obb = typeof computeMinAreaOBB2D === 'function' ? computeMinAreaOBB2D(outer) : null;
     const estW = typeof _estimatePolyRibbonWidthJS === 'function' ? _estimatePolyRibbonWidthJS(outer, axisRaw, obb) : 1.5;
     const widthU = Math.max(minDeckU * 1.3, Number.isFinite(estW) ? estW : 1.5);
-    let structNorm = _normalizeBridgeStructJS(bp.bridgeStructure || (bp.tags && bp.tags['bridge:structure']), bp.covered, bp.tags);
-    let expThrough = /through[-_ ]?arch|tied[-_ ]?arch|bowstring/i.test(String(bp.bridgeStructure || ''));
+    const rawBpStruct = bp.bridgeStructure || (bp.tags && bp.tags['bridge:structure']);
+    const rawBpTrim = String(rawBpStruct || '').trim().toLowerCase();
+    const hasExplicitBpStruct = Boolean(rawBpTrim && !['yes', 'viaduct', 'bridge', 'movable'].includes(rawBpTrim));
+    let structNorm = _normalizeBridgeStructJS(rawBpStruct, bp.covered, bp.tags);
+    let expThrough = /through[-_ ]?arch|tied[-_ ]?arch|bowstring/i.test(String(rawBpStruct || ''));
     let heightM = bp.heightM, clearanceM = bp.clearanceM;
     for (const rd of linked) {
       const rs = _normalizeBridgeStructJS(rd.bridgeStructure, rd.covered, rd.tags);
-      if (_structRankJS(rs) > _structRankJS(structNorm)) structNorm = rs;
-      if (/through[-_ ]?arch|tied[-_ ]?arch|bowstring/i.test(String(rd.bridgeStructure || ''))) expThrough = true;
+      if (!hasExplicitBpStruct && _structRankJS(rs) > _structRankJS(structNorm)) structNorm = rs;
+      if (!hasExplicitBpStruct && /through[-_ ]?arch|tied[-_ ]?arch|bowstring/i.test(String(rd.bridgeStructure || ''))) expThrough = true;
       if (heightM == null && rd.heightM != null) heightM = rd.heightM;
       if (clearanceM == null && rd.clearanceM != null) clearanceM = rd.clearanceM;
     }
@@ -304,22 +308,37 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
       }
     }
 
+    const pinA = !sp.isElevatedViaduct && !sp.clippedStart && !abA.inWater;
+    const pinB = !sp.isElevatedViaduct && !sp.clippedEnd && !abB.inWater;
+    const endZoneU = Math.min(L * 0.20, Math.max(0.95, sp.width * 1.25));
+    const endSnapU = Math.max(0.55, sp.width * 0.70 + 0.25);
+
     if (!sp.isBoardwalk || sp.deckLayer >= 2) {
       for (const gr of groundRoads) {
         if (gr.layer >= sp.deckLayer) continue;
         if (sp.bbox[2] < gr.bbox[0] || sp.bbox[0] > gr.bbox[2] || sp.bbox[3] < gr.bbox[1] || sp.bbox[1] > gr.bbox[3]) continue;
+        const g0 = gr.pts[0], g1 = gr.pts[gr.pts.length - 1];
+        const touchesStartAbutment = pinA && (Math.hypot(g0[0] - pts[0][0], g0[1] - pts[0][1]) <= endSnapU || Math.hypot(g1[0] - pts[0][0], g1[1] - pts[0][1]) <= endSnapU);
+        const touchesEndAbutment = pinB && (Math.hypot(g0[0] - pts[n - 1][0], g0[1] - pts[n - 1][1]) <= endSnapU || Math.hypot(g1[0] - pts[n - 1][0], g1[1] - pts[n - 1][1]) <= endSnapU);
         const rad = sp.width * 0.5 + gr.halfW + 0.08;
         for (let k = 0; k < n - 1; k++) {
+          const bdx = pts[k + 1][0] - pts[k][0], bdy = pts[k + 1][1] - pts[k][1], bl = Math.hypot(bdx, bdy) || 1;
           for (let q = 0; q < gr.pts.length - 1; q++) {
             const cp = _segClosestPair2DJS(pts[k], pts[k + 1], gr.pts[q], gr.pts[q + 1]);
             if (cp.dist > rad) continue;
+            const sHit = cumS[k] + (cumS[k + 1] - cumS[k]) * cp.sA;
+            const gdx = gr.pts[q + 1][0] - gr.pts[q][0], gdy = gr.pts[q + 1][1] - gr.pts[q][1], gl = Math.hypot(gdx, gdy) || 1;
+            const absDot = Math.abs((bdx / bl) * (gdx / gl) + (bdy / bl) * (gdy / gl));
+            if (pinA && sHit <= endZoneU * 1.35 && (touchesStartAbutment || absDot >= 0.52)) continue;
+            if (pinB && (L - sHit) <= endZoneU * 1.35 && (touchesEndAbutment || absDot >= 0.52)) continue;
+            if (terrainWater.isPointInWater(cp.qb[0], cp.qb[1])) continue;
             const zGr = Math.max(terrainWater.getSurfaceZ(cp.qb[0], cp.qb[1]), ctx.getTerrainZ(cp.qb[0], cp.qb[1]) + (terrainWater.hRoadU || 0));
             const reqTop = zGr + baseLandClearU + sp.deckThick;
             const zCur = zTopArr[k] + (zTopArr[k + 1] - zTopArr[k]) * cp.sA;
             if (reqTop > zCur) {
               const def = reqTop - zCur;
-              landNeed[k] = Math.max(landNeed[k], def);
-              landNeed[k + 1] = Math.max(landNeed[k + 1], def);
+              if (!(k === 0 && pinA)) landNeed[k] = Math.max(landNeed[k], def);
+              if (!(k + 1 === n - 1 && pinB)) landNeed[k + 1] = Math.max(landNeed[k + 1], def);
             }
           }
         }
@@ -327,8 +346,6 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     }
 
     if (landNeed.some(v => v > 0)) {
-      const pinA = !sp.isElevatedViaduct && !sp.clippedStart && !abA.inWater;
-      const pinB = !sp.isElevatedViaduct && !sp.clippedEnd && !abB.inWater;
       _applyLocalSmoothLiftJS(zTopArr, zBotArr, cumS, L, landNeed, 3.8, pinA, pinB);
     }
 
@@ -339,6 +356,54 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
   // Multi-deck bridge-over-bridge clearance using local lower-deck Z and local longitudinal ramp
   specs.sort((a, b) => a.deckLayer - b.deckLayer);
   const gapU = Math.max(0.30, 0.48 / ctx.scaleMm, minDeckU * 0.48);
+
+  const findButtJoints = (lo, hi, hitRad) => {
+    const out = [];
+    if (Boolean(hi.isRail) !== Boolean(lo.isRail) || hi.deckLayer - lo.deckLayer !== 1) return out;
+    const hiMid = hi.pts[hi.pts.length >> 1];
+    let minMidDist = Infinity;
+    for (let q = 0; q < lo.pts.length; q++) minMidDist = Math.min(minMidDist, Math.hypot(hiMid[0] - lo.pts[q][0], hiMid[1] - lo.pts[q][1]));
+    if (minMidDist <= hitRad * 1.6) return out;
+    const joinSnap = Math.max(1.1, (hi.width + lo.width) * 0.65);
+    for (const [hiAtStart, hiIdx] of [[true, 0], [false, hi.pts.length - 1]]) {
+      const tHi = _outTan2DJS(hi.pts, hiAtStart), pHi = hi.pts[hiIdx];
+      for (const [loAtStart, loIdx] of [[true, 0], [false, lo.pts.length - 1]]) {
+        const tLo = _outTan2DJS(lo.pts, loAtStart), pLo = lo.pts[loIdx];
+        if (Math.hypot(pHi[0] - pLo[0], pHi[1] - pLo[1]) <= joinSnap && -(tHi[0] * tLo[0] + tHi[1] * tLo[1]) >= 0.68) {
+          out.push({ hiAtStart, loAtStart, hiIdx, loIdx });
+        }
+      }
+    }
+    return out;
+  };
+
+  // Pre-align collinear layer -> layer+1 butt-joints before multi-deck separation so no bridge is ever pulled down afterward
+  for (let i = 0; i < specs.length; i++) {
+    const hi = specs[i];
+    for (let j = 0; j < i; j++) {
+      const lo = specs[j];
+      const hitRad = Math.max(0.82, (hi.width + lo.width) * 0.54);
+      for (const bj of findButtJoints(lo, hi, hitRad)) {
+        const zJoin = Math.max(hi.zTopArr[bj.hiIdx], lo.zTopArr[bj.loIdx]);
+        const dHi = zJoin - hi.zTopArr[bj.hiIdx], dLo = zJoin - lo.zTopArr[bj.loIdx];
+        if (dHi > 0.01 && dHi < 2.5) {
+          const rU = Math.min(hi.spanU * 0.32, Math.max(2.2, dHi * 6.0));
+          for (let m = 0; m < hi.pts.length; m++) {
+            const ds = bj.hiAtStart ? hi.sArr[m] : (hi.spanU - hi.sArr[m]);
+            if (ds < rU) { const u = 1 - ds / rU, w = dHi * u * u * (3 - 2 * u); hi.zTopArr[m] += w; hi.zBotArr[m] += w; }
+          }
+        }
+        if (dLo > 0.01 && dLo < 2.5) {
+          const rU = Math.min(lo.spanU * 0.32, Math.max(2.2, dLo * 6.0));
+          for (let m = 0; m < lo.pts.length; m++) {
+            const ds = bj.loAtStart ? lo.sArr[m] : (lo.spanU - lo.sArr[m]);
+            if (ds < rU) { const u = 1 - ds / rU, w = dLo * u * u * (3 - 2 * u); lo.zTopArr[m] += w; lo.zBotArr[m] += w; }
+          }
+        }
+      }
+    }
+  }
+
   for (let i = 0; i < specs.length; i++) {
     const hi = specs[i];
     for (let j = 0; j < i; j++) {
@@ -347,32 +412,41 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
       const need = new Array(hi.pts.length).fill(0);
       const hitRad = Math.max(0.82, (hi.width + lo.width) * 0.54);
       const segRad = (hi.width + lo.width) * 0.54;
+      const buttJoints = findButtJoints(lo, hi, hitRad);
+      const jointZoneU = Math.max(2.4, (hi.width + lo.width) * 1.15);
+      const isNearButtJoint = (sHi, sLo) => buttJoints.some(bj =>
+        (bj.hiAtStart ? sHi : hi.spanU - sHi) <= jointZoneU &&
+        (bj.loAtStart ? sLo : lo.spanU - sLo) <= jointZoneU
+      );
 
       for (let k = 0; k < hi.pts.length; k++) {
-        const hp = hi.pts[k];
+        const hp = hi.pts[k], sHiK = hi.sArr[k];
         let reqBot = -Infinity;
         if (lo.isAreaPoly && _ptInRingJS(hp[0], hp[1], lo.outer)) {
-          let nearZ = lo.zTopArr[0], nearD = Infinity;
+          let nearZ = lo.zTopArr[0], nearD = Infinity, nearS = 0;
           for (let q = 0; q < lo.pts.length; q++) {
             const d = Math.hypot(hp[0] - lo.pts[q][0], hp[1] - lo.pts[q][1]);
-            if (d < nearD) { nearD = d; nearZ = lo.zTopArr[q]; }
+            if (d < nearD) { nearD = d; nearZ = lo.zTopArr[q]; nearS = lo.sArr[q]; }
           }
-          reqBot = Math.max(reqBot, nearZ + gapU);
+          if (!isNearButtJoint(sHiK, nearS)) reqBot = Math.max(reqBot, nearZ + gapU);
         }
         for (let q = 0; q < lo.pts.length; q++) {
-          if (Math.hypot(hp[0] - lo.pts[q][0], hp[1] - lo.pts[q][1]) <= hitRad) {
+          if (!isNearButtJoint(sHiK, lo.sArr[q]) && Math.hypot(hp[0] - lo.pts[q][0], hp[1] - lo.pts[q][1]) <= hitRad) {
             reqBot = Math.max(reqBot, lo.zTopArr[q] + gapU);
           }
         }
         for (let q = 0; q < lo.pts.length - 1; q++) {
           const a = lo.pts[q], b = lo.pts[q + 1], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1e-9;
           const t = Math.max(0, Math.min(1, ((hp[0] - a[0]) * dx + (hp[1] - a[1]) * dy) / l2));
-          if (Math.hypot(hp[0] - (a[0] + dx * t), hp[1] - (a[1] + dy * t)) <= hitRad) {
+          const sLoT = lo.sArr[q] + Math.sqrt(l2) * t;
+          if (!isNearButtJoint(sHiK, sLoT) && Math.hypot(hp[0] - (a[0] + dx * t), hp[1] - (a[1] + dy * t)) <= hitRad) {
             reqBot = Math.max(reqBot, lo.zTopArr[q] + (lo.zTopArr[q + 1] - lo.zTopArr[q]) * t + gapU);
           }
           if (k < hi.pts.length - 1) {
             const cp = _segClosestPair2DJS(hp, hi.pts[k + 1], a, b);
-            if (cp.dist <= segRad) {
+            const sHiCp = sHiK + (hi.sArr[k + 1] - sHiK) * cp.sA;
+            const sLoCp = lo.sArr[q] + (lo.sArr[q + 1] - lo.sArr[q]) * cp.tB;
+            if (!isNearButtJoint(sHiCp, sLoCp) && cp.dist <= segRad) {
               const loZ = lo.zTopArr[q] + (lo.zTopArr[q + 1] - lo.zTopArr[q]) * cp.tB + gapU;
               const hiBotAtS = hi.zBotArr[k] + (hi.zBotArr[k + 1] - hi.zBotArr[k]) * cp.sA;
               if (loZ > hiBotAtS) {

@@ -6,8 +6,10 @@
 function _normalizeBridgeStructJS(raw, covered, tags) {
   const s = String(raw || '').trim().toLowerCase();
   const cov = String(covered || (tags && tags.covered) || '').trim().toLowerCase();
+  const isMovable = Boolean(tags && (tags['bridge:movable'] || String(tags.bridge || '').trim().toLowerCase() === 'movable'));
   if (/cable[-_ ]?stayed|extradosed|harp|fan/.test(s)) return 'cable-stayed';
   if (/suspension/.test(s)) return 'suspension';
+  if (isMovable && !/truss|warren|pratt|bailey|cantilever|lattice/.test(s)) return 'beam';
   if (/through[-_ ]?arch|tied[-_ ]?arch|bowstring|arch|humpback/.test(s)) return 'arch';
   if (/truss|warren|pratt|bailey|cantilever|lattice/.test(s) || cov === 'yes') return 'truss';
   if (/floating|pontoon/.test(s) || (tags && tags.floating === 'yes')) return 'floating';
@@ -302,42 +304,63 @@ function _stitchAndMergeLinearBridgesJS(roadBridges, opts = {}) {
     }
   );
 
-  // Metric + MSLA anti-capillary twin-carriageway / twin-track corridor merge (local cross-sections only)
+  // Metric + MSLA anti-capillary multi-track / twin-carriageway corridor merge (local cross-sections only)
   const maxEdgeGapU = Math.min(Math.max(0.42 / scaleMm, 5.5 * mToBedXY), 12.0 * mToBedXY + 0.25 / scaleMm);
+  const maxCorridorSpanU = Math.max(26.0 * mToBedXY + 0.5 / scaleMm, 1.4 / scaleMm);
   const out = [], used = new Set();
   for (let i = 0; i < chains.length; i++) {
     if (used.has(i)) continue;
     const base = chains[i], group = [base], lenA = _polyLenJS(base.pts);
-    for (let j = i + 1; j < chains.length; j++) {
-      if (used.has(j)) continue;
-      const c = chains[j];
-      if ((base.layer ?? 1) !== (c.layer ?? 1)) continue;
-      if ((base.parentBridgeRelId || null) !== (c.parentBridgeRelId || null)) continue;
-      if (!base.parentBridgeRelId && Boolean(base.isRail) !== Boolean(c.isRail)) continue;
-      const lenB = _polyLenJS(c.pts);
-      if (Math.min(lenA, lenB) / Math.max(lenA, lenB, 1e-6) < 0.72) continue;
+    let grew = true;
+    while (grew && group.length < 6) {
+      grew = false;
+      for (let j = i + 1; j < chains.length && group.length < 6; j++) {
+        if (used.has(j)) continue;
+        const c = chains[j];
+        if ((base.layer ?? 1) !== (c.layer ?? 1)) continue;
+        if ((base.parentBridgeRelId || null) !== (c.parentBridgeRelId || null)) continue;
+        if (!base.parentBridgeRelId && Boolean(base.isRail) !== Boolean(c.isRail)) continue;
+        const lenB = _polyLenJS(c.pts);
+        if (Math.min(lenA, lenB) / Math.max(lenA, lenB, 1e-6) < 0.72) continue;
 
-      const nCheck = Math.max(13, Math.min(96, Math.ceil(Math.max(lenA, lenB) / 1.1) + 1));
-      const rsA = _resamplePolyJS(base.pts, nCheck);
-      const rsB = _resamplePolyJS(_alignPtsToRefJS(c.pts, base.pts), nCheck);
-      const maxCenterDistU = (base.width + c.width) * 0.5 + maxEdgeGapU;
-      let ok = true;
-      const dists = [];
-      for (let k = 0; k < nCheck; k++) {
-        const d = Math.hypot(rsA[k][0] - rsB[k][0], rsA[k][1] - rsB[k][1]);
-        if (d > maxCenterDistU * 1.35) { ok = false; break; }
-        dists.push(d);
-        if (k > 0) {
-          const ax = rsA[k][0] - rsA[k - 1][0], ay = rsA[k][1] - rsA[k - 1][1], al = Math.hypot(ax, ay) || 1;
-          const bx = rsB[k][0] - rsB[k - 1][0], by = rsB[k][1] - rsB[k - 1][1], bl = Math.hypot(bx, by) || 1;
-          if ((ax / al) * (bx / bl) + (ay / al) * (by / bl) < 0.72) { ok = false; break; }
+        const nCheck = Math.max(13, Math.min(96, Math.ceil(Math.max(lenA, lenB) / 1.1) + 1));
+        const rsBase = _resamplePolyJS(base.pts, nCheck);
+        const rsC = _resamplePolyJS(_alignPtsToRefJS(c.pts, base.pts), nCheck);
+        let maxBaseDist = 0;
+        for (let k = 0; k < nCheck; k++) {
+          const d0 = Math.hypot(rsBase[k][0] - rsC[k][0], rsBase[k][1] - rsC[k][1]);
+          if (d0 > maxBaseDist) maxBaseDist = d0;
         }
-      }
-      if (!ok) continue;
-      dists.sort((u, v) => u - v);
-      if (dists[dists.length >> 1] <= maxCenterDistU && dists[0] <= maxCenterDistU * 1.45) {
-        used.add(j);
-        group.push(c);
+        if (maxBaseDist > Math.max(base.width * 3.2, maxCorridorSpanU)) continue;
+
+        let matchedMember = false;
+        for (const refM of group) {
+          const rsA = refM === base ? rsBase : _resamplePolyJS(_alignPtsToRefJS(refM.pts, base.pts), nCheck);
+          const maxCenterDistU = (refM.width + c.width) * 0.5 + maxEdgeGapU;
+          let ok = true;
+          const dists = [];
+          for (let k = 0; k < nCheck; k++) {
+            const d = Math.hypot(rsA[k][0] - rsC[k][0], rsA[k][1] - rsC[k][1]);
+            if (d > maxCenterDistU * 1.35) { ok = false; break; }
+            dists.push(d);
+            if (k > 0) {
+              const ax = rsA[k][0] - rsA[k - 1][0], ay = rsA[k][1] - rsA[k - 1][1], al = Math.hypot(ax, ay) || 1;
+              const bx = rsC[k][0] - rsC[k - 1][0], by = rsC[k][1] - rsC[k - 1][1], bl = Math.hypot(bx, by) || 1;
+              if ((ax / al) * (bx / bl) + (ay / al) * (by / bl) < 0.74) { ok = false; break; }
+            }
+          }
+          if (!ok) continue;
+          dists.sort((u, v) => u - v);
+          if (dists[dists.length >> 1] <= maxCenterDistU && dists[0] <= maxCenterDistU * 1.45) {
+            matchedMember = true;
+            break;
+          }
+        }
+        if (matchedMember) {
+          used.add(j);
+          group.push(c);
+          grew = true;
+        }
       }
     }
 
@@ -383,7 +406,7 @@ function _stitchAndMergeLinearBridgesJS(roadBridges, opts = {}) {
 
 const _AXIS_HELPER_EXPORTS = {
   _normalizeBridgeStructJS, _structRankJS, _polyLenJS, _dedupPtsJS,
-  _resamplePolyJS, _bbox2DJS, _ptInRingJS, _clipPolylineToRectJS,
+  _resamplePolyJS, _bbox2DJS, _ptInRingJS, _clipPolylineToRectJS, _outTan2DJS,
   _ribbonWidthFromRingJS, _extractClippedAxisFromRoadsJS,
   _extractCurvedSpineFromPolyJS, _estimatePolyRibbonWidthJS, _stitchAndMergeLinearBridgesJS
 };

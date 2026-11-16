@@ -544,6 +544,78 @@ async function runSuite() {
     );
   }
 
+  // [12/12] Multi-City Detail Regressions (Explicit Poly Beam vs Linked Arch, Multi-Bay Arch Piers, Approach Street Pinning & Butt-Joint Continuity, Dry Cable Approach)
+  console.log('\n[12/12] Multi-City Detail Invariants (Warsaw / Tokyo / Chicago Regressions)');
+  {
+    const scene = {
+      spanMeters: 1600,
+      metersToUnits: 169.2 / 1600,
+      dem: { grid: [[14, 14, 4, 10], [14, 14, 4, 10]], minElev: 4, maxElev: 14 },
+      waterPolys: [{ outer: [[4, -80], [52, -80], [52, 80], [4, 80]], holes: [] }],
+      waterLines: [], greenPolys: [], trees: [], buildings: [],
+      bridgeSupports: [
+        { kind: 'pier', isPoint: true, pt: [20, 0], osmId: 701, tags: { 'bridge:support': 'pier' } },
+        { kind: 'pier', isPoint: true, pt: [36, 0], osmId: 702, tags: { 'bridge:support': 'pier' } },
+      ],
+      bridgePolys: [
+        // Dry-land viaduct explicitly tagged bridge:structure=beam (like Wiadukt Poniatowskiego)
+        {
+          osmId: 801, name: 'Dry Beam Viaduct',
+          outer: [[-64, -2], [-2, -2], [-2, 2], [-64, 2]], holes: [], layer: 1,
+          bridgeStructure: 'beam', acrossRoadIds: [811],
+          tags: { man_made: 'bridge', 'bridge:structure': 'beam', layer: '1' },
+        },
+        // River arch bridge continuing collinearly at layer=2 with 2 interior river piers (3 bays)
+        {
+          osmId: 802, name: 'Multi-Bay River Arch',
+          outer: [[-2, -2], [60, -2], [60, 2], [-2, 2]], holes: [], layer: 2,
+          bridgeStructure: 'arch', acrossRoadIds: [811], supportIds: [701, 702],
+          tags: { man_made: 'bridge', 'bridge:structure': 'arch', layer: '2' },
+        },
+        // Short dry-land cable-stayed anchorage fragment with 0 pylons (like Rainbow Bridge land anchorage)
+        {
+          osmId: 803, name: 'Dry Cable Anchorage',
+          outer: [[-70, 28], [-62, 28], [-62, 31], [-70, 31]], holes: [], layer: 1,
+          bridgeStructure: 'cable-stayed', acrossRoadIds: [],
+          tags: { man_made: 'bridge', 'bridge:structure': 'cable-stayed', layer: '1' },
+        },
+      ],
+      roads: [
+        // Collinear layer=0 approach streets connecting at both ends
+        { osmId: 810, pts: [[-82, 0], [-64, 0]], width: 1.8, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'secondary' } },
+        { osmId: 812, pts: [[60, 0], [82, 0]], width: 1.8, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'secondary' } },
+        // Shared across road carrying arch tag across both polygons
+        { osmId: 811, pts: [[-64, 0], [60, 0]], width: 1.8, isBridge: true, layer: 2, bridgeStructure: 'arch', tags: { highway: 'secondary', bridge: 'yes', 'bridge:structure': 'arch', layer: '2' } },
+      ],
+    };
+    const res = buildComplete3DModel(scene, makeState());
+    assertCleanManifold(res.printMetrics, 'Multi-city detail invariants scene');
+    const audits = res.audit.bridgeAudits || [];
+    const dryViaduct = audits.find(a => a.name === 'Dry Beam Viaduct');
+    const riverArch = audits.find(a => a.name === 'Multi-Bay River Arch');
+    const dryAnchorage = audits.find(a => a.name === 'Dry Cable Anchorage');
+    check(
+      Boolean(dryViaduct && dryViaduct.structure === 'beam' && Math.abs(dryViaduct.zPylonTop - dryViaduct.zDeckTop) < 0.05),
+      'Explicit bridge:structure=beam on man_made=bridge is NOT overwritten into giant arch by linked road',
+      `structure=${dryViaduct?.structure}, zTop=${dryViaduct?.zDeckTop}, pyTop=${dryViaduct?.zPylonTop}`
+    );
+    check(
+      Boolean(dryViaduct && Math.abs(dryViaduct.zStartDeck - dryViaduct.zAbutmentA) <= 0.15),
+      'Collinear layer=0 approach road at dry abutment does NOT lift bridge start into a vertical cliff',
+      `zStart=${dryViaduct?.zStartDeck} vs zA=${dryViaduct?.zAbutmentA}`
+    );
+    check(
+      Boolean(res.printMetrics.multiDeckSeparationsOk === true && dryViaduct && riverArch && Math.abs(dryViaduct.zEndDeck - riverArch.zStartDeck) <= 0.25 && riverArch.zPylonTop < riverArch.zDeckTop + 5.5),
+      'Collinear layer=1 -> layer=2 butt-joint welds smoothly without step, passes multiDeckSeparationsOk, and subdivides river arch across piers',
+      `multiDeckOk=${res.printMetrics.multiDeckSeparationsOk}, viaductEnd=${dryViaduct?.zEndDeck}, riverStart=${riverArch?.zStartDeck}, archPyTop=${riverArch?.zPylonTop}`
+    );
+    check(
+      Boolean(dryAnchorage && Math.abs(dryAnchorage.zPylonTop - dryAnchorage.zDeckTop) < 0.05),
+      'Short dry-land cable-stayed anchorage fragment without pylons does NOT sprout synthetic cable towers',
+      `anchorageDeckTop=${dryAnchorage?.zDeckTop}, pyTop=${dryAnchorage?.zPylonTop}`
+    );
+  }
+
   console.log(`\nETAP 4 BRIDGES GLOBAL SUMMARY: ${passed} passed, ${failed} failed.`);
   if (failed > 0) process.exit(1);
 }
