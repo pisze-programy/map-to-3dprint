@@ -149,9 +149,66 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   }).catch(() => {});
 
   const concurrency = Math.min(2, totalChunks);
+  const subRetryDelayMs = (options && typeof options.subRetryDelayMs === 'number') ? options.subRetryDelayMs : 1200;
+  const pass2RetryDelayMs = (options && typeof options.retryDelayMs === 'number') ? options.retryDelayMs : 1800;
+  const partialPreviewDelayMs = (options && typeof options.partialPreviewDelayMs === 'number') ? options.partialPreviewDelayMs : 400;
   let nextChunkIdx = 0;
   let streamCompleted = false;
   const failedChunkEntries = [];
+
+  const subChunkCallbacks = {
+    retryDelayMs: subRetryDelayMs,
+    onSubSplit: (splitChunk) => {
+      if (abortSignal && abortSignal.aborted) return;
+      if (typeof options.onProgress === 'function') {
+        options.onProgress({
+          loadedChunks,
+          totalChunks,
+          pct: Math.min(92, Math.round(12 + ((loadedChunks + failedChunks) / totalChunks) * 75)),
+          progressKind: 'split',
+          statusText: `Sektor ${splitChunk.id} duży — dzielenie na 2×2 pod-sektory...`
+        });
+      }
+    },
+    onSubChunkProgress: (subChunk, phase, subDone, subTotal, subCount = 0) => {
+      if (abortSignal && abortSignal.aborted) return;
+      if (typeof options.onProgress === 'function') {
+        let statusText = `Pod-sektor ${subChunk.id} (${subDone}/${subTotal})...`;
+        if (phase === 'start') {
+          statusText = `Pobieranie pod-sektora ${subChunk.id} (${subDone}/${subTotal})...`;
+        } else if (phase === 'retry-start') {
+          statusText = `Ponawianie pod-sektora ${subChunk.id} (${subDone}/${subTotal})...`;
+        } else if (phase === 'done' || phase === 'retry-done') {
+          statusText = `Pobrano pod-sektor ${subChunk.id} (${subDone}/${subTotal} • +${Number(subCount || 0).toLocaleString()} el.)...`;
+        } else if (phase === 'retry-queued' || phase === 'failed') {
+          statusText = `Oczekiwanie na pod-sektor ${subChunk.id} (${subDone}/${subTotal})...`;
+        }
+        options.onProgress({
+          loadedChunks,
+          totalChunks,
+          pct: Math.min(93, Math.round(13 + ((loadedChunks + (subDone / Math.max(1, subTotal))) / Math.max(1, totalChunks)) * 75)),
+          progressKind: 'subchunk',
+          subChunkId: subChunk.id,
+          subChunkPhase: phase,
+          statusText
+        });
+      }
+    }
+  };
+
+  const _waitDelayAbortable = (ms) => {
+    if (!ms || ms <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      if (abortSignal && abortSignal.aborted) { resolve(); return; }
+      let t = null;
+      const onAbt = () => { if (t !== null) clearTimeout(t); resolve(); };
+      t = setTimeout(() => {
+        if (abortSignal) abortSignal.removeEventListener('abort', onAbt);
+        resolve();
+      }, ms);
+      if (abortSignal) abortSignal.addEventListener('abort', onAbt, { once: true });
+    });
+  };
 
   const runChunkWorker = async () => {
     while (nextChunkIdx < chunks.length) {
@@ -173,32 +230,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
 
       let chunkSucceeded = false;
       try {
-        const els = await fetchChunkWithRecursiveSplit(chunk, abortSignal, {
-          onSubSplit: (splitChunk) => {
-            if (abortSignal && abortSignal.aborted) return;
-            if (typeof options.onProgress === 'function') {
-              options.onProgress({
-                loadedChunks,
-                totalChunks,
-                pct: Math.min(92, Math.round(12 + ((loadedChunks + failedChunks) / totalChunks) * 75)),
-                progressKind: 'split',
-                statusText: `Sektor ${splitChunk.id} duży — dzielenie na 2×2 pod-sektory...`
-              });
-            }
-          },
-          onSubChunkDone: (subChunk, subCount, subDone, subTotal) => {
-            if (abortSignal && abortSignal.aborted) return;
-            if (typeof options.onProgress === 'function') {
-              options.onProgress({
-                loadedChunks,
-                totalChunks,
-                pct: Math.min(92, Math.round(13 + ((loadedChunks + failedChunks + (subDone / subTotal)) / totalChunks) * 75)),
-                progressKind: 'subchunk',
-                statusText: `Pobrano pod-sektor ${subChunk.id} (${subDone}/${subTotal} • +${subCount.toLocaleString()} el.)...`
-              });
-            }
-          }
-        });
+        const els = await fetchChunkWithRecursiveSplit(chunk, abortSignal, subChunkCallbacks);
 
         if (Array.isArray(els)) {
           collectedChunkElements.push(els);
@@ -207,11 +239,16 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
           chunkSucceeded = true;
         } else {
           failedChunks++;
-          failedChunkEntries.push({ chunk, partialElements: null });
+          failedChunkEntries.push({ chunk, partialElements: null, missingSubChunks: null, failedSubChunkIds: [chunk.id] });
         }
       } catch (err) {
         failedChunks++;
-        failedChunkEntries.push({ chunk, partialElements: (err && Array.isArray(err.partialElements)) ? err.partialElements : null });
+        failedChunkEntries.push({
+          chunk,
+          partialElements: (err && Array.isArray(err.partialElements)) ? err.partialElements : null,
+          missingSubChunks: (err && Array.isArray(err.missingSubChunks) && err.missingSubChunks.length > 0) ? err.missingSubChunks : null,
+          failedSubChunkIds: (err && Array.isArray(err.failedSubChunkIds) && err.failedSubChunkIds.length > 0) ? err.failedSubChunkIds : [chunk.id]
+        });
         if (!(abortSignal && abortSignal.aborted)) {
           console.warn(`[GIS Chunk Streamer] Chunk ${chunk.id} failed on pass 1:`, err);
         }
@@ -233,6 +270,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
 
       if (
         !partialRendered &&
+        !streamCompleted &&
         totalChunks >= 4 &&
         loadedChunks >= Math.ceil(totalChunks * 0.5) &&
         loadedChunks < totalChunks &&
@@ -244,7 +282,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
         const snapLoaded = loadedChunks;
         partialPreviewPromise = (async () => {
           try {
-            await new Promise(r => setTimeout(r, 400));
+            await _waitDelayAbortable(partialPreviewDelayMs);
             if (streamCompleted || loadedChunks + failedChunks >= totalChunks || (abortSignal && abortSignal.aborted)) return;
             const demNow = await demPromise;
             if (streamCompleted || loadedChunks + failedChunks >= totalChunks || (abortSignal && abortSignal.aborted)) return;
@@ -253,7 +291,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
               south, west, north, east, `${title} (${snapLoaded}/${totalChunks})`, demNow, partialElements, 4500, sceneOptions
             );
             partialScene._isPartialPreview = true;
-            if (!(abortSignal && abortSignal.aborted)) {
+            if (!streamCompleted && loadedChunks < totalChunks && !(abortSignal && abortSignal.aborted)) {
               options.onPartialScene(partialScene, snapLoaded, totalChunks);
             }
           } catch (partialErr) {
@@ -265,13 +303,27 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   };
 
   await Promise.all(Array.from({ length: concurrency }, () => runChunkWorker()));
+  if (nextChunkIdx < chunks.length) {
+    for (let uIdx = nextChunkIdx; uIdx < chunks.length; uIdx++) {
+      failedChunks++;
+      failedChunkEntries.push({
+        chunk: chunks[uIdx],
+        partialElements: null,
+        missingSubChunks: null,
+        failedSubChunkIds: [chunks[uIdx].id]
+      });
+    }
+  }
 
-  // Second-chance sequential backoff retry for any chunks that failed during initial concurrent wave
-  if (failedChunkEntries.length > 0 && !(abortSignal && abortSignal.aborted)) {
-    const remainingFailed = [];
+  // Pass 2: Sequential targeted retry (retries ONLY missing sub-chunks when parent chunk partially succeeded)
+  const remainingFailed = [];
+  if (failedChunkEntries.length > 0) {
     for (let rIdx = 0; rIdx < failedChunkEntries.length; rIdx++) {
-      if (abortSignal && abortSignal.aborted) break;
       const entry = failedChunkEntries[rIdx];
+      if (abortSignal && abortSignal.aborted) {
+        remainingFailed.push(entry);
+        continue;
+      }
       if (typeof options.onProgress === 'function') {
         options.onProgress({
           loadedChunks,
@@ -281,29 +333,106 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
           statusText: `Ponawianie sektora ${entry.chunk.id} (${rIdx + 1}/${failedChunkEntries.length})...`
         });
       }
-      await new Promise(r => setTimeout(r, 1800));
-      if (abortSignal && abortSignal.aborted) break;
-      try {
-        const retryEls = await fetchChunkWithRecursiveSplit(entry.chunk, abortSignal, null);
-        if (Array.isArray(retryEls)) {
-          collectedChunkElements.push(retryEls);
+      await _waitDelayAbortable(pass2RetryDelayMs);
+      if (abortSignal && abortSignal.aborted) {
+        remainingFailed.push(entry);
+        continue;
+      }
+
+      if (Array.isArray(entry.missingSubChunks) && entry.missingSubChunks.length > 0) {
+        const mergedForEntry = Array.isArray(entry.partialElements) ? entry.partialElements.slice() : [];
+        const stillMissingSubs = [];
+        for (let sIdx = 0; sIdx < entry.missingSubChunks.length; sIdx++) {
+          const sc = entry.missingSubChunks[sIdx];
+          if (abortSignal && abortSignal.aborted) {
+            stillMissingSubs.push(sc);
+            continue;
+          }
+          if (sIdx > 0) await _waitDelayAbortable(subRetryDelayMs);
+          if (abortSignal && abortSignal.aborted) {
+            stillMissingSubs.push(sc);
+            continue;
+          }
+          subChunkCallbacks.onSubChunkProgress(sc, 'retry-start', sIdx, entry.missingSubChunks.length, 0);
+          try {
+            const subEls = await fetchChunkWithRecursiveSplit(sc, abortSignal, subChunkCallbacks);
+            if (Array.isArray(subEls)) {
+              if (typeof storeOverpassChunkCache === 'function') storeOverpassChunkCache(sc, subEls);
+              for (let k = 0; k < subEls.length; k++) mergedForEntry.push(subEls[k]);
+              subChunkCallbacks.onSubChunkProgress(sc, 'retry-done', sIdx + 1, entry.missingSubChunks.length, subEls.length);
+            } else {
+              stillMissingSubs.push(sc);
+              subChunkCallbacks.onSubChunkProgress(sc, 'failed', sIdx, entry.missingSubChunks.length, 0);
+            }
+          } catch (subRetryErr) {
+            if (subRetryErr && Array.isArray(subRetryErr.partialElements)) {
+              for (let k = 0; k < subRetryErr.partialElements.length; k++) mergedForEntry.push(subRetryErr.partialElements[k]);
+            }
+            if (subRetryErr && Array.isArray(subRetryErr.missingSubChunks) && subRetryErr.missingSubChunks.length > 0) {
+              for (const msc of subRetryErr.missingSubChunks) stillMissingSubs.push(msc);
+            } else {
+              stillMissingSubs.push(sc);
+            }
+            subChunkCallbacks.onSubChunkProgress(sc, 'failed', sIdx, entry.missingSubChunks.length, 0);
+          }
+        }
+        if (stillMissingSubs.length === 0) {
+          if (typeof storeOverpassChunkCache === 'function') storeOverpassChunkCache(entry.chunk, mergedForEntry);
+          collectedChunkElements.push(mergedForEntry);
           loadedChunks++;
           failedChunks = Math.max(0, failedChunks - 1);
-          totalLoadedEls += retryEls.length;
+          totalLoadedEls += mergedForEntry.length;
         } else {
-          remainingFailed.push(entry);
+          remainingFailed.push({
+            chunk: entry.chunk,
+            partialElements: mergedForEntry,
+            missingSubChunks: stillMissingSubs,
+            failedSubChunkIds: stillMissingSubs.map(s => s.id)
+          });
         }
-      } catch (retryErr) {
-        const bestPartial = (retryErr && Array.isArray(retryErr.partialElements) && retryErr.partialElements.length > 0)
-          ? retryErr.partialElements
-          : entry.partialElements;
-        remainingFailed.push({ chunk: entry.chunk, partialElements: bestPartial });
+      } else {
+        try {
+          const retryEls = await fetchChunkWithRecursiveSplit(entry.chunk, abortSignal, subChunkCallbacks);
+          if (Array.isArray(retryEls)) {
+            collectedChunkElements.push(retryEls);
+            loadedChunks++;
+            failedChunks = Math.max(0, failedChunks - 1);
+            totalLoadedEls += retryEls.length;
+          } else {
+            remainingFailed.push(entry);
+          }
+        } catch (retryErr) {
+          const bestPartial = (retryErr && Array.isArray(retryErr.partialElements) && retryErr.partialElements.length > 0)
+            ? retryErr.partialElements
+            : entry.partialElements;
+          const missingSubs = (retryErr && Array.isArray(retryErr.missingSubChunks) && retryErr.missingSubChunks.length > 0)
+            ? retryErr.missingSubChunks
+            : entry.missingSubChunks;
+          const failedIds = (retryErr && Array.isArray(retryErr.failedSubChunkIds) && retryErr.failedSubChunkIds.length > 0)
+            ? retryErr.failedSubChunkIds
+            : (entry.failedSubChunkIds || [entry.chunk.id]);
+          remainingFailed.push({
+            chunk: entry.chunk,
+            partialElements: bestPartial,
+            missingSubChunks: missingSubs,
+            failedSubChunkIds: failedIds
+          });
+        }
       }
     }
-    for (const rem of remainingFailed) {
-      if (Array.isArray(rem.partialElements) && rem.partialElements.length > 0) {
-        collectedChunkElements.push(rem.partialElements);
+  }
+
+  const allMissingSubChunkIds = [];
+  for (const rem of remainingFailed) {
+    if (Array.isArray(rem.partialElements) && rem.partialElements.length > 0) {
+      collectedChunkElements.push(rem.partialElements);
+    }
+    if (Array.isArray(rem.failedSubChunkIds) && rem.failedSubChunkIds.length > 0) {
+      for (const id of rem.failedSubChunkIds) {
+        if (!allMissingSubChunkIds.includes(id)) allMissingSubChunkIds.push(id);
       }
+    } else if (rem.chunk && rem.chunk.id && !allMissingSubChunkIds.includes(rem.chunk.id)) {
+      allMissingSubChunkIds.push(rem.chunk.id);
     }
   }
 
@@ -370,11 +499,29 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     ? (effectiveSpanM <= 2600 ? 12000 : 8500)
     : (effectiveSpanM > 12000 ? 2500 : 6000);
   const finalScene = await buildSceneFromPreloadedGis(south, west, north, east, title, dem, mergedElements, maxBlds, sceneOptions);
-  finalScene._chunkStats = { rows, cols, loadedChunks, failedChunks, totalChunks, lodTier, demZoom: dem.zoom || 14 };
-  if (failedChunks > 0) {
+  const effectiveFailedCount = (failedChunks > 0 || allMissingSubChunkIds.length > 0)
+    ? Math.max(1, failedChunks)
+    : 0;
+  finalScene._chunkStats = {
+    rows,
+    cols,
+    loadedChunks,
+    failedChunks: effectiveFailedCount,
+    totalChunks,
+    lodTier,
+    demZoom: dem.zoom || 14,
+    missingSubChunkIds: allMissingSubChunkIds
+  };
+  if (effectiveFailedCount > 0) {
     finalScene._partialIncomplete = true;
-    finalScene._failedChunkCount = failedChunks;
+    finalScene._failedChunkCount = effectiveFailedCount;
     finalScene._totalChunkCount = totalChunks;
+    finalScene._missingSubChunkIds = allMissingSubChunkIds;
+  } else {
+    finalScene._partialIncomplete = false;
+    finalScene._failedChunkCount = 0;
+    finalScene._totalChunkCount = totalChunks;
+    finalScene._missingSubChunkIds = [];
   }
 
   return finalScene;
@@ -382,4 +529,11 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
 
 if (typeof window !== 'undefined') {
   window.fetchChunkedGISInBrowser = fetchChunkedGISInBrowser;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    buildSceneFromPreloadedGis,
+    fetchChunkedGISInBrowser
+  };
 }

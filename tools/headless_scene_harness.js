@@ -906,6 +906,9 @@ class LocalOverpassEvaluator {
     this.nodesById = new Map();
     this.waysById = new Map();
     this.relsById = new Map();
+    this.wayBBox = new Map();
+    this.relBBox = new Map();
+    this.wayToRels = new Map();
     this.treeNodes = [];
     this.supportNodes = [];
     this.indexedWays = [];
@@ -938,6 +941,7 @@ class LocalOverpassEvaluator {
         if (nd.lon > maxLon) maxLon = nd.lon;
       }
       if (minLat <= maxLat) {
+        this.wayBBox.set(way.id, [minLat, minLon, maxLat, maxLon]);
         this.indexedWays.push({ way, minLat, maxLat, minLon, maxLon });
       }
     }
@@ -948,16 +952,17 @@ class LocalOverpassEvaluator {
       const memberNodeIds = [];
       for (const mem of (rel.members || [])) {
         if (mem.type === 'way') {
+          if (!this.wayToRels.has(mem.ref)) this.wayToRels.set(mem.ref, []);
+          this.wayToRels.get(mem.ref).push(rel);
           const w = this.waysById.get(mem.ref);
           if (w) {
             memberWayIds.push(w.id);
-            for (const nid of (w.nodes || [])) {
-              const nd = this.nodesById.get(nid);
-              if (!nd) continue;
-              if (nd.lat < minLat) minLat = nd.lat;
-              if (nd.lat > maxLat) maxLat = nd.lat;
-              if (nd.lon < minLon) minLon = nd.lon;
-              if (nd.lon > maxLon) maxLon = nd.lon;
+            const wb = this.wayBBox.get(w.id);
+            if (wb) {
+              if (wb[0] < minLat) minLat = wb[0];
+              if (wb[2] > maxLat) maxLat = wb[2];
+              if (wb[1] < minLon) minLon = wb[1];
+              if (wb[3] > maxLon) maxLon = wb[3];
             }
           }
         } else if (mem.type === 'node') {
@@ -972,165 +977,255 @@ class LocalOverpassEvaluator {
         }
       }
       if (minLat <= maxLat) {
+        this.relBBox.set(rel.id, [minLat, minLon, maxLat, maxLon]);
         this.indexedRels.push({ rel, minLat, maxLat, minLon, maxLon, memberWayIds, memberNodeIds });
       }
     }
   }
 
+  _extractBracketContents(str) {
+    const out = [];
+    let inQ = false, start = -1, depth = 0;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str[i];
+      if (ch === '"' && str[i - 1] !== '\\') inQ = !inQ;
+      else if (!inQ) {
+        if (ch === '[') {
+          if (depth === 0) start = i + 1;
+          depth++;
+        } else if (ch === ']') {
+          depth--;
+          if (depth === 0 && start >= 0) {
+            out.push(str.slice(start, i));
+            start = -1;
+          }
+        }
+      }
+    }
+    return out;
+  }
+
   _compileBracketPredicates(clauseStr) {
     const preds = [];
-    const re = /\[([^\]]+)\]/g;
-    let m;
-    while ((m = re.exec(clauseStr)) !== null) {
-      const body = m[1].trim();
+    for (const raw of this._extractBracketContents(clauseStr)) {
+      const body = raw.trim();
       let pm;
-      if ((pm = body.match(/^~\s*"([^"]+)"\s*~\s*"([^"]+)"$/))) {
-        const kRe = new RegExp(pm[1]), vRe = new RegExp(pm[2]);
-        preds.push(tags => Object.entries(tags).some(([k, v]) => kRe.test(k) && vRe.test(String(v))));
+      if ((pm = body.match(/^(!)?~\s*"([^"]*)"\s*~\s*"([^"]*)"$/))) {
+        const neg = Boolean(pm[1]);
+        const kRe = new RegExp(pm[2]), vRe = new RegExp(pm[3]);
+        preds.push(tags => {
+          const hit = Boolean(tags) && Object.entries(tags).some(([k, v]) => kRe.test(k) && vRe.test(String(v)));
+          return neg ? !hit : hit;
+        });
       } else if ((pm = body.match(/^!\s*"?([^"\]]+)"?$/))) {
         const key = pm[1].trim();
-        preds.push(tags => tags[key] === undefined);
-      } else if ((pm = body.match(/^"?([^"!=~]+)"?\s*(!=|!~|=|~)\s*"([^"]*)"$/))) {
-        const key = pm[1].trim(), op = pm[2], val = pm[3];
-        if (op === '=') preds.push(tags => tags[key] !== undefined && String(tags[key]) === val);
-        else if (op === '!=') preds.push(tags => tags[key] === undefined || String(tags[key]) !== val);
-        else if (op === '~') { const vRe = new RegExp(val); preds.push(tags => tags[key] !== undefined && vRe.test(String(tags[key]))); }
-        else if (op === '!~') { const vRe = new RegExp(val); preds.push(tags => tags[key] === undefined || !vRe.test(String(tags[key]))); }
+        preds.push(tags => !tags || tags[key] === undefined);
+      } else if ((pm = body.match(/^"?([^"!=~]+)"?\s*(!=|!~|=|~)\s*(?:"([^"]*)"|([^\]]+))$/))) {
+        const key = pm[1].trim(), op = pm[2], val = pm[3] !== undefined ? pm[3] : pm[4].trim();
+        if (op === '=') preds.push(tags => Boolean(tags) && tags[key] !== undefined && String(tags[key]) === val);
+        else if (op === '!=') preds.push(tags => !tags || tags[key] === undefined || String(tags[key]) !== val);
+        else if (op === '~') { const vRe = new RegExp(val); preds.push(tags => Boolean(tags) && tags[key] !== undefined && vRe.test(String(tags[key]))); }
+        else if (op === '!~') { const vRe = new RegExp(val); preds.push(tags => !tags || tags[key] === undefined || !vRe.test(String(tags[key]))); }
       } else if ((pm = body.match(/^"?([^"\]]+)"?$/))) {
         const key = pm[1].trim();
-        preds.push(tags => tags[key] !== undefined);
+        preds.push(tags => Boolean(tags) && tags[key] !== undefined);
       }
     }
-    return preds.length > 0 ? (tags => Boolean(tags) && preds.every(fn => fn(tags))) : null;
+    return tags => preds.every(fn => fn(tags));
   }
 
-  _compileQueryMatchers(qlText) {
-    const s = String(qlText || '');
-    const wayMatchers = [];
-    const wayRe = /\bway(?:\.bw)?((?:\[[^\]]+\])+)\s*;/g;
-    let m;
-    while ((m = wayRe.exec(s)) !== null) {
-      const fn = this._compileBracketPredicates(m[1]);
-      if (fn) wayMatchers.push(fn);
-    }
-    const mpMatchers = [];
-    const mpRe = /rel\(bw\.bw\)(\["type"="multipolygon"\](?:\[[^\]]+\])*)\s*(?:->\s*\.(?:mp|isl)\s*)?;/g;
-    while ((m = mpRe.exec(s)) !== null) {
-      const fn = this._compileBracketPredicates(m[1]);
-      if (fn) mpMatchers.push(fn);
-    }
-    return {
-      wayMatcher: wayMatchers.length > 0 ? (tags => Boolean(tags) && wayMatchers.some(fn => fn(tags))) : null,
-      mpMatcher: mpMatchers.length > 0 ? (tags => Boolean(tags) && mpMatchers.some(fn => fn(tags))) : null,
-    };
-  }
-
-  _matchWayTags(tags, isDetail) {
-    if (!tags) return false;
-    if (tags['building:part']) return true;
-    if (tags.building && (isDetail || !EXCLUDED_URBAN_BLD_RE.test(String(tags.building)))) {
-      return true;
-    }
-    if (tags.attraction && ATTRACTION_WHEEL_RE.test(tags.attraction)) return true;
-    if (tags.waterway || tags.water) return true;
-    if (tags.natural && (isDetail || DETAIL_URBAN_NAT_SET.has(tags.natural))) return true;
-    if (tags.landuse && (isDetail || DETAIL_LANDUSE_SET.has(tags.landuse))) return true;
-    if (tags.leisure && (isDetail || DETAIL_LEISURE_SET.has(tags.leisure))) return true;
-    if (tags.highway || tags['area:highway']) return true;
-    if (tags.place === 'square' || tags.place === 'island' || tags.place === 'islet') return true;
-    if (tags.railway || tags.public_transport === 'platform') return true;
-    if (tags['bridge:support'] || tags['tower:construction'] || (tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge))) return true;
-    if (tags.man_made && /^(bridge|pier|pontoon|breakwater|groyne|jetty|quay|tower|mast|communications_tower|lighthouse|chimney|cooling_tower|storage_tank|silo|crane|wind_turbine)$/.test(tags.man_made)) return true;
-    return false;
-  }
-
-  _matchRelTags(tags, mpMatcher = null) {
-    if (!tags) return false;
-    if (tags.building || tags.type === 'building' || tags['building:part'] || tags['bridge:support']) return true;
-    if (tags.man_made === 'bridge' || tags.type === 'bridge') return true;
-    if (tags.attraction && ATTRACTION_WHEEL_RE.test(tags.attraction)) return true;
-    if (tags.type === 'multipolygon') {
-      if (mpMatcher) return mpMatcher(tags);
-      if (tags.natural || tags.waterway || tags.water || tags.landuse || tags.leisure ||
-          tags.place === 'island' || tags.place === 'islet' || tags.place === 'square' ||
-          tags.highway === 'pedestrian' || tags['area:highway'] ||
-          /^(quay|pier|pontoon|breakwater|groyne|jetty)$/.test(tags.man_made || '') ||
-          tags.railway === 'platform' || tags.public_transport === 'platform') {
-        return true;
+  _splitStatements(s) {
+    const out = [];
+    let pDepth = 0, bDepth = 0, inQ = false, start = 0;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === '"' && s[i - 1] !== '\\') inQ = !inQ;
+      else if (!inQ) {
+        if (ch === '(') pDepth++;
+        else if (ch === ')') pDepth--;
+        else if (ch === '[') bDepth++;
+        else if (ch === ']') bDepth--;
+        else if (ch === ';' && pDepth === 0 && bDepth === 0) {
+          const st = s.slice(start, i).trim();
+          if (st) out.push(st);
+          start = i + 1;
+        }
       }
     }
-    return false;
+    return out;
   }
 
   evaluateQL(qlText) {
-    const bboxMatch = String(qlText || '').match(/\[bbox:([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\]/);
-    let south = -90, west = -180, north = 90, east = 180;
-    if (bboxMatch) {
-      south = Number(bboxMatch[1]);
-      west = Number(bboxMatch[2]);
-      north = Number(bboxMatch[3]);
-      east = Number(bboxMatch[4]);
+    let gBBox = null;
+    let rest = String(qlText || '').trim();
+    const hdrMatch = rest.match(/^(?:\s*\[[^\]]+\])+\s*;/);
+    if (hdrMatch) {
+      const bm = hdrMatch[0].match(/\[bbox:([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\]/);
+      if (bm) gBBox = [Number(bm[1]), Number(bm[2]), Number(bm[3]), Number(bm[4])];
+      rest = rest.slice(hdrMatch[0].length);
     }
 
-    const wantTrees = String(qlText || '').includes('natural"="tree"');
-    const isDetail = String(qlText || '').includes('way["highway"];') ||
-                     String(qlText || '').includes('way.bw["highway"];') ||
-                     String(qlText || '').includes('way["natural"];') ||
-                     String(qlText || '').includes('way.bw["natural"];');
-    const { wayMatcher, mpMatcher } = this._compileQueryMatchers(qlText);
-
+    const sets = new Map();
+    const getSet = name => sets.get(name || '_') || new Map();
+    const setSet = (name, map) => sets.set(name || '_', map);
     const outNodes = new Map();
     const outWays = new Map();
     const outRels = new Map();
 
-    const addWayWithNodes = (way) => {
-      if (!way) return;
-      outWays.set(way.id, way);
-      for (const nid of (way.nodes || [])) {
-        const nd = this.nodesById.get(nid);
-        if (nd) outNodes.set(nd.id, nd);
-      }
+    const inBox = (el, box) => {
+      if (!box) return true;
+      const [s, w, n, e] = box;
+      if (el.type === 'node') return el.lat >= s && el.lat <= n && el.lon >= w && el.lon <= e;
+      const bb = el.type === 'way' ? this.wayBBox.get(el.id) : this.relBBox.get(el.id);
+      if (!bb) return false;
+      return !(bb[2] < s || bb[0] > n || bb[3] < w || bb[1] > e);
     };
 
-    for (const item of this.indexedRels) {
-      if (item.maxLat < south || item.minLat > north || item.maxLon < west || item.minLon > east) continue;
-      if (!this._matchRelTags(item.rel.tags, mpMatcher)) continue;
-      outRels.set(item.rel.id, item.rel);
-      for (const wid of item.memberWayIds) addWayWithNodes(this.waysById.get(wid));
-      for (const nid of item.memberNodeIds) {
-        const nd = this.nodesById.get(nid);
-        if (nd) outNodes.set(nd.id, nd);
-      }
-      for (const mem of (item.rel.members || [])) {
-        if (mem.type === 'relation' && this.relsById.has(mem.ref)) {
-          const sub = this.relsById.get(mem.ref);
-          outRels.set(sub.id, sub);
-          for (const sm of (sub.members || [])) if (sm.type === 'way') addWayWithNodes(this.waysById.get(sm.ref));
+    const execStmt = (stmt) => {
+      let m;
+      if ((m = stmt.match(/^(?:\.([A-Za-z0-9_]+)\s+)?out\b/))) {
+        const src = getSet(m[1] || '_');
+        for (const el of src.values()) {
+          if (el.type === 'node') outNodes.set(el.id, el);
+          else if (el.type === 'way') outWays.set(el.id, el);
+          else if (el.type === 'relation') outRels.set(el.id, el);
         }
+        return src;
       }
-    }
+      if (stmt.startsWith('(')) {
+        let depth = 0, inQ = false, closeIdx = -1;
+        for (let i = 0; i < stmt.length; i++) {
+          const ch = stmt[i];
+          if (ch === '"' && stmt[i - 1] !== '\\') inQ = !inQ;
+          else if (!inQ) {
+            if (ch === '(') depth++;
+            else if (ch === ')') {
+              depth--;
+              if (depth === 0) { closeIdx = i; break; }
+            }
+          }
+        }
+        const inner = stmt.slice(1, closeIdx);
+        const tail = stmt.slice(closeIdx + 1).trim();
+        const assignM = tail.match(/^->\s*\.([A-Za-z0-9_]+)$/);
+        const targetName = assignM ? assignM[1] : '_';
+        const unionMap = new Map();
+        for (const sub of this._splitStatements(inner)) {
+          const produced = execStmt(sub);
+          if (produced) for (const [k, el] of produced) unionMap.set(k, el);
+        }
+        setSet(targetName, unionMap);
+        return unionMap;
+      }
+      if ((m = stmt.match(/^\.([A-Za-z0-9_]+)(?:\s*->\s*\.([A-Za-z0-9_]+))?$/))) {
+        const src = new Map(getSet(m[1]));
+        setSet(m[2] || '_', src);
+        return src;
+      }
+      let body = stmt;
+      let outSet = '_';
+      const outM = body.match(/->\s*\.([A-Za-z0-9_]+)\s*$/);
+      if (outM) {
+        outSet = outM[1];
+        body = body.slice(0, outM.index).trim();
+      }
+      const typeM = body.match(/^(node|way|rel|nw|nr|wr|nwr)(?:\.([A-Za-z0-9_]+))?/);
+      if (!typeM) return new Map();
+      const tSpec = typeM[1];
+      const inSetName = typeM[2] || null;
+      const restFilters = body.slice(typeM[0].length).trim();
 
-    for (const item of this.indexedWays) {
-      if (item.maxLat < south || item.minLat > north || item.maxLon < west || item.minLon > east) continue;
-      const matched = wayMatcher ? wayMatcher(item.way.tags) : this._matchWayTags(item.way.tags, isDetail);
-      if (!matched) continue;
-      addWayWithNodes(item.way);
-    }
+      const wantN = tSpec === 'node' || tSpec === 'nw' || tSpec === 'nr' || tSpec === 'nwr';
+      const wantW = tSpec === 'way' || tSpec === 'nw' || tSpec === 'wr' || tSpec === 'nwr';
+      const wantR = tSpec === 'rel' || tSpec === 'nr' || tSpec === 'wr' || tSpec === 'nwr';
 
-    if (wantTrees) {
-      for (const nd of this.treeNodes) {
-        if (nd.lat >= south && nd.lat <= north && nd.lon >= west && nd.lon <= east) {
-          outNodes.set(nd.id, nd);
+      let outsideBrackets = '';
+      {
+        let bDepth = 0, inQ = false;
+        for (let i = 0; i < restFilters.length; i++) {
+          const ch = restFilters[i];
+          if (ch === '"' && restFilters[i - 1] !== '\\') inQ = !inQ;
+          if (!inQ) {
+            if (ch === '[') { bDepth++; continue; }
+            if (ch === ']') { bDepth--; continue; }
+          }
+          if (bDepth === 0) outsideBrackets += ch;
         }
       }
-    }
-    if (String(qlText || '').includes('bridge:support')) {
-      for (const nd of this.supportNodes) {
-        if (nd.lat >= south && nd.lat <= north && nd.lon >= west && nd.lon <= east) {
-          outNodes.set(nd.id, nd);
+
+      const parenRe = /\(([^)]+)\)/g;
+      let pm, recurseCands = null, explicitBox = null, hasRecurse = false;
+      while ((pm = parenRe.exec(outsideBrackets)) !== null) {
+        const p = pm[1].trim();
+        let rm;
+        if ((rm = p.match(/^bw(?:\.([A-Za-z0-9_]+))?$/))) {
+          hasRecurse = true;
+          const src = getSet(rm[1] || '_');
+          const c = new Map();
+          for (const el of src.values()) {
+            if (el.type !== 'way') continue;
+            for (const r of (this.wayToRels.get(el.id) || [])) c.set('relation:' + r.id, r);
+          }
+          recurseCands = c;
+        } else if ((rm = p.match(/^r(?:\.([A-Za-z0-9_]+))?$/))) {
+          hasRecurse = true;
+          const src = getSet(rm[1] || '_');
+          const c = new Map();
+          for (const el of src.values()) {
+            if (el.type !== 'relation') continue;
+            for (const mem of (el.members || [])) {
+              if (mem.type === 'node' && wantN && this.nodesById.has(mem.ref)) c.set('node:' + mem.ref, this.nodesById.get(mem.ref));
+              else if (mem.type === 'way' && wantW && this.waysById.has(mem.ref)) c.set('way:' + mem.ref, this.waysById.get(mem.ref));
+              else if (mem.type === 'relation' && wantR && this.relsById.has(mem.ref)) c.set('relation:' + mem.ref, this.relsById.get(mem.ref));
+            }
+          }
+          recurseCands = c;
+        } else if ((rm = p.match(/^w(?:\.([A-Za-z0-9_]+))?$/))) {
+          hasRecurse = true;
+          const src = getSet(rm[1] || '_');
+          const c = new Map();
+          for (const el of src.values()) {
+            if (el.type !== 'way') continue;
+            for (const nid of (el.nodes || [])) {
+              if (wantN && this.nodesById.has(nid)) c.set('node:' + nid, this.nodesById.get(nid));
+            }
+          }
+          recurseCands = c;
+        } else if ((rm = p.match(/^([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)$/))) {
+          explicitBox = [Number(rm[1]), Number(rm[2]), Number(rm[3]), Number(rm[4])];
         }
       }
-    }
+
+      const tagPred = this._compileBracketPredicates(restFilters);
+      let cands;
+      if (inSetName && recurseCands) {
+        const inMap = getSet(inSetName);
+        cands = new Map();
+        for (const [k, el] of recurseCands) if (inMap.has(k)) cands.set(k, el);
+      } else if (inSetName) {
+        cands = getSet(inSetName);
+      } else if (recurseCands) {
+        cands = recurseCands;
+      } else {
+        cands = new Map();
+        if (wantN) for (const el of this.nodesById.values()) cands.set('node:' + el.id, el);
+        if (wantW) for (const el of this.waysById.values()) cands.set('way:' + el.id, el);
+        if (wantR) for (const el of this.relsById.values()) cands.set('relation:' + el.id, el);
+      }
+
+      const applyBox = explicitBox || ((!inSetName && !hasRecurse) ? gBBox : null);
+      const res = new Map();
+      for (const [k, el] of cands) {
+        if ((el.type === 'node' && !wantN) || (el.type === 'way' && !wantW) || (el.type === 'relation' && !wantR)) continue;
+        if (applyBox && !inBox(el, applyBox)) continue;
+        if (!tagPred(el.tags)) continue;
+        res.set(k, el);
+      }
+      setSet(outSet, res);
+      return res;
+    };
+
+    for (const stmt of this._splitStatements(rest)) execStmt(stmt);
 
     return {
       version: 0.6,
