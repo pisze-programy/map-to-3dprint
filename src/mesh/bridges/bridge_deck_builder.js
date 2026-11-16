@@ -1,7 +1,11 @@
 // ============================================================================
-// src/mesh/bridge_deck_builder.js
+// src/mesh/bridges/bridge_deck_builder.js
 // Watertight Curved Z(s) Bridge Decks, Abutments & Supportless >= 35° Corbels
 // ============================================================================
+
+if (typeof manifoldFromRawSoup === 'undefined' && typeof require !== 'undefined') {
+  Object.assign(globalThis, require('../../geometry/manifold_core.js'));
+}
 
 function _stationTangentsJS(pts) {
   const n = pts.length, tans = [];
@@ -236,5 +240,6 @@ function buildSupportlessUndersideCorbels(spec, supportStationsS, terrainWater, 
 }
 
 const _DECK_BUILDER_EXPORTS = { buildSlopedBridgeDeck, buildBankAbutments, buildSupportlessUndersideCorbels, _lerpArrAtSJS, _samplePtAtSJS };
+if (typeof globalThis !== 'undefined') Object.assign(globalThis, _DECK_BUILDER_EXPORTS);
 if (typeof window !== 'undefined') Object.assign(window, _DECK_BUILDER_EXPORTS);
 if (typeof module !== 'undefined' && module.exports) module.exports = _DECK_BUILDER_EXPORTS;

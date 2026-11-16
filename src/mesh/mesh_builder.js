@@ -69,13 +69,18 @@
     Object.assign(g, _req('./layer1_s3db_buildings.js'));
   }
   if (typeof solveBridgeGraph === 'undefined') {
-    Object.assign(g, _req('./bridge_axis_helper.js'));
-    Object.assign(g, _req('./bridge_graph_solver.js'));
-    Object.assign(g, _req('./bridge_deck_builder.js'));
-    Object.assign(g, _req('./bridge_superstructure_solver.js'));
+    Object.assign(g, _req('./bridges/bridge_geom_2d.js'));
+    Object.assign(g, _req('./bridges/bridge_spine_stitch.js'));
+    Object.assign(g, _req('./bridges/bridge_tin_sampler.js'));
+    Object.assign(g, _req('./bridges/bridge_specs_extract.js'));
+    Object.assign(g, _req('./bridges/bridge_elevation_profile.js'));
+    Object.assign(g, _req('./bridges/bridge_multideck_solver.js'));
+    Object.assign(g, _req('./bridges/bridge_deck_builder.js'));
+    Object.assign(g, _req('./bridges/bridge_supports_solver.js'));
+    Object.assign(g, _req('./bridges/bridge_superstructure_arch_cable.js'));
   }
   if (typeof buildLayer1Bridges === 'undefined') {
-    Object.assign(g, _req('./layer1_bridges.js'));
+    Object.assign(g, _req('./bridges/layer1_bridges.js'));
   }
   if (typeof buildLayer2Archetypes === 'undefined') {
     Object.assign(g, _req('./waterfront_piers_solver.js'));

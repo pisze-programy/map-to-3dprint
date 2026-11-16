@@ -17,7 +17,7 @@ const {
   collectSurfacePolys,
   buildSurfaceDrapesAndFrame,
 } = require(path.join(ROOT, 'src/mesh/terrain_surface_drape.js'));
-const { solveBridgeGraph } = require(path.join(ROOT, 'src/mesh/bridge_graph_solver.js'));
+const { solveBridgeGraph } = require(path.join(ROOT, 'src/mesh/bridges/bridge_multideck_solver.js'));
 const { processOsmRoadOrPlazaWayJS } = require(path.join(ROOT, 'src/gis_client/osm_roads_extract.js'));
 const {
   selectLodTier,

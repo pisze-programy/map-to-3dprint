@@ -1,15 +1,20 @@
 // ============================================================================
-// src/mesh/layer1_bridges.js
+// src/mesh/bridges/layer1_bridges.js
 // Layer-1 Bridge & Viaduct Orchestrator (Graph, Sloped Deck & Superstructure)
 // ============================================================================
 
 (function (root) {
   function _ensureBridgeDeps() {
-    if (typeof solveBridgeGraph === 'undefined' && typeof require !== 'undefined') {
-      Object.assign(global, require('./bridge_axis_helper.js'));
-      Object.assign(global, require('./bridge_graph_solver.js'));
-      Object.assign(global, require('./bridge_deck_builder.js'));
-      Object.assign(global, require('./bridge_superstructure_solver.js'));
+    if ((typeof solveBridgeGraph === 'undefined' || typeof buildBridgeSuperstructure === 'undefined') && typeof require !== 'undefined') {
+      Object.assign(root, require('./bridge_geom_2d.js'));
+      Object.assign(root, require('./bridge_spine_stitch.js'));
+      Object.assign(root, require('./bridge_tin_sampler.js'));
+      Object.assign(root, require('./bridge_specs_extract.js'));
+      Object.assign(root, require('./bridge_elevation_profile.js'));
+      Object.assign(root, require('./bridge_multideck_solver.js'));
+      Object.assign(root, require('./bridge_deck_builder.js'));
+      Object.assign(root, require('./bridge_supports_solver.js'));
+      Object.assign(root, require('./bridge_superstructure_arch_cable.js'));
     }
   }
 
@@ -105,5 +110,6 @@
 
   const exportsObj = { buildLayer1Bridges, _normalizeBridgeStructure };
   Object.assign(root, exportsObj);
+  if (typeof window !== 'undefined') Object.assign(window, exportsObj);
   if (typeof module !== 'undefined' && module.exports) module.exports = exportsObj;
 })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : global));

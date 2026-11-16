@@ -150,7 +150,7 @@
 
   function _getSplitOutsideFn() {
     if (typeof _splitPolylineOutsideRingsJS === 'function') return _splitPolylineOutsideRingsJS;
-    if (typeof require === 'function') return require('./bridge_axis_helper.js')._splitPolylineOutsideRingsJS;
+    if (typeof require === 'function') return require('./bridges/bridge_geom_2d.js')._splitPolylineOutsideRingsJS;
     return null;
   }
 
