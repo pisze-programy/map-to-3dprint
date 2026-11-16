@@ -418,6 +418,13 @@ function _stitchAndMergeLinearBridgesJS(roadBridges, opts = {}) {
       if (_structRankJS(b.structNorm) > _structRankJS(a.structNorm)) {
         a.structNorm = b.structNorm;
         a.explicitThroughArch = a.explicitThroughArch || b.explicitThroughArch;
+        a.isHumpback = Boolean(a.isHumpback || b.isHumpback);
+      } else if (b.isHumpback) {
+        a.isHumpback = true;
+      }
+      if (Array.isArray(b.linkedPolyOsmIds) && b.linkedPolyOsmIds.length) {
+        const set = new Set([...(a.linkedPolyOsmIds || []), ...b.linkedPolyOsmIds]);
+        a.linkedPolyOsmIds = [...set];
       }
       if (a.heightM == null) a.heightM = b.heightM;
       if (a.minHeightM == null) a.minHeightM = b.minHeightM;
@@ -516,6 +523,13 @@ function _stitchAndMergeLinearBridgesJS(roadBridges, opts = {}) {
         if (_structRankJS(g.structNorm) > _structRankJS(base.structNorm)) {
           base.structNorm = g.structNorm;
           base.explicitThroughArch = base.explicitThroughArch || g.explicitThroughArch;
+          base.isHumpback = Boolean(base.isHumpback || g.isHumpback);
+        } else if (g.isHumpback) {
+          base.isHumpback = true;
+        }
+        if (Array.isArray(g.linkedPolyOsmIds) && g.linkedPolyOsmIds.length) {
+          const set = new Set([...(base.linkedPolyOsmIds || []), ...g.linkedPolyOsmIds]);
+          base.linkedPolyOsmIds = [...set];
         }
         if (base.heightM == null) base.heightM = g.heightM;
         if (base.minHeightM == null) base.minHeightM = g.minHeightM;

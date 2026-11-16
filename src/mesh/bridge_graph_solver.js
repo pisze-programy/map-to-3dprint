@@ -244,7 +244,11 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     const lyr = rd.hasExplicitLayer ? (rd.layer ?? 0) : 0;
     for (const pc of _clipPolylineToRectJS(rd.pts.map(toBed), cMinX, cMinY, cMaxX, cMaxY)) {
       const bb = _bbox2DJS(pc.pts);
-      groundRoads.push({ pts: pc.pts, halfW: hw, layer: lyr, isPath: Boolean(rd.isPath), bbox: [bb[0] - hw, bb[1] - hw, bb[2] + hw, bb[3] + hw] });
+      groundRoads.push({
+        pts: pc.pts, halfW: hw, layer: lyr, isPath: Boolean(rd.isPath),
+        osmId: rd.osmId ?? null, name: rd.name || '',
+        bbox: [bb[0] - hw, bb[1] - hw, bb[2] + hw, bb[3] + hw]
+      });
     }
   }
 
@@ -281,23 +285,36 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     const hasExplicitBpStruct = Boolean(rawBpTrim && !['yes', 'viaduct', 'bridge', 'movable'].includes(rawBpTrim));
     let structNorm = _normalizeBridgeStructJS(rawBpStruct, bp.covered, bp.tags);
     let expThrough = /through[-_ ]?arch|tied[-_ ]?arch|bowstring/i.test(String(rawBpStruct || ''));
+    let isHumpback = /humpback/i.test(String(rawBpStruct || ''));
     let heightM = bp.heightM, clearanceM = bp.clearanceM;
     for (const rd of linked) {
       const rs = _normalizeBridgeStructJS(rd.bridgeStructure, rd.covered, rd.tags);
       if (!hasExplicitBpStruct && _structRankJS(rs) > _structRankJS(structNorm)) structNorm = rs;
       if (!hasExplicitBpStruct && /through[-_ ]?arch|tied[-_ ]?arch|bowstring/i.test(String(rd.bridgeStructure || ''))) expThrough = true;
+      if (!hasExplicitBpStruct && /humpback/i.test(String(rd.bridgeStructure || ''))) isHumpback = true;
       if (heightM == null && rd.heightM != null) heightM = rd.heightM;
       if (clearanceM == null && rd.clearanceM != null) clearanceM = rd.clearanceM;
     }
     const allAcross = linked.concat(surfaceAcross);
+    const carriedVerts = [];
+    const acrossOsmIdSet = new Set(bp.acrossRoadIds || []);
+    for (const cr of allAcross) {
+      if (cr && cr.osmId != null) acrossOsmIdSet.add(cr.osmId);
+      for (const p of (cr && cr.pts) || []) carriedVerts.push(toBed(p));
+    }
+    const hasExplicitBpLayer = Boolean((bp.tags && bp.tags.layer !== undefined) || bp.hasExplicitLayer);
+    const inferredPolyLayer = (!hasExplicitBpLayer && linked.length > 0)
+      ? Math.max(bp.layer ?? 1, ...linked.map(r => r.layer ?? 1))
+      : (bp.layer ?? 1);
     const nSt = Math.max(7, Math.min(160, Math.ceil(spanU / 0.80) + 1));
     specs.push({
       isAreaPoly: true, outer, holes, pts: _resamplePolyJS(axisRaw, nSt),
       width: widthU, deckThick: Math.max(minDeckU, Math.min(widthU * 0.35, minDeckU * (structNorm === 'beam' ? 1.15 : 1.22))),
-      deckLayer: bp.layer ?? 1, name: bp.name || 'Most', structNorm, explicitThroughArch: expThrough,
+      deckLayer: inferredPolyLayer, name: bp.name || 'Most', structNorm, explicitThroughArch: expThrough, isHumpback,
       isRail: allAcross.length > 0 && allAcross.every(rd => rd.tags && rd.tags.railway),
       isPath: false, isBoardwalk: false, level: bp.level || '',
       clippedStart: false, clippedEnd: false, joinPolyStart: false, joinPolyEnd: false,
+      acrossOsmIdSet, carriedVerts, linkedPolyOsmIds: [],
       heightM, minHeightM: bp.minHeightM, clearanceM, covered: bp.covered, supportIds: bp.supportIds || [], osmId: bp.osmId
     });
   }
@@ -307,6 +324,7 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
   const freeRoadPieces = [];
   for (const rd of rawRoads) {
     const linkedEntries = roadLinkedPolyList.get(rd) || [];
+    const linkedPolyOsmIds = linkedEntries.map(e => e.bp && e.bp.osmId).filter(id => id != null);
     const rawSt = rd.bridgeStructure || rd.structure || (rd.tags && (rd.tags['bridge:structure'] || rd.tags.bridge));
     const cov = rd.covered || (rd.tags && rd.tags.covered);
     const isRail = Boolean((rd.tags && rd.tags.railway) || ['rail', 'light_rail', 'tram', 'monorail', 'subway', 'narrow_gauge', 'funicular'].includes(rd.hwy));
@@ -335,12 +353,14 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
           clippedEnd: pc.clippedEnd,
           joinPolyStart: Boolean(sub.entersRingAtStart && !pc.clippedStart),
           joinPolyEnd: Boolean(sub.entersRingAtEnd && !pc.clippedEnd),
+          linkedPolyOsmIds,
           width: Math.max(isRail || rd.isPath ? 0.20 : 0.28, (rd.width || 0.8) * s2b),
           layer: effLayer,
           parentBridgeRelId: rd.parentBridgeRelId, name: rd.name || '',
           isRail, isPath: Boolean(rd.isPath), isBoardwalk, level: rd.level || (rd.tags && rd.tags.level) || '',
           structNorm: _normalizeBridgeStructJS(rawSt, cov, rd.tags),
           explicitThroughArch: /through[-_ ]?arch|tied[-_ ]?arch|bowstring/i.test(String(rawSt || '')),
+          isHumpback: /humpback/i.test(String(rawSt || '')),
           heightM: rd.heightM, minHeightM: rd.minHeightM, clearanceM: rd.clearanceM, covered: cov, osmId: rd.osmId
         });
       }
@@ -349,18 +369,28 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
 
   for (const r of _stitchAndMergeLinearBridgesJS(freeRoadPieces, { mToBedXY, scaleMm: ctx.scaleMm })) {
     const spanU = Math.max(0.4, _polyLenJS(r.pts));
+    const spanMetersLinear = spanU / Math.max(1e-5, mToBedXY);
+    const isShortPolyStub = Boolean((r.joinPolyStart || r.joinPolyEnd) && spanMetersLinear < 25.0);
+    const effStruct = (isShortPolyStub || (spanMetersLinear < 14.0 && !r.explicitThroughArch && r.structNorm === 'arch'))
+      ? 'beam'
+      : r.structNorm;
     const slender = Boolean(r.isRail || r.isPath);
     const minW = slender ? Math.max(0.54 / ctx.scaleMm, minDeckU * 0.78) : minDeckU * 1.12;
     const widthU = Math.max(minW, r.width);
     const deckThick = Math.max(slender ? Math.max(0.56 / ctx.scaleMm, minDeckU * 0.82) : minDeckU, Math.min(widthU * 0.40, minDeckU * 1.15));
     const nSt = Math.max(7, Math.min(160, Math.ceil(spanU / 0.80) + 1));
+    const resampledPts = _resamplePolyJS(r.pts, nSt);
     specs.push({
-      isAreaPoly: false, outer: null, holes: [], pts: _resamplePolyJS(r.pts, nSt),
-      width: widthU, deckThick, deckLayer: r.layer ?? 1, name: r.name, structNorm: r.structNorm,
-      explicitThroughArch: r.explicitThroughArch, isRail: Boolean(r.isRail),
+      isAreaPoly: false, outer: null, holes: [], pts: resampledPts,
+      width: widthU, deckThick, deckLayer: r.layer ?? 1, name: r.name, structNorm: effStruct,
+      explicitThroughArch: Boolean(!isShortPolyStub && r.explicitThroughArch),
+      isHumpback: Boolean(!isShortPolyStub && r.isHumpback),
+      isRail: Boolean(r.isRail),
       isPath: Boolean(r.isPath), isBoardwalk: Boolean(r.isBoardwalk), level: r.level || '',
       clippedStart: Boolean(r.clippedStart), clippedEnd: Boolean(r.clippedEnd),
       joinPolyStart: Boolean(r.joinPolyStart), joinPolyEnd: Boolean(r.joinPolyEnd),
+      acrossOsmIdSet: null, carriedVerts: [resampledPts[0], resampledPts[resampledPts.length - 1]],
+      linkedPolyOsmIds: r.linkedPolyOsmIds || [],
       heightM: r.heightM, minHeightM: r.minHeightM, clearanceM: r.clearanceM, covered: r.covered, supportIds: [], osmId: r.osmId
     });
   }
@@ -480,6 +510,17 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     sp.elevatedDeadEndStart = Boolean(isSkyFootway && !sp.clippedStart && !sp.joinPolyStart && !abA.inWater && (hasPosLvl || !touchesGroundStart));
     sp.elevatedDeadEndEnd = Boolean(isSkyFootway && !sp.clippedEnd && !sp.joinPolyEnd && !abB.inWater && (hasPosLvl || !touchesGroundEnd));
 
+    const pinA = !sp.isElevatedViaduct && !sp.clippedStart && !sp.joinPolyStart && !sp.elevatedDeadEndStart && !abA.inWater;
+    const pinB = !sp.isElevatedViaduct && !sp.clippedEnd && !sp.joinPolyEnd && !sp.elevatedDeadEndEnd && !abB.inWater;
+    const endZoneU = Math.min(L * 0.20, Math.max(0.95, sp.width * 1.25));
+    const natSlope = Math.abs(baseEnd - baseStart) / Math.max(1.0, L);
+    const gradeLim = Math.max(natSlope + 0.035, (sp.isRail ? 0.055 : (sp.isPath ? 0.13 : 0.095)) * (ctx.zScale || 1.0));
+    const zAnchorA = zTopArr[0], zAnchorB = zTopArr[n - 1];
+    const maxGradeTopAt = (sk) => Math.min(
+      pinA ? zAnchorA + gradeLim * sk : Infinity,
+      pinB ? zAnchorB + gradeLim * Math.max(0, L - sk) : Infinity
+    );
+
     // 1. Dry-land layer>=1 bridge span envelope over flat terrain (preserves natural valley/gorge bridges)
     if (!sp.crossesWater && sp.deckLayer >= 1 && !sp.isBoardwalk && !sp.isElevatedViaduct && n >= 3) {
       let maxNatClear = -Infinity;
@@ -496,7 +537,8 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
           const wA = freeStart ? 1.0 : Math.min(1.0, sk / Math.max(1e-4, ramp));
           const wB = freeEnd ? 1.0 : Math.min(1.0, (L - sk) / Math.max(1e-4, ramp));
           const env = Math.min(wA * wA * (3 - 2 * wA), wB * wB * (3 - 2 * wB));
-          const reqTop = tinSampler.getTrueSurfaceZ(pts[k][0], pts[k][1]) + baseLandClearU * env + sp.deckThick;
+          const rawReq = tinSampler.getTrueSurfaceZ(pts[k][0], pts[k][1]) + baseLandClearU * env + sp.deckThick;
+          const reqTop = Math.min(rawReq, maxGradeTopAt(sk));
           if (reqTop > zTopArr[k]) { zTopArr[k] = reqTop; zBotArr[k] = reqTop - sp.deckThick; }
         }
       }
@@ -513,18 +555,25 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
       }
     }
 
-    const pinA = !sp.isElevatedViaduct && !sp.clippedStart && !sp.joinPolyStart && !sp.elevatedDeadEndStart && !abA.inWater;
-    const pinB = !sp.isElevatedViaduct && !sp.clippedEnd && !sp.joinPolyEnd && !sp.elevatedDeadEndEnd && !abB.inWater;
-    const endZoneU = Math.min(L * 0.20, Math.max(0.95, sp.width * 1.25));
+    const pedLandClearU = Math.max(0.24, 0.36 / ctx.scaleMm, Math.min(0.62, 2.5 * mToBedZ));
+    const juncSnapU = Math.max(0.25, 2.2 * mToBedXY);
+    const cvList = sp.carriedVerts || [];
 
     if (!sp.isBoardwalk || sp.deckLayer >= 2) {
       for (const gr of groundRoads) {
         if (gr.layer >= sp.deckLayer) continue;
+        if (sp.deckLayer >= 0 && gr.layer < 0) continue;
+        if (sp.acrossOsmIdSet && gr.osmId != null && sp.acrossOsmIdSet.has(gr.osmId)) continue;
+        if (sp.name && gr.name && sp.name === gr.name) continue;
         if (sp.bbox[2] < gr.bbox[0] || sp.bbox[0] > gr.bbox[2] || sp.bbox[3] < gr.bbox[1] || sp.bbox[1] > gr.bbox[3]) continue;
         const g0 = gr.pts[0], g1 = gr.pts[gr.pts.length - 1];
+        if (cvList.length > 0 && cvList.some(cv => Math.hypot(g0[0] - cv[0], g0[1] - cv[1]) <= juncSnapU || Math.hypot(g1[0] - cv[0], g1[1] - cv[1]) <= juncSnapU)) {
+          continue;
+        }
         const touchesStartAbutment = pinA && (Math.hypot(g0[0] - pts[0][0], g0[1] - pts[0][1]) <= endSnapU || Math.hypot(g1[0] - pts[0][0], g1[1] - pts[0][1]) <= endSnapU);
         const touchesEndAbutment = pinB && (Math.hypot(g0[0] - pts[n - 1][0], g0[1] - pts[n - 1][1]) <= endSnapU || Math.hypot(g1[0] - pts[n - 1][0], g1[1] - pts[n - 1][1]) <= endSnapU);
         const rad = sp.width * 0.5 + gr.halfW + 0.08;
+        const clearU = gr.isPath ? pedLandClearU : baseLandClearU;
         for (let k = 0; k < n - 1; k++) {
           const bdx = pts[k + 1][0] - pts[k][0], bdy = pts[k + 1][1] - pts[k][1], bl = Math.hypot(bdx, bdy) || 1;
           for (let q = 0; q < gr.pts.length - 1; q++) {
@@ -533,16 +582,18 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
             const sHit = cumS[k] + (cumS[k + 1] - cumS[k]) * cp.sA;
             const gdx = gr.pts[q + 1][0] - gr.pts[q][0], gdy = gr.pts[q + 1][1] - gr.pts[q][1], gl = Math.hypot(gdx, gdy) || 1;
             const absDot = Math.abs((bdx / bl) * (gdx / gl) + (bdy / bl) * (gdy / gl));
+            if (absDot >= 0.72) continue;
             if (pinA && sHit <= endZoneU * 1.35 && (touchesStartAbutment || absDot >= 0.52)) continue;
             if (pinB && (L - sHit) <= endZoneU * 1.35 && (touchesEndAbutment || absDot >= 0.52)) continue;
             if (terrainWater.isPointInWater(cp.qb[0], cp.qb[1])) continue;
             const zGr = Math.max(tinSampler.getTrueSurfaceZ(cp.qb[0], cp.qb[1]), tinSampler.getTinZ(cp.qb[0], cp.qb[1]) + (terrainWater.hRoadU || 0));
-            const reqTop = zGr + baseLandClearU + sp.deckThick;
+            const rawReqTop = zGr + clearU + sp.deckThick;
+            const reqTop = sp.isElevatedViaduct ? rawReqTop : Math.min(rawReqTop, maxGradeTopAt(sHit));
             const zCur = zTopArr[k] + (zTopArr[k + 1] - zTopArr[k]) * cp.sA;
             if (reqTop > zCur) {
               const def = reqTop - zCur;
-              if (!(k === 0 && pinA)) landNeed[k] = Math.max(landNeed[k], def);
-              if (!(k + 1 === n - 1 && pinB)) landNeed[k + 1] = Math.max(landNeed[k + 1], def);
+              if (!(k === 0 && pinA)) landNeed[k] = Math.max(landNeed[k], Math.min(def, Math.max(0, maxGradeTopAt(cumS[k]) - zTopArr[k])));
+              if (!(k + 1 === n - 1 && pinB)) landNeed[k + 1] = Math.max(landNeed[k + 1], Math.min(def, Math.max(0, maxGradeTopAt(cumS[k + 1]) - zTopArr[k + 1])));
             }
           }
         }
@@ -551,6 +602,12 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
 
     if (landNeed.some(v => v > 0)) {
       _bridgeCorridorPlateausJS(zTopArr, landNeed, cumS, Math.max(2.5 / ctx.scaleMm, 55.0 * mToBedXY));
+      if (!sp.isElevatedViaduct) {
+        for (let k = 0; k < n; k++) {
+          const cap = Math.max(0, maxGradeTopAt(cumS[k]) - zTopArr[k]);
+          if (landNeed[k] > cap) landNeed[k] = cap;
+        }
+      }
       _applyLocalSmoothLiftJS(zTopArr, zBotArr, cumS, L, landNeed, 3.8, pinA, pinB);
     }
 
@@ -565,6 +622,40 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
       if (minDryTop > zTopArr[k]) {
         zTopArr[k] = minDryTop;
         zBotArr[k] = minDryTop - sp.deckThick;
+      }
+    }
+
+    // 4. Eliminate concave mid-water sags between lifted shore approaches (guarantees smooth convex/chord span over water)
+    if (sp.crossesWater && n >= 3) {
+      const shoreBandU = Math.min(L * 0.36, Math.max(3.5, 65.0 * mToBedXY));
+      let sw = 0;
+      while (sw < n) {
+        if (!inW[sw]) { sw++; continue; }
+        const w0 = sw;
+        while (sw + 1 < n && inW[sw + 1]) sw++;
+        const w1 = sw++;
+        let iPeakL = Math.max(0, w0 - 1), zPeakL = zTopArr[iPeakL];
+        for (let k = iPeakL; k >= 0 && (cumS[w0] - cumS[k]) <= shoreBandU; k--) {
+          if (inW[k] && k < w0) break;
+          if (zTopArr[k] >= zPeakL) { zPeakL = zTopArr[k]; iPeakL = k; }
+        }
+        let iPeakR = Math.min(n - 1, w1 + 1), zPeakR = zTopArr[iPeakR];
+        for (let k = iPeakR; k < n && (cumS[k] - cumS[w1]) <= shoreBandU; k++) {
+          if (inW[k] && k > w1) break;
+          if (zTopArr[k] >= zPeakR) { zPeakR = zTopArr[k]; iPeakR = k; }
+        }
+        if (iPeakR > iPeakL + 1) {
+          const spanBridge = Math.max(1e-4, cumS[iPeakR] - cumS[iPeakL]);
+          const camberAmp = Math.min(0.30 / ctx.scaleMm, spanBridge * (sp.isHumpback ? 0.022 : 0.008));
+          for (let k = iPeakL; k <= iPeakR; k++) {
+            const u = (cumS[k] - cumS[iPeakL]) / spanBridge;
+            const zNoSag = zPeakL + (zPeakR - zPeakL) * u + camberAmp * Math.sin(Math.PI * u);
+            if (zNoSag > zTopArr[k]) {
+              zTopArr[k] = zNoSag;
+              zBotArr[k] = zNoSag - sp.deckThick;
+            }
+          }
+        }
       }
     }
     if (!inW[0] && !abA.inWater && !sp.elevatedDeadEndStart && !sp.isElevatedViaduct && !sp.joinPolyStart) sp.zAbutmentA = zTopArr[0];
@@ -659,6 +750,10 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     for (let j = 0; j < i; j++) {
       const lo = specs[j];
       if (lo.deckLayer >= hi.deckLayer || hi.bbox[2] + 0.9 < lo.bbox[0] || hi.bbox[0] - 0.9 > lo.bbox[2] || hi.bbox[3] + 0.9 < lo.bbox[1] || hi.bbox[1] - 0.9 > lo.bbox[3]) continue;
+      if ((lo.isAreaPoly && lo.osmId != null && hi.linkedPolyOsmIds && hi.linkedPolyOsmIds.includes(lo.osmId)) ||
+          (hi.isAreaPoly && hi.osmId != null && lo.linkedPolyOsmIds && lo.linkedPolyOsmIds.includes(hi.osmId))) {
+        continue;
+      }
       const hitRad = Math.max(0.82, (hi.width + lo.width) * 0.54);
       const segRad = (hi.width + lo.width) * 0.54;
       const buttJoints = findButtJoints(lo, hi, hitRad);

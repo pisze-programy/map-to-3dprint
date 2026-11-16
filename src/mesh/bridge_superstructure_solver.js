@@ -152,7 +152,7 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
   const medW = waterClears.length ? waterClears[waterClears.length >> 1] : Infinity;
   const avgBaySpan = totalArchSpan / Math.max(1, bayStops.length - 1);
   const waterThroughThresh = spec.isRail ? 1.45 : Math.max(0.75, Math.min(1.5, avgBaySpan * 0.085));
-  const isThrough = Boolean(
+  const isThrough = !spec.isHumpback && Boolean(
     spec.explicitThroughArch ||
     (spec.crossesWater ? (medW < waterThroughThresh) : (bayStops.length === 2 && minL < 0.72))
   );
@@ -176,6 +176,7 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
     const sMid = (b0 + b1) * 0.5, { pt: ptMid } = _samplePtAtSJS(spec, sMid);
     const zDeckMid = _lerpArrAtSJS(spec.sArr, isThrough ? spec.zTopArr : spec.zBotArr, sMid);
     const zFloorLim = terrainWater.isPointInWater(ptMid[0], ptMid[1]) ? ctx.zWaterTop + 0.24 : terrainWater.getSurfaceZ(ptMid[0], ptMid[1]) + 0.2;
+    if (!isThrough && spec.isHumpback && (zDeckMid - zFloorLim) < 0.28) continue;
     const riseOrDrop = isThrough
       ? Math.max(1.8 / ctx.scaleMm, Math.min(baySpan * 0.28, spec.heightM ? spec.heightM * mToBedZ : baySpan * 0.22))
       : Math.max(0.45, Math.min(baySpan * 0.32, Math.max(0.45, zDeckMid - zFloorLim)));

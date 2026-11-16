@@ -616,6 +616,80 @@ async function runSuite() {
     );
   }
 
+  // [13/13] Driveable Longitudinal Grade & Concave-Free Water Crossings (No Mid-River Sag & No Embankment Cliff Hump)
+  console.log('\n[13/13] Driveable Grade & Concave-Free Water Crossings (Humpback Sag & Urban River Cliff Regressions)');
+  {
+    const scene = {
+      spanMeters: 1200,
+      metersToUnits: 169.2 / 1200,
+      dem: { grid: [[9, 9, 3, 7], [9, 9, 3, 7]], minElev: 3, maxElev: 9 },
+      waterPolys: [
+        { outer: [[-18, -75], [22, -75], [22, -5], [-18, -5]], holes: [] },
+        { outer: [[-8, 12], [8, 12], [8, 75], [-8, 75]], holes: [] },
+      ],
+      waterLines: [], greenPolys: [], trees: [], buildings: [], bridgeSupports: [],
+      bridgePolys: [
+        // A. 220m humpback footbridge crossing a layer=0 shoreline promenade before spanning a wide bay
+        {
+          osmId: 901, name: 'Bay Humpback Footbridge',
+          outer: [[-28, -42], [28, -42], [28, -39], [-28, -39]], holes: [], layer: 1,
+          bridgeStructure: 'humpback', acrossRoadIds: [],
+          tags: { man_made: 'bridge', 'bridge:structure': 'humpback', layer: '1' },
+        },
+        // B. 45m urban street bridge over incised river channel with riverside towpath & on-deck tram/junction
+        {
+          osmId: 902, name: 'Urban River Humpback Bridge',
+          outer: [[-11, 38], [11, 38], [11, 42], [-11, 42]], holes: [], layer: 1,
+          bridgeStructure: 'humpback', acrossRoadIds: [912],
+          tags: { man_made: 'bridge', 'bridge:structure': 'humpback', layer: '1' },
+        },
+      ],
+      roads: [
+        // Shoreline promenade (layer=0) running perpendicular under left end of Bay Humpback Footbridge
+        { osmId: 910, pts: [[-22, -65], [-22, -15]], width: 1.2, isBridge: false, isPath: true, layer: 0, hasExplicitLayer: false, tags: { highway: 'pedestrian' } },
+        // Parallel highway bridge next to Bay Humpback Footbridge crossing shoreline roads on both banks
+        { osmId: 911, name: 'Bay Trunk Bridge', pts: [[-30, -32], [30, -32]], width: 2.0, isBridge: true, layer: 1, hasExplicitLayer: true, tags: { highway: 'trunk', bridge: 'yes', layer: '1' } },
+        { osmId: 915, pts: [[25, -65], [25, -15]], width: 1.5, isBridge: false, isPath: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'secondary' } },
+        // On-deck tram/street + island T-junction + riverside park towpath on Urban River Bridge
+        { osmId: 912, name: 'Urban River Street', pts: [[-25, 40], [25, 40]], width: 1.6, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'secondary' } },
+        { osmId: 913, pts: [[10, 40], [10, 62]], width: 0.9, isBridge: false, layer: 0, hasExplicitLayer: false, tags: { highway: 'service' } },
+        { osmId: 914, pts: [[-9.5, 20], [-9.5, 65]], width: 0.6, isBridge: false, isPath: true, layer: 0, hasExplicitLayer: false, tags: { highway: 'footway' } },
+      ],
+    };
+
+    const res = buildComplete3DModel(scene, makeState());
+    assertCleanManifold(res.printMetrics, 'Driveable grade & concave-free water bridges');
+    const audits = res.audit.bridgeAudits || [];
+    const bayHump = audits.find(a => a.name === 'Bay Humpback Footbridge');
+    const bayTrunk = audits.find(a => a.name === 'Bay Trunk Bridge');
+    const urbRiver = audits.find(a => a.name === 'Urban River Humpback Bridge');
+
+    check(
+      Boolean(bayHump && bayHump.isThroughArch === false && Math.abs(bayHump.zPylonTop - bayHump.zDeckTop) < 0.08),
+      'bridge:structure=humpback never invents an overhead through-arch superstructure',
+      `isThrough=${bayHump?.isThroughArch}, deckTop=${bayHump?.zDeckTop}, pyTop=${bayHump?.zPylonTop}`
+    );
+
+    const checkNoMidSag = (aud) => {
+      if (!aud || !Array.isArray(aud.zTopArr) || aud.zTopArr.length < 5) return false;
+      const z = aud.zTopArr, n = z.length, mid = z[n >> 1];
+      const maxL = Math.max(...z.slice(0, Math.max(2, Math.floor(n * 0.28))));
+      const maxR = Math.max(...z.slice(Math.min(n - 2, Math.ceil(n * 0.72))));
+      return mid + 0.03 >= Math.min(maxL, maxR);
+    };
+    check(
+      Boolean(bayHump && bayTrunk && checkNoMidSag(bayHump) && checkNoMidSag(bayTrunk) && bayHump.zDeckTop <= Math.max(bayHump.zStartDeck, bayHump.zEndDeck) + 0.9),
+      'Water-crossing bridges maintain smooth convex/chord deck without mid-river U-sag or bank spike',
+      `bayHump=[${bayHump?.zStartDeck}..${bayHump?.zDeckTop}..${bayHump?.zEndDeck}], bayTrunk=[${bayTrunk?.zStartDeck}..${bayTrunk?.zDeckTop}..${bayTrunk?.zEndDeck}]`
+    );
+
+    check(
+      Boolean(urbRiver && urbRiver.zDeckTop <= Math.max(urbRiver.zStartDeck, urbRiver.zEndDeck) + 0.45),
+      'Short urban river bridge stays driveable without +2mm cliff hump over bank towpath or on-deck junction',
+      `start=${urbRiver?.zStartDeck}, maxTop=${urbRiver?.zDeckTop}, end=${urbRiver?.zEndDeck}`
+    );
+  }
+
   console.log(`\nETAP 4 BRIDGES GLOBAL SUMMARY: ${passed} passed, ${failed} failed.`);
   if (failed > 0) process.exit(1);
 }
