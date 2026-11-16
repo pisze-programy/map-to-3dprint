@@ -308,9 +308,11 @@ def match_and_emit_s3db(buildings, candidate_parents, candidate_parts, meters_to
     for parent in candidate_parents:
         suppress = False
         if parent["hasParts"]:
+            bp_raw = str(parent["tags"].get("building:part", "")).lower().strip()
             ground_cov = parent["groundPartsAreaSum"] / max(1e-4, parent["netArea"])
             total_cov = parent["partsAreaSum"] / max(1e-4, parent["netArea"])
-            if (ground_cov >= 0.42 or total_cov >= 0.52 or
+            if (bp_raw in ("no", "none") or
+                ground_cov >= 0.42 or total_cov >= 0.52 or
                 (parent["fromBuildingRel"] and total_cov >= 0.30) or
                 (parent["partCount"] >= 4 and total_cov >= 0.32)):
                 suppress = True
