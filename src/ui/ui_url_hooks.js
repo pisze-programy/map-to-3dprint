@@ -376,11 +376,15 @@ async function applyMap3DUrlParams(ctx) {
       if (state.mapSpanMeters !== prevSpan) needs3DRebuild = true;
     }
 
+    const savedCfg = (!isVideoMode && !bboxParts && !hasLatLonParams && typeof loadActiveConfig === 'function')
+      ? loadActiveConfig()
+      : null;
     const needsSavedCenterFetch = Boolean(
-      !bboxParts && !hasLatLonParams &&
-      state && state.sceneData && state.sceneData.center &&
-      (Math.abs(state.mapCenterLat - state.sceneData.center[0]) > 0.01 ||
-       Math.abs(state.mapCenterLon - state.sceneData.center[1]) > 0.01)
+      !isVideoMode && !bboxParts && !hasLatLonParams &&
+      savedCfg && typeof savedCfg.lat === 'number' && typeof savedCfg.lon === 'number' &&
+      (!state || !state.sceneData || !state.sceneData.center ||
+        Math.abs(state.mapCenterLat - state.sceneData.center[0]) > 0.01 ||
+        Math.abs(state.mapCenterLon - state.sceneData.center[1]) > 0.01)
     );
     const willFetchGIS = Boolean(bboxParts || hasLatLonParams || needsSavedCenterFetch);
 

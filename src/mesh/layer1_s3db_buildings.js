@@ -98,7 +98,7 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
       for (const pt of b.outer) { cx += pt[0]; cy += pt[1]; if (pt[0] < minX) minX = pt[0]; if (pt[0] > maxX) maxX = pt[0]; if (pt[1] < minY) minY = pt[1]; if (pt[1] > maxY) maxY = pt[1]; }
       return {
         idx, b, tags, areaM2: Math.abs(_ringAreaSigned(b.outer)) / Math.max(1e-8, mToU * mToU),
-        cx: cx / b.outer.length, cy: cy / b.outer.length, minX, maxX, minY, maxY, bodyTopM: 0,
+        cx: cx / b.outer.length, cy: cy / b.outer.length, minX, maxX, minY, maxY, bodyTopM: 0, bracedTopM: 0,
         rawH: Number((b.h !== undefined && b.h !== null) ? b.h : (b.height !== undefined ? b.height : 9.0)),
         rawMinH: Math.max(0, Number(b.minH !== undefined ? b.minH : (tags.min_height || 0)) || 0),
         normRoof: _normalizeRoofShape(tags['roof:shape'] || b.roof || 'flat'), skip: false, skipReason: null, flattened: false,
@@ -124,7 +124,7 @@ if (typeof buildS3DBPartSolid === 'undefined' && typeof require !== 'undefined')
         const sameGroup = m.b.groupId !== undefined && m.b.groupId !== null && m.b.groupId === o.b.groupId;
         const overlapsBox = !(m.maxX < o.minX || m.minX > o.maxX || m.maxY < o.minY || m.minY > o.maxY);
         const insideOther = overlapsBox && _ptInSolid(m.cx, m.cy, o.b.outer, o.b.holes);
-        if (o.areaM2 > m.areaM2 * 1.25 && o.rawH >= 6.0 && m.rawH > o.rawH + 1.5 && (sameGroup || insideOther) && o.rawH > m.bodyTopM) m.bodyTopM = o.rawH;
+        if (o.areaM2 > m.areaM2 * 1.25 && o.rawH >= 6.0 && (sameGroup || insideOther)) { if (o.rawH > m.bracedTopM) m.bracedTopM = o.rawH; if (m.rawH > o.rawH + 1.5 && o.rawH > m.bodyTopM) m.bodyTopM = o.rawH; }
         if (!overlapsBox) continue;
         if ((m.b.part || m.tags['building:part']) && o.areaM2 > m.areaM2 * 1.15 && insideOther && m.rawMinH >= o.rawMinH - 0.5 && m.rawH <= o.rawH + 0.5 &&
             m.b.outer.every(pt => _ptInSolid(pt[0], pt[1], o.b.outer, o.b.holes))) { m.skip = true; m.skipReason = 'cluster_swallowed_interior'; break; }

@@ -213,7 +213,8 @@
     }
     if (paths.length === 0) return [];
     const jt = C2.JoinType[joinTypeName] || C2.JoinType.Miter;
-    const sol = C2.inflatePaths(paths, delta * CLIPPER_SCALE, jt, C2.EndType.Polygon, 2.5, 0.25);
+    const arcTol = Math.max(80, Math.min(2500, Math.abs(delta) * CLIPPER_SCALE * 0.035));
+    const sol = C2.inflatePaths(paths, delta * CLIPPER_SCALE, jt, C2.EndType.Polygon, 2.5, arcTol);
     return fromPaths64(sol, minArea);
   }
 

@@ -42,31 +42,45 @@ OVERPASS_USER_AGENT = (
     "contact@piszeprogramy.pl)"
 )
 OVERPASS_CONNECT_TIMEOUT_SEC = 2.6
-OVERPASS_ATTEMPT_TIMEOUT_SEC = 6.5
-OVERPASS_MIRROR_PHASE_BUDGET_SEC = 9.0
-OVERPASS_TOTAL_BUDGET_SEC = 20.0
+OVERPASS_ATTEMPT_TIMEOUT_SEC = 10.5
+OVERPASS_MIRROR_PHASE_BUDGET_SEC = 15.0
+OVERPASS_TOTAL_BUDGET_SEC = 32.0
 OVERPASS_CACHE_TTL_SEC = 600.0
 OVERPASS_CACHE_MAX = 64
+OVERPASS_DISK_CACHE_DIR = os.path.join(ROOT_DIR, "cache", "overpass_v2")
+OVERPASS_DISK_CACHE_TTL_SEC = 86400.0
+OVERPASS_DISK_CACHE_MAX = 128
 
 OVERPASS_UPSTREAM_MIRRORS = [
-    "https://overpass.private.coffee/api/interpreter",
-    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
     "https://overpass-api.de/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
 ]
+OVERPASS_REGIONAL_MIRRORS = {
+    "eu": "https://ovp.dresel.systems/api/interpreter",
+    "na": "https://ovp.dresel.systems/api-na/interpreter",
+}
+_ALL_OVERPASS_MIRROR_URLS = list(
+    dict.fromkeys(list(OVERPASS_REGIONAL_MIRRORS.values()) + OVERPASS_UPSTREAM_MIRRORS)
+)
 
 _LOG_LOCK = threading.Lock()
 _MIRROR_LOCK = threading.Lock()
 _UPSTREAM_SEMAPHORE = threading.Semaphore(3)
+_OSM_V06_SEMAPHORE = threading.Semaphore(1)
+_OSM_V06_TIME_LOCK = threading.Lock()
+_OSM_V06_LAST_REQ_TS = 0.0
+_OSM_V06_MIN_INTERVAL_SEC = 0.4
 _MIRROR_STATE = {
     url: {
-        "ewma_ms": 1100.0 + idx * 150.0,
+        "ewma_ms": 950.0 + idx * 150.0,
         "cooldown_until": 0.0,
         "ok": 0,
         "fail": 0,
         "consec_fail": 0,
         "in_flight": 0,
     }
-    for idx, url in enumerate(OVERPASS_UPSTREAM_MIRRORS)
+    for idx, url in enumerate(_ALL_OVERPASS_MIRROR_URLS)
 }
 
 _INFLIGHT_LOCK = threading.Lock()
@@ -145,33 +159,47 @@ def _mark_mirror_inflight(url, delta):
             st["in_flight"] = max(0, st.get("in_flight", 0) + delta)
 
 
-def _ordered_overpass_mirrors():
+def _select_regional_mirrors_for_bbox(south, west, north, east):
+    """Returns official Wiki regional Overpass mirrors whose extract strictly covers the bbox."""
+    regional = []
+    if 35.0 <= south and north <= 71.5 and -12.0 <= west and east <= 35.0:
+        regional.append(OVERPASS_REGIONAL_MIRRORS["eu"])
+    elif 15.0 <= south and north <= 72.0 and -168.0 <= west and east <= -52.0:
+        regional.append(OVERPASS_REGIONAL_MIRRORS["na"])
+    return regional
+
+
+def _ordered_overpass_mirrors(regional_urls=None):
     """
-    Orders mirrors strictly keeping non-cooling mirrors ahead of cooling ones,
-    balancing concurrent in-flight load across healthy mirrors and skipping
-    long-cooldown mirrors (e.g. HTTP 401/403) when any healthy candidate exists.
+    Orders mirrors strictly keeping non-cooling mirrors ahead of cooling ones
+    (and bbox-covering regional mirrors first when healthy), balancing in-flight load
+    and skipping long-cooldown mirrors (e.g. HTTP 401/403) when healthier options exist.
     """
     now = time.monotonic()
+    regional_list = list(regional_urls or ())
+    regional_set = set(regional_list)
+    candidate_urls = list(dict.fromkeys(regional_list + OVERPASS_UPSTREAM_MIRRORS))
     with _MIRROR_LOCK:
         ranked = []
         has_non_cooling = False
-        for idx, url in enumerate(OVERPASS_UPSTREAM_MIRRORS):
+        for idx, url in enumerate(candidate_urls):
             st = _MIRROR_STATE[url]
             cooldown_rem = st["cooldown_until"] - now
             is_cooling = cooldown_rem > 0.0
             has_ok = st["ok"] > 0
             consec_fail = st["consec_fail"]
             in_flight = st.get("in_flight", 0)
+            reg_prio = 0 if url in regional_set else 1
             if not is_cooling:
                 has_non_cooling = True
                 tier = 0 if has_ok else 1
             else:
                 tier = 2 if has_ok else 3
-            ranked.append((tier, in_flight, consec_fail, st["ewma_ms"], idx, url, dict(st), cooldown_rem))
+            ranked.append((1 if is_cooling else 0, reg_prio, tier, in_flight, consec_fail, st["ewma_ms"], idx, url, dict(st), cooldown_rem))
         if has_non_cooling:
-            ranked = [item for item in ranked if item[0] <= 1 or item[7] <= 120.0]
-        ranked.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4]))
-        return [(item[5], item[6]) for item in ranked]
+            ranked = [item for item in ranked if item[0] == 0 or item[9] <= 120.0]
+        ranked.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4], item[5], item[6]))
+        return [(item[7], item[8]) for item in ranked]
 
 
 def _has_healthy_proven_mirror():
@@ -201,9 +229,12 @@ def _record_mirror_failure(url, cooldown_sec=40.0, is_query_timeout=False):
             return
         st["fail"] += 1
         st["consec_fail"] += 1
-        # Never cooldown-poison a proven mirror (ok > 0) on isolated heavy-query timeouts
-        if is_query_timeout and st["ok"] > 0 and st["consec_fail"] < 2:
-            return
+        if is_query_timeout:
+            # Never cooldown-poison a proven mirror on isolated heavy-query timeouts,
+            # and keep query-timeout cooldowns short (<= 12s) so mirrors recover rapidly.
+            if st["ok"] > 0 and st["consec_fail"] < 2:
+                return
+            cooldown_sec = min(cooldown_sec, 12.0)
         st["cooldown_until"] = max(st["cooldown_until"], now + cooldown_sec)
         st["ewma_ms"] = min(15000.0, st["ewma_ms"] * 1.3 + 600.0)
 
@@ -475,14 +506,39 @@ def _get_cached_overpass(q_hash):
     now = time.monotonic()
     with _OVERPASS_CACHE_LOCK:
         item = _OVERPASS_CACHE.get(q_hash)
-        if not item:
-            return None
-        expires_at, payload, elem_count = item
-        if now >= expires_at:
+        if item:
+            expires_at, payload, elem_count = item
+            if now < expires_at:
+                _OVERPASS_CACHE.move_to_end(q_hash)
+                return payload, elem_count
             _OVERPASS_CACHE.pop(q_hash, None)
-            return None
-        _OVERPASS_CACHE.move_to_end(q_hash)
-        return payload, elem_count
+
+    disk_path = os.path.join(OVERPASS_DISK_CACHE_DIR, f"{q_hash}.json.gz")
+    try:
+        st = os.stat(disk_path)
+        if (time.time() - st.st_mtime) < OVERPASS_DISK_CACHE_TTL_SEC:
+            with open(disk_path, "rb") as fh:
+                raw = gzip.decompress(fh.read())
+            validated_bytes, elem_count = _validate_overpass_json_bytes(raw)
+            if elem_count > 0:
+                with _OVERPASS_CACHE_LOCK:
+                    _OVERPASS_CACHE[q_hash] = (
+                        now + OVERPASS_CACHE_TTL_SEC,
+                        validated_bytes,
+                        elem_count,
+                    )
+                    _OVERPASS_CACHE.move_to_end(q_hash)
+                    while len(_OVERPASS_CACHE) > OVERPASS_CACHE_MAX:
+                        _OVERPASS_CACHE.popitem(last=False)
+                return validated_bytes, elem_count
+    except FileNotFoundError:
+        pass
+    except Exception:
+        try:
+            os.remove(disk_path)
+        except OSError:
+            pass
+    return None
 
 
 def _put_cached_overpass(q_hash, payload, elem_count):
@@ -492,6 +548,48 @@ def _put_cached_overpass(q_hash, payload, elem_count):
         _OVERPASS_CACHE.move_to_end(q_hash)
         while len(_OVERPASS_CACHE) > OVERPASS_CACHE_MAX:
             _OVERPASS_CACHE.popitem(last=False)
+
+    if elem_count <= 0:
+        return
+    try:
+        os.makedirs(OVERPASS_DISK_CACHE_DIR, exist_ok=True)
+        disk_path = os.path.join(OVERPASS_DISK_CACHE_DIR, f"{q_hash}.json.gz")
+        tmp_path = os.path.join(
+            OVERPASS_DISK_CACHE_DIR,
+            f".{q_hash}.{os.getpid()}.{threading.get_ident()}.tmp",
+        )
+        gz_bytes = gzip.compress(payload, compresslevel=4)
+        with open(tmp_path, "wb") as fh:
+            fh.write(gz_bytes)
+        os.replace(tmp_path, disk_path)
+
+        entries = []
+        for fn in os.listdir(OVERPASS_DISK_CACHE_DIR):
+            if fn.endswith(".json.gz"):
+                fp = os.path.join(OVERPASS_DISK_CACHE_DIR, fn)
+                try:
+                    entries.append((os.stat(fp).st_mtime, fp))
+                except OSError:
+                    pass
+        if len(entries) > OVERPASS_DISK_CACHE_MAX:
+            entries.sort(key=lambda it: it[0])
+            for _, old_fp in entries[: len(entries) - OVERPASS_DISK_CACHE_MAX]:
+                try:
+                    os.remove(old_fp)
+                except OSError:
+                    pass
+    except Exception:
+        pass
+
+
+def _pace_osm_v06_request():
+    global _OSM_V06_LAST_REQ_TS
+    with _OSM_V06_TIME_LOCK:
+        now = time.monotonic()
+        wait = (_OSM_V06_LAST_REQ_TS + _OSM_V06_MIN_INTERVAL_SEC) - now
+        if wait > 0.0:
+            time.sleep(wait)
+        _OSM_V06_LAST_REQ_TS = time.monotonic()
 
 
 def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
@@ -514,62 +612,106 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
     path_and_query = (
         f"/api/0.6/map.json?bbox={west:.6f},{south:.6f},{east:.6f},{north:.6f}"
     )
-    connect_timeout = min(2.8, max(0.5, timeout_budget_sec))
-    read_timeout = min(11.5, max(4.0, timeout_budget_sec))
-    conn = _IPv4PreferredHTTPSConnection(
-        "api.openstreetmap.org", port=443, timeout=connect_timeout
-    )
-    try:
-        conn.connect()
-        if conn.sock is not None:
-            conn.sock.settimeout(read_timeout)
-        req_headers = {
-            "User-Agent": OVERPASS_USER_AGENT,
-            "Accept": "application/json",
-            "Accept-Encoding": "gzip",
-            "Connection": "close",
-        }
-        conn.request("GET", path_and_query, headers=req_headers)
-        resp = conn.getresponse()
-        status = resp.status
-        encoding = (resp.getheader("Content-Encoding") or "").lower()
-        raw = resp.read() if status == 200 else resp.read(240)
-    except Exception as exc:
-        if _is_timeout_exception(exc):
-            raise OverpassQueryTimeoutError(
-                f"osm-api-v0.6: {type(exc).__name__}: {exc}"
-            ) from exc
-        raise RuntimeError(f"api.openstreetmap.org: {type(exc).__name__}: {exc}") from exc
-    finally:
+
+    extra_rel_elements = []
+    with _OSM_V06_SEMAPHORE:
+        rem_budget = max(1.0, fallback_deadline - time.monotonic())
+        connect_timeout = min(2.8, max(0.5, rem_budget))
+        read_timeout = min(16.0, max(6.0, rem_budget))
+        _pace_osm_v06_request()
+        conn = _IPv4PreferredHTTPSConnection(
+            "api.openstreetmap.org", port=443, timeout=connect_timeout
+        )
         try:
-            conn.close()
-        except Exception:
-            pass
+            conn.connect()
+            if conn.sock is not None:
+                conn.sock.settimeout(read_timeout)
+            req_headers = {
+                "User-Agent": OVERPASS_USER_AGENT,
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+                "Connection": "close",
+            }
+            conn.request("GET", path_and_query, headers=req_headers)
+            resp = conn.getresponse()
+            status = resp.status
+            encoding = (resp.getheader("Content-Encoding") or "").lower()
+            raw = resp.read() if status == 200 else resp.read(240)
+        except Exception as exc:
+            if _is_timeout_exception(exc):
+                raise OverpassQueryTimeoutError(
+                    f"osm-api-v0.6: {type(exc).__name__}: {exc}"
+                ) from exc
+            raise RuntimeError(f"api.openstreetmap.org: {type(exc).__name__}: {exc}") from exc
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
-    if status in (400, 504, 509):
-        raise OverpassQueryTimeoutError(f"osm-api-v0.6: HTTP {status}; split 2x2")
-    if status != 200:
-        raise RuntimeError(f"api.openstreetmap.org: HTTP {status}")
+        if status in (400, 504, 509):
+            raise OverpassQueryTimeoutError(f"osm-api-v0.6: HTTP {status}; split 2x2")
+        if status != 200:
+            raise RuntimeError(f"api.openstreetmap.org: HTTP {status}")
 
-    if encoding == "gzip" or raw[:2] == b"\x1f\x8b":
-        raw = gzip.decompress(raw)
-    parsed = json.loads(raw.decode("utf-8"))
-    raw_elements = parsed.get("elements")
-    if not isinstance(raw_elements, list):
-        raise ValueError("OSM v0.6 JSON missing 'elements' array")
+        if encoding == "gzip" or raw[:2] == b"\x1f\x8b":
+            raw = gzip.decompress(raw)
+        parsed = json.loads(raw.decode("utf-8"))
+        raw_elements = parsed.get("elements")
+        if not isinstance(raw_elements, list):
+            raise ValueError("OSM v0.6 JSON missing 'elements' array")
+
+        ways_present = {
+            el.get("id")
+            for el in raw_elements
+            if isinstance(el, dict) and el.get("type") == "way"
+        }
+        rels_to_complete = []
+        for el in raw_elements:
+            if not isinstance(el, dict) or el.get("type") != "relation":
+                continue
+            tags = el.get("tags") or {}
+            rtype = tags.get("type")
+            members = el.get("members") or []
+            if len(members) > 80:
+                continue
+            is_local_3d = bool(
+                rtype in ("building", "bridge")
+                or tags.get("building")
+                or tags.get("man_made") == "bridge"
+                or tags.get("bridge:support")
+            )
+            if not is_local_3d:
+                continue
+            if any(
+                mem.get("type") == "way" and mem.get("ref") not in ways_present
+                for mem in members
+            ):
+                rels_to_complete.append(el.get("id"))
+
+        for rid in rels_to_complete[:3]:
+            rem = fallback_deadline - time.monotonic()
+            if rem <= 2.5:
+                break
+            try:
+                _pace_osm_v06_request()
+                rel_data = _fetch_json_ipv4_preferred(
+                    f"https://api.openstreetmap.org/api/0.6/relation/{rid}/full.json",
+                    timeout_sec=min(2.0, rem - 0.5),
+                )
+                for rel_el in rel_data.get("elements") or []:
+                    if isinstance(rel_el, dict):
+                        extra_rel_elements.append(rel_el)
+            except Exception:
+                pass
 
     by_key = {}
-    ways_present = set()
     for el in raw_elements:
-        if not isinstance(el, dict):
-            continue
-        et = el.get("type")
-        eid = el.get("id")
-        if et is None or eid is None:
-            continue
-        by_key[(et, eid)] = el
-        if et == "way":
-            ways_present.add(eid)
+        if isinstance(el, dict) and el.get("type") is not None and el.get("id") is not None:
+            by_key[(el["type"], el["id"])] = el
+    for rel_el in extra_rel_elements:
+        if rel_el.get("type") is not None and rel_el.get("id") is not None:
+            by_key[(rel_el["type"], rel_el["id"])] = rel_el
 
     def _is_relevant_3d_relation(tags):
         if not tags or not isinstance(tags, dict):
@@ -591,8 +733,9 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
             return False
         if (
             tags.get("building")
-            or rtype == "building"
+            or rtype in ("building", "bridge")
             or tags.get("building:part")
+            or tags.get("bridge:support")
             or tags.get("man_made")
             or tags.get("attraction")
             or tags.get("bridge")
@@ -616,54 +759,6 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
         ):
             return True
         return False
-
-    rels_to_complete = []
-    for el in raw_elements:
-        if not isinstance(el, dict) or el.get("type") != "relation":
-            continue
-        tags = el.get("tags") or {}
-        if not _is_relevant_3d_relation(tags):
-            continue
-        is_interesting = bool(
-            tags.get("building")
-            or tags.get("type") == "building"
-            or tags.get("building:part")
-            or tags.get("man_made") == "bridge"
-            or tags.get("attraction")
-            or (
-                tags.get("type") == "multipolygon"
-                and any(
-                    tags.get(k)
-                    for k in ("water", "waterway", "natural", "landuse", "leisure")
-                )
-            )
-        )
-        if not is_interesting:
-            continue
-        if any(
-            mem.get("type") == "way" and mem.get("ref") not in ways_present
-            for mem in (el.get("members") or [])
-        ):
-            rels_to_complete.append(el.get("id"))
-
-    for rid in rels_to_complete[:5]:
-        rem = fallback_deadline - time.monotonic()
-        if rem <= 2.5:
-            break
-        try:
-            rel_data = _fetch_json_ipv4_preferred(
-                f"https://api.openstreetmap.org/api/0.6/relation/{rid}/full.json",
-                timeout_sec=min(2.0, rem - 0.5),
-            )
-            for rel_el in rel_data.get("elements") or []:
-                if not isinstance(rel_el, dict):
-                    continue
-                ret = rel_el.get("type")
-                reid = rel_el.get("id")
-                if ret is not None and reid is not None:
-                    by_key[(ret, reid)] = rel_el
-        except Exception:
-            pass
 
     want_trees = '"tree"' in (query_str or "")
     ref_node_ids = set()
@@ -705,14 +800,24 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
                     or "seamark:type" in tags
                 )
             )
-            if eid in ref_node_ids or is_tree or is_marine:
+            is_3d_node = bool(
+                tags
+                and (
+                    "bridge:support" in tags
+                    or "man_made" in tags
+                    or "attraction" in tags
+                    or "power" in tags
+                    or "generator:source" in tags
+                )
+            )
+            if eid in ref_node_ids or is_tree or is_marine or is_3d_node:
                 item = {
                     "type": "node",
                     "id": eid,
                     "lat": el.get("lat"),
                     "lon": el.get("lon"),
                 }
-                if (is_tree or is_marine) and tags:
+                if (is_tree or is_marine or is_3d_node) and tags:
                     item["tags"] = tags
                 compacted.append(item)
 
@@ -773,9 +878,19 @@ def forward_overpass_query(query_str):
         with _UPSTREAM_SEMAPHORE:
             t_start = time.monotonic()
             deadline = t_start + OVERPASS_TOTAL_BUDGET_SEC
-            has_bbox = bool(_BBOX_QL_RE.search(query_str))
+            bbox_match = _BBOX_QL_RE.search(query_str)
+            has_bbox = bool(bbox_match)
+            regional_urls = []
+            if bbox_match:
+                regional_urls = _select_regional_mirrors_for_bbox(
+                    float(bbox_match.group(1)),
+                    float(bbox_match.group(2)),
+                    float(bbox_match.group(3)),
+                    float(bbox_match.group(4)),
+                )
+            regional_set = set(regional_urls)
             mirror_deadline = min(
-                deadline,
+                (deadline - 15.0) if has_bbox else deadline,
                 t_start
                 + (
                     OVERPASS_MIRROR_PHASE_BUDGET_SEC
@@ -783,14 +898,31 @@ def forward_overpass_query(query_str):
                     else OVERPASS_TOTAL_BUDGET_SEC
                 ),
             )
-            mirrors_with_state = _ordered_overpass_mirrors()
+            all_candidates = _ordered_overpass_mirrors(regional_urls)
             if has_bbox:
                 now = time.monotonic()
                 mirrors_with_state = [
                     (url, st)
-                    for url, st in mirrors_with_state
+                    for url, st in all_candidates
                     if st.get("cooldown_until", 0.0) <= now
                 ]
+                if not mirrors_with_state:
+                    all_global_failing = all(
+                        st.get("consec_fail", 0) >= 2
+                        for url, st in all_candidates
+                        if url in OVERPASS_UPSTREAM_MIRRORS
+                    )
+                    if not all_global_failing:
+                        short_cool = [
+                            (st.get("cooldown_until", 0.0) - now, url, st)
+                            for url, st in all_candidates
+                            if (st.get("cooldown_until", 0.0) - now) <= 45.0
+                        ]
+                        if short_cool:
+                            short_cool.sort(key=lambda it: it[0])
+                            mirrors_with_state = [(short_cool[0][1], short_cool[0][2])]
+            else:
+                mirrors_with_state = all_candidates
 
             errors = []
             saw_query_timeout = False
@@ -807,6 +939,13 @@ def forward_overpass_query(query_str):
                         mirror_url, encoded_body, attempt_timeout
                     )
                     payload, elem_count, mirror_name, _ = res
+                    if has_bbox and mirror_url in regional_set and elem_count == 0:
+                        log_server_event(
+                            "UPSTREAM_WARN",
+                            f"Overpass regional mirror={mirror_name} returned 0 elements; trying global fallback",
+                        )
+                        errors.append(f"{mirror_name}: 0 elements")
+                        continue
                     _put_cached_overpass(q_hash, payload, elem_count)
                     with _INFLIGHT_LOCK:
                         entry["result"] = res

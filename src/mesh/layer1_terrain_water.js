@@ -40,13 +40,56 @@
     return [minX, minY, maxX, maxY];
   }
 
-  function _pointInStructuredPolys(x, y, polys) {
-    for (let i = 0; i < (polys || []).length; i++) {
-      const wp = polys[i];
-      if (!wp || !wp.outer || wp.outer.length < 3 || !_ptInRing(x, y, wp.outer)) continue;
+  function _indexRing2D(poly) {
+    if (!poly || poly.length < 3) return null;
+    const [minX, minY, maxX, maxY] = _ringBBox(poly);
+    const n = poly.length, spanY = maxY - minY;
+    if (n < 32 || spanY <= 1e-9) return { poly, minX, minY, maxX, maxY, slabs: null, invH: 0, nSlabs: 0 };
+    const nSlabs = Math.min(256, Math.max(32, n >> 3)), invH = nSlabs / spanY;
+    const slabs = Array.from({ length: nSlabs }, () => []);
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const yi = poly[i][1], yj = poly[j][1];
+      if (yi === yj) continue;
+      const yLo = yi < yj ? yi : yj, yHi = yi < yj ? yj : yi;
+      const s0 = Math.max(0, Math.floor((yLo - minY) * invH - 1e-6));
+      const s1 = Math.min(nSlabs - 1, Math.floor((yHi - minY) * invH + 1e-6));
+      for (let s = s0; s <= s1; s++) slabs[s].push(i);
+    }
+    return { poly, minX, minY, maxX, maxY, slabs, invH, nSlabs };
+  }
+
+  function _ptInIndexedRing(px, py, ir) {
+    if (!ir || px < ir.minX - 1e-9 || px > ir.maxX + 1e-9 || py < ir.minY - 1e-9 || py > ir.maxY + 1e-9) return false;
+    if (!ir.slabs) return _ptInRing(px, py, ir.poly);
+    const s = Math.min(ir.nSlabs - 1, Math.max(0, Math.floor((py - ir.minY) * ir.invH)));
+    const idxs = ir.slabs[s], poly = ir.poly, n = poly.length;
+    let inside = false;
+    for (let k = 0; k < idxs.length; k++) {
+      const i = idxs[k], j = i === 0 ? n - 1 : i - 1;
+      const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if (((yi > py) !== (yj > py)) && (px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
+    }
+    return inside;
+  }
+
+  function _indexStructuredPolys(polys) {
+    const out = [];
+    for (const wp of (polys || [])) {
+      const outer = wp && _indexRing2D(wp.outer);
+      if (!outer) continue;
+      const holes = (wp.holes || []).map(_indexRing2D).filter(Boolean);
+      out.push({ outer, holes });
+    }
+    return out;
+  }
+
+  function _pointInIndexedPolys(x, y, idxPolys) {
+    for (let i = 0; i < idxPolys.length; i++) {
+      const wp = idxPolys[i];
+      if (!_ptInIndexedRing(x, y, wp.outer)) continue;
       let inHole = false;
-      for (let h = 0; h < (wp.holes || []).length; h++) {
-        if (wp.holes[h] && wp.holes[h].length >= 3 && _ptInRing(x, y, wp.holes[h])) { inHole = true; break; }
+      for (let h = 0; h < wp.holes.length; h++) {
+        if (_ptInIndexedRing(x, y, wp.holes[h])) { inHole = true; break; }
       }
       if (!inHole) return true;
     }
@@ -98,18 +141,21 @@
       core, mf, ctx, terrainManifold, plateClipPoly, unionedWaterRings, surfaceData
     );
     const { greeneryManifold, roadManifold, frameManifold, roadPolys2D, greenPolys2D, hGreenU, hRoadU } = drapeRes;
+    const waterIdx = _indexStructuredPolys(waterMaskPolys2D);
+    const roadIdx = _indexStructuredPolys(roadPolys2D);
+    const greenIdx = _indexStructuredPolys(greenPolys2D);
 
     const isPointInWater = (x, y) => {
-      if (waterMaskPolys2D.length === 0) return false;
-      if (_pointInStructuredPolys(x, y, waterMaskPolys2D)) return true;
+      if (waterIdx.length === 0) return false;
+      if (_pointInIndexedPolys(x, y, waterIdx)) return true;
       let hits = 0;
       for (const [dx, dy] of [[0.22, 0], [-0.22, 0], [0, 0.22], [0, -0.22]]) {
-        if (_pointInStructuredPolys(x + dx, y + dy, waterMaskPolys2D)) hits++;
+        if (_pointInIndexedPolys(x + dx, y + dy, waterIdx)) hits++;
       }
       return hits >= 3;
     };
-    const isPointOnRoad = (x, y) => _pointInStructuredPolys(x, y, roadPolys2D);
-    const isPointInGreen = (x, y) => _pointInStructuredPolys(x, y, greenPolys2D);
+    const isPointOnRoad = (x, y) => _pointInIndexedPolys(x, y, roadIdx);
+    const isPointInGreen = (x, y) => _pointInIndexedPolys(x, y, greenIdx);
 
     const getSurfaceZ = (x, y) => {
       if (isPointInWater(x, y)) return queryWaterZAt(x, y, false);

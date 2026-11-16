@@ -148,7 +148,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     }
   }).catch(() => {});
 
-  const concurrency = Math.min(3, totalChunks);
+  const concurrency = Math.min(2, totalChunks);
   let nextChunkIdx = 0;
   let streamCompleted = false;
 

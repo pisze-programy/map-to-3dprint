@@ -154,8 +154,10 @@ function buildS3DBPartSolid(core, b, tags, metaP, groupDatumById, platePoly, sce
   }
   const isSpireOrPart = Boolean(b.part || b.fromBuildingRel || isLatticePart || (metaP && metaP.bodyTopM > 0) || ['cone', 'onion', 'pyramidal'].includes(roofShape));
   if (slaLaws && isSpireOrPart && adjOuters.length > 0 && adjHoles.length === 0) {
+    const isBracedFlush = Boolean(metaP && metaP.bracedTopM >= rawH_m - 1.5);
     const protMm = Math.max(0.5, (metaP && metaP.bodyTopM > 0 ? Math.max(0.5, rawH_m - metaP.bodyTopM) : (rawH_m - rawMinH_m)) * mToMm);
-    adjOuters = widenNarrowSpirePolys(core, adjOuters, adjHoles, platePoly, slaLaws.minPinDiameterMm(protMm), scaleMm);
+    const reqDiaMm = isBracedFlush ? slaLaws.minWallThicknessMm(0) : slaLaws.minPinDiameterMm(protMm);
+    adjOuters = widenNarrowSpirePolys(core, adjOuters, adjHoles, platePoly, reqDiaMm, scaleMm);
   }
 
   const structured = core.ringsToOutersWithHoles(adjHoles.length > 0 ? core.clipperDiffPolys(adjOuters, adjHoles, 1e-5) : adjOuters, 6e-4);

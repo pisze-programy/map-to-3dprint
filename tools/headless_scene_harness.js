@@ -979,10 +979,8 @@ class LocalOverpassEvaluator {
 
   _matchWayTags(tags, isDetail) {
     if (!tags) return false;
-    if (tags.building || tags['building:part']) {
-      if (!isDetail && tags.building && EXCLUDED_URBAN_BLD_RE.test(String(tags.building))) {
-        return false;
-      }
+    if (tags['building:part']) return true;
+    if (tags.building && (isDetail || !EXCLUDED_URBAN_BLD_RE.test(String(tags.building)))) {
       return true;
     }
     if (tags.attraction && ATTRACTION_WHEEL_RE.test(tags.attraction)) return true;
@@ -1027,7 +1025,9 @@ class LocalOverpassEvaluator {
 
     const wantTrees = String(qlText || '').includes('natural"="tree"');
     const isDetail = String(qlText || '').includes('way["highway"];') ||
-                     String(qlText || '').includes('way["natural"];');
+                     String(qlText || '').includes('way.bw["highway"];') ||
+                     String(qlText || '').includes('way["natural"];') ||
+                     String(qlText || '').includes('way.bw["natural"];');
 
     const outNodes = new Map();
     const outWays = new Map();
