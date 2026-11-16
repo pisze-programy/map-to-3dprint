@@ -12,6 +12,39 @@ if (typeof parseOsmLengthMetersJS === 'undefined' && typeof require !== 'undefin
 if (typeof computeSolidInteriorPtJS === 'undefined' && typeof require !== 'undefined') {
   try { Object.assign(global, require('./s3db_relation_helper.js')); } catch (_) {}
 }
+if (typeof computeGroundPartsUnionCoverage2D === 'undefined' && typeof require !== 'undefined') {
+  try { Object.assign(global, require('../geometry/polygon_2d.js')); } catch (_) {}
+}
+
+function _fallbackPartsCoverageS3DB(outer, holes, partEntries) {
+  if (!outer || outer.length < 3 || !partEntries || partEntries.length === 0) return 0;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of outer) {
+    if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+    if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+  }
+  const dx = maxX - minX, dy = maxY - minY;
+  if (dx < 1e-8 || dy < 1e-8) return 0;
+  const N = 14;
+  let parentHits = 0, coveredHits = 0;
+  for (let iy = 0; iy < N; iy++) {
+    const py = minY + ((iy + 0.5) / N) * dy;
+    for (let ix = 0; ix < N; ix++) {
+      const px = minX + ((ix + 0.5) / N) * dx;
+      if (!_pointInPolyS3DB(px, py, outer) || _pointInAnyHoleS3DB(px, py, holes)) continue;
+      parentHits++;
+      for (const pe of partEntries) {
+        const po = pe.outer || (pe.part && pe.part.pts);
+        const ph = pe.holes || (pe.part && pe.part.holes);
+        if (po && _pointInPolyS3DB(px, py, po) && !_pointInAnyHoleS3DB(px, py, ph)) {
+          coveredHits++;
+          break;
+        }
+      }
+    }
+  }
+  return parentHits > 0 ? (coveredHits / parentHits) : 0;
+}
 
 function createS3DBClientCollector(halfW, halfH, metersToUnits) {
   const candidateParents = [];
@@ -45,14 +78,14 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       wid: osmId, tags: { ...tags }, pts: outerPts, holes: validHoles, cx, cy, interiorPt,
       bbox: [minX, minY, maxX, maxY], area: outerArea, netArea, minH,
       archType, isFerrisWheel: archType === 'ferris_wheel',
-      hasParts: false, partCount: 0, allParts: [],
+      hasParts: false, partCount: 0, allParts: [], groundParts: [], groundPartHeights: [],
       fromBuildingRel: Boolean(fromBldRel), groupId, parentHeightHint: null, isPart: Boolean(isPart),
     };
     if (isPart) candidateParts.push(rec);
     else candidateParents.push(rec);
   }
 
-  function addBuildingRecord(osmId, tags, outer, holes, groupId = null, isPart = false, parentHeightHint = null, fromBldRel = false) {
+  function addBuildingRecord(osmId, tags, outer, holes, groupId = null, isPart = false, parentHeightHint = null, fromBldRel = false, maxDefaultHeightCap = null) {
     if (!outer || outer.length < 3) return;
     let sx = 0, sy = 0;
     for (const p of outer) { sx += p[0]; sy += p[1]; }
@@ -117,10 +150,15 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
     const heightSource = explicitH !== null ? 'explicit_height' : (levels !== null ? 'levels' : 'estimated_default');
     if (h === null) {
       if (!isFerrisWheel && levels !== null) h = levels * lvlH + roofH;
-      else h = estimateDefaultHeightM({
-        isFerrisWheel, isPart, isChurch, isTower, btype, rawMinSpanM, rawMaxSpanM, minSpanM, maxSpanM,
-        areaM2: areaM2 > 0 ? areaM2 : (areaU / Math.max(1e-6, mToU * mToU)), parentHeightHint, tags, roofH, cfg,
-      });
+      else {
+        h = estimateDefaultHeightM({
+          isFerrisWheel, isPart, isChurch, isTower, btype, rawMinSpanM, rawMaxSpanM, minSpanM, maxSpanM,
+          areaM2: areaM2 > 0 ? areaM2 : (areaU / Math.max(1e-6, mToU * mToU)), parentHeightHint, tags, roofH, cfg,
+        });
+        if (maxDefaultHeightCap !== null && maxDefaultHeightCap > 0) {
+          h = Math.min(h, maxDefaultHeightCap);
+        }
+      }
     }
     if (minH >= h - 0.5) minH = (explicitH !== null && h > 12.0) ? Math.max(0.0, h - 2.0) : 0.0;
     if (roof !== 'flat') {
@@ -178,7 +216,19 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
         }
       }
       const lvlHM = (typeof OSM_METRIC_CONFIG !== 'undefined') ? OSM_METRIC_CONFIG.levelHeightM : 3.5;
-      for (const ep of enclosingParents) { ep.hasParts = true; ep.partCount++; ep.allParts.push({ part }); }
+      const partRef = { outer: part.pts, holes: part.holes, part };
+      const pExplicitH = parseOsmLengthMetersJS(part.tags.height, null) ?? parseOsmLengthMetersJS(part.tags['building:height'], null);
+      const pLvls = pExplicitH === null ? parseFloatTagJS(part.tags['building:levels'], null) : null;
+      const partEstH = pExplicitH !== null ? pExplicitH : (pLvls !== null ? pLvls * lvlHM : null);
+      for (const ep of enclosingParents) {
+        ep.hasParts = true;
+        ep.partCount++;
+        ep.allParts.push(partRef);
+        if ((part.minH || 0) <= 0.5) {
+          ep.groundParts.push(partRef);
+          if (partEstH !== null && partEstH > 0) ep.groundPartHeights.push(partEstH);
+        }
+      }
       if (bestParent) {
         if (part.groupId === null) part.groupId = bestParent.groupId || bestParent.wid;
         for (const ep of enclosingParents) if (ep.groupId === null) ep.groupId = part.groupId;
@@ -205,11 +255,31 @@ function createS3DBClientCollector(halfW, halfH, metersToUnits) {
       const inheritLat = part.parentTowerConstruction && !t['tower:construction'] && !t.amenity && !t.shop && !t.office && !t.tourism && t.covered !== 'yes' && (t.wall === 'no' || t['building:part'] === 'roof' || dH >= 12.0);
       addBuildingRecord(part.wid, inheritLat ? Object.assign({}, t, { 'tower:construction': part.parentTowerConstruction }) : t, part.pts, part.holes, part.groupId, true, part.parentHeightHint, part.fromBuildingRel);
     }
+    const evalCov = (outer, holes, list) => (typeof computeGroundPartsUnionCoverage2D === 'function')
+      ? computeGroundPartsUnionCoverage2D(outer, holes, list)
+      : _fallbackPartsCoverageS3DB(outer, holes, list);
+
     for (const parent of candidateParents) {
       if (isWheelSuppressedAux(parent)) continue;
-      // Strict S3DB invariant: any outline containing >= 1 part is unconditionally suppressed
-      if (parent.hasParts && parent.partCount >= 1) continue;
-      addBuildingRecord(parent.wid, parent.tags, parent.pts, parent.holes, parent.groupId || parent.wid, false, null, parent.fromBuildingRel);
+      let maxDefaultHeightCap = null;
+      if (parent.hasParts && parent.partCount >= 1) {
+        // Explicit OSM type=building relation role=outline is strictly a grouping container
+        if (parent.fromBuildingRel) continue;
+        // Standalone spatial outline (podium/hotel wing): suppress when parts cover >=78% of ground,
+        // >=72% total across >=2 parts, or >=58% in a complete >=3-part cantilevered S3DB stack (ground + elevated upper part)
+        const groundCov = parent.groundParts.length > 0 ? evalCov(parent.pts, parent.holes, parent.groundParts) : 0;
+        const allCov = parent.partCount >= 2 ? evalCov(parent.pts, parent.holes, parent.allParts) : groundCov;
+        const hasCantileverStack = parent.partCount >= 3 &&
+          parent.groundParts.length >= 1 &&
+          parent.allParts.some(pe => pe && pe.part && (pe.part.minH || 0) > 0.5);
+        if (groundCov >= 0.78 || (parent.partCount >= 2 && allCov >= 0.72) || (hasCantileverStack && allCov >= 0.58)) continue;
+        if (groundCov > 0 && parent.groundPartHeights.length > 0) {
+          const sortedH = parent.groundPartHeights.slice().sort((a, b) => a - b);
+          const medH = sortedH[sortedH.length >> 1];
+          if (medH >= 6.0) maxDefaultHeightCap = medH;
+        }
+      }
+      addBuildingRecord(parent.wid, parent.tags, parent.pts, parent.holes, parent.groupId || parent.wid, false, null, parent.fromBuildingRel, maxDefaultHeightCap);
     }
     for (let i = 0; i < buildings.length; i++) buildings[i].id = i + 1;
     return buildings;

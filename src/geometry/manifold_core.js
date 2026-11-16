@@ -248,17 +248,26 @@
     return clipperUnionPolys(allPolys, minArea);
   }
 
-  // Group Clipper2 Positive+Negative rings into [{ outer, holes }] via area containment
+  // Group Clipper2 Positive+Negative rings into [{ outer, holes }] via strictly-interior point containment
   function ringsToOutersWithHoles(rings, minArea = 1e-5) {
     const outers = [];
     const holes = [];
+    const ringBBox = (poly) => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let i = 0; i < poly.length; i++) {
+        const x = poly[i][0], y = poly[i][1];
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+      return [x0, y0, x1, y1];
+    };
     for (let i = 0; i < (rings || []).length; i++) {
       const r = rings[i];
       if (!r || r.length < 3) continue;
       const a = signedArea2D(r);
       if (Math.abs(a) < minArea) continue;
-      if (a > 0) outers.push({ outer: r, holes: [], area: a });
-      else holes.push({ ring: r, area: Math.abs(a) });
+      if (a > 0) outers.push({ outer: r, holes: [], area: a, bb: ringBBox(r) });
+      else holes.push({ ring: r, area: Math.abs(a), bb: ringBBox(r) });
     }
     const ptInRing = (px, py, poly) => {
       let inside = false;
@@ -268,23 +277,66 @@
       }
       return inside;
     };
+    // Computes a point guaranteed strictly inside `poly` (crucial for C-shaped / concave islands like Palm Crescent)
+    const strictlyInteriorPt = (poly, bb) => {
+      let cx = 0, cy = 0;
+      for (let k = 0; k < poly.length; k++) { cx += poly[k][0]; cy += poly[k][1]; }
+      cx /= poly.length; cy /= poly.length;
+      if (ptInRing(cx, cy, poly)) return [cx, cy];
+
+      const dy = bb[3] - bb[1];
+      if (dy > 1e-9) {
+        let bestMid = null, bestSpan = -1;
+        for (const frac of [0.5, 0.37, 0.63, 0.25, 0.75]) {
+          const sy = bb[1] + dy * frac;
+          const xs = [];
+          for (let i = 0, n = poly.length, j = n - 1; i < n; j = i++) {
+            const yi = poly[i][1], yj = poly[j][1];
+            if ((yi > sy) !== (yj > sy)) {
+              xs.push(poly[i][0] + ((poly[j][0] - poly[i][0]) * (sy - yi)) / (yj - yi));
+            }
+          }
+          xs.sort((a, b) => a - b);
+          for (let k = 0; k + 1 < xs.length; k += 2) {
+            const span = xs[k + 1] - xs[k];
+            if (span > bestSpan) {
+              const mx = (xs[k] + xs[k + 1]) * 0.5;
+              if (ptInRing(mx, sy, poly)) { bestSpan = span; bestMid = [mx, sy]; }
+            }
+          }
+        }
+        if (bestMid) return bestMid;
+      }
+
+      for (let i = 0, n = poly.length; i < n; i++) {
+        const a = poly[i], b = poly[(i + 1) % n];
+        const dx = b[0] - a[0], edy = b[1] - a[1], len = Math.hypot(dx, edy);
+        if (len < 1e-7) continue;
+        const mx = (a[0] + b[0]) * 0.5, my = (a[1] + b[1]) * 0.5;
+        const eps = Math.min(len * 0.15, 1e-3);
+        const nx = -edy / len, ny = dx / len;
+        if (ptInRing(mx + nx * eps, my + ny * eps, poly)) return [mx + nx * eps, my + ny * eps];
+        if (ptInRing(mx - nx * eps, my - ny * eps, poly)) return [mx - nx * eps, my - ny * eps];
+      }
+      return [poly[0][0], poly[0][1]];
+    };
+
     for (let hi = 0; hi < holes.length; hi++) {
       const h = holes[hi];
-      let cx = 0, cy = 0;
-      for (let k = 0; k < h.ring.length; k++) { cx += h.ring[k][0]; cy += h.ring[k][1]; }
-      cx /= h.ring.length; cy /= h.ring.length;
+      const ip = strictlyInteriorPt(h.ring, h.bb);
       let best = null;
       for (let oi = 0; oi < outers.length; oi++) {
         const o = outers[oi];
         if (o.area <= h.area * 1.0001) continue;
         if (best && o.area >= best.area) continue;
-        if (ptInRing(cx, cy, o.outer) || ptInRing(h.ring[0][0], h.ring[0][1], o.outer)) {
+        if (ip[0] < o.bb[0] - 1e-4 || ip[0] > o.bb[2] + 1e-4 || ip[1] < o.bb[1] - 1e-4 || ip[1] > o.bb[3] + 1e-4) continue;
+        if (ptInRing(ip[0], ip[1], o.outer)) {
           best = o;
         }
       }
       if (best) best.holes.push(h.ring);
     }
-    return outers;
+    return outers.map(o => ({ outer: o.outer, holes: o.holes, area: o.area }));
   }
 
   // --------------------------------------------------------------------------

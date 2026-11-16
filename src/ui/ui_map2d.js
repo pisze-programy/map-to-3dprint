@@ -45,9 +45,10 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
     const rad = Math.abs(rotDeg) * Math.PI / 180.0;
     const absCos = Math.abs(Math.cos(rad));
     const absSin = Math.abs(Math.sin(rad));
-    const envPad = 1.045;
-    const envHalfMx = (halfMx * absCos + halfMy * absSin) * envPad;
-    const envHalfMy = (halfMx * absSin + halfMy * absCos) * envPad;
+    const envPad = 1.06;
+    const rotFreeRadiusM = baseSpan <= 8000 ? Math.hypot(halfMx, halfMy) * 1.04 : 0;
+    const envHalfMx = Math.max((halfMx * absCos + halfMy * absSin) * envPad, rotFreeRadiusM);
+    const envHalfMy = Math.max((halfMx * absSin + halfMy * absCos) * envPad, rotFreeRadiusM);
     const fetchDLat = envHalfMy / 111320.0;
     const fetchDLon = envHalfMx / (111320.0 * cosLat);
 

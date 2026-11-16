@@ -183,15 +183,17 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
 
   const bbox = `${south.toFixed(5)},${west.toFixed(5)},${north.toFixed(5)},${east.toFixed(5)}`;
   const query = (typeof buildAdaptiveOverpassQL === 'function' && typeof selectLodTier === 'function')
-    ? buildAdaptiveOverpassQL(south, west, north, east, selectLodTier(effectiveSpanM), 14, lodQueryOpts)
-    : `[out:json][timeout:14][bbox:${bbox}];` +
+    ? buildAdaptiveOverpassQL(south, west, north, east, selectLodTier(effectiveSpanM), 20, lodQueryOpts)
+    : `[out:json][timeout:20][bbox:${bbox}];` +
       `way->.bw;` +
-      `(rel(bw.bw)["type"~"^(building|bridge)$"];rel(bw.bw)[~"^(building|building:part|bridge:support)$"~"."];rel(bw.bw)["man_made"="bridge"];rel(bw.bw)["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];)->.br;` +
+      `(rel(bw.bw)["type"~"^(building|bridge)$"];rel(bw.bw)["building"];rel(bw.bw)["building:part"];rel(bw.bw)["bridge:support"];rel(bw.bw)["man_made"="bridge"];rel(bw.bw)["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];)->.br;` +
       `(way(r.br);rel(r.br)->.brs;way(r.brs);)->.brw;` +
-      `rel(bw.bw)["type"="multipolygon"][!"building"][!"building:part"][!"route"][!"boundary"][!"restriction"][~"^(natural|waterway|water|place|landuse|leisure|highway|area:highway|man_made|railway|public_transport)$"~"."]->.mp;` +
+      `rel(bw.bw)["type"="multipolygon"][!"building"][!"building:part"][!"route"][!"boundary"][!"restriction"][place!~"^(sea|ocean|peninsula|archipelago|continent|country|state|region)$"]["place"~"^(island|islet|square)$"]->.isl;` +
+      `way(r.isl)->.islw;` +
+      `rel(bw.bw)["type"="multipolygon"][!"building"][!"building:part"][!"route"][!"boundary"][!"restriction"][natural!~"^(bay|strait|peninsula|cape|mountain_range|massif|desert|valley|sea|ridge)$"][place!~"^(sea|ocean|peninsula|archipelago|continent|country|state|region)$"][~"^(natural|waterway|water|landuse|leisure|highway|area:highway|man_made|railway|public_transport)$"~"."]->.mp;` +
       `way(r.mp)(${bbox})->.mpw;` +
-      `(way.bw[~"^(building|building:part|natural|waterway|water|landuse|leisure|highway|area:highway|railway|bridge:support)$"~"."];way.bw["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];way.bw["place"~"^(square|island|islet)$"];way.bw["public_transport"="platform"];way.bw["power"="generator"];way.bw["man_made"~"^(bridge|pier|pontoon|breakwater|groyne|jetty|quay|tower|mast|communications_tower|lighthouse|chimney|cooling_tower|storage_tank|silo|crane|wind_turbine)$"];.brw;.mpw;)->.wbox;` +
-      `(rel.br;rel.brs;.mp;.wbox;node["natural"="tree"];node["bridge:support"];node["man_made"~"^(wind_turbine|tower|mast|communications_tower|lighthouse|chimney|crane)$"];node["power"="generator"]["generator:source"="wind"];node(r.br););out body qt;` +
+      `(way.bw[~"^(building|building:part|natural|waterway|water|landuse|leisure|highway|area:highway|railway|bridge:support)$"~"."];way.bw["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];way.bw["place"~"^(square|island|islet)$"];way.bw["public_transport"="platform"];way.bw["power"="generator"];way.bw["man_made"~"^(bridge|pier|pontoon|breakwater|groyne|jetty|quay|tower|mast|communications_tower|lighthouse|chimney|cooling_tower|storage_tank|silo|crane|wind_turbine)$"];.brw;.islw;.mpw;)->.wbox;` +
+      `(rel.br;rel.brs;.isl;.mp;.wbox;node["natural"="tree"];node["bridge:support"];node["man_made"~"^(wind_turbine|tower|mast|communications_tower|lighthouse|chimney|crane)$"];node["power"="generator"]["generator:source"="wind"];node(r.br););out body qt;` +
       `node(w.wbox);out skel qt;`;
 
   const spanU = (typeof SCENE_CANONICAL_SPAN_UNITS !== 'undefined') ? SCENE_CANONICAL_SPAN_UNITS : 169.2;
@@ -263,6 +265,8 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
       roads: [],
       roadPolys: [],
       bridgePolys: [],
+      pierPolys: [],
+      pierLines: [],
       bridgeSupports: [],
       buildings: [],
       _fallback: true,

@@ -282,15 +282,9 @@ function processOsmWaterMultipolygonJS(rel, tags, raw, ctx, extraFlags = null) {
     return false;
   }
 
-  // Standalone place=island / place=islet multipolygons: record land ring without blocking greenery/plaza extraction
+  // Standalone place=island / place=islet multipolygons: record land ring (including multi-way coastline islands
+  // like Logo Island rel/9170571) without adding memberWayIds to usedWays so coastline ways still stitch normally.
   if (isOsmStandaloneIslandTagsJS(tags)) {
-    const hasCoastlineMember = Boolean(raw.memberWayIds && raw.memberWayIds.some(wid => {
-      const mw = ctx.ways && ctx.ways.get(wid);
-      return Boolean(mw && mw.tags && mw.tags.natural === 'coastline');
-    }));
-    if (hasCoastlineMember) {
-      return !extraFlags || (!extraFlags.isGreen && !extraFlags.isPlaza);
-    }
     const clipped = (typeof stitchClippedMultipolygonRingsJS === 'function')
       ? stitchClippedMultipolygonRingsJS(raw.outerWays, raw.innerWays, ctx.nodesToPts, ctx.fetchHalfW, ctx.fetchHalfH, {
           isWater: false,
@@ -403,7 +397,18 @@ function finalizeOsmWaterLayerJS(ctx) {
   }
 
   const waterPolys = ctx.waterPolys || [];
-  if (waterPolys.length === 0) return;
+  if (waterPolys.length === 0) {
+    if (ctx._hasMarineTags && Array.isArray(ctx._standaloneIslands) && ctx._standaloneIslands.length > 0) {
+      const existingOpen = Array.isArray(ctx._openSeaIslands) ? ctx._openSeaIslands : [];
+      for (const isl of ctx._standaloneIslands) {
+        if (_waterRingAbsAreaJS(isl) > 1e-4 && !existingOpen.some(o => _waterRingsMatchSameLoopJS(o, isl))) {
+          existingOpen.push(isl);
+        }
+      }
+      if (existingOpen.length > 0) ctx._openSeaIslands = existingOpen;
+    }
+    return;
+  }
 
   // Collect all explicit island holes (from multipolygons + coastline islands) and standalone place=island|islet polygons
   const allIslandEntries = [];
@@ -475,22 +480,16 @@ function finalizeOsmWaterLayerJS(ctx) {
     if (!attachedStrict && !entry.isShingle && entry.fromStandalone && entry.area <= maxStandaloneArea) {
       const largerIdxs = [];
       for (let wi = 0; wi < waterPolys.length; wi++) {
-        if (outerAreas[wi] > entry.area * 1.15) largerIdxs.push(wi);
+        if (outerAreas[wi] > entry.area * 1.05) largerIdxs.push(wi);
       }
-      if (largerIdxs.length > 0) {
+      if (largerIdxs.length > 0 && entry.ring.length >= 3) {
         const probe = _waterRingProbePtJS(entry.ring);
         const probeInLarger = largerIdxs.some(wi => _waterPointInPolyJS(probe[0], probe[1], waterPolys[wi].outer));
-        if (probeInLarger && entry.ring.length >= 3) {
-          let inUnionCount = 0;
-          for (let k = 0; k < entry.ring.length; k++) {
-            const pt = entry.ring[k];
-            if (largerIdxs.some(wi => _waterPointInPolyJS(pt[0], pt[1], waterPolys[wi].outer))) {
-              inUnionCount++;
-            }
-          }
-          if (inUnionCount / entry.ring.length >= 0.90) {
-            extraLandRings.push(entry.ring);
-          }
+        const anyVertInLarger = probeInLarger || entry.ring.some(pt =>
+          largerIdxs.some(wi => _waterPointInPolyJS(pt[0], pt[1], waterPolys[wi].outer))
+        );
+        if (anyVertInLarger) {
+          extraLandRings.push(entry.ring);
         }
       }
     }

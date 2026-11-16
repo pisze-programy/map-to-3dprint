@@ -882,18 +882,29 @@ function stitchCoastlineSeaPolysJS(coastWays, halfW, halfH, waterPolys, metaOut 
         classifyClosedCoastRing(pc);
         continue;
       }
-      if (!isOnBoundary(p0)) {
-        const sn0 = snapNearBoundary(p0);
-        if (!sn0) continue;
-        pc[0] = sn0;
-        p0 = sn0;
+      const sn0 = isOnBoundary(p0) ? p0 : snapNearBoundary(p0);
+      const snN = isOnBoundary(pN) ? pN : snapNearBoundary(pN);
+      if (!sn0 || !snN) {
+        // Recover multi-way CCW island coastline chains that lost 1 short segment (e.g. Logo Island)
+        if (!sn0 && !snN && pc.length >= 3) {
+          let arcLen = 0;
+          for (let s = 1; s < pc.length; s++) {
+            arcLen += Math.hypot(pc[s][0] - pc[s - 1][0], pc[s][1] - pc[s - 1][1]);
+          }
+          const gap = Math.hypot(p0[0] - pN[0], p0[1] - pN[1]);
+          const closedCand = pc.concat([pc[0]]);
+          const sArea = polyAreaSignedJS(closedCand);
+          const rectArea = Math.max(1, 4 * Cx * Cy);
+          if (arcLen > 0.25 && gap <= arcLen * 0.90 && sArea > 0.0025 && sArea < rectArea * 0.15) {
+            landIslands.push(closedCand);
+          }
+        }
+        continue;
       }
-      if (!isOnBoundary(pN)) {
-        const snN = snapNearBoundary(pN);
-        if (!snN) continue;
-        pc[pc.length - 1] = snN;
-        pN = snN;
-      }
+      pc[0] = sn0;
+      p0 = sn0;
+      pc[pc.length - 1] = snN;
+      pN = snN;
       if (Math.hypot(p0[0] - pN[0], p0[1] - pN[1]) < 0.12) {
         if (pc.length >= 4) classifyClosedCoastRing(pc);
         continue;

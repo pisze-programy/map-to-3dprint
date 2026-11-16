@@ -593,6 +593,11 @@ function initMap3DApp(initialScene) {
             errText.textContent = 'Nie udało się pobrać budynków z Overpass API (przeciążenie serwerów). Załadowano model terenu DEM.';
             errBanner.classList.remove('hidden');
           }
+        } else if (scene._partialIncomplete) {
+          if (errBanner && errText) {
+            errText.textContent = `Uwaga: przeciążenie Overpass API — nie udało się pobrać ${scene._failedChunkCount || 1} z ${scene._totalChunkCount || '?'} sektorów mapy. Kliknij Generuj ponownie za chwilę, aby uzupełnić brakujące fragmenty.`;
+            errBanner.classList.remove('hidden');
+          }
         } else {
           if (errBanner) errBanner.classList.add('hidden');
         }

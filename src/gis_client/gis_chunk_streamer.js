@@ -151,6 +151,7 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   const concurrency = Math.min(2, totalChunks);
   let nextChunkIdx = 0;
   let streamCompleted = false;
+  const failedChunkEntries = [];
 
   const runChunkWorker = async () => {
     while (nextChunkIdx < chunks.length) {
@@ -206,11 +207,13 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
           chunkSucceeded = true;
         } else {
           failedChunks++;
+          failedChunkEntries.push({ chunk, partialElements: null });
         }
       } catch (err) {
         failedChunks++;
+        failedChunkEntries.push({ chunk, partialElements: (err && Array.isArray(err.partialElements)) ? err.partialElements : null });
         if (!(abortSignal && abortSignal.aborted)) {
-          console.warn(`[GIS Chunk Streamer] Chunk ${chunk.id} failed:`, err);
+          console.warn(`[GIS Chunk Streamer] Chunk ${chunk.id} failed on pass 1:`, err);
         }
       }
 
@@ -262,6 +265,48 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
   };
 
   await Promise.all(Array.from({ length: concurrency }, () => runChunkWorker()));
+
+  // Second-chance sequential backoff retry for any chunks that failed during initial concurrent wave
+  if (failedChunkEntries.length > 0 && !(abortSignal && abortSignal.aborted)) {
+    const remainingFailed = [];
+    for (let rIdx = 0; rIdx < failedChunkEntries.length; rIdx++) {
+      if (abortSignal && abortSignal.aborted) break;
+      const entry = failedChunkEntries[rIdx];
+      if (typeof options.onProgress === 'function') {
+        options.onProgress({
+          loadedChunks,
+          totalChunks,
+          pct: Math.min(93, Math.round(86 + ((rIdx + 1) / failedChunkEntries.length) * 6)),
+          progressKind: 'chunk-retry',
+          statusText: `Ponawianie sektora ${entry.chunk.id} (${rIdx + 1}/${failedChunkEntries.length})...`
+        });
+      }
+      await new Promise(r => setTimeout(r, 1800));
+      if (abortSignal && abortSignal.aborted) break;
+      try {
+        const retryEls = await fetchChunkWithRecursiveSplit(entry.chunk, abortSignal, null);
+        if (Array.isArray(retryEls)) {
+          collectedChunkElements.push(retryEls);
+          loadedChunks++;
+          failedChunks = Math.max(0, failedChunks - 1);
+          totalLoadedEls += retryEls.length;
+        } else {
+          remainingFailed.push(entry);
+        }
+      } catch (retryErr) {
+        const bestPartial = (retryErr && Array.isArray(retryErr.partialElements) && retryErr.partialElements.length > 0)
+          ? retryErr.partialElements
+          : entry.partialElements;
+        remainingFailed.push({ chunk: entry.chunk, partialElements: bestPartial });
+      }
+    }
+    for (const rem of remainingFailed) {
+      if (Array.isArray(rem.partialElements) && rem.partialElements.length > 0) {
+        collectedChunkElements.push(rem.partialElements);
+      }
+    }
+  }
+
   streamCompleted = true;
 
   if (partialPreviewPromise) {
@@ -290,10 +335,14 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
         _demHalfUnits: Math.round((halfM * mToU) * 100) / 100,
         buildings: [],
         waterPolys: [],
+        waterLines: [],
         greenPolys: [],
+        trees: [],
         roads: [],
         roadPolys: [],
         bridgePolys: [],
+        pierPolys: [],
+        pierLines: [],
         bridgeSupports: [],
         dem,
         _fallback: true
@@ -322,6 +371,11 @@ async function fetchChunkedGISInBrowser(south, west, north, east, title, options
     : (effectiveSpanM > 12000 ? 2500 : 6000);
   const finalScene = await buildSceneFromPreloadedGis(south, west, north, east, title, dem, mergedElements, maxBlds, sceneOptions);
   finalScene._chunkStats = { rows, cols, loadedChunks, failedChunks, totalChunks, lodTier, demZoom: dem.zoom || 14 };
+  if (failedChunks > 0) {
+    finalScene._partialIncomplete = true;
+    finalScene._failedChunkCount = failedChunks;
+    finalScene._totalChunkCount = totalChunks;
+  }
 
   return finalScene;
 }

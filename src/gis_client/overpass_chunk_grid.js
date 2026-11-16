@@ -26,22 +26,42 @@ function selectLodTier(spanMeters) {
 
 const _BUILD_QL_LAYER2_WAY = 'way.bw["bridge:support"];way.bw["power"="generator"];way.bw["man_made"~"^(bridge|pier|pontoon|breakwater|groyne|jetty|quay|tower|mast|communications_tower|lighthouse|chimney|cooling_tower|storage_tank|silo|crane|wind_turbine)$"];';
 const _BUILD_QL_LAYER2_NODE = 'node["bridge:support"];node["man_made"~"^(wind_turbine|tower|mast|communications_tower|lighthouse|chimney|crane)$"];node["power"="generator"]["generator:source"="wind"];';
-const _BUILD_QL_REL_BRIDGE_BLD = '(rel(bw.bw)["type"~"^(building|bridge)$"];rel(bw.bw)[~"^(building|building:part|bridge:support)$"~"."];rel(bw.bw)["man_made"="bridge"];rel(bw.bw)["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];)->.br;(way(r.br);rel(r.br)->.brs;way(r.brs);)->.brw;';
+const _BUILD_QL_REL_BRIDGE_BLD = '(rel(bw.bw)["type"~"^(building|bridge)$"];rel(bw.bw)["building"];rel(bw.bw)["building:part"];rel(bw.bw)["bridge:support"];rel(bw.bw)["man_made"="bridge"];rel(bw.bw)["attraction"~"^(big_wheel|observation_wheel|ferris_wheel)$"];)->.br;(way(r.br);rel(r.br)->.brs;way(r.brs);)->.brw;';
+const _MP_EXCL_CONTINENTAL = '[!"building"][!"building:part"][!"route"][!"boundary"][!"restriction"][natural!~"^(bay|strait|peninsula|cape|mountain_range|massif|desert|valley|sea|ridge)$"][place!~"^(sea|ocean|peninsula|archipelago|continent|country|state|region)$"]';
+const _MP_STD_CLAUSES =
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["natural"~"^(water|wood|scrub|grassland|heath|wetland|beach|shingle|shoal|mud|bare_rock)$"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["waterway"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["water"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["landuse"~"^(reservoir|basin|forest|grass|meadow|park|recreation_ground|cemetery|village_green|allotments|farmland|orchard|vineyard)$"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["leisure"~"^(park|garden|nature_reserve|pitch|playground|common|golf_course|recreation_ground|dog_park|marina|swimming_pool)$"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["highway"="pedestrian"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["area:highway"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["man_made"~"^(quay|pier|pontoon|breakwater|groyne|jetty)$"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["railway"="platform"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["public_transport"="platform"];`;
+const _MP_MTN_CLAUSES =
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["natural"~"^(water|wood|scrub|shingle|shoal)$"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["waterway"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["water"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["landuse"~"^(reservoir|basin|forest)$"];` +
+  `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["leisure"~"^(park|nature_reserve|marina)$"];`;
 
-function _assembleSpatialQL(bbox, timeoutSec, mpFilter, wayClauses, nodeClauses, includeNodesInBr = true) {
+function _assembleSpatialQL(bbox, timeoutSec, mpClauses, wayClauses, nodeClauses, includeNodesInBr = true) {
   const relNodeOut = includeNodesInBr ? 'node(r.br);' : '';
   const brsOut = includeNodesInBr ? 'rel.brs;' : '';
   return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
     `way->.bw;` +
     _BUILD_QL_REL_BRIDGE_BLD +
-    `rel(bw.bw)["type"="multipolygon"][!"building"][!"building:part"][!"route"][!"boundary"][!"restriction"]${mpFilter}->.mp;` +
+    `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["place"~"^(island|islet|square)$"]->.isl;` +
+    `way(r.isl)->.islw;` +
+    `(${mpClauses})->.mp;` +
     `way(r.mp)(${bbox})->.mpw;` +
-    `(${wayClauses}.brw;.mpw;)->.wbox;` +
-    `(rel.br;${brsOut}.mp;.wbox;${nodeClauses}${relNodeOut});out body qt;` +
+    `(${wayClauses}.brw;.islw;.mpw;)->.wbox;` +
+    `(rel.br;${brsOut}.isl;.mp;.wbox;${nodeClauses}${relNodeOut});out body qt;` +
     `node(w.wbox);out skel qt;`;
 }
 
-function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', timeoutSec = 11, lodOptions = null) {
+function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', timeoutSec = 20, lodOptions = null) {
   const bbox = `${south.toFixed(5)},${west.toFixed(5)},${north.toFixed(5)},${east.toFixed(5)}`;
   const wantTrees = (lodOptions && typeof lodOptions.wantTrees === 'boolean')
     ? lodOptions.wantTrees
@@ -61,13 +81,15 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
     const extraBridge = roadDetail === 'major'
       ? `way.bw["highway"]["bridge"~"${bridgeValRegex}"];`
       : '';
-    const mpFilter = '[~"^(natural|waterway|water|place|landuse|leisure|highway|area:highway|man_made|railway|public_transport)$"~"."]';
     const ways =
-      'way.bw[~"^(building|building:part|natural|waterway|water|landuse|leisure|area:highway|railway)$"~"."];' +
+      'way.bw["building"];way.bw["building:part"];' +
+      'way.bw["natural"~"^(water|coastline|wood|scrub|grassland|heath|tree_row|beach|wetland|shingle|shoal|mud|bare_rock)$"];' +
+      'way.bw["waterway"];way.bw["water"];way.bw["landuse"];way.bw["leisure"];way.bw["area:highway"];way.bw["railway"];' +
+      'way.bw["amenity"="fountain"];' +
       wheelFilter + hwyFilter + extraBridge +
       'way.bw["place"~"^(square|island|islet)$"];way.bw["public_transport"="platform"];' +
       _BUILD_QL_LAYER2_WAY;
-    return _assembleSpatialQL(bbox, timeoutSec, mpFilter, ways, nodeClause);
+    return _assembleSpatialQL(bbox, timeoutSec, _MP_STD_CLAUSES, ways, nodeClause);
   }
   if (lodTier === 'urban') {
     const bldWay = minBldM <= 0
@@ -79,7 +101,6 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
     const extraBridge = roadDetail === 'major'
       ? `way.bw["highway"]["bridge"~"${bridgeValRegex}"];`
       : '';
-    const mpFilter = '[~"^(natural|waterway|water|place|landuse|leisure|highway|area:highway|man_made|railway|public_transport)$"~"."]';
     const ways =
       bldWay + wheelFilter + hwyFilter + extraBridge +
       'way.bw["natural"~"^(water|coastline|wood|scrub|grassland|heath|tree_row|beach|wetland|shingle|shoal|mud|bare_rock)$"];' +
@@ -89,7 +110,7 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
       'way.bw["place"~"^(square|island|islet)$"];way.bw["railway"~"^(rail|light_rail|tram|narrow_gauge|funicular|platform)$"];' +
       elevatedTransitFilter + 'way.bw["public_transport"="platform"];' +
       _BUILD_QL_LAYER2_WAY;
-    return _assembleSpatialQL(bbox, timeoutSec, mpFilter, ways, nodeClause);
+    return _assembleSpatialQL(bbox, timeoutSec, _MP_STD_CLAUSES, ways, nodeClause);
   }
   if (lodTier === 'regional') {
     const regNodes = (lodOptions && lodOptions.wantTrees === true) ? `node["natural"="tree"];${_BUILD_QL_LAYER2_NODE}` : _BUILD_QL_LAYER2_NODE;
@@ -99,7 +120,6 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
     const exclBld = minBldM <= 0
       ? '^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|sty|greenhouse|static_caravan|ger)$'
       : '^(shed|garage|garages|hut|cabin|kiosk|roof|allotment_house|greenhouse|house|detached|terrace|semidetached_house|bungalow|farm_auxiliary|barn)$';
-    const mpFilter = '[~"^(natural|waterway|water|place|landuse|leisure|highway|area:highway|man_made|railway|public_transport)$"~"."]';
     const regHwyFilter = roadDetail === 'major'
       ? majorHwyFilter
       : 'way.bw["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|service|path|cycleway|steps|track)$"];' +
@@ -114,7 +134,7 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
       `way.bw["highway"]["bridge"~"${bridgeValRegex}"];way.bw["railway"~"^(rail|light_rail|tram|narrow_gauge|platform)$"];` +
       elevatedTransitFilter + 'way.bw["public_transport"="platform"];' +
       _BUILD_QL_LAYER2_WAY;
-    return _assembleSpatialQL(bbox, timeoutSec, mpFilter, ways, regNodes);
+    return _assembleSpatialQL(bbox, timeoutSec, _MP_STD_CLAUSES, ways, regNodes);
   }
   const midLatRad = ((south + north) * 0.5) * Math.PI / 180;
   const chunkSpanM = Math.max(
@@ -125,22 +145,23 @@ function buildAdaptiveOverpassQL(south, west, north, east, lodTier = 'detail', t
   if (isWideMetropolisScale) {
     return `[out:json][timeout:${timeoutSec}][bbox:${bbox}];` +
       `way->.bw;` +
-      `rel(bw.bw)["type"="multipolygon"][~"^(natural|waterway|water|landuse|leisure)$"~"."]->.mp;` +
+      `rel(bw.bw)["type"="multipolygon"]${_MP_EXCL_CONTINENTAL}["place"~"^(island|islet)$"]->.isl;` +
+      `way(r.isl)->.islw;` +
+      `(${_MP_MTN_CLAUSES})->.mp;` +
       `way(r.mp)(${bbox})->.mpw;` +
-      `(way.bw["building:levels"~"^(1[2-9]|[2-9][0-9])"]["building"];way.bw["building"~"^(church|cathedral|chapel|castle|palace|tower|stadium)$"];way.bw["natural"~"^(water|coastline)$"];way.bw["waterway"~"^(river|riverbank|canal)$"];way.bw["water"];way.bw["place"~"^(island|islet)$"];way.bw["landuse"~"^(reservoir|basin)$"];way.bw["leisure"="park"];way.bw["highway"~"^(motorway|trunk|primary|motorway_link|trunk_link)$"];.mpw;)->.wbox;` +
-      `(.mp;.wbox;);out body qt;` +
+      `(way.bw["building:levels"~"^(1[2-9]|[2-9][0-9])"]["building"];way.bw["building"~"^(church|cathedral|chapel|castle|palace|tower|stadium)$"];way.bw["natural"~"^(water|coastline)$"];way.bw["waterway"~"^(river|riverbank|canal)$"];way.bw["water"];way.bw["place"~"^(island|islet)$"];way.bw["landuse"~"^(reservoir|basin)$"];way.bw["leisure"="park"];way.bw["highway"~"^(motorway|trunk|primary|motorway_link|trunk_link)$"];.islw;.mpw;)->.wbox;` +
+      `(.isl;.mp;.wbox;);out body qt;` +
       `node(w.wbox);out skel qt;`;
   }
-  const mtnMpFilter = '[~"^(natural|waterway|water|landuse|leisure)$"~"."]';
   const mtnWays =
     'way.bw["building"]["height"];way.bw["building"]["building:levels"~"^([5-9]|[1-9][0-9])"];way.bw["building"]["name"];' +
     'way.bw["building"~"^(church|cathedral|chapel|castle|palace|public|civic|commercial|industrial|apartments|hotel|hospital|university|train_station|tower|stadium)$"];' +
     'way.bw["natural"~"^(water|coastline|wood|scrub)$"];way.bw["waterway"~"^(river|riverbank|canal|dock)$"];way.bw["water"];way.bw["place"~"^(island|islet)$"];' +
-    'way.bw["landuse"~"^(reservoir|basin|forest)$"];way.bw["leisure"~"^(park|nature_reserve)$"];' +
+    'way.bw["landuse"~"^(reservoir|basin|forest)$"];way.bw["leisure"~"^(park|nature_reserve|marina)$"];' +
     'way.bw["highway"~"^(motorway|trunk|primary|secondary|tertiary|motorway_link|trunk_link)$"];' +
     'way.bw["highway"]["bridge"~"^(yes|viaduct|suspension)$"];way.bw["railway"="rail"];' +
     _BUILD_QL_LAYER2_WAY;
-  return _assembleSpatialQL(bbox, timeoutSec, mtnMpFilter, mtnWays, 'node["bridge:support"];', true);
+  return _assembleSpatialQL(bbox, timeoutSec, _MP_MTN_CLAUSES, mtnWays, 'node["bridge:support"];', true);
 }
 
 function buildSpatialChunkGrid(south, west, north, east, spanMeters, lodOptions = null) {
@@ -149,7 +170,7 @@ function buildSpatialChunkGrid(south, west, north, east, spanMeters, lodOptions 
   const lodTier = selectLodTier(s);
   let rows = 1, cols = 1;
   if (fetchSpan > 6800) { rows = 3; cols = 3; }
-  else if (fetchSpan > 2650) { rows = 2; cols = 2; }
+  else if (fetchSpan > 1650) { rows = 2; cols = 2; }
   const dLat = (north - south) / rows;
   const dLon = (east - west) / cols;
   const padLat = rows > 1 ? dLat * 0.015 : 0;
@@ -363,17 +384,17 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, callbacks
   const lodKey = lo
     ? `t${lo.wantTrees === false ? 0 : 1}_b${Math.round(lo.minBuildingFootprintM || 0)}_r${lo.roadDetail || 'all'}`
     : 'def';
-  const cacheKey = `v11_${chunk.lodTier}_${lodKey}_${chunk.south.toFixed(4)}_${chunk.west.toFixed(4)}_${chunk.north.toFixed(4)}_${chunk.east.toFixed(4)}`;
+  const cacheKey = `v12_${chunk.lodTier}_${lodKey}_${chunk.south.toFixed(4)}_${chunk.west.toFixed(4)}_${chunk.north.toFixed(4)}_${chunk.east.toFixed(4)}`;
   if (_overpassChunkCache.has(cacheKey)) return _overpassChunkCache.get(cacheKey);
 
-  const timeoutSec = chunk.depth === 0 ? 14 : 11;
-  const perAttemptMs = chunk.depth === 0 ? 15000 : 12000;
+  const timeoutSec = chunk.depth === 0 ? 20 : 16;
+  const perAttemptMs = chunk.depth === 0 ? 25000 : 22000;
   const query = buildAdaptiveOverpassQL(chunk.south, chunk.west, chunk.north, chunk.east, chunk.lodTier, timeoutSec, lo);
 
   try {
     const elements = await fetchSingleOverpassQuery(query, perAttemptMs, abortSignal);
     _overpassChunkCache.set(cacheKey, elements);
-    if (_overpassChunkCache.size > 80) _overpassChunkCache.delete(_overpassChunkCache.keys().next().value);
+    if (_overpassChunkCache.size > 120) _overpassChunkCache.delete(_overpassChunkCache.keys().next().value);
     return elements;
   } catch (err) {
     if (abortSignal && abortSignal.aborted) throw err;
@@ -384,19 +405,21 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, callbacks
       Math.abs(chunk.north - chunk.south) * 111320,
       Math.abs(chunk.east - chunk.west) * 111320 * Math.max(0.2, Math.cos(midLat * Math.PI / 180))
     );
-    if (chunk.depth < 1 && !isFatalNetwork && chunkSpanM > 1850) {
+    const curDepth = Number(chunk.depth) || 0;
+    if (curDepth < 2 && !isFatalNetwork && chunkSpanM > 450) {
       if (onSubSplit) onSubSplit(chunk);
-      // Sub-chunks are already 1/4 the geographic area; preserve chunk.lodTier & lodOptions
-      // so split urban/detail sectors retain full trees, greenery, and building detail.
       const fallbackTier = chunk.lodTier;
       const parentTotalChunks = chunk.totalChunks || 1;
+      const subPadLat = (chunk.north - chunk.south) * 0.008;
+      const subPadLon = (chunk.east - chunk.west) * 0.008;
       const subChunks = [
-        { id: `${chunk.id}.1`, south: chunk.south, west: chunk.west, north: midLat, east: midLon, lodTier: fallbackTier, lodOptions: lo, totalChunks: parentTotalChunks, depth: 1 },
-        { id: `${chunk.id}.2`, south: chunk.south, west: midLon, north: midLat, east: chunk.east, lodTier: fallbackTier, lodOptions: lo, totalChunks: parentTotalChunks, depth: 1 },
-        { id: `${chunk.id}.3`, south: midLat, west: chunk.west, north: chunk.north, east: midLon, lodTier: fallbackTier, lodOptions: lo, totalChunks: parentTotalChunks, depth: 1 },
-        { id: `${chunk.id}.4`, south: midLat, west: midLon, north: chunk.north, east: chunk.east, lodTier: fallbackTier, lodOptions: lo, totalChunks: parentTotalChunks, depth: 1 }
+        { id: `${chunk.id}.1`, south: chunk.south, west: chunk.west, north: Math.min(chunk.north, midLat + subPadLat), east: Math.min(chunk.east, midLon + subPadLon), lodTier: fallbackTier, lodOptions: lo, totalChunks: parentTotalChunks, depth: curDepth + 1 },
+        { id: `${chunk.id}.2`, south: chunk.south, west: Math.max(chunk.west, midLon - subPadLon), north: Math.min(chunk.north, midLat + subPadLat), east: chunk.east, lodTier: fallbackTier, lodOptions: lo, totalChunks: parentTotalChunks, depth: curDepth + 1 },
+        { id: `${chunk.id}.3`, south: Math.max(chunk.south, midLat - subPadLat), west: chunk.west, north: chunk.north, east: Math.min(chunk.east, midLon + subPadLon), lodTier: fallbackTier, lodOptions: lo, totalChunks: parentTotalChunks, depth: curDepth + 1 },
+        { id: `${chunk.id}.4`, south: Math.max(chunk.south, midLat - subPadLat), west: Math.max(chunk.west, midLon - subPadLon), north: chunk.north, east: chunk.east, lodTier: fallbackTier, lodOptions: lo, totalChunks: parentTotalChunks, depth: curDepth + 1 }
       ];
       const mergedSub = [];
+      const failedSubs = [];
       let subCursor = 0;
       let subDoneCount = 0;
       const subWorker = async () => {
@@ -409,14 +432,58 @@ async function fetchChunkWithRecursiveSplit(chunk, abortSignal = null, callbacks
               for (let k = 0; k < subEls.length; k++) mergedSub.push(subEls[k]);
               subDoneCount++;
               if (onSubChunkDone) onSubChunkDone(sc, subEls.length, subDoneCount, subChunks.length);
+            } else {
+              failedSubs.push(sc);
             }
-          } catch (_) {}
+          } catch (subErr) {
+            if (subErr && Array.isArray(subErr.partialElements)) {
+              for (let k = 0; k < subErr.partialElements.length; k++) mergedSub.push(subErr.partialElements[k]);
+            }
+            failedSubs.push(sc);
+          }
         }
       };
       const subConc = (chunk.totalChunks && chunk.totalChunks > 1) ? 1 : 2;
       await Promise.all(Array.from({ length: subConc }, () => subWorker()));
-      if (mergedSub.length > 0) {
+
+      // Second-chance sequential backoff retry for any failed sub-sectors (recovers transient HTTP 429 / timeouts)
+      if (failedSubs.length > 0 && !(abortSignal && abortSignal.aborted)) {
+        const stillFailed = [];
+        for (const sc of failedSubs) {
+          if (abortSignal && abortSignal.aborted) break;
+          await new Promise(r => setTimeout(r, 1600));
+          if (abortSignal && abortSignal.aborted) break;
+          try {
+            const subEls = await fetchChunkWithRecursiveSplit(sc, abortSignal, null);
+            if (Array.isArray(subEls)) {
+              for (let k = 0; k < subEls.length; k++) mergedSub.push(subEls[k]);
+              subDoneCount++;
+              if (onSubChunkDone) onSubChunkDone(sc, subEls.length, subDoneCount, subChunks.length);
+            } else {
+              stillFailed.push(sc);
+            }
+          } catch (retryErr) {
+            if (retryErr && Array.isArray(retryErr.partialElements)) {
+              for (let k = 0; k < retryErr.partialElements.length; k++) mergedSub.push(retryErr.partialElements[k]);
+            }
+            stillFailed.push(sc);
+          }
+        }
+        if (stillFailed.length === 0) {
+          _overpassChunkCache.set(cacheKey, mergedSub);
+          if (_overpassChunkCache.size > 120) _overpassChunkCache.delete(_overpassChunkCache.keys().next().value);
+          return mergedSub;
+        }
+        // NEVER poison _overpassChunkCache under parent cacheKey when any sub-sector is missing!
+        const partialErr = new Error(`Incomplete sub-chunk split (${stillFailed.length}/${subChunks.length} failed)`);
+        partialErr.partialElements = mergedSub;
+        partialErr.failedSubChunkIds = stillFailed.map(s => s.id);
+        throw partialErr;
+      }
+
+      if (subDoneCount === subChunks.length) {
         _overpassChunkCache.set(cacheKey, mergedSub);
+        if (_overpassChunkCache.size > 120) _overpassChunkCache.delete(_overpassChunkCache.keys().next().value);
         return mergedSub;
       }
     }

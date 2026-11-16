@@ -42,9 +42,9 @@ OVERPASS_USER_AGENT = (
     "contact@piszeprogramy.pl)"
 )
 OVERPASS_CONNECT_TIMEOUT_SEC = 2.6
-OVERPASS_ATTEMPT_TIMEOUT_SEC = 10.5
-OVERPASS_MIRROR_PHASE_BUDGET_SEC = 15.0
-OVERPASS_TOTAL_BUDGET_SEC = 32.0
+OVERPASS_ATTEMPT_TIMEOUT_SEC = 18.0
+OVERPASS_MIRROR_PHASE_BUDGET_SEC = 22.0
+OVERPASS_TOTAL_BUDGET_SEC = 38.0
 OVERPASS_CACHE_TTL_SEC = 600.0
 OVERPASS_CACHE_MAX = 64
 OVERPASS_DISK_CACHE_DIR = os.path.join(ROOT_DIR, "cache", "overpass_v2")
@@ -673,23 +673,45 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
             tags = el.get("tags") or {}
             rtype = tags.get("type")
             members = el.get("members") or []
-            if len(members) > 80:
+            if len(members) > 100:
                 continue
-            is_local_3d = bool(
+            nat = str(tags.get("natural") or "")
+            plc = str(tags.get("place") or "")
+            if nat in ("bay", "strait", "peninsula", "cape", "mountain_range", "massif", "desert", "valley", "sea", "ridge"):
+                continue
+            if plc in ("sea", "ocean", "peninsula", "archipelago", "continent", "country", "state", "region"):
+                continue
+            is_island_rel = plc in ("island", "islet")
+            is_core_3d = bool(
                 rtype in ("building", "bridge")
                 or tags.get("building")
+                or tags.get("building:part")
                 or tags.get("man_made") == "bridge"
                 or tags.get("bridge:support")
             )
-            if not is_local_3d:
+            is_local_mp = bool(
+                rtype == "multipolygon"
+                and (
+                    is_island_rel
+                    or plc == "square"
+                    or nat in ("water", "wood", "scrub", "beach", "shingle", "shoal")
+                    or tags.get("water")
+                    or tags.get("waterway")
+                    or tags.get("leisure") in ("marina", "park", "garden")
+                    or tags.get("man_made") in ("pier", "pontoon", "breakwater", "groyne", "jetty", "quay")
+                )
+            )
+            if not (is_island_rel or is_core_3d or is_local_mp):
                 continue
             if any(
                 mem.get("type") == "way" and mem.get("ref") not in ways_present
                 for mem in members
             ):
-                rels_to_complete.append(el.get("id"))
+                priority = 0 if is_island_rel else (1 if is_core_3d else 2)
+                rels_to_complete.append((priority, len(members), el.get("id")))
 
-        for rid in rels_to_complete[:3]:
+        rels_to_complete.sort(key=lambda item: (item[0], item[1]))
+        for _, _, rid in rels_to_complete[:18]:
             rem = fallback_deadline - time.monotonic()
             if rem <= 2.5:
                 break

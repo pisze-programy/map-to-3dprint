@@ -166,16 +166,31 @@ for (const dt of dirTests) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Hard Rule partCount >= 1 -> unconditional outline suppression even at 15%
+// 3. S3DB Outline Suppression: Relation role=outline (Unconditional) vs Spatial Podium Coverage (>=78%)
 // ---------------------------------------------------------------------------
-console.log('\n[3/7] Unconditional Outline Suppression when partCount >= 1 (15% Coverage)');
+console.log('\n[3/7] S3DB Outline Suppression: Relation role=outline vs Spatial Podium Coverage (>=78%)');
 {
-  const col = matcherMod.createS3DBClientCollector(80, 80, 0.25);
-  col.registerCandidate(5001, { building: 'yes', height: '20' }, makeRect(0, 0, 10, 10), [], false, null, false);
-  // Small corner part covering only (4*1.5)/(20*20) = 1.5%..15%
-  col.registerCandidate(5002, { 'building:part': 'yes', height: '14' }, makeRect(-4, -4, 3.8, 3.9), [], true, null, false);
-  const out = col.resolveAndEmitS3DBBuildings();
-  check(out.length === 1 && out[0].osmId === 5002 && out[0].part === true, '15% part suppresses outline unconditionally', `emitted=${out.map(x => `${x.osmId}:${x.part}`).join(',')}`);
+  // 3a. Explicit type=building relation role=outline suppresses unconditionally even at 15% part coverage
+  const colRel = matcherMod.createS3DBClientCollector(80, 80, 0.25);
+  colRel.registerCandidate(5001, { building: 'yes', height: '20' }, makeRect(0, 0, 10, 10), [], false, 9001, true);
+  colRel.registerCandidate(5002, { 'building:part': 'yes', height: '14' }, makeRect(-4, -4, 3.8, 3.9), [], true, 9001, true);
+  const outRel = colRel.resolveAndEmitS3DBBuildings();
+  check(outRel.length === 1 && outRel[0].osmId === 5002 && outRel[0].part === true, 'Relation role=outline suppresses unconditionally at 15% coverage', `emitted=${outRel.map(x => `${x.osmId}:${x.part}`).join(',')}`);
+
+  // 3b. Standalone hotel/podium outline with a small 15% tower/dome part preserves the podium!
+  const colPod = matcherMod.createS3DBClientCollector(80, 80, 0.25);
+  colPod.registerCandidate(5011, { building: 'apartments', 'building:levels': '6', height: '20' }, makeRect(0, 0, 10, 10), [], false, null, false);
+  colPod.registerCandidate(5012, { 'building:part': 'yes', height: '80' }, makeRect(-4, -4, 3.8, 3.9), [], true, null, false);
+  const outPod = colPod.resolveAndEmitS3DBBuildings();
+  check(outPod.length === 2 && outPod.some(x => x.osmId === 5011 && !x.part) && outPod.some(x => x.osmId === 5012 && x.part), 'Standalone podium with 15% tower part preserves podium + tower', `emitted=${outPod.map(x => `${x.osmId}:${x.part}`).join(',')}`);
+
+  // 3c. Standalone outline fully covered (>=78%) by ground parts suppresses redundant outline
+  const colFull = matcherMod.createS3DBClientCollector(80, 80, 0.25);
+  colFull.registerCandidate(5021, { building: 'yes', height: '20' }, makeRect(0, 0, 10, 10), [], false, null, false);
+  colFull.registerCandidate(5022, { 'building:part': 'yes', height: '28' }, makeRect(-4.8, 0, 4.8, 9.6), [], true, null, false);
+  colFull.registerCandidate(5023, { 'building:part': 'yes', height: '16' }, makeRect(4.8, 0, 4.8, 9.6), [], true, null, false);
+  const outFull = colFull.resolveAndEmitS3DBBuildings();
+  check(outFull.length === 2 && outFull.every(x => x.part === true), 'Standalone outline >=78% covered by ground parts suppresses cleanly', `emitted=${outFull.map(x => `${x.osmId}:${x.part}`).join(',')}`);
 }
 
 // ---------------------------------------------------------------------------
