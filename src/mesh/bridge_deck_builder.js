@@ -52,24 +52,28 @@ function _buildClosedStationTubeJS(pts, halfW, zBotArr, zTopArr, mf) {
 }
 
 function _buildSegmentUnionTubeJS(pts, halfW, zBotArr, zTopArr, mf) {
-  const parts = [];
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
-    if (len < 0.01) continue;
-    const tx = dx / len, ty = dy / len, ext = Math.min(halfW * 0.45, len * 0.35);
-    const segPts = [[a[0] - tx * ext, a[1] - ty * ext], [b[0] + tx * ext, b[1] + ty * ext]];
-    const m = _buildClosedStationTubeJS(segPts, halfW, [zBotArr[i], zBotArr[i + 1]], [zTopArr[i], zTopArr[i + 1]], mf);
-    if (m) parts.push(m);
-  }
-  for (let i = 1; i < pts.length - 1; i++) {
+  const parts = [], n = pts.length;
+  const cornerSharp = new Array(n).fill(false);
+  for (let i = 1; i < n - 1; i++) {
     const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
     const l1 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1, l2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) || 1;
     const dot = ((p1[0] - p0[0]) / l1) * ((p2[0] - p1[0]) / l2) + ((p1[1] - p0[1]) / l1) * ((p2[1] - p1[1]) / l2);
+    if (dot < 0.55) cornerSharp[i] = true;
     if (dot < 0.992) {
       const zb = zBotArr[i], zt = Math.max(zb + 0.05, zTopArr[i]);
-      const jc = mf.Manifold.cylinder(zt - zb, halfW, halfW, 12, false).translate([p1[0], p1[1], zb]);
+      const jc = mf.Manifold.cylinder(zt - zb, halfW * 1.005, halfW * 1.005, 20, false).translate([p1[0], p1[1], zb]);
       parts.push(jc);
     }
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+    if (len < 0.01) continue;
+    const tx = dx / len, ty = dy / len;
+    const extA = (i === 0 || cornerSharp[i]) ? 0 : Math.min(halfW * 0.28, len * 0.25);
+    const extB = (i === n - 2 || cornerSharp[i + 1]) ? 0 : Math.min(halfW * 0.28, len * 0.25);
+    const segPts = [[a[0] - tx * extA, a[1] - ty * extA], [b[0] + tx * extB, b[1] + ty * extB]];
+    const m = _buildClosedStationTubeJS(segPts, halfW, [zBotArr[i], zBotArr[i + 1]], [zTopArr[i], zTopArr[i + 1]], mf);
+    if (m) parts.push(m);
   }
   return parts.length ? batchUnionManifolds(mf, parts) : null;
 }
@@ -80,6 +84,17 @@ function _buildSlopedWedgeCorbelJS(pA, pB, halfW, zBotA, zBotB, zTopA, zTopB, mf
   return _buildClosedStationTubeJS([pA, pB], halfW, [zBotA, zBotB], [zTopA, zTopB], mf);
 }
 
+function _distPtToPolyDeckJS(px, py, pts) {
+  let best = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1e-12;
+    const t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / l2));
+    const d = Math.hypot(px - (a[0] + dx * t), py - (a[1] + dy * t));
+    if (d < best) best = d;
+  }
+  return best;
+}
+
 function buildSlopedBridgeDeck(spec, mf) {
   const zTopMin = Math.min(...spec.zTopArr), zTopMax = Math.max(...spec.zTopArr);
   const zBotMin = Math.min(...spec.zBotArr), zBotMax = Math.max(...spec.zBotArr);
@@ -87,21 +102,25 @@ function buildSlopedBridgeDeck(spec, mf) {
 
   if (spec.isAreaPoly && spec.outer && spec.outer.length >= 3) {
     if (isFlat) {
-      return extrudeRingSolid(mf, spec.outer, spec.holes || [], (zBotMin + zBotMax) * 0.5, (zTopMin + zTopMax) * 0.5);
+      return extrudeRingSolid(mf, spec.outer, spec.holes || [], zBotMin, zTopMax);
     }
     const col = extrudeRingSolid(mf, spec.outer, spec.holes || [], zBotMin - 0.5, zTopMax + 0.5);
     if (!col) return null;
     const pts = spec.pts, n = pts.length;
     const t0x = pts[1][0] - pts[0][0], t0y = pts[1][1] - pts[0][1], l0 = Math.hypot(t0x, t0y) || 1;
     const t1x = pts[n - 1][0] - pts[n - 2][0], t1y = pts[n - 1][1] - pts[n - 2][1], l1 = Math.hypot(t1x, t1y) || 1;
-    const extPts = [[pts[0][0] - (t0x / l0) * 3.0, pts[0][1] - (t0y / l0) * 3.0]].concat(pts, [[pts[n - 1][0] + (t1x / l1) * 3.0, pts[n - 1][1] + (t1y / l1) * 3.0]]);
+    const extDist = Math.max(0.6, Math.min(3.0, (spec.spanU || 4.0) * 0.18));
+    const extPts = [[pts[0][0] - (t0x / l0) * extDist, pts[0][1] - (t0y / l0) * extDist]].concat(
+      pts,
+      [[pts[n - 1][0] + (t1x / l1) * extDist, pts[n - 1][1] + (t1y / l1) * extDist]]
+    );
     const ezB = [spec.zBotArr[0]].concat(spec.zBotArr, [spec.zBotArr[n - 1]]);
     const ezT = [spec.zTopArr[0]].concat(spec.zTopArr, [spec.zTopArr[n - 1]]);
-    let maxLat = spec.width;
-    for (const p of spec.outer) maxLat = Math.max(maxLat, Math.hypot(p[0] - pts[0][0], p[1] - pts[0][1]) * 0.65);
-    const envHalfW = Math.max(spec.width * 1.8 + 2.5, Math.min(maxLat, spec.width * 4.0 + 4.0));
+    let trueMaxLat = spec.width * 0.55;
+    for (const p of spec.outer) trueMaxLat = Math.max(trueMaxLat, _distPtToPolyDeckJS(p[0], p[1], extPts));
+    const envHalfW = Math.max(spec.width * 0.60, Math.min(trueMaxLat + Math.min(0.35, spec.width * 0.25), spec.width * 4.0 + 4.0));
     const env = _buildClosedStationTubeJS(extPts, envHalfW, ezB, ezT, mf) || _buildSegmentUnionTubeJS(extPts, envHalfW, ezB, ezT, mf);
-    if (!env) return col;
+    if (!env) { col.delete(); return extrudeRingSolid(mf, spec.outer, spec.holes || [], zBotMin, zTopMax); }
     try { const out = col.intersect(env); col.delete(); env.delete(); return out; } catch (_) { env.delete(); return col; }
   }
 
@@ -138,7 +157,7 @@ function buildBankAbutments(spec, terrainWater, ctx) {
   const wHalf = Math.max(0.25, spec.width * 0.46), padL = Math.max(0.35, Math.min(1.1, spec.spanU * 0.08));
   for (const idx of [0, spec.pts.length - 1]) {
     const isStart = idx === 0;
-    if ((isStart && spec.clippedStart) || (!isStart && spec.clippedEnd)) continue;
+    if ((isStart && (spec.clippedStart || spec.joinPolyStart)) || (!isStart && (spec.clippedEnd || spec.joinPolyEnd))) continue;
     const sPos = isStart ? 0 : spec.spanU;
     const { pt, tx, ty } = _samplePtAtSJS(spec, sPos);
     if (Math.abs(pt[0]) > ctx.halfW + 0.05 || Math.abs(pt[1]) > ctx.halfH + 0.05) continue;
@@ -146,10 +165,12 @@ function buildBankAbutments(spec, terrainWater, ctx) {
     const floorZ = ctx.waterCutout && terrainWater.isPointInWater(pt[0], pt[1]) ? 0.0 : Math.max(0.0, Math.min(surfZ, spec.zBotArr[idx]) - 0.55);
     const meetZ = Math.min(spec.zTopArr[idx] - 0.05, spec.zBotArr[idx] + 0.14);
     if (meetZ <= floorZ + 0.05) continue;
-    if (spec.isElevatedViaduct) {
-      const colR = Math.max(0.24 / ctx.scaleMm, Math.min(spec.width * 0.34, 0.55 / ctx.scaleMm));
-      const px = pt[0] + (isStart ? 1 : -1) * tx * Math.min(colR * 1.2, spec.spanU * 0.1);
-      const py = pt[1] + (isStart ? 1 : -1) * ty * Math.min(colR * 1.2, spec.spanU * 0.1);
+    const isSkyDeadEnd = Boolean(spec.isPath && ((isStart ? spec.elevatedDeadEndStart : spec.elevatedDeadEndEnd) || (spec.deckLayer >= 1 && spec.zBotArr[idx] > surfZ + 0.10)));
+    if (spec.isElevatedViaduct || isSkyDeadEnd) {
+      const colR = Math.max(0.24 / ctx.scaleMm, Math.min(spec.width * 0.38, 0.55 / ctx.scaleMm));
+      const inset = Math.min(spec.width * 0.40, colR * 1.15, spec.spanU * 0.16);
+      const px = pt[0] + (isStart ? 1 : -1) * tx * inset;
+      const py = pt[1] + (isStart ? 1 : -1) * ty * inset;
       const col = beamManifoldBetween(mf, [px, py, floorZ], [px, py, meetZ], colR);
       if (col) parts.push(col);
       continue;

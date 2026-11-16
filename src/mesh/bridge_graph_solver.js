@@ -7,7 +7,103 @@ if (typeof _normalizeBridgeStructJS === 'undefined' && typeof require !== 'undef
   Object.assign(global, require('./bridge_axis_helper.js'));
 }
 
-function _sampleAbutmentZJS(pt, outDirX, outDirY, outerRing, terrainWater, ctx) {
+function _buildTinSurfaceSamplerJS(terrainWater, ctx) {
+  const fallbackTinZ = (x, y) => ctx.getTerrainZ(x, y);
+  const fallbackSurfZ = (x, y) => terrainWater.getSurfaceZ(x, y);
+  const tm = terrainWater && terrainWater.terrainManifold;
+  if (!tm || typeof tm.getMesh !== 'function' || (ctx.elevReliefM !== undefined && ctx.elevReliefM <= 0.35)) {
+    return { getTinZ: fallbackTinZ, getTrueSurfaceZ: fallbackSurfZ };
+  }
+  let mesh = null;
+  try { mesh = tm.getMesh(); } catch (_) { mesh = null; }
+  if (!mesh || !mesh.vertProperties || !mesh.triVerts || mesh.triVerts.length < 3) {
+    return { getTinZ: fallbackTinZ, getTrueSurfaceZ: fallbackSurfZ };
+  }
+  const vp = mesh.vertProperties, tv = mesh.triVerts, stride = mesh.numProp || 3;
+  const gMinX = -ctx.halfW - 1.0, gMaxX = ctx.halfW + 1.0, gMinY = -ctx.halfH - 1.0, gMaxY = ctx.halfH + 1.0;
+  const nGrid = 32, invW = nGrid / Math.max(1e-6, gMaxX - gMinX), invH = nGrid / Math.max(1e-6, gMaxY - gMinY);
+  const cells = Array.from({ length: nGrid * nGrid }, () => []);
+  const topTris = [];
+
+  for (let t = 0; t < tv.length; t += 3) {
+    const i0 = tv[t] * stride, i1 = tv[t + 1] * stride, i2 = tv[t + 2] * stride;
+    const ax = vp[i0], ay = vp[i0 + 1], az = vp[i0 + 2];
+    const bx = vp[i1], by = vp[i1 + 1], bz = vp[i1 + 2];
+    const cx = vp[i2], cy = vp[i2 + 1], cz = vp[i2 + 2];
+    if (Math.max(az, bz, cz) <= 0.02) continue;
+    const det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+    if (det <= 1e-8) continue;
+    const idx = topTris.length;
+    topTris.push([ax, ay, az, bx, by, bz, cx, cy, cz, 1.0 / det]);
+    const x0 = Math.max(0, Math.min(nGrid - 1, Math.floor((Math.min(ax, bx, cx) - gMinX) * invW)));
+    const x1 = Math.max(0, Math.min(nGrid - 1, Math.floor((Math.max(ax, bx, cx) - gMinX) * invW)));
+    const y0 = Math.max(0, Math.min(nGrid - 1, Math.floor((Math.min(ay, by, cy) - gMinY) * invH)));
+    const y1 = Math.max(0, Math.min(nGrid - 1, Math.floor((Math.max(ay, by, cy) - gMinY) * invH)));
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) cells[gy * nGrid + gx].push(idx);
+  }
+  if (!topTris.length) return { getTinZ: fallbackTinZ, getTrueSurfaceZ: fallbackSurfZ };
+
+  const getTinZ = (x, y) => {
+    let best = ctx.getTerrainZ(x, y);
+    const gx = Math.floor((x - gMinX) * invW), gy = Math.floor((y - gMinY) * invH);
+    if (gx < 0 || gx >= nGrid || gy < 0 || gy >= nGrid) return best;
+    const bucket = cells[gy * nGrid + gx];
+    for (let k = 0; k < bucket.length; k++) {
+      const tr = topTris[bucket[k]];
+      const u = ((tr[4] - tr[7]) * (x - tr[6]) + (tr[6] - tr[3]) * (y - tr[7])) * tr[9];
+      if (u < -1e-5 || u > 1.00001) continue;
+      const v = ((tr[7] - tr[1]) * (x - tr[6]) + (tr[0] - tr[6]) * (y - tr[7])) * tr[9];
+      if (v < -1e-5 || u + v > 1.00001) continue;
+      const z = u * tr[2] + v * tr[5] + (1.0 - u - v) * tr[8];
+      if (z > best) best = z;
+    }
+    return best;
+  };
+  const getTrueSurfaceZ = (x, y) => {
+    if (terrainWater.isPointInWater(x, y)) return terrainWater.getSurfaceZ(x, y);
+    const surf = terrainWater.getSurfaceZ(x, y);
+    const relief = Math.max(0, surf - ctx.getTerrainZ(x, y));
+    return Math.max(surf, getTinZ(x, y) + relief);
+  };
+  return { getTinZ, getTrueSurfaceZ };
+}
+
+function _sampleDryCrossSectionMinTopJS(px, py, nx, ny, widthU, outerRing, terrainWater, tinSampler, minDryReliefU, ctx) {
+  let halfSpan = Math.max(0.12, widthU * 0.48);
+  if (outerRing && outerRing.length >= 3) {
+    let maxPolyLat = halfSpan;
+    const ux = ny, uy = -nx;
+    for (let i = 0, n = outerRing.length; i < n; i++) {
+      const a = outerRing[i], b = outerRing[(i + 1) % n];
+      const ua = (a[0] - px) * ux + (a[1] - py) * uy, ub = (b[0] - px) * ux + (b[1] - py) * uy;
+      if ((ua <= 0 && ub >= 0) || (ub <= 0 && ua >= 0)) {
+        const t = Math.abs(ub - ua) < 1e-8 ? 0.5 : -ua / (ub - ua);
+        if (t >= 0 && t <= 1) {
+          const lat = Math.abs((a[0] + (b[0] - a[0]) * t - px) * nx + (a[1] + (b[1] - a[1]) * t - py) * ny);
+          if (lat < widthU * 1.35 && lat > maxPolyLat) maxPolyLat = lat * 0.94;
+        }
+      }
+    }
+    halfSpan = maxPolyLat;
+  }
+  let maxTinZ = -Infinity, maxSurfZ = -Infinity;
+  for (const f of [-1.0, -0.5, 0.0, 0.5, 1.0]) {
+    const sx = px + nx * (halfSpan * f), sy = py + ny * (halfSpan * f);
+    if (Math.abs(sx) > ctx.halfW + 0.5 || Math.abs(sy) > ctx.halfH + 0.5) continue;
+    if (f !== 0.0 && terrainWater.isPointInWater(sx, sy)) continue;
+    if (f === 0.0 && terrainWater.isPointInWater(sx, sy)) continue;
+    const tz = tinSampler.getTinZ(sx, sy), sz = tinSampler.getTrueSurfaceZ(sx, sy);
+    if (tz > maxTinZ) maxTinZ = tz;
+    if (sz > maxSurfZ) maxSurfZ = sz;
+  }
+  if (!Number.isFinite(maxTinZ)) {
+    maxTinZ = tinSampler.getTinZ(px, py);
+    maxSurfZ = tinSampler.getTrueSurfaceZ(px, py);
+  }
+  return Math.max(maxSurfZ, maxTinZ + minDryReliefU);
+}
+
+function _sampleAbutmentZJS(pt, outDirX, outDirY, outerRing, terrainWater, ctx, tinSampler, minDryReliefU) {
   let sx0 = pt[0], sy0 = pt[1];
   if (outerRing) {
     for (let k = 0; k < 5 && _ptInRingJS(sx0, sy0, outerRing); k++) { sx0 += outDirX * 0.45; sy0 += outDirY * 0.45; }
@@ -15,10 +111,54 @@ function _sampleAbutmentZJS(pt, outDirX, outDirY, outerRing, terrainWater, ctx) 
   for (const d of [0.0, 0.35, 0.85, 1.6]) {
     const sx = sx0 + outDirX * d, sy = sy0 + outDirY * d;
     if (Math.abs(sx) <= ctx.halfW + 0.5 && Math.abs(sy) <= ctx.halfH + 0.5 && !terrainWater.isPointInWater(sx, sy)) {
-      return { z: terrainWater.getSurfaceZ(sx, sy), inWater: false };
+      const zSurf = tinSampler ? tinSampler.getTrueSurfaceZ(sx, sy) : terrainWater.getSurfaceZ(sx, sy);
+      const zFloor = tinSampler ? (tinSampler.getTinZ(sx, sy) + (minDryReliefU || 0)) : zSurf;
+      return { z: Math.max(zSurf, zFloor), inWater: false };
     }
   }
   return { z: terrainWater.getSurfaceZ(pt[0], pt[1]), inWater: terrainWater.isPointInWater(pt[0], pt[1]) };
+}
+
+function _bridgeCorridorPlateausJS(baseZArr, needArr, sArr, maxGapU) {
+  const pos = [];
+  for (let k = 0; k < needArr.length; k++) if (needArr[k] > 1e-4) pos.push(k);
+  if (pos.length < 2) return;
+  let cStart = 0;
+  while (cStart < pos.length) {
+    let cEnd = cStart;
+    while (cEnd + 1 < pos.length && (sArr[pos[cEnd + 1]] - sArr[pos[cEnd]]) <= maxGapU) cEnd++;
+    if (cEnd > cStart) {
+      const i0 = pos[cStart], i1 = pos[cEnd], len = i1 - i0 + 1;
+      const req = new Array(len);
+      for (let m = cStart; m <= cEnd; m++) {
+        const idx = pos[m];
+        req[idx - i0] = baseZArr[idx] + needArr[idx];
+        if (m < cEnd) {
+          const nxt = pos[m + 1], rA = baseZArr[idx] + needArr[idx], rB = baseZArr[nxt] + needArr[nxt];
+          const ds = Math.max(1e-6, sArr[nxt] - sArr[idx]);
+          for (let q = idx + 1; q < nxt; q++) {
+            req[q - i0] = rA + (rB - rA) * ((sArr[q] - sArr[idx]) / ds);
+          }
+        }
+      }
+      const lMax = new Array(len), rMax = new Array(len);
+      lMax[0] = req[0];
+      for (let m = 1; m < len; m++) lMax[m] = Math.max(lMax[m - 1], req[m]);
+      rMax[len - 1] = req[len - 1];
+      for (let m = len - 2; m >= 0; m--) rMax[m] = Math.max(rMax[m + 1], req[m]);
+      for (let m = 0; m < len; m++) {
+        const k = i0 + m, platZ = Math.max(req[m], Math.min(lMax[m], rMax[m]));
+        if (platZ > baseZArr[k] + needArr[k]) needArr[k] = platZ - baseZArr[k];
+      }
+    }
+    cStart = cEnd + 1;
+  }
+}
+
+function _hasPositiveOsmLevelJS(rawLevel) {
+  if (rawLevel === undefined || rawLevel === null || rawLevel === '') return false;
+  const nums = String(rawLevel).split(/[;,]/).map(s => parseFloat(s.trim().replace(',', '.'))).filter(Number.isFinite);
+  return nums.length > 0 && nums.every(v => v >= 1);
 }
 
 function _stationWaterFlagsJS(pts, terrainWater) {
@@ -58,7 +198,7 @@ function _segClosestPair2DJS(a0, a1, b0, b1) {
 }
 
 function _applyLocalSmoothLiftJS(zTopArr, zBotArr, sArr, spanU, needArr, baseRampU, pinStart, pinEnd) {
-  const n = zTopArr.length;
+  const n = zTopArr.length, zRef = zTopArr.slice();
   for (let k = 0; k < n; k++) {
     if ((k === 0 && pinStart) || (k === n - 1 && pinEnd)) continue;
     const sk = sArr[k];
@@ -68,13 +208,15 @@ function _applyLocalSmoothLiftJS(zTopArr, zBotArr, sArr, spanU, needArr, baseRam
     let lift = needArr[k] * pinEnv;
     for (let m = 0; m < n; m++) {
       const nm = needArr[m];
-      if (nm * pinEnv <= lift) continue;
+      if (nm <= 0) continue;
+      const effNeed = Math.min(nm, Math.max(0, (zRef[m] + nm) - zRef[k]));
+      if (effNeed * pinEnv <= lift) continue;
       const ramp = Math.max(baseRampU, Math.min(18.0, nm * 8.5));
       const ds = Math.abs(sk - sArr[m]);
       if (ds >= ramp) continue;
       const u = 1.0 - ds / ramp;
-      let env = u * u * (3.0 - 2.0 * u) * pinEnv;
-      if (nm * env > lift) lift = nm * env;
+      const env = u * u * (3.0 - 2.0 * u) * pinEnv;
+      if (effNeed * env > lift) lift = effNeed * env;
     }
     if (lift > 0) { zTopArr[k] += lift; zBotArr[k] += lift; }
   }
@@ -106,14 +248,30 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     }
   }
 
-  const consumedRoadOsmIds = new Set(), specs = [];
+  const allSceneRoadByOsmId = new Map();
+  for (const rd of (scene.roads || [])) if (rd && rd.osmId != null) allSceneRoadByOsmId.set(rd.osmId, rd);
+
+  const polyOuterByOsmId = new Map(), polyObjByOsmId = new Map(), roadLinkedPolyList = new Map();
+  const specs = [];
   for (const bp of rawPolys) {
     const outer = bp.outer.map(toBed), pbb = _bbox2DJS(outer);
     if (pbb[2] < cMinX || pbb[0] > cMaxX || pbb[3] < cMinY || pbb[1] > cMaxY) continue;
+    if (bp.osmId != null) { polyOuterByOsmId.set(bp.osmId, outer); polyObjByOsmId.set(bp.osmId, bp); }
     const holes = (bp.holes || []).map(h => h.map(toBed));
-    const linked = rawRoads.filter(rd => rd._bridgePolyOsmId === bp.osmId || (bp.acrossRoadIds && bp.acrossRoadIds.includes(rd.osmId)));
-    linked.forEach(rd => { if (rd.osmId != null) consumedRoadOsmIds.add(rd.osmId); });
-    const axisRaw = _extractClippedAxisFromRoadsJS(outer, linked.map(r => r.pts.map(toBed)), mToBedXY) || _extractCurvedSpineFromPolyJS(outer);
+    const linked = rawRoads.filter(rd =>
+      rd._bridgePolyOsmId === bp.osmId ||
+      (Array.isArray(rd._bridgePolyOsmIds) && rd._bridgePolyOsmIds.includes(bp.osmId)) ||
+      (bp.acrossRoadIds && bp.acrossRoadIds.includes(rd.osmId))
+    );
+    for (const rd of linked) {
+      if (!roadLinkedPolyList.has(rd)) roadLinkedPolyList.set(rd, []);
+      roadLinkedPolyList.get(rd).push({ bp, outer });
+    }
+    const surfaceAcross = (bp.acrossRoadIds || [])
+      .map(id => allSceneRoadByOsmId.get(id))
+      .filter(rd => rd && !(rd.isBridge || rd.bridge) && rd.pts && rd.pts.length >= 2);
+    const axisCandidates = linked.length > 0 ? linked : surfaceAcross;
+    const axisRaw = _extractClippedAxisFromRoadsJS(outer, axisCandidates.map(r => r.pts.map(toBed)), mToBedXY) || _extractCurvedSpineFromPolyJS(outer);
     const spanU = Math.max(0.4, _polyLenJS(axisRaw));
     const obb = typeof computeMinAreaOBB2D === 'function' ? computeMinAreaOBB2D(outer) : null;
     const estW = typeof _estimatePolyRibbonWidthJS === 'function' ? _estimatePolyRibbonWidthJS(outer, axisRaw, obb) : 1.5;
@@ -131,35 +289,61 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
       if (heightM == null && rd.heightM != null) heightM = rd.heightM;
       if (clearanceM == null && rd.clearanceM != null) clearanceM = rd.clearanceM;
     }
+    const allAcross = linked.concat(surfaceAcross);
     const nSt = Math.max(7, Math.min(160, Math.ceil(spanU / 0.80) + 1));
     specs.push({
       isAreaPoly: true, outer, holes, pts: _resamplePolyJS(axisRaw, nSt),
-      width: widthU, deckThick: Math.max(minDeckU, Math.min(widthU * 0.38, minDeckU * (structNorm === 'beam' ? 1.15 : 1.25))),
+      width: widthU, deckThick: Math.max(minDeckU, Math.min(widthU * 0.35, minDeckU * (structNorm === 'beam' ? 1.15 : 1.22))),
       deckLayer: bp.layer ?? 1, name: bp.name || 'Most', structNorm, explicitThroughArch: expThrough,
-      isRail: linked.length > 0 && linked.every(rd => rd.tags && rd.tags.railway), isBoardwalk: false,
-      clippedStart: false, clippedEnd: false,
+      isRail: allAcross.length > 0 && allAcross.every(rd => rd.tags && rd.tags.railway),
+      isPath: false, isBoardwalk: false, level: bp.level || '',
+      clippedStart: false, clippedEnd: false, joinPolyStart: false, joinPolyEnd: false,
       heightM, minHeightM: bp.minHeightM, clearanceM, covered: bp.covered, supportIds: bp.supportIds || [], osmId: bp.osmId
     });
   }
 
+  const polyOverlapU = Math.max(0.25, 0.6 * mToBedXY);
+  const minOutsideSubU = Math.max(0.10, 0.8 * mToBedXY);
   const freeRoadPieces = [];
   for (const rd of rawRoads) {
-    if (rd.osmId != null && consumedRoadOsmIds.has(rd.osmId)) continue;
+    const linkedEntries = roadLinkedPolyList.get(rd) || [];
     const rawSt = rd.bridgeStructure || rd.structure || (rd.tags && (rd.tags['bridge:structure'] || rd.tags.bridge));
     const cov = rd.covered || (rd.tags && rd.tags.covered);
     const isRail = Boolean((rd.tags && rd.tags.railway) || ['rail', 'light_rail', 'tram', 'monorail', 'subway', 'narrow_gauge', 'funicular'].includes(rd.hwy));
-    const isBoardwalk = String((rd.tags && rd.tags.bridge) || rawSt || '').toLowerCase() === 'boardwalk';
-    for (const pc of _clipPolylineToRectJS(rd.pts.map(toBed), cMinX, cMinY, cMaxX, cMaxY)) {
-      freeRoadPieces.push({
-        pts: pc.pts, clippedStart: pc.clippedStart, clippedEnd: pc.clippedEnd,
-        width: Math.max(isRail || rd.isPath ? 0.20 : 0.28, (rd.width || 0.8) * s2b),
-        layer: rd.hasExplicitLayer !== undefined ? (rd.hasExplicitLayer ? rd.layer : 1) : (rd.layer ?? 1),
-        parentBridgeRelId: rd.parentBridgeRelId, name: rd.name || '',
-        isRail, isPath: Boolean(rd.isPath), isBoardwalk,
-        structNorm: _normalizeBridgeStructJS(rawSt, cov, rd.tags),
-        explicitThroughArch: /through[-_ ]?arch|tied[-_ ]?arch|bowstring/i.test(String(rawSt || '')),
-        heightM: rd.heightM, minHeightM: rd.minHeightM, clearanceM: rd.clearanceM, covered: cov, osmId: rd.osmId
-      });
+    const isBoardwalk = String((rd.tags && rd.tags.bridge) || rawSt || '').trim().toLowerCase() === 'boardwalk';
+    let sourcePolylines;
+    if (linkedEntries.length > 0) {
+      const rings = linkedEntries.map(e => e.outer);
+      const subs = typeof _splitPolylineOutsideRingsJS === 'function'
+        ? _splitPolylineOutsideRingsJS(rd.pts.map(toBed), rings, polyOverlapU, minOutsideSubU)
+        : [];
+      if (!subs.length) continue;
+      sourcePolylines = subs.filter(sub => !isBoardwalk || _stationWaterFlagsJS(sub.pts, terrainWater).some(Boolean));
+      if (!sourcePolylines.length) continue;
+    } else {
+      sourcePolylines = [{ pts: rd.pts.map(toBed), entersRingAtStart: false, entersRingAtEnd: false }];
+    }
+
+    const effLayer = rd.hasExplicitLayer !== undefined
+      ? (rd.hasExplicitLayer ? rd.layer : (linkedEntries.length > 0 ? (linkedEntries[0].bp.layer ?? 1) : 1))
+      : (rd.layer ?? 1);
+    for (const sub of sourcePolylines) {
+      for (const pc of _clipPolylineToRectJS(sub.pts, cMinX, cMinY, cMaxX, cMaxY)) {
+        freeRoadPieces.push({
+          pts: pc.pts,
+          clippedStart: pc.clippedStart,
+          clippedEnd: pc.clippedEnd,
+          joinPolyStart: Boolean(sub.entersRingAtStart && !pc.clippedStart),
+          joinPolyEnd: Boolean(sub.entersRingAtEnd && !pc.clippedEnd),
+          width: Math.max(isRail || rd.isPath ? 0.20 : 0.28, (rd.width || 0.8) * s2b),
+          layer: effLayer,
+          parentBridgeRelId: rd.parentBridgeRelId, name: rd.name || '',
+          isRail, isPath: Boolean(rd.isPath), isBoardwalk, level: rd.level || (rd.tags && rd.tags.level) || '',
+          structNorm: _normalizeBridgeStructJS(rawSt, cov, rd.tags),
+          explicitThroughArch: /through[-_ ]?arch|tied[-_ ]?arch|bowstring/i.test(String(rawSt || '')),
+          heightM: rd.heightM, minHeightM: rd.minHeightM, clearanceM: rd.clearanceM, covered: cov, osmId: rd.osmId
+        });
+      }
     }
   }
 
@@ -173,12 +357,16 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     specs.push({
       isAreaPoly: false, outer: null, holes: [], pts: _resamplePolyJS(r.pts, nSt),
       width: widthU, deckThick, deckLayer: r.layer ?? 1, name: r.name, structNorm: r.structNorm,
-      explicitThroughArch: r.explicitThroughArch, isRail: Boolean(r.isRail), isBoardwalk: Boolean(r.isBoardwalk),
+      explicitThroughArch: r.explicitThroughArch, isRail: Boolean(r.isRail),
+      isPath: Boolean(r.isPath), isBoardwalk: Boolean(r.isBoardwalk), level: r.level || '',
       clippedStart: Boolean(r.clippedStart), clippedEnd: Boolean(r.clippedEnd),
+      joinPolyStart: Boolean(r.joinPolyStart), joinPolyEnd: Boolean(r.joinPolyEnd),
       heightM: r.heightM, minHeightM: r.minHeightM, clearanceM: r.clearanceM, covered: r.covered, supportIds: [], osmId: r.osmId
     });
   }
 
+  const tinSampler = _buildTinSurfaceSamplerJS(terrainWater, ctx);
+  const minDryReliefU = Math.max(terrainWater.hRoadU || 0.19, 0.45 / ctx.scaleMm, 0.18);
   const airClearWater = Math.max(0.32, 0.48 / ctx.scaleMm, minDeckU * 0.55);
   const baseLandClearU = Math.max(0.30, 0.48 / ctx.scaleMm, Math.min(1.15, 4.8 * mToBedZ));
 
@@ -187,8 +375,8 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     sp.spanU = L;
     const t0x = pts[1][0] - pts[0][0], t0y = pts[1][1] - pts[0][1], l0 = Math.hypot(t0x, t0y) || 1;
     const t1x = pts[n - 1][0] - pts[n - 2][0], t1y = pts[n - 1][1] - pts[n - 2][1], l1 = Math.hypot(t1x, t1y) || 1;
-    const abA = _sampleAbutmentZJS(pts[0], -t0x / l0, -t0y / l0, sp.outer, terrainWater, ctx);
-    const abB = _sampleAbutmentZJS(pts[n - 1], t1x / l1, t1y / l1, sp.outer, terrainWater, ctx);
+    const abA = _sampleAbutmentZJS(pts[0], -t0x / l0, -t0y / l0, sp.outer, terrainWater, ctx, tinSampler, minDryReliefU);
+    const abB = _sampleAbutmentZJS(pts[n - 1], t1x / l1, t1y / l1, sp.outer, terrainWater, ctx, tinSampler, minDryReliefU);
     sp.zAbutmentA = abA.z; sp.zAbutmentB = abB.z;
     const inW = _stationWaterFlagsJS(pts, terrainWater);
     sp.inWater = inW; sp.crossesWater = inW.some(Boolean);
@@ -207,7 +395,7 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     const spanMetersEst = L / Math.max(1e-5, mToBedXY);
     let baseTop;
     if (spanMetersEst > 900.0 && waterFrac < 0.45) {
-      const rawDry = pts.map((p, i) => i === 0 ? baseStart : i === n - 1 ? baseEnd : (inW[i] ? null : terrainWater.getSurfaceZ(p[0], p[1])));
+      const rawDry = pts.map((p, i) => i === 0 ? baseStart : i === n - 1 ? baseEnd : (inW[i] ? null : tinSampler.getTrueSurfaceZ(p[0], p[1])));
       if (rawDry[0] == null) rawDry[0] = baseStart;
       if (rawDry[n - 1] == null) rawDry[n - 1] = baseEnd;
       let prevIdx = 0;
@@ -250,7 +438,7 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
         const s0 = w0 === 0 ? 0 : Math.max(0, cumS[w0] - rampU);
         const s1 = w1 === n - 1 ? L : Math.min(L, cumS[w1] + rampU);
         for (let k = 0; k < n; k++) {
-          if ((k === 0 && !abA.inWater && !sp.clippedStart) || (k === n - 1 && !abB.inWater && !sp.clippedEnd)) continue;
+          if ((k === 0 && !abA.inWater && !sp.clippedStart && !sp.joinPolyStart) || (k === n - 1 && !abB.inWater && !sp.clippedEnd && !sp.joinPolyEnd)) continue;
           const sk = cumS[k];
           if (sk < s0 || sk > s1) continue;
           let lift = 0;
@@ -277,21 +465,38 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     sp.bbox = _bbox2DJS(sp.isAreaPoly ? sp.outer : pts);
     if (!sp.isAreaPoly) { sp.bbox[0] -= sp.width * 0.6; sp.bbox[1] -= sp.width * 0.6; sp.bbox[2] += sp.width * 0.6; sp.bbox[3] += sp.width * 0.6; }
 
+    // Detect elevated skybridge terminals (e.g. level>=1 concourse or footbridge dead-end without ground path connection)
+    const endSnapU = Math.max(0.55, sp.width * 0.70 + 0.25);
+    const hasPosLvl = _hasPositiveOsmLevelJS(sp.level);
+    let touchesGroundStart = false, touchesGroundEnd = false;
+    for (const gr of groundRoads) {
+      if (gr.layer > 0) continue;
+      const g0 = gr.pts[0], g1 = gr.pts[gr.pts.length - 1];
+      if (!touchesGroundStart && (Math.hypot(g0[0] - pts[0][0], g0[1] - pts[0][1]) <= endSnapU || Math.hypot(g1[0] - pts[0][0], g1[1] - pts[0][1]) <= endSnapU)) touchesGroundStart = true;
+      if (!touchesGroundEnd && (Math.hypot(g0[0] - pts[n - 1][0], g0[1] - pts[n - 1][1]) <= endSnapU || Math.hypot(g1[0] - pts[n - 1][0], g1[1] - pts[n - 1][1]) <= endSnapU)) touchesGroundEnd = true;
+      if (touchesGroundStart && touchesGroundEnd) break;
+    }
+    const isSkyFootway = Boolean(sp.isPath && sp.deckLayer >= 1 && !sp.isBoardwalk && (hasPosLvl || !sp.crossesWater));
+    sp.elevatedDeadEndStart = Boolean(isSkyFootway && !sp.clippedStart && !sp.joinPolyStart && !abA.inWater && (hasPosLvl || !touchesGroundStart));
+    sp.elevatedDeadEndEnd = Boolean(isSkyFootway && !sp.clippedEnd && !sp.joinPolyEnd && !abB.inWater && (hasPosLvl || !touchesGroundEnd));
+
     // 1. Dry-land layer>=1 bridge span envelope over flat terrain (preserves natural valley/gorge bridges)
     if (!sp.crossesWater && sp.deckLayer >= 1 && !sp.isBoardwalk && !sp.isElevatedViaduct && n >= 3) {
       let maxNatClear = -Infinity;
       for (let k = 1; k < n - 1; k++) {
-        maxNatClear = Math.max(maxNatClear, (chordTop[k] - sp.deckThick) - terrainWater.getSurfaceZ(pts[k][0], pts[k][1]));
+        maxNatClear = Math.max(maxNatClear, (chordTop[k] - sp.deckThick) - tinSampler.getTrueSurfaceZ(pts[k][0], pts[k][1]));
       }
       if (maxNatClear < baseLandClearU * 0.90) {
+        const freeStart = sp.clippedStart || sp.joinPolyStart || sp.elevatedDeadEndStart;
+        const freeEnd = sp.clippedEnd || sp.joinPolyEnd || sp.elevatedDeadEndEnd;
         const ramp = Math.min(L * 0.20, Math.max(1.2, baseLandClearU * 4.2));
         for (let k = 0; k < n; k++) {
-          if ((k === 0 && !sp.clippedStart) || (k === n - 1 && !sp.clippedEnd)) continue;
+          if ((k === 0 && !freeStart) || (k === n - 1 && !freeEnd)) continue;
           const sk = cumS[k];
-          const wA = sp.clippedStart ? 1.0 : Math.min(1.0, sk / Math.max(1e-4, ramp));
-          const wB = sp.clippedEnd ? 1.0 : Math.min(1.0, (L - sk) / Math.max(1e-4, ramp));
+          const wA = freeStart ? 1.0 : Math.min(1.0, sk / Math.max(1e-4, ramp));
+          const wB = freeEnd ? 1.0 : Math.min(1.0, (L - sk) / Math.max(1e-4, ramp));
           const env = Math.min(wA * wA * (3 - 2 * wA), wB * wB * (3 - 2 * wB));
-          const reqTop = terrainWater.getSurfaceZ(pts[k][0], pts[k][1]) + baseLandClearU * env + sp.deckThick;
+          const reqTop = tinSampler.getTrueSurfaceZ(pts[k][0], pts[k][1]) + baseLandClearU * env + sp.deckThick;
           if (reqTop > zTopArr[k]) { zTopArr[k] = reqTop; zBotArr[k] = reqTop - sp.deckThick; }
         }
       }
@@ -303,15 +508,14 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
       const viadClearU = baseLandClearU + Math.min(0.42, 3.0 * mToBedZ) * Math.max(0, Math.min(2, sp.deckLayer - 1));
       for (let k = 0; k < n; k++) {
         if (inW[k]) continue;
-        const reqTop = terrainWater.getSurfaceZ(pts[k][0], pts[k][1]) + viadClearU + sp.deckThick;
+        const reqTop = tinSampler.getTrueSurfaceZ(pts[k][0], pts[k][1]) + viadClearU + sp.deckThick;
         if (reqTop > zTopArr[k]) landNeed[k] = Math.max(landNeed[k], reqTop - zTopArr[k]);
       }
     }
 
-    const pinA = !sp.isElevatedViaduct && !sp.clippedStart && !abA.inWater;
-    const pinB = !sp.isElevatedViaduct && !sp.clippedEnd && !abB.inWater;
+    const pinA = !sp.isElevatedViaduct && !sp.clippedStart && !sp.joinPolyStart && !sp.elevatedDeadEndStart && !abA.inWater;
+    const pinB = !sp.isElevatedViaduct && !sp.clippedEnd && !sp.joinPolyEnd && !sp.elevatedDeadEndEnd && !abB.inWater;
     const endZoneU = Math.min(L * 0.20, Math.max(0.95, sp.width * 1.25));
-    const endSnapU = Math.max(0.55, sp.width * 0.70 + 0.25);
 
     if (!sp.isBoardwalk || sp.deckLayer >= 2) {
       for (const gr of groundRoads) {
@@ -332,7 +536,7 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
             if (pinA && sHit <= endZoneU * 1.35 && (touchesStartAbutment || absDot >= 0.52)) continue;
             if (pinB && (L - sHit) <= endZoneU * 1.35 && (touchesEndAbutment || absDot >= 0.52)) continue;
             if (terrainWater.isPointInWater(cp.qb[0], cp.qb[1])) continue;
-            const zGr = Math.max(terrainWater.getSurfaceZ(cp.qb[0], cp.qb[1]), ctx.getTerrainZ(cp.qb[0], cp.qb[1]) + (terrainWater.hRoadU || 0));
+            const zGr = Math.max(tinSampler.getTrueSurfaceZ(cp.qb[0], cp.qb[1]), tinSampler.getTinZ(cp.qb[0], cp.qb[1]) + (terrainWater.hRoadU || 0));
             const reqTop = zGr + baseLandClearU + sp.deckThick;
             const zCur = zTopArr[k] + (zTopArr[k + 1] - zTopArr[k]) * cp.sA;
             if (reqTop > zCur) {
@@ -346,11 +550,56 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
     }
 
     if (landNeed.some(v => v > 0)) {
+      _bridgeCorridorPlateausJS(zTopArr, landNeed, cumS, Math.max(2.5 / ctx.scaleMm, 55.0 * mToBedXY));
       _applyLocalSmoothLiftJS(zTopArr, zBotArr, cumS, L, landNeed, 3.8, pinA, pinB);
     }
 
+    // 3. Strict Delatin TIN cross-section floor across every dry-land station (prevents TIN triangle bleed-through)
+    for (let k = 0; k < n; k++) {
+      if (inW[k]) continue;
+      const a = pts[Math.max(0, k - 1)], b = pts[Math.min(n - 1, k + 1)];
+      const dx = b[0] - a[0], dy = b[1] - a[1], dl = Math.hypot(dx, dy) || 1;
+      const minDryTop = _sampleDryCrossSectionMinTopJS(
+        pts[k][0], pts[k][1], -dy / dl, dx / dl, sp.width, sp.outer, terrainWater, tinSampler, minDryReliefU, ctx
+      );
+      if (minDryTop > zTopArr[k]) {
+        zTopArr[k] = minDryTop;
+        zBotArr[k] = minDryTop - sp.deckThick;
+      }
+    }
+    if (!inW[0] && !abA.inWater && !sp.elevatedDeadEndStart && !sp.isElevatedViaduct && !sp.joinPolyStart) sp.zAbutmentA = zTopArr[0];
+    if (!inW[n - 1] && !abB.inWater && !sp.elevatedDeadEndEnd && !sp.isElevatedViaduct && !sp.joinPolyEnd) sp.zAbutmentB = zTopArr[n - 1];
+
     sp.zTopArr = zTopArr;
     sp.zBotArr = zBotArr;
+  }
+
+  // Smoothly weld split approach extensions into their linked man_made=bridge area decks
+  const areaSpecs = specs.filter(s => s.isAreaPoly && s.outer && s.outer.length >= 3);
+  if (areaSpecs.length > 0) {
+    for (const sp of specs) {
+      if (sp.isAreaPoly || (!sp.joinPolyStart && !sp.joinPolyEnd)) continue;
+      for (const [atStart, idx] of [[true, 0], [false, sp.pts.length - 1]]) {
+        if (atStart ? !sp.joinPolyStart : !sp.joinPolyEnd) continue;
+        const ep = sp.pts[idx];
+        const targetArea = areaSpecs.find(as => _ptInRingJS(ep[0], ep[1], as.outer)) ||
+          areaSpecs.find(as => typeof _ptToPolyDist2DJS === 'function' && _ptToPolyDist2DJS(ep[0], ep[1], as.outer) <= 0.8);
+        if (!targetArea) continue;
+        let nearZ = targetArea.zTopArr[0], nearD = Infinity;
+        for (let q = 0; q < targetArea.pts.length; q++) {
+          const d = Math.hypot(ep[0] - targetArea.pts[q][0], ep[1] - targetArea.pts[q][1]);
+          if (d < nearD) { nearD = d; nearZ = targetArea.zTopArr[q]; }
+        }
+        const dz = nearZ - sp.zTopArr[idx];
+        if (Math.abs(dz) > 0.005 && Math.abs(dz) < 3.5) {
+          const rU = Math.min(sp.spanU * 0.45, Math.max(1.8, Math.abs(dz) * 6.0));
+          for (let m = 0; m < sp.pts.length; m++) {
+            const ds = atStart ? sp.sArr[m] : (sp.spanU - sp.sArr[m]);
+            if (ds < rU) { const u = 1 - ds / rU, w = dz * u * u * (3 - 2 * u); sp.zTopArr[m] += w; sp.zBotArr[m] += w; }
+          }
+        }
+      }
+    }
   }
 
   // Multi-deck bridge-over-bridge clearance using local lower-deck Z and local longitudinal ramp
@@ -406,10 +655,10 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
 
   for (let i = 0; i < specs.length; i++) {
     const hi = specs[i];
+    const combinedNeed = new Array(hi.pts.length).fill(0);
     for (let j = 0; j < i; j++) {
       const lo = specs[j];
       if (lo.deckLayer >= hi.deckLayer || hi.bbox[2] + 0.9 < lo.bbox[0] || hi.bbox[0] - 0.9 > lo.bbox[2] || hi.bbox[3] + 0.9 < lo.bbox[1] || hi.bbox[1] - 0.9 > lo.bbox[3]) continue;
-      const need = new Array(hi.pts.length).fill(0);
       const hitRad = Math.max(0.82, (hi.width + lo.width) * 0.54);
       const segRad = (hi.width + lo.width) * 0.54;
       const buttJoints = findButtJoints(lo, hi, hitRad);
@@ -450,18 +699,18 @@ function solveBridgeGraph(scene, terrainWater, ctx) {
               const loZ = lo.zTopArr[q] + (lo.zTopArr[q + 1] - lo.zTopArr[q]) * cp.tB + gapU;
               const hiBotAtS = hi.zBotArr[k] + (hi.zBotArr[k + 1] - hi.zBotArr[k]) * cp.sA;
               if (loZ > hiBotAtS) {
-                need[k] = Math.max(need[k], loZ - hiBotAtS);
-                need[k + 1] = Math.max(need[k + 1], loZ - hiBotAtS);
+                combinedNeed[k] = Math.max(combinedNeed[k], loZ - hiBotAtS);
+                combinedNeed[k + 1] = Math.max(combinedNeed[k + 1], loZ - hiBotAtS);
               }
             }
           }
         }
-        if (reqBot > hi.zBotArr[k]) need[k] = Math.max(need[k], reqBot - hi.zBotArr[k]);
+        if (reqBot > hi.zBotArr[k]) combinedNeed[k] = Math.max(combinedNeed[k], reqBot - hi.zBotArr[k]);
       }
-
-      if (need.some(v => v > 0)) {
-        _applyLocalSmoothLiftJS(hi.zTopArr, hi.zBotArr, hi.sArr, hi.spanU, need, 4.5, false, false);
-      }
+    }
+    if (combinedNeed.some(v => v > 0)) {
+      _bridgeCorridorPlateausJS(hi.zBotArr, combinedNeed, hi.sArr, Math.max(2.0 / ctx.scaleMm, 45.0 * mToBedXY));
+      _applyLocalSmoothLiftJS(hi.zTopArr, hi.zBotArr, hi.sArr, hi.spanU, combinedNeed, 4.5, false, false);
     }
   }
 

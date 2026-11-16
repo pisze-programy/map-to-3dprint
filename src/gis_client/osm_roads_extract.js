@@ -44,6 +44,10 @@ function isSurfaceRailPlatformJS(tags) {
   return false;
 }
 
+const SURFACE_COVERED_VALS_JS = new Set([
+  'no', 'false', '0', 'none', 'yes', 'arcade', 'colonnade', 'booth', 'pergola', 'roof', 'partial'
+]);
+
 function isUndergroundOsmRoadOrPlazaJS(tags, allowSurfaceCoveredRail = false) {
   if (!tags) return false;
   if (tags.location === 'underground' || tags.parking === 'underground') return true;
@@ -52,10 +56,13 @@ function isUndergroundOsmRoadOrPlazaJS(tags, allowSurfaceCoveredRail = false) {
   if (layerVal < 0) return true;
   if (tags.indoor === 'yes') return true;
   const tun = String(tags.tunnel || '').trim().toLowerCase();
-  if (tun && !['no', 'false', '0', 'none'].includes(tun)) {
-    if (!(allowSurfaceCoveredRail && tun === 'building_passage')) return true;
+  if (tun && !['no', 'false', '0', 'none', 'building_passage', 'avalanche_protector'].includes(tun)) {
+    return true;
   }
-  if (tags.covered === 'yes' && !allowSurfaceCoveredRail) return true;
+  const cov = String(tags.covered || '').trim().toLowerCase();
+  if (cov && !SURFACE_COVERED_VALS_JS.has(cov) && !allowSurfaceCoveredRail) {
+    return true;
+  }
   return false;
 }
 
@@ -222,6 +229,7 @@ function finalizeOsmRoadsLayerJS(_ctx) {
 }
 
 if (typeof window !== 'undefined') {
+  window.isUndergroundOsmRoadOrPlazaJS = isUndergroundOsmRoadOrPlazaJS;
   window.collectOsmRoadSampleCandidateJS = collectOsmRoadSampleCandidateJS;
   window.isOsmPlazaMultipolygonJS = isOsmPlazaMultipolygonJS;
   window.processOsmPlazaMultipolygonJS = processOsmPlazaMultipolygonJS;
@@ -232,6 +240,7 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     MOTOR_ROAD_VALS_JS,
+    isUndergroundOsmRoadOrPlazaJS,
     collectOsmRoadSampleCandidateJS,
     isOsmPlazaMultipolygonJS,
     processOsmPlazaMultipolygonJS,

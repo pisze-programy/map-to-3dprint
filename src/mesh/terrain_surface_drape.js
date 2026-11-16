@@ -148,32 +148,68 @@
       : unioned;
   }
 
+  function _getSplitOutsideFn() {
+    if (typeof _splitPolylineOutsideRingsJS === 'function') return _splitPolylineOutsideRingsJS;
+    if (typeof require === 'function') return require('./bridge_axis_helper.js')._splitPolylineOutsideRingsJS;
+    return null;
+  }
+
   function collectSurfacePolys(core, ctx, scene, plateClipPoly) {
     const { toBed, scaleToBed, scaleMm } = ctx;
+    const mToBedXY = ((ctx.mToU || ctx.metersToUnits || (scene && scene.metersToUnits) || (scene && scene.meta && scene.meta.metersToUnits)) || 0.141) * (scaleToBed || 1.0);
     const lod = (ctx.state && ctx.state.lodSettings) || {};
     const roadDetail = lod.roadDetail || 'all';
     const roadRawPolys = [], footpathRawPolys = [], waterfrontRawPolys = [];
     const openStreetLines = [], openFootpathLines = [], openQuayLines = [];
 
+    const bpEntries = [];
+    for (const bp of (scene && scene.bridgePolys) || []) {
+      if (!bp || bp.isPier || !bp.outer || bp.outer.length < 3) continue;
+      bpEntries.push({ bp, outerBed: bp.outer.map(toBed) });
+    }
+    const splitOutsideFn = bpEntries.length > 0 ? _getSplitOutsideFn() : null;
+
     for (const rd of (scene && scene.roads) || []) {
-      if (!rd || !rd.pts || rd.pts.length < 2 || rd.bridge || rd.isBridge) continue;
+      if (!rd || !rd.pts || rd.pts.length < 2) continue;
       const mm = String(rd.man_made || '').toLowerCase();
       if (MARINE_PIER_SET.has(mm)) continue;
+
+      let candidatePolylines = null;
+      if (rd.bridge || rd.isBridge) {
+        const rawBr = String((rd.tags && rd.tags.bridge) || rd.bridgeStructure || '').trim().toLowerCase();
+        if (rawBr !== 'boardwalk' || !splitOutsideFn || bpEntries.length === 0) continue;
+        const linkedRings = [];
+        const idSet = new Set(rd._bridgePolyOsmIds || (rd._bridgePolyOsmId != null ? [rd._bridgePolyOsmId] : []));
+        for (const e of bpEntries) {
+          if ((e.bp.osmId != null && idSet.has(e.bp.osmId)) ||
+              (rd.osmId != null && Array.isArray(e.bp.acrossRoadIds) && e.bp.acrossRoadIds.includes(rd.osmId))) {
+            linkedRings.push(e.outerBed);
+          }
+        }
+        if (linkedRings.length === 0) continue;
+        const subs = splitOutsideFn(rd.pts.map(toBed), linkedRings, Math.max(0.25, 0.6 * mToBedXY), Math.max(0.10, 0.8 * mToBedXY));
+        if (!subs.length) continue;
+        candidatePolylines = subs.map(s => s.pts);
+      } else {
+        candidatePolylines = [rd.pts.map(toBed)];
+      }
+
       const isQuay = Boolean(rd.isQuay || mm === 'quay' || rd.hwy === 'quay');
       const isPath = !isQuay && isFootpathRoad(rd);
       const hwyNorm = String(rd.hwy || '').toLowerCase();
       if (roadDetail === 'major' && !isQuay && (isPath || hwyNorm === 'service' || hwyNorm === 'living_street')) continue;
 
-      const bedPts = rd.pts.map(toBed);
       // Physical MSLA minimum width (0.45 mm cured street wall, 0.25 mm embossed park path) converted to buffer half-width (radius = 0.5 * fullW)
       const fullMinMm = isPath ? 0.25 : 0.45;
       const minHalfW = isPath
         ? Math.max((fullMinMm * 0.5) / scaleMm, ((ctx.xyPixelMm || 0.017) * 6) / scaleMm)
         : Math.max(ctx.minPrintU * 0.5, (fullMinMm * 0.5) / scaleMm);
       const halfW = Math.max(minHalfW, ((rd.width || (isPath ? 0.30 : 0.70)) * 0.5) * scaleToBed);
-      if (isQuay) openQuayLines.push({ pts: bedPts, halfW });
-      else if (isPath) openFootpathLines.push({ pts: bedPts, halfW });
-      else openStreetLines.push({ pts: bedPts, halfW });
+      for (const bedPts of candidatePolylines) {
+        if (isQuay) openQuayLines.push({ pts: bedPts, halfW });
+        else if (isPath) openFootpathLines.push({ pts: bedPts, halfW });
+        else openStreetLines.push({ pts: bedPts, halfW });
+      }
     }
     if (openStreetLines.length > 0) {
       for (const r of core.clipperBufferOpenPaths(openStreetLines, 'Round', 1e-5)) roadRawPolys.push(r);

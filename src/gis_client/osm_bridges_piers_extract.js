@@ -64,6 +64,7 @@ function _buildBridgeRecJS(outer, holes, tags, osmId) {
   return {
     outer, holes: holes || [], name: tags.name || 'Most',
     layer: _parseBridgeSignedLayerJS(tags.layer, 1),
+    hasExplicitLayer: Boolean(tags && tags.layer !== undefined && tags.layer !== ''),
     bridgeStructure: _extractBridgeStructTagJS(tags) || (tags.bridge || ''),
     covered: tags.covered || '', level: tags.level !== undefined ? tags.level : '',
     heightM: _parseLenM(tags, 'height'), minHeightM: _parseLenM(tags, 'min_height'),
@@ -169,6 +170,66 @@ function _applyBridgeMetaToObjJS(srcTags, obj) {
   if (obj.clearanceM == null) obj.clearanceM = _parseLenM(srcTags, 'seamark:bridge:clearance_height') ?? _parseLenM(srcTags, 'maxheight');
 }
 
+function _linkRoadAndBridgePolyJS(rd, bp, setBridgePolyId = true) {
+  if (!rd || !bp) return;
+  bp.acrossRoadIds = bp.acrossRoadIds || [];
+  if (rd.osmId != null && !bp.acrossRoadIds.includes(rd.osmId)) bp.acrossRoadIds.push(rd.osmId);
+  if (setBridgePolyId && bp.osmId != null) {
+    rd._bridgePolyOsmIds = rd._bridgePolyOsmIds || [];
+    if (!rd._bridgePolyOsmIds.includes(bp.osmId)) rd._bridgePolyOsmIds.push(bp.osmId);
+    if (rd._bridgePolyOsmId == null) rd._bridgePolyOsmId = bp.osmId;
+  }
+}
+
+function _isPtInSceneWaterExtractJS(px, py, ctx) {
+  if (Array.isArray(ctx._openSeaIslands) && ctx._openSeaIslands.length > 0) {
+    const inLand = ctx._openSeaIslands.some(isl => isl && isl.length >= 3 && _pointInRingExtract2D(px, py, isl));
+    if (!inLand) return true;
+  }
+  for (const wp of (ctx.waterPolys || [])) {
+    if (!wp || !wp.outer || wp.outer.length < 3 || !_pointInRingExtract2D(px, py, wp.outer)) continue;
+    if ((wp.holes || []).some(h => h && h.length >= 3 && _pointInRingExtract2D(px, py, h))) continue;
+    if ((wp._unrotatedLandRings || []).some(h => h && h.length >= 3 && _pointInRingExtract2D(px, py, h))) continue;
+    return true;
+  }
+  for (const wl of (ctx.waterLines || [])) {
+    if (!wl || !wl.pts || wl.pts.length < 2) continue;
+    const hw = Math.max(0.25, (wl.width || 0.7) * 0.55);
+    for (let i = 0; i < wl.pts.length - 1; i++) {
+      const a = wl.pts[i], b = wl.pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1e-9;
+      const t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / l2));
+      if (Math.hypot(px - (a[0] + dx * t), py - (a[1] + dy * t)) <= hw) return true;
+    }
+  }
+  return false;
+}
+
+function _ringTouchesWaterExtractJS(outer, ctx) {
+  for (let i = 0, n = outer.length; i < n; i++) {
+    const a = outer[i], b = outer[(i + 1) % n], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const steps = Math.max(2, Math.min(24, Math.ceil(len / 0.8)));
+    for (let k = 0; k < steps; k++) {
+      const t = k / steps;
+      if (_isPtInSceneWaterExtractJS(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, ctx)) return true;
+    }
+  }
+  const c = _ringCentroidExtract2D(outer);
+  return _isPtInSceneWaterExtractJS(c[0], c[1], ctx);
+}
+
+function _polylineCrossesBridgeOverWaterJS(pts, bpOuter, ctx) {
+  if (!_polylineCrossesRingExtract2D(pts, bpOuter)) return false;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const steps = Math.max(2, Math.min(24, Math.ceil(len / 0.6)));
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps, px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t;
+      if (_pointInRingExtract2D(px, py, bpOuter) && _isPtInSceneWaterExtractJS(px, py, ctx)) return true;
+    }
+  }
+  return false;
+}
+
 function finalizeOsmBridgesLayerJS(ctx) {
   if (!ctx.pierPolys) ctx.pierPolys = [];
   if (!ctx.pierLines) ctx.pierLines = [];
@@ -179,36 +240,48 @@ function finalizeOsmBridgesLayerJS(ctx) {
   for (const bp of (ctx.bridgePolys || [])) if (bp && !bp.isPier && bp.osmId != null) polyByOsmId.set(bp.osmId, bp);
 
   for (const meta of (ctx.bridgeRelMeta || [])) {
-    const bp = polyByOsmId.get(meta.relId) || (meta.outlineWayIds || []).map(id => polyByOsmId.get(id)).find(Boolean);
+    const bps = [];
+    if (polyByOsmId.has(meta.relId)) bps.push(polyByOsmId.get(meta.relId));
+    for (const id of (meta.outlineWayIds || [])) if (polyByOsmId.has(id) && !bps.includes(polyByOsmId.get(id))) bps.push(polyByOsmId.get(id));
     for (const wid of (meta.acrossWayIds || [])) {
       const rd = roadByOsmId.get(wid);
       if (!rd) continue;
       _applyBridgeMetaToObjJS(meta.tags, rd);
       rd.parentBridgeRelId = meta.relId; rd.isBridge = true; rd.bridge = true;
-      if (bp) {
+      for (const bp of bps) {
         _applyBridgeMetaToObjJS(bp.tags, rd); _applyBridgeMetaToObjJS(rd.tags, bp);
-        rd._bridgePolyOsmId = bp.osmId;
-        bp.acrossRoadIds = bp.acrossRoadIds || [];
-        if (!bp.acrossRoadIds.includes(rd.osmId)) bp.acrossRoadIds.push(rd.osmId);
+        _linkRoadAndBridgePolyJS(rd, bp, true);
       }
     }
-    if (bp) { _applyBridgeMetaToObjJS(meta.tags, bp); bp.parentBridgeRelId = meta.relId; }
+    for (const bp of bps) { _applyBridgeMetaToObjJS(meta.tags, bp); bp.parentBridgeRelId = meta.relId; }
   }
 
+  const validBps = (ctx.bridgePolys || []).filter(bp => bp && !bp.isPier && bp.outer && bp.outer.length >= 3);
+  const waterBps = validBps.filter(bp => _ringTouchesWaterExtractJS(bp.outer, ctx));
+
   for (const rd of (ctx.roads || [])) {
-    if (!rd || !(rd.isBridge || rd.bridge) || rd._bridgePolyOsmId != null || !rd.pts || rd.pts.length < 2) continue;
-    let bestBp = null, bestDiff = Infinity;
-    for (const bp of (ctx.bridgePolys || [])) {
-      if (!bp || bp.isPier || !bp.outer || bp.outer.length < 3) continue;
-      const diff = Math.abs((rd.hasExplicitLayer ? rd.layer : bp.layer) - (bp.layer ?? 1));
-      if (diff > 1) continue;
-      if (_polylineCrossesRingExtract2D(rd.pts, bp.outer) && diff < bestDiff) { bestDiff = diff; bestBp = bp; }
-    }
-    if (bestBp) {
-      _applyBridgeMetaToObjJS(rd.tags, bestBp); _applyBridgeMetaToObjJS(bestBp.tags, rd);
-      bestBp.acrossRoadIds = bestBp.acrossRoadIds || [];
-      if (rd.osmId != null && !bestBp.acrossRoadIds.includes(rd.osmId)) bestBp.acrossRoadIds.push(rd.osmId);
-      rd._bridgePolyOsmId = bestBp.osmId;
+    if (!rd || !rd.pts || rd.pts.length < 2) continue;
+    if (rd.isBridge || rd.bridge) {
+      const matched = [];
+      for (const bp of validBps) {
+        const bpLyr = bp.layer ?? 1, rdLyr = rd.hasExplicitLayer ? rd.layer : bpLyr;
+        const diff = Math.abs(rdLyr - bpLyr);
+        if ((rd.hasExplicitLayer && bp.hasExplicitLayer) ? (diff > 0) : (diff > 1)) continue;
+        if (_polylineCrossesRingExtract2D(rd.pts, bp.outer)) matched.push({ bp, diff });
+      }
+      matched.sort((a, b) => a.diff - b.diff);
+      for (const { bp } of matched) {
+        _applyBridgeMetaToObjJS(rd.tags, bp); _applyBridgeMetaToObjJS(bp.tags, rd);
+        _linkRoadAndBridgePolyJS(rd, bp, true);
+      }
+    } else if ((rd.layer ?? 0) >= 0 && waterBps.length > 0) {
+      for (const bp of waterBps) {
+        if (!_polylineCrossesBridgeOverWaterJS(rd.pts, bp.outer, ctx)) continue;
+        _applyBridgeMetaToObjJS(rd.tags, bp);
+        _linkRoadAndBridgePolyJS(rd, bp, false);
+        rd._surfaceAcrossBridgePolyIds = rd._surfaceAcrossBridgePolyIds || [];
+        if (bp.osmId != null && !rd._surfaceAcrossBridgePolyIds.includes(bp.osmId)) rd._surfaceAcrossBridgePolyIds.push(bp.osmId);
+      }
     }
   }
 }

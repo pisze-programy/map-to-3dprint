@@ -59,6 +59,125 @@ function _ptInRingJS(px, py, ring) {
   return inside;
 }
 
+function _ptToPolyDist2DJS(px, py, pts) {
+  if (!pts || !pts.length) return Infinity;
+  if (pts.length === 1) return Math.hypot(px - pts[0][0], py - pts[0][1]);
+  let best = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1e-12;
+    const t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / l2));
+    const d = Math.hypot(px - (a[0] + dx * t), py - (a[1] + dy * t));
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+function _trimTerminalHairpinSpikesJS(pts, maxStubU = 0.25) {
+  if (!pts || pts.length < 3) return pts || [];
+  const out = pts.slice();
+  while (out.length >= 3) {
+    const d0x = out[1][0] - out[0][0], d0y = out[1][1] - out[0][1], l0 = Math.hypot(d0x, d0y);
+    const d1x = out[2][0] - out[1][0], d1y = out[2][1] - out[1][1], l1 = Math.hypot(d1x, d1y);
+    if (l0 <= maxStubU && l0 > 1e-8 && l1 > 1e-8 && ((d0x / l0) * (d1x / l1) + (d0y / l0) * (d1y / l1)) < -0.5) {
+      out.shift(); continue;
+    }
+    const n = out.length;
+    const e1x = out[n - 1][0] - out[n - 2][0], e1y = out[n - 1][1] - out[n - 2][1], le1 = Math.hypot(e1x, e1y);
+    const e0x = out[n - 2][0] - out[n - 3][0], e0y = out[n - 2][1] - out[n - 3][1], le0 = Math.hypot(e0x, e0y);
+    if (le1 <= maxStubU && le1 > 1e-8 && le0 > 1e-8 && ((e0x / le0) * (e1x / le1) + (e0y / le0) * (e1y / le1)) < -0.5) {
+      out.pop(); continue;
+    }
+    break;
+  }
+  return out;
+}
+
+function _splitPolylineOutsideRingsJS(pts, rings, overlapU = 0.30, minSubLenU = 0.15) {
+  if (!pts || pts.length < 2) return [];
+  const validRings = (rings || []).filter(r => r && r.length >= 3);
+  if (!validRings.length) return [{ pts: pts.slice(), lenOut: _polyLenJS(pts), entersRingAtStart: false, entersRingAtEnd: false }];
+  const inAny = (px, py) => validRings.some(r => _ptInRingJS(px, py, r));
+  const stepMax = Math.max(0.08, Math.min(0.35, overlapU * 0.45));
+  const rawSamples = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], segL = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const steps = Math.max(1, Math.min(96, Math.ceil(segL / stepMax)));
+    for (let k = (i === 0 ? 0 : 1); k <= steps; k++) {
+      const t = k / steps;
+      rawSamples.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    }
+  }
+  if (rawSamples.length < 2) return [];
+
+  const sPts = [rawSamples[0]], sIn = [inAny(rawSamples[0][0], rawSamples[0][1])], isCross = [false];
+  for (let i = 1; i < rawSamples.length; i++) {
+    const prevP = rawSamples[i - 1], curP = rawSamples[i];
+    const prevIn = sIn[sIn.length - 1], curIn = inAny(curP[0], curP[1]);
+    if (prevIn !== curIn) {
+      let t0 = 0, t1 = 1;
+      for (let b = 0; b < 8; b++) {
+        const tm = 0.5 * (t0 + t1);
+        if (inAny(prevP[0] + (curP[0] - prevP[0]) * tm, prevP[1] + (curP[1] - prevP[1]) * tm) === prevIn) t0 = tm; else t1 = tm;
+      }
+      const tc = 0.5 * (t0 + t1);
+      sPts.push([prevP[0] + (curP[0] - prevP[0]) * tc, prevP[1] + (curP[1] - prevP[1]) * tc]);
+      sIn.push(curIn);
+      isCross.push(true);
+    }
+    sPts.push(curP);
+    sIn.push(curIn);
+    isCross.push(false);
+  }
+
+  const cumS = [0];
+  for (let i = 1; i < sPts.length; i++) cumS.push(cumS[i - 1] + Math.hypot(sPts[i][0] - sPts[i - 1][0], sPts[i][1] - sPts[i - 1][1]));
+  const sampleAtS = (targetS) => {
+    if (targetS <= 0) return sPts[0];
+    const n = sPts.length;
+    if (targetS >= cumS[n - 1]) return sPts[n - 1];
+    let lo = 0;
+    while (lo < n - 2 && cumS[lo + 1] < targetS) lo++;
+    const f = (targetS - cumS[lo]) / Math.max(1e-8, cumS[lo + 1] - cumS[lo]);
+    return [sPts[lo][0] + (sPts[lo + 1][0] - sPts[lo][0]) * f, sPts[lo][1] + (sPts[lo + 1][1] - sPts[lo][1]) * f];
+  };
+
+  // Build outside intervals between inside states
+  const isOutsideSeg = [];
+  for (let i = 0; i < sPts.length - 1; i++) {
+    const mx = 0.5 * (sPts[i][0] + sPts[i + 1][0]), my = 0.5 * (sPts[i][1] + sPts[i + 1][1]);
+    isOutsideSeg.push(!inAny(mx, my));
+  }
+
+  const pieces = [];
+  let i = 0;
+  while (i < isOutsideSeg.length) {
+    if (!isOutsideSeg[i]) { i++; continue; }
+    const startIdx = i;
+    while (i + 1 < isOutsideSeg.length && isOutsideSeg[i + 1]) i++;
+    const endIdx = i + 1;
+    i++;
+    const lenOut = cumS[endIdx] - cumS[startIdx];
+    if (lenOut < minSubLenU) continue;
+    const entersRingAtStart = startIdx > 0;
+    const entersRingAtEnd = endIdx < sPts.length - 1;
+    const subPts = [];
+    if (entersRingAtStart && overlapU > 1e-4) {
+      const sTarget = Math.max(0, cumS[startIdx] - overlapU);
+      subPts.push(sampleAtS(sTarget));
+      for (let k = 0; k < startIdx; k++) if (cumS[k] > sTarget + 1e-4) subPts.push(sPts[k]);
+    }
+    for (let k = startIdx; k <= endIdx; k++) subPts.push(sPts[k]);
+    if (entersRingAtEnd && overlapU > 1e-4) {
+      const sTarget = Math.min(cumS[sPts.length - 1], cumS[endIdx] + overlapU);
+      for (let k = endIdx + 1; k < sPts.length; k++) if (cumS[k] < sTarget - 1e-4) subPts.push(sPts[k]);
+      subPts.push(sampleAtS(sTarget));
+    }
+    const clean = _dedupPtsJS(subPts, 0.004);
+    if (clean.length >= 2) pieces.push({ pts: clean, lenOut, entersRingAtStart, entersRingAtEnd });
+  }
+  return pieces;
+}
+
 function _clipPolylineToRectJS(pts, minX, minY, maxX, maxY) {
   if (!pts || pts.length < 2) return [];
   const clipSeg = (p0, p1) => {
@@ -128,6 +247,8 @@ function _stitchEndpointsJS(chains, minDot, maxSnapU, canPairFn, onPairFn) {
           : mode === 1 ? a.pts.concat(b.pts.slice(0, -1).reverse())
           : mode === 2 ? b.pts.slice().reverse().concat(a.pts.slice(1))
           : b.pts.concat(a.pts.slice(1));
+        a.joinPolyStart = mode === 0 || mode === 1 ? Boolean(a.joinPolyStart) : (mode === 2 ? Boolean(b.joinPolyEnd) : Boolean(b.joinPolyStart));
+        a.joinPolyEnd = mode === 0 ? Boolean(b.joinPolyEnd) : mode === 1 ? Boolean(b.joinPolyStart) : Boolean(a.joinPolyEnd);
         a.clippedStart = mode === 0 || mode === 1 ? Boolean(a.clippedStart) : (mode === 2 ? Boolean(b.clippedEnd) : Boolean(b.clippedStart));
         a.clippedEnd = mode === 0 ? Boolean(b.clippedEnd) : mode === 1 ? Boolean(b.clippedStart) : Boolean(a.clippedEnd);
         a.pts = _dedupPtsJS(newPts, 0.01);
@@ -280,8 +401,9 @@ function _stitchAndMergeLinearBridgesJS(roadBridges, opts = {}) {
   const snapU = Math.min(0.32, Math.max(0.03, 2.5 * mToBedXY));
   const minChainLenU = Math.max(0.08, Math.min(0.18, 1.5 * mToBedXY));
 
+  const stubMaxU = Math.max(0.12, 0.65 * mToBedXY);
   const chains = roadBridges
-    .map(r => ({ ...r, pts: _dedupPtsJS(r.pts, 0.008) }))
+    .map(r => ({ ...r, pts: _trimTerminalHairpinSpikesJS(_dedupPtsJS(r.pts, 0.008), stubMaxU) }))
     .filter(r => r.pts.length >= 2 && _polyLenJS(r.pts) >= minChainLenU);
 
   _stitchEndpointsJS(
@@ -300,9 +422,12 @@ function _stitchAndMergeLinearBridgesJS(roadBridges, opts = {}) {
       if (a.heightM == null) a.heightM = b.heightM;
       if (a.minHeightM == null) a.minHeightM = b.minHeightM;
       if (a.clearanceM == null) a.clearanceM = b.clearanceM;
+      if (!a.level && b.level) a.level = b.level;
+      a.isPath = Boolean(a.isPath && b.isPath);
       a.isBoardwalk = Boolean(a.isBoardwalk && b.isBoardwalk);
     }
   );
+  for (const ch of chains) ch.pts = _trimTerminalHairpinSpikesJS(ch.pts, stubMaxU);
 
   // Metric + MSLA anti-capillary multi-track / twin-carriageway corridor merge (local cross-sections only)
   const maxEdgeGapU = Math.min(Math.max(0.42 / scaleMm, 5.5 * mToBedXY), 12.0 * mToBedXY + 0.25 / scaleMm);
@@ -397,6 +522,10 @@ function _stitchAndMergeLinearBridgesJS(roadBridges, opts = {}) {
         if (base.clearanceM == null) base.clearanceM = g.clearanceM;
         base.clippedStart = Boolean(base.clippedStart && g.clippedStart);
         base.clippedEnd = Boolean(base.clippedEnd && g.clippedEnd);
+        base.joinPolyStart = Boolean(base.joinPolyStart || g.joinPolyStart);
+        base.joinPolyEnd = Boolean(base.joinPolyEnd || g.joinPolyEnd);
+        base.isPath = Boolean(base.isPath && g.isPath);
+        if (!base.level && g.level) base.level = g.level;
       }
     }
     out.push(base);
@@ -406,7 +535,9 @@ function _stitchAndMergeLinearBridgesJS(roadBridges, opts = {}) {
 
 const _AXIS_HELPER_EXPORTS = {
   _normalizeBridgeStructJS, _structRankJS, _polyLenJS, _dedupPtsJS,
-  _resamplePolyJS, _bbox2DJS, _ptInRingJS, _clipPolylineToRectJS, _outTan2DJS,
+  _resamplePolyJS, _bbox2DJS, _ptInRingJS, _ptToPolyDist2DJS,
+  _trimTerminalHairpinSpikesJS, _splitPolylineOutsideRingsJS,
+  _clipPolylineToRectJS, _outTan2DJS,
   _ribbonWidthFromRingJS, _extractClippedAxisFromRoadsJS,
   _extractCurvedSpineFromPolyJS, _estimatePolyRibbonWidthJS, _stitchAndMergeLinearBridgesJS
 };
