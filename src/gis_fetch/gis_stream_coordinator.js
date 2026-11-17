@@ -103,7 +103,11 @@
     const wantTrees = lodSettings ? (lodSettings.enableTrees !== false && spanKm <= (lodSettings.treeMaxSpanKm ?? 4.0)) : (spanKm <= 4.0);
     const minBldFootprintM = (lodSettings && typeof lodSettings.minBuildingFootprintM === 'number') ? lodSettings.minBuildingFootprintM : 0;
     const roadDetail = (lodSettings && lodSettings.roadDetail) || 'all';
-    const lodQueryOpts = { wantTrees, minBuildingFootprintM: minBldFootprintM, roadDetail, fetchSpanMeters: maxSpanM };
+    const lodQueryOpts = {
+      wantTrees, minBuildingFootprintM: minBldFootprintM, roadDetail, fetchSpanMeters: maxSpanM,
+      printTileCols: options && options.tileCols, printTileRows: options && options.tileRows,
+      rotationDeg: options && options.rotationDeg,
+    };
     const sceneOptions = {
       targetSpanMeters: effectiveSpanM, targetWidthMm: options && options.targetWidthMm,
       targetHeightMm: options && options.targetHeightMm, rotationDeg: options && options.rotationDeg,
@@ -125,7 +129,7 @@
 
     const collectedChunkElements = [], failedChunkEntries = [];
     let loadedChunks = 0, failedChunks = 0, totalLoadedEls = 0, partialRendered = false, partialPreviewPromise = null;
-    let nextChunkIdx = 0, streamCompleted = false;
+    let nextChunkIdx = 0, streamCompleted = false, infraOutageCount = 0, proxyUnreachableCount = 0, outageCircuitTripped = false;
 
     const demGridSize = effectiveSpanM > 5500 ? 96 : 72;
     const demPromise = demMod.fetchAdaptiveTerrariumDem(centerLat - sqDLat, centerLon - sqDLon, centerLat + sqDLat, centerLon + sqDLon, demGridSize, null, abortSignal);
@@ -140,7 +144,7 @@
       });
     }).catch(() => {});
 
-    const concurrency = Math.min(4, totalChunks);
+    const concurrency = Math.min(6, totalChunks);
     const subRetryDelayMs = (options && typeof options.subRetryDelayMs === 'number') ? options.subRetryDelayMs : 1200;
     const pass2RetryDelayMs = (options && typeof options.retryDelayMs === 'number') ? options.retryDelayMs : 1800;
     const partialPreviewDelayMs = (options && typeof options.partialPreviewDelayMs === 'number') ? options.partialPreviewDelayMs : 400;
@@ -167,7 +171,7 @@
 
     const runChunkWorker = async () => {
       while (nextChunkIdx < chunks.length) {
-        if (abortSignal && abortSignal.aborted) break;
+        if ((abortSignal && abortSignal.aborted) || outageCircuitTripped) break;
         const cIdx = nextChunkIdx++, chunk = chunks[cIdx];
         emitProgress({
           loadedChunks, totalChunks, pct: Math.min(90, Math.round(11 + ((loadedChunks + failedChunks) / totalChunks) * 75)),
@@ -178,16 +182,24 @@
         try {
           const els = await executor.fetchChunkWithRecursiveSplit(chunk, abortSignal, subChunkCallbacks);
           if (Array.isArray(els)) {
-            collectedChunkElements.push(els); loadedChunks++; totalLoadedEls += els.length; chunkSucceeded = true;
+            collectedChunkElements.push(els); loadedChunks++; totalLoadedEls += els.length; chunkSucceeded = true; infraOutageCount = 0;
           } else {
             failedChunks++;
             failedChunkEntries.push({ chunk, partialElements: null, missingSubChunks: null, failedSubChunkIds: [chunk.id] });
           }
         } catch (err) {
           failedChunks++;
+          const hasPartial = Boolean(err && Array.isArray(err.partialElements) && err.partialElements.length > 0);
+          if (err && err.proxyUnreachable) proxyUnreachableCount++;
+          if (!hasPartial && err && (err.isInfraOutage || err.allFatalNetwork)) {
+            infraOutageCount++;
+            if (loadedChunks === 0 && totalLoadedEls === 0 && infraOutageCount >= Math.min(4, totalChunks)) {
+              outageCircuitTripped = true;
+            }
+          }
           failedChunkEntries.push({
             chunk,
-            partialElements: (err && Array.isArray(err.partialElements)) ? err.partialElements : null,
+            partialElements: hasPartial ? err.partialElements : null,
             missingSubChunks: (err && Array.isArray(err.missingSubChunks) && err.missingSubChunks.length > 0) ? err.missingSubChunks : null,
             failedSubChunkIds: (err && Array.isArray(err.failedSubChunkIds) && err.failedSubChunkIds.length > 0) ? err.failedSubChunkIds : [chunk.id],
           });
@@ -231,7 +243,7 @@
     const remainingFailed = [];
     for (let rIdx = 0; rIdx < failedChunkEntries.length; rIdx++) {
       const entry = failedChunkEntries[rIdx];
-      if (abortSignal && abortSignal.aborted) { remainingFailed.push(entry); continue; }
+      if ((abortSignal && abortSignal.aborted) || outageCircuitTripped) { remainingFailed.push(entry); continue; }
       emitProgress({
         loadedChunks, totalChunks, pct: Math.min(93, Math.round(86 + ((rIdx + 1) / failedChunkEntries.length) * 6)),
         progressKind: 'chunk-retry', statusText: `Ponawianie sektora ${entry.chunk.id} (${rIdx + 1}/${failedChunkEntries.length})...`,
@@ -277,11 +289,15 @@
     if (partialPreviewPromise) { try { await partialPreviewPromise; } catch (_) {} }
 
     if (collectedChunkElements.length === 0) {
-      if (diag) diag.finishFetchDiagnosticSession('empty-or-aborted', { loadedChunks, failedChunks }, diagSession);
+      if (diag) diag.finishFetchDiagnosticSession('empty-or-aborted', { loadedChunks, failedChunks, outageCircuitTripped }, diagSession);
       if (abortSignal && abortSignal.aborted) throw new Error('Przekroczono limit czasu oczekiwania na dane GIS po 45s');
       let dem = null;
       try { dem = await demPromise; } catch (_) {}
-      if (dem) return handoff.buildTerrainOnlyFallbackScene(title, centerLat, centerLon, effectiveSpanM, halfM, dem);
+      if (dem) {
+        const fbScene = handoff.buildTerrainOnlyFallbackScene(title, centerLat, centerLon, effectiveSpanM, halfM, dem);
+        if (proxyUnreachableCount > 0) fbScene._proxyUnreachable = true;
+        return fbScene;
+      }
       throw new Error('Nie udało się pobrać danych GIS ani DEM.');
     }
 

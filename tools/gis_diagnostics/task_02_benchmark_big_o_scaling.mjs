@@ -40,9 +40,16 @@ export async function runBigOBenchmark({ quiet = false } = {}) {
       for (let i = 0; i < nEls; i++) {
         chunks[i & 3].push({ type: 'node', id: i % Math.floor(nEls * 0.8), lat: 52.0 + i * 1e-6, lon: 21.0 + i * 1e-6 });
       }
-      const t0 = performance.now();
-      const out = gisFetch.mergeAndDeduplicateElements(chunks, 8000);
-      return { ms: performance.now() - t0, count: out.length };
+      const samples = [];
+      let count = 0;
+      for (let r = 0; r < 3; r++) {
+        const t0 = performance.now();
+        const out = gisFetch.mergeAndDeduplicateElements(chunks, 8000);
+        samples.push(performance.now() - t0);
+        count = out.length;
+      }
+      samples.sort((x, y) => x - y);
+      return { ms: samples[1], count };
     };
     runMerge(5000); // warmup
     const a = runMerge(50000);

@@ -79,9 +79,16 @@
     } catch (err) {
       if (abortSignal && abortSignal.aborted) throw err;
       const isFatalNetwork = Boolean(err && err.allFatalNetwork);
+      const isInfraOutage = Boolean(err && err.isInfraOutage);
+      const canSplitNode =
+        !isFatalNetwork &&
+        !isInfraOutage &&
+        (Boolean(err && err.isQueryTooHeavy) || curDepth < 1) &&
+        curDepth < planner.MAX_CHUNK_SPLIT_DEPTH &&
+        !visitedBBoxKeys.has(bboxKey);
 
-      // Strict cycle + depth + minimum-span guard: guarantees finite DAG termination
-      if (!isFatalNetwork && curDepth < planner.MAX_CHUNK_SPLIT_DEPTH && !visitedBBoxKeys.has(bboxKey)) {
+      // Strict cycle + depth + minimum-span + outage guard: guarantees finite DAG termination
+      if (canSplitNode) {
         const subChunks = planner.subdivideChunk2x2(chunk).filter(
           (sc) => !visitedBBoxKeys.has(planner.getChunkCanonicalBBoxKey(sc))
         );
@@ -139,35 +146,41 @@
 
           if (failedSubs.length > 0 || cascadedMissingLeaves.length > 0) {
             const stillFailed = cascadedMissingLeaves.slice();
-            for (let fIdx = 0; fIdx < failedSubs.length; fIdx++) {
-              const sc = failedSubs[fIdx];
-              if (abortSignal && abortSignal.aborted) { stillFailed.push(sc); continue; }
-              await _abortableDelay(retryDelayMs, abortSignal);
-              if (abortSignal && abortSignal.aborted) { stillFailed.push(sc); continue; }
-              if (diag) diag.recordFetchDiagnosticEvent('retry', { chunkId: sc.id, depth: sc.depth });
-              if (onSubChunkProgress) onSubChunkProgress(sc, 'retry-start', subDoneCount, subChunks.length, 0);
-              try {
-                const subEls = await _executeChunkNode(sc, abortSignal, callbacks, childVisited);
-                if (Array.isArray(subEls)) {
-                  cache.storeOverpassChunkCache(sc, subEls);
-                  for (let k = 0; k < subEls.length; k++) mergedSub.push(subEls[k]);
-                  subDoneCount++;
-                  if (onSubChunkProgress) onSubChunkProgress(sc, 'retry-done', subDoneCount, subChunks.length, subEls.length);
-                  if (onSubChunkDone) onSubChunkDone(sc, subEls.length, subDoneCount, subChunks.length);
-                } else {
-                  stillFailed.push(sc);
+            // When 0/4 sibling sub-chunks succeeded (total mirror/proxy outage), skip redundant sibling retry storm
+            const allSiblingsDead = subDoneCount === 0 && mergedSub.length === 0 && failedSubs.length === subChunks.length;
+            if (allSiblingsDead) {
+              for (const sc of failedSubs) stillFailed.push(sc);
+            } else {
+              for (let fIdx = 0; fIdx < failedSubs.length; fIdx++) {
+                const sc = failedSubs[fIdx];
+                if (abortSignal && abortSignal.aborted) { stillFailed.push(sc); continue; }
+                await _abortableDelay(retryDelayMs, abortSignal);
+                if (abortSignal && abortSignal.aborted) { stillFailed.push(sc); continue; }
+                if (diag) diag.recordFetchDiagnosticEvent('retry', { chunkId: sc.id, depth: sc.depth });
+                if (onSubChunkProgress) onSubChunkProgress(sc, 'retry-start', subDoneCount, subChunks.length, 0);
+                try {
+                  const subEls = await _executeChunkNode(sc, abortSignal, callbacks, childVisited);
+                  if (Array.isArray(subEls)) {
+                    cache.storeOverpassChunkCache(sc, subEls);
+                    for (let k = 0; k < subEls.length; k++) mergedSub.push(subEls[k]);
+                    subDoneCount++;
+                    if (onSubChunkProgress) onSubChunkProgress(sc, 'retry-done', subDoneCount, subChunks.length, subEls.length);
+                    if (onSubChunkDone) onSubChunkDone(sc, subEls.length, subDoneCount, subChunks.length);
+                  } else {
+                    stillFailed.push(sc);
+                    if (onSubChunkProgress) onSubChunkProgress(sc, 'failed', subDoneCount, subChunks.length, 0);
+                  }
+                } catch (retryErr) {
+                  if (retryErr && Array.isArray(retryErr.partialElements)) {
+                    for (let k = 0; k < retryErr.partialElements.length; k++) mergedSub.push(retryErr.partialElements[k]);
+                  }
+                  if (retryErr && Array.isArray(retryErr.missingSubChunks) && retryErr.missingSubChunks.length > 0) {
+                    for (const msc of retryErr.missingSubChunks) stillFailed.push(msc);
+                  } else {
+                    stillFailed.push(sc);
+                  }
                   if (onSubChunkProgress) onSubChunkProgress(sc, 'failed', subDoneCount, subChunks.length, 0);
                 }
-              } catch (retryErr) {
-                if (retryErr && Array.isArray(retryErr.partialElements)) {
-                  for (let k = 0; k < retryErr.partialElements.length; k++) mergedSub.push(retryErr.partialElements[k]);
-                }
-                if (retryErr && Array.isArray(retryErr.missingSubChunks) && retryErr.missingSubChunks.length > 0) {
-                  for (const msc of retryErr.missingSubChunks) stillFailed.push(msc);
-                } else {
-                  stillFailed.push(sc);
-                }
-                if (onSubChunkProgress) onSubChunkProgress(sc, 'failed', subDoneCount, subChunks.length, 0);
               }
             }
             if (stillFailed.length === 0) {

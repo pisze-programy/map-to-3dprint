@@ -5,8 +5,10 @@
 // ============================================================================
 
 (function (root) {
-  const TARGET_CHUNK_SPAN_METERS = 2300;
-  const MAX_CHUNK_SPLIT_DEPTH = 3;
+  const TARGET_CHUNK_SPAN_METERS = 1550;
+  const MAX_GRID_AXIS = 12;
+  const MIN_PRINT_ALIGNED_CHUNK_M = 900;
+  const MAX_CHUNK_SPLIT_DEPTH = 2;
   const MIN_CHUNK_SPLIT_SPAN_M = 250;
 
   function selectLodTier(spanMeters) {
@@ -48,14 +50,29 @@
 
     let rows = 1;
     let cols = 1;
-    if (fetchSpan > 3600) {
-      const effNs = bboxNsM > 10 ? bboxNsM : fetchSpan;
-      const effEw = bboxEwM > 10 ? bboxEwM : fetchSpan;
-      rows = Math.max(2, Math.ceil(effNs / TARGET_CHUNK_SPAN_METERS));
-      cols = Math.max(2, Math.ceil(effEw / TARGET_CHUNK_SPAN_METERS));
+    const effNs = bboxNsM > 10 ? bboxNsM : fetchSpan;
+    const effEw = bboxEwM > 10 ? bboxEwM : fetchSpan;
+
+    if (fetchSpan > 3200) {
+      rows = Math.min(MAX_GRID_AXIS, Math.max(2, Math.ceil(effNs / TARGET_CHUNK_SPAN_METERS)));
+      cols = Math.min(MAX_GRID_AXIS, Math.max(2, Math.ceil(effEw / TARGET_CHUNK_SPAN_METERS)));
     } else if (fetchSpan > 1650) {
       rows = 2;
       cols = 2;
+    }
+
+    // Align fetch granularity so GIS sectors are never coarser than physical print-bed tiles on wide frames
+    const rawPrintCols = lodOptions && Number(lodOptions.printTileCols) > 1 ? Math.round(Number(lodOptions.printTileCols)) : 0;
+    const rawPrintRows = lodOptions && Number(lodOptions.printTileRows) > 1 ? Math.round(Number(lodOptions.printTileRows)) : 0;
+    if ((rawPrintCols > 1 || rawPrintRows > 1) && fetchSpan > 2200) {
+      const rotRad = ((Number(lodOptions && lodOptions.rotationDeg) || 0) * Math.PI) / 180.0;
+      const swapAxes = Math.abs(Math.sin(rotRad)) > Math.abs(Math.cos(rotRad));
+      const axisPrintRows = swapAxes ? (rawPrintCols || 1) : (rawPrintRows || 1);
+      const axisPrintCols = swapAxes ? (rawPrintRows || 1) : (rawPrintCols || 1);
+      const maxRowsByMinSpan = Math.min(MAX_GRID_AXIS, Math.max(1, Math.floor(effNs / MIN_PRINT_ALIGNED_CHUNK_M)));
+      const maxColsByMinSpan = Math.min(MAX_GRID_AXIS, Math.max(1, Math.floor(effEw / MIN_PRINT_ALIGNED_CHUNK_M)));
+      rows = Math.max(rows, Math.min(axisPrintRows, maxRowsByMinSpan));
+      cols = Math.max(cols, Math.min(axisPrintCols, maxColsByMinSpan));
     }
 
     const dLat = (north - south) / rows;

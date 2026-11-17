@@ -43,8 +43,8 @@ OVERPASS_USER_AGENT = (
     "contact@piszeprogramy.pl)"
 )
 OVERPASS_CONNECT_TIMEOUT_SEC = 2.6
-OVERPASS_ATTEMPT_TIMEOUT_SEC = 8.5
-OVERPASS_MIRROR_PHASE_BUDGET_SEC = 11.0
+OVERPASS_ATTEMPT_TIMEOUT_SEC = 13.5
+OVERPASS_MIRROR_PHASE_BUDGET_SEC = 15.0
 OVERPASS_TOTAL_BUDGET_SEC = 32.0
 OVERPASS_CACHE_TTL_SEC = 600.0
 OVERPASS_CACHE_MAX = 256
@@ -91,6 +91,7 @@ _OVERPASS_CACHE = OrderedDict()
 _BBOX_QL_RE = re.compile(
     r"\[bbox:\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\]"
 )
+_TIMEOUT_QL_RE = re.compile(r"\[timeout:\s*(\d+)\s*\]")
 
 GEOCODE_CACHE_TTL_SEC = 900.0
 GEOCODE_CACHE_MAX = 256
@@ -399,7 +400,22 @@ def _fetch_overpass_upstream_once(mirror_url, encoded_form_body, attempt_timeout
             reason = resp.reason
             content_encoding = (resp.getheader("Content-Encoding") or "").lower()
             content_type = (resp.getheader("Content-Type") or "").lower()
-            raw = resp.read(240) if status != 200 else resp.read()
+            if status != 200:
+                raw = resp.read(240)
+            else:
+                # Enforce hard wall-clock deadline across chunked reads so trickling upstream streams cannot exceed attempt_timeout_sec
+                read_deadline = time.perf_counter() + attempt_timeout_sec + 2.5
+                chunks = []
+                while True:
+                    if time.perf_counter() > read_deadline:
+                        raise TimeoutError(
+                            f"Upstream wallclock read deadline ({attempt_timeout_sec:.1f}s) exceeded"
+                        )
+                    buf = resp.read(65536)
+                    if not buf:
+                        break
+                    chunks.append(buf)
+                raw = b"".join(chunks)
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
             timed_out = _is_timeout_exception(exc)
@@ -523,7 +539,7 @@ def _get_cached_overpass(q_hash):
             with open(disk_path, "rb") as fh:
                 raw = gzip.decompress(fh.read())
             validated_bytes, elem_count = _validate_overpass_json_bytes(raw)
-            if elem_count > 0:
+            if elem_count >= 0:
                 with _OVERPASS_CACHE_LOCK:
                     _OVERPASS_CACHE[q_hash] = (
                         now + OVERPASS_CACHE_TTL_SEC,
@@ -558,7 +574,7 @@ def _put_cached_overpass(q_hash, payload, elem_count):
         _OVERPASS_DISK_PUT_COUNTER += 1
         should_prune_disk = (_OVERPASS_DISK_PUT_COUNTER % 32) == 0
 
-    if elem_count <= 0:
+    if elem_count < 0:
         return
     try:
         os.makedirs(OVERPASS_DISK_CACHE_DIR, exist_ok=True)
@@ -795,7 +811,7 @@ def _fetch_osm_v06_bbox_fallback(query_str, timeout_budget_sec):
             except Exception:
                 pass
 
-        if status in (400, 504, 509):
+        if status in (400, 504):
             raise OverpassQueryTimeoutError(f"osm-api-v0.6: HTTP {status}; split 2x2")
         if status != 200:
             raise RuntimeError(f"api.openstreetmap.org: HTTP {status}")
@@ -994,20 +1010,27 @@ def forward_overpass_query(query_str):
                 entry["event"].set()
             return payload, elem_count, "cache"
 
-        encoded_body = urllib.parse.urlencode({"data": query_str}).encode("utf-8")
+        upstream_ql = _TIMEOUT_QL_RE.sub(
+            lambda m: f"[timeout:{min(int(m.group(1)), 12)}]",
+            query_str,
+            count=1,
+        )
+        encoded_body = urllib.parse.urlencode({"data": upstream_ql}).encode("utf-8")
         with _UPSTREAM_SEMAPHORE:
             t_start = time.monotonic()
             deadline = t_start + OVERPASS_TOTAL_BUDGET_SEC
             bbox_match = _BBOX_QL_RE.search(query_str)
             has_bbox = bool(bbox_match)
+            b_s = b_w = b_n = b_e = 0.0
             regional_urls = []
             if bbox_match:
-                regional_urls = _select_regional_mirrors_for_bbox(
+                b_s, b_w, b_n, b_e = (
                     float(bbox_match.group(1)),
                     float(bbox_match.group(2)),
                     float(bbox_match.group(3)),
                     float(bbox_match.group(4)),
                 )
+                regional_urls = _select_regional_mirrors_for_bbox(b_s, b_w, b_n, b_e)
             regional_set = set(regional_urls)
             mirror_deadline = min(
                 (deadline - 15.0) if has_bbox else deadline,
@@ -1047,7 +1070,7 @@ def forward_overpass_query(query_str):
             errors = []
             saw_query_timeout = False
 
-            for mirror_url, _ in mirrors_with_state:
+            for mirror_url, mirror_st in mirrors_with_state:
                 mirror_rem = mirror_deadline - time.monotonic()
                 if mirror_rem < 2.2:
                     break
@@ -1060,12 +1083,25 @@ def forward_overpass_query(query_str):
                     )
                     payload, elem_count, mirror_name, _ = res
                     if has_bbox and mirror_url in regional_set and elem_count == 0:
-                        log_server_event(
-                            "UPSTREAM_WARN",
-                            f"Overpass regional mirror={mirror_name} returned 0 elements; trying global fallback",
+                        interior_eu = (
+                            mirror_url == OVERPASS_REGIONAL_MIRRORS.get("eu")
+                            and 36.2 <= b_s and b_n <= 70.5
+                            and -10.5 <= b_w and b_e <= 28.0
                         )
-                        errors.append(f"{mirror_name}: 0 elements")
-                        continue
+                        interior_na = (
+                            mirror_url == OVERPASS_REGIONAL_MIRRORS.get("na")
+                            and 24.0 <= b_s and b_n <= 60.0
+                            and -130.0 <= b_w and b_e <= -60.0
+                        )
+                        if not ((interior_eu or interior_na) and mirror_st.get("ok", 0) > 0):
+                            log_server_event(
+                                "UPSTREAM_WARN",
+                                f"Overpass regional mirror={mirror_name} returned 0 elements; verifying fallback",
+                            )
+                            errors.append(f"{mirror_name}: 0 elements")
+                            if abs(b_n - b_s) * abs(b_e - b_w) <= 0.0014:
+                                break
+                            continue
                     _put_cached_overpass(q_hash, payload, elem_count)
                     with _INFLIGHT_LOCK:
                         entry["result"] = res
@@ -1959,6 +1995,8 @@ class Map3DRequestHandler(SimpleHTTPRequestHandler):
                     }
                 ).encode("utf-8")
                 self._send_json_bytes(200, remark_payload)
+            except (BrokenPipeError, ConnectionResetError):
+                raise
             except Exception as exc:
                 err_msg = str(exc)
                 self._log_details.append("upstream_failed=true")

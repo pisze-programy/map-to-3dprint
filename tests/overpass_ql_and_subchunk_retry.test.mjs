@@ -633,8 +633,8 @@ async function runTests() {
   {
     const grid12km = buildSpatialChunkGrid(25.1400, 55.2110, 25.2543, 55.3373, 12000, { fetchSpanMeters: 12720 });
     check(
-      grid12km.rows === 6 && grid12km.cols === 6 && grid12km.chunks.length === 36,
-      '12km metropolis fetch (12.72km envelope) splits into 6x6 = 36 tiles (~2.1km each) instead of 3x3 (4.37km)',
+      grid12km.rows === 9 && grid12km.cols === 9 && grid12km.chunks.length === 81,
+      '12km metropolis fetch (12.72km envelope) splits into 9x9 = 81 fine tiles (~1.41km each) staying under OSM v0.6 50k-node & Overpass 12s limits',
       `grid=${grid12km.rows}x${grid12km.cols} (${grid12km.chunks.length} tiles)`
     );
 
@@ -680,6 +680,64 @@ async function runTests() {
       parentEndpointsHit.length === 1 && parentEndpointsHit[0] === '/api/interpreter' && sc.buildings.length === 4,
       'Map3D Overpass Proxy timeout remark sets isQueryTooHeavy=true and immediately splits 2x2 without polling direct browser mirrors',
       `parentEndpointsHit=${JSON.stringify(parentEndpointsHit)}, buildings=${sc.buildings.length}`
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 7. Rotated 50x100cm (6x7=42 print tiles, +90°) fine grid alignment & Dead-Proxy Outage Circuit Breaker
+  // ---------------------------------------------------------------------------
+  console.log('\n7) Porto 50x100cm (6x7=42 print tiles, +90°) grid alignment & dead-proxy outage circuit breaker (0 R1C3.2.1.4 cascades):');
+  {
+    const centerLat = 41.1439, centerLon = -8.6323;
+    const cosLat = Math.cos((centerLat * Math.PI) / 180);
+    const fetchSouth = centerLat - 3180 / 111320;
+    const fetchNorth = centerLat + 3180 / 111320;
+    const fetchWest = centerLon - 6360 / (111320 * cosLat);
+    const fetchEast = centerLon + 6360 / (111320 * cosLat);
+
+    const portoGrid = buildSpatialChunkGrid(fetchSouth, fetchWest, fetchNorth, fetchEast, 12000, {
+      fetchSpanMeters: 12720,
+      printTileCols: 6,
+      printTileRows: 7,
+      rotationDeg: 90,
+    });
+    check(
+      portoGrid.rows >= 6 && portoGrid.cols >= 7 && portoGrid.chunks.length >= 42,
+      'Rotated +90° 50x100cm (6x7=42 print tiles) aligns GIS fetch grid to >= 6x7 fine sectors (6x9 = 54 sectors of ~1.06x1.41km)',
+      `grid=${portoGrid.rows}x${portoGrid.cols} (${portoGrid.chunks.length} sectors)`
+    );
+
+    const runtime = createPipelineRuntime({ offlineOnly: true, offlineFallbackDem: true, silent: true });
+    runtime.sandbox.window.location.protocol = 'http:';
+    runtime.sandbox.clearOverpassChunkCache();
+
+    let totalRequests = 0;
+    const subchunkEvents = [];
+    runtime.sandbox._overpassCustomFetch = async (ep) => {
+      totalRequests++;
+      if (ep === '/api/interpreter') throw new TypeError('Failed to fetch');
+      const status = (totalRequests % 3 === 0) ? 504 : ((totalRequests % 2 === 0) ? 429 : 502);
+      return { ok: false, status, async text() { return `HTTP ${status}`; } };
+    };
+
+    const outScene = await runtime.sandbox.fetchChunkedGISInBrowser(fetchSouth, fetchWest, fetchNorth, fetchEast, 'PORTO_OUTAGE_GUARD', {
+      targetSpanMeters: 12000,
+      targetWidthMm: 500,
+      targetHeightMm: 1000,
+      rotationDeg: 90,
+      tileCols: 6,
+      tileRows: 7,
+      subRetryDelayMs: 1,
+      retryDelayMs: 1,
+      onProgress: (info) => {
+        if (info && info.subChunkId) subchunkEvents.push(info.subChunkId);
+      },
+    });
+
+    check(
+      subchunkEvents.length === 0 && totalRequests <= 48 && outScene._fallback === true && outScene._proxyUnreachable === true,
+      'Dead local proxy + 429/502/504 public mirrors trips outage circuit breaker with 0 2x2 splits and <= 48 total requests (vs 15,336 before)',
+      `totalRequests=${totalRequests}, subchunkEvents=${subchunkEvents.length}, _proxyUnreachable=${outScene._proxyUnreachable}`
     );
   }
 

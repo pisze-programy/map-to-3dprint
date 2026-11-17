@@ -15,8 +15,61 @@
     return require('../geometry/manifold_core.js');
   }
 
+  function _tryWasmOffsetStructured(core, groups, delta, minEdge = 6e-4) {
+    let totalContours = 0;
+    for (let i = 0; i < (groups || []).length; i++) {
+      const g = groups[i];
+      if (g && g.outer) totalContours += 1 + (g.holes ? g.holes.length : 0);
+    }
+    if (totalContours < 250) return null;
+    try {
+      const gRoot = typeof globalThis !== 'undefined' ? globalThis : window;
+      const mf = gRoot.__MANIFOLD_LIB__ || (typeof gRoot.__getManifoldSync === 'function' ? gRoot.__getManifoldSync() : null);
+      if (!mf || !mf.CrossSection) return null;
+      const allRings = [];
+      for (let i = 0; i < groups.length; i++) {
+        const g = groups[i];
+        if (!g || !g.outer || g.outer.length < 3) continue;
+        const o = core.ensureWinding(g.outer, true, minEdge);
+        if (o.length < 3) continue;
+        allRings.push(o);
+        for (let hi = 0; hi < (g.holes || []).length; hi++) {
+          const h = core.ensureWinding(g.holes[hi], false, minEdge);
+          if (h.length >= 3) allRings.push(h);
+        }
+      }
+      if (allRings.length === 0) return [];
+      const cs = mf.CrossSection.ofPolygons(allRings, 'Positive');
+      const csOff = Math.abs(delta) > 1e-7 ? cs.offset(delta, 'Miter', 2.5) : cs;
+      if (csOff !== cs) cs.delete();
+      const raw = csOff.toPolygons();
+      csOff.delete();
+      const cleaned = [];
+      for (let i = 0; i < raw.length; i++) {
+        const c = core.ensureWinding(raw[i], null, minEdge);
+        if (c.length >= 3 && Math.abs(core.signedArea2D(c)) >= 1e-5) cleaned.push(c);
+      }
+      return cleaned;
+    } catch (_) {
+      return null;
+    }
+  }
+
   function _regularizePolys2D(core, groups, minEdge = 6e-4, openEps = 3.5e-4) {
     const out = [], ringAbs = (r) => (r && r.length >= 3) ? Math.abs(core.signedArea2D(r)) : 0;
+    const fastRings = _tryWasmOffsetStructured(core, groups, -openEps, minEdge);
+    if (fastRings !== null) {
+      const reg = core.ringsToOutersWithHoles(fastRings, minEdge);
+      for (let ri = 0; ri < reg.length; ri++) {
+        const ro = core.ensureWinding(reg[ri].outer, true, minEdge);
+        if (ro.length < 3 || ringAbs(ro) < 1e-4) continue;
+        const rh = (reg[ri].holes || [])
+          .map(h => core.ensureWinding(h, false, minEdge))
+          .filter(h => h.length >= 3 && ringAbs(h) >= 1e-4);
+        out.push({ outer: ro, holes: rh, area: ringAbs(ro) });
+      }
+      return out;
+    }
     for (let gi = 0; gi < (groups || []).length; gi++) {
       const g = groups[gi];
       if (!g || !g.outer || g.outer.length < 3) continue;
@@ -57,6 +110,55 @@
 
   function _buildClippedPolysExtrude(core, mf, polyPairs, zBot, zTop, clipRectPolys) {
     if (!polyPairs || polyPairs.length === 0) return null;
+
+    let totalContours = 0;
+    for (let i = 0; i < polyPairs.length; i++) {
+      if (polyPairs[i] && polyPairs[i].outer) totalContours += 1 + (polyPairs[i].holes ? polyPairs[i].holes.length : 0);
+    }
+    if (totalContours >= 120 && mf && mf.CrossSection) {
+      let csSubj = null, csClip = null, csFinal = null;
+      try {
+        const directRings = [];
+        for (let i = 0; i < polyPairs.length; i++) {
+          const pp = polyPairs[i];
+          if (!pp || !pp.outer || pp.outer.length < 3) continue;
+          const o = core.ensureWinding(pp.outer, true, 6e-4);
+          if (o.length < 3) continue;
+          directRings.push(o);
+          for (const h of (pp.holes || [])) {
+            const hc = core.ensureWinding(h, false, 6e-4);
+            if (hc.length >= 3) directRings.push(hc);
+          }
+        }
+        if (directRings.length === 0) return null;
+        csSubj = mf.CrossSection.ofPolygons(directRings, 'Positive');
+        if (clipRectPolys && clipRectPolys.length > 0) {
+          csClip = mf.CrossSection.ofPolygons(clipRectPolys.map(r => core.ensureWinding(r, true, 1e-4)), 'Positive');
+          csFinal = csSubj.intersect(csClip);
+        } else {
+          csFinal = csSubj;
+          csSubj = null;
+        }
+        if (csFinal && (!csFinal.isEmpty || !csFinal.isEmpty())) {
+          let man = csFinal.extrude(zTop - zBot);
+          if (Math.abs(zBot) > 1e-7) {
+            const shifted = man.translate([0, 0, zBot]);
+            man.delete();
+            man = shifted;
+          }
+          if (man && man.numTri() > 0) return man;
+          core.safeDeleteManifold(man);
+        }
+        return null;
+      } catch (_) {
+        // Fallback to standard path below
+      } finally {
+        core.safeDeleteManifold(csSubj);
+        core.safeDeleteManifold(csClip);
+        core.safeDeleteManifold(csFinal);
+      }
+    }
+
     const clippedPolys = [];
     for (let i = 0; i < polyPairs.length; i++) {
       const pp = polyPairs[i];
@@ -128,6 +230,8 @@
 
   function _shrinkStructuredPolys2D(core, structuredPolys, shrinkDist) {
     if (!structuredPolys || structuredPolys.length === 0) return [];
+    const fastRings = _tryWasmOffsetStructured(core, structuredPolys, -(shrinkDist > 1e-6 ? shrinkDist : 0), 4e-4);
+    if (fastRings !== null) return fastRings;
     if (!(shrinkDist > 1e-6)) {
       const passthrough = [];
       for (let i = 0; i < structuredPolys.length; i++) {
@@ -270,21 +374,37 @@
       for (const r of core.clipperBufferOpenPaths(openQuayLines, 'Round', 1e-5)) waterfrontRawPolys.push(r);
     }
 
+    const ringBb2D = (ring) => {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let i = 0; i < ring.length; i++) {
+        const px = ring[i][0], py = ring[i][1];
+        if (px < x0) x0 = px; if (px > x1) x1 = px;
+        if (py < y0) y0 = py; if (py > y1) y1 = py;
+      }
+      return [x0, y0, x1, y1];
+    };
+    const polyCullX = (ctx.halfW || 85) + 1.5;
+    const polyCullY = (ctx.halfH || 85) + 1.5;
+
     const greenRawPolys = [], greenWithArea = [];
     for (const gp of (scene && scene.greenPolys) || []) {
       if (!gp || !gp.outer || gp.outer.length < 3) continue;
       const oBed = gp.outer.map(toBed);
+      const gbb = ringBb2D(oBed);
+      if (gbb[2] < -polyCullX || gbb[0] > polyCullX || gbb[3] < -polyCullY || gbb[1] > polyCullY) continue;
       const holesBed = (gp.holes || []).filter(h => h && h.length >= 3).map(h => h.map(toBed));
       const clean = holesBed.length > 0 ? core.clipperDiffPolys([oBed], holesBed, 1e-5) : [oBed];
       for (const r of clean) {
         greenRawPolys.push(r);
-        greenWithArea.push({ ring: r, area: Math.abs(core.signedArea2D(r)) });
+        greenWithArea.push({ ring: r, area: Math.abs(core.signedArea2D(r)), bb: ringBb2D(r) });
       }
     }
 
     for (const rp of (scene && scene.roadPolys) || []) {
       if (!rp || !rp.outer || rp.outer.length < 3) continue;
       const oBed = rp.outer.map(toBed);
+      const rbb = ringBb2D(oBed);
+      if (rbb[2] < -polyCullX || rbb[0] > polyCullX || rbb[3] < -polyCullY || rbb[1] > polyCullY) continue;
       const holesBed = (rp.holes || []).filter(h => h && h.length >= 3).map(h => h.map(toBed));
       let clean = holesBed.length > 0 ? core.clipperDiffPolys([oBed], holesBed, 1e-5) : [oBed];
       const isProtected = Boolean(
@@ -294,7 +414,9 @@
       // Preserve explicit park/garden islands inside uncarved town squares (e.g. Python prebuilt scenes)
       if (!rp._greenIslandsCarved && !rp.isQuay && rp.hwy !== 'quay' && greenWithArea.length > 0 && clean.length > 0) {
         const rpArea = Math.abs(core.signedArea2D(oBed));
-        const cutters = greenWithArea.filter(g => rpArea >= g.area * 0.45).map(g => g.ring);
+        const cutters = greenWithArea
+          .filter(g => rpArea >= g.area * 0.45 && g.bb[2] >= rbb[0] && g.bb[0] <= rbb[2] && g.bb[3] >= rbb[1] && g.bb[1] <= rbb[3])
+          .map(g => g.ring);
         if (cutters.length > 0) clean = core.clipperDiffPolys(clean, cutters, 1e-5);
       }
       for (const r of clean) {

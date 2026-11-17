@@ -161,8 +161,94 @@
     return out;
   }
 
+  function _tryGetWasmCrossSection() {
+    try {
+      const mf = root.__MANIFOLD_LIB__ || (typeof root.__getManifoldSync === 'function' ? root.__getManifoldSync() : null);
+      return mf && mf.CrossSection ? mf.CrossSection : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function _fromWasmPolys(rawPolys, minAreaUnits = 1e-5) {
+    if (!rawPolys) return [];
+    const out = [];
+    for (let i = 0; i < rawPolys.length; i++) {
+      const p = rawPolys[i];
+      if (!p || p.length < 3) continue;
+      const ring = [];
+      for (let j = 0; j < p.length; j++) {
+        const pt = p[j];
+        const x = Number(pt[0]), y = Number(pt[1]);
+        if (ring.length === 0 || Math.hypot(x - ring[ring.length - 1][0], y - ring[ring.length - 1][1]) > 4e-4) {
+          ring.push([x, y]);
+        }
+      }
+      if (ring.length >= 2 && Math.hypot(ring[0][0] - ring[ring.length - 1][0], ring[0][1] - ring[ring.length - 1][1]) <= 4e-4) {
+        ring.pop();
+      }
+      if (ring.length >= 3 && Math.abs(signedArea2D(ring)) >= minAreaUnits) {
+        out.push(ring);
+      }
+    }
+    return out;
+  }
+
   function _runClipperOp(clipType, subjPolys, clipPolys = [], fillRuleName = 'NonZero', minArea = 1e-5) {
     const { Clipper2: C2 } = getVendorDeps();
+    const totalRings = (subjPolys ? subjPolys.length : 0) + (clipPolys ? clipPolys.length : 0);
+    let totalVerts = 0;
+    if (totalRings >= 64) {
+      for (let i = 0; i < (subjPolys || []).length && totalVerts < 4500; i++) totalVerts += (subjPolys[i] ? subjPolys[i].length : 0);
+      for (let i = 0; i < (clipPolys || []).length && totalVerts < 4500; i++) totalVerts += (clipPolys[i] ? clipPolys[i].length : 0);
+    }
+    const CS = (totalRings >= 350 || totalVerts >= 4500) ? _tryGetWasmCrossSection() : null;
+    if (CS && fillRuleName === 'NonZero') {
+      const sClean = [];
+      for (let i = 0; i < (subjPolys || []).length; i++) {
+        const c = ensureWinding(subjPolys[i], null, 1e-4);
+        if (c.length >= 3) sClean.push(c);
+      }
+      if (sClean.length === 0) return [];
+      const cClean = [];
+      for (let i = 0; i < (clipPolys || []).length; i++) {
+        const c = ensureWinding(clipPolys[i], null, 1e-4);
+        if (c.length >= 3) cClean.push(c);
+      }
+      let csSubj = null, csClip = null, csRes = null;
+      try {
+        csSubj = CS.ofPolygons(sClean, 'NonZero');
+        if (clipType === C2.ClipType.Union) {
+          if (cClean.length > 0) {
+            csClip = CS.ofPolygons(cClean, 'NonZero');
+            csRes = csSubj.add(csClip);
+          } else {
+            csRes = csSubj;
+            csSubj = null;
+          }
+        } else if (clipType === C2.ClipType.Intersection) {
+          if (cClean.length === 0) return [];
+          csClip = CS.ofPolygons(cClean, 'NonZero');
+          csRes = csSubj.intersect(csClip);
+        } else if (clipType === C2.ClipType.Difference) {
+          if (cClean.length === 0) {
+            csRes = csSubj;
+            csSubj = null;
+          } else {
+            csClip = CS.ofPolygons(cClean, 'NonZero');
+            csRes = csSubj.subtract(csClip);
+          }
+        }
+        if (csRes) return _fromWasmPolys(csRes.toPolygons(), minArea);
+      } catch (_) {
+        // Fallback to pure-JS Clipper64 below
+      } finally {
+        if (csSubj) try { csSubj.delete(); } catch (_) {}
+        if (csClip) try { csClip.delete(); } catch (_) {}
+        if (csRes) try { csRes.delete(); } catch (_) {}
+      }
+    }
+
     const subj = [];
     for (let i = 0; i < (subjPolys || []).length; i++) {
       const p = toPath64(C2, subjPolys[i], null);
@@ -324,12 +410,40 @@
       return [poly[0][0], poly[0][1]];
     };
 
+    if (outers.length === 0 || holes.length === 0) {
+      return outers.map(o => ({ outer: o.outer, holes: o.holes, area: o.area }));
+    }
+
+    // Spatial 2D grid index when hole * outer product is large (O(H + O) instead of O(H * O))
+    const useGrid = outers.length * holes.length >= 2500;
+    const CELL = 6.0;
+    let outerGrid = null;
+    if (useGrid) {
+      outerGrid = new Map();
+      for (let oi = 0; oi < outers.length; oi++) {
+        const o = outers[oi];
+        const gx0 = Math.floor((o.bb[0] - 1e-4) / CELL), gx1 = Math.floor((o.bb[2] + 1e-4) / CELL);
+        const gy0 = Math.floor((o.bb[1] - 1e-4) / CELL), gy1 = Math.floor((o.bb[3] + 1e-4) / CELL);
+        for (let gx = gx0; gx <= gx1; gx++) {
+          for (let gy = gy0; gy <= gy1; gy++) {
+            const k = `${gx}:${gy}`;
+            let bucket = outerGrid.get(k);
+            if (!bucket) { bucket = []; outerGrid.set(k, bucket); }
+            bucket.push(o);
+          }
+        }
+      }
+    }
+
     for (let hi = 0; hi < holes.length; hi++) {
       const h = holes[hi];
       const ip = strictlyInteriorPt(h.ring, h.bb);
       let best = null;
-      for (let oi = 0; oi < outers.length; oi++) {
-        const o = outers[oi];
+      const candidates = outerGrid
+        ? (outerGrid.get(`${Math.floor(ip[0] / CELL)}:${Math.floor(ip[1] / CELL)}`) || [])
+        : outers;
+      for (let ci = 0; ci < candidates.length; ci++) {
+        const o = candidates[ci];
         if (o.area <= h.area * 1.0001) continue;
         if (best && o.area >= best.area) continue;
         if (ip[0] < o.bb[0] - 1e-4 || ip[0] > o.bb[2] + 1e-4 || ip[1] < o.bb[1] - 1e-4 || ip[1] > o.bb[3] + 1e-4) continue;

@@ -467,7 +467,9 @@ function initMap3DApp(initialScene) {
         targetSpanMeters: selBox.targetSpanMeters || state.mapSpanMeters || 1200,
         targetWidthMm: selBox.targetWidthMm || state.bedSizeMm || 500,
         targetHeightMm: selBox.targetHeightMm || state.totalHeightMm || 500,
-        rotationDeg: selBox.rotationDeg !== undefined ? selBox.rotationDeg : (state.mapRotationDeg || 0)
+        rotationDeg: selBox.rotationDeg !== undefined ? selBox.rotationDeg : (state.mapRotationDeg || 0),
+        tileCols: state.tileCols || 1,
+        tileRows: state.tileRows || 1
       };
       state.lastFetchBbox = [south, west, north, east];
       state.lastFetchMeta = fetchMeta;
@@ -540,6 +542,8 @@ function initMap3DApp(initialScene) {
         targetSpanMeters: options.targetSpanMeters || (fetchMeta && fetchMeta.targetSpanMeters) || null,
         targetWidthMm: options.targetWidthMm || (fetchMeta && fetchMeta.targetWidthMm) || null,
         targetHeightMm: options.targetHeightMm || (fetchMeta && fetchMeta.targetHeightMm) || null,
+        tileCols: options.tileCols || (fetchMeta && fetchMeta.tileCols) || state.tileCols || 1,
+        tileRows: options.tileRows || (fetchMeta && fetchMeta.tileRows) || state.tileRows || 1,
         rotationDeg: options.rotationDeg !== undefined
           ? options.rotationDeg
           : (fetchMeta ? fetchMeta.rotationDeg : (state.mapRotationDeg || 0)),
@@ -548,7 +552,8 @@ function initMap3DApp(initialScene) {
         lodSettings: options.lodSettings || state.lodSettings || null,
         onProgress: (info) => {
           const kind = (info && typeof info === 'object') ? info.progressKind : null;
-          if (typeof info === 'number' || !kind || kind === 'init' || kind === 'dem' || kind === 'split' || kind === 'chunk' || kind === 'subchunk' || kind === 'chunk-retry' || kind === 'assemble') {
+          const isRealSubchunkData = kind === 'subchunk' && (info.subChunkPhase === 'done' || info.subChunkPhase === 'retry-done');
+          if (typeof info === 'number' || !kind || kind === 'init' || kind === 'dem' || kind === 'chunk' || isRealSubchunkData || kind === 'assemble') {
             resetWatchdog();
           }
           let pct = 10;
@@ -590,7 +595,9 @@ function initMap3DApp(initialScene) {
 
         if (scene._fallback) {
           if (errBanner && errText) {
-            errText.textContent = 'Nie udało się pobrać budynków z Overpass API (przeciążenie serwerów). Załadowano model terenu DEM.';
+            errText.textContent = scene._proxyUnreachable
+              ? 'Brak połączenia z lokalnym serwerem proxy GIS (/api/interpreter), a publiczne mirrory Overpass odrzuciły zapytania. Uruchom serwer (python3 server.py) i odśwież stronę.'
+              : 'Nie udało się pobrać budynków z Overpass API (przeciążenie serwerów). Załadowano model terenu DEM.';
             errBanner.classList.remove('hidden');
           }
         } else if (scene._partialIncomplete) {

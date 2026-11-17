@@ -244,6 +244,15 @@
     let slopedExcludePolys = flatWaterRings.length > 0 ? core.clipperOffsetPolys(flatWaterRings, -0.025, 'Miter', 1e-5) : [];
     if (effectiveIslandPolys.length > 0) slopedExcludePolys = core.clipperUnionPolys(slopedExcludePolys, 1e-5, effectiveIslandPolys);
     if (protectedPolys.length > 0) slopedExcludePolys = core.clipperUnionPolys(slopedExcludePolys, 1e-5, protectedPolys);
+    const slopedExcludeIndexed = slopedExcludePolys.map(r => {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let k = 0; k < r.length; k++) {
+        const px = r[k][0], py = r[k][1];
+        if (px < x0) x0 = px; if (px > x1) x1 = px;
+        if (py < y0) y0 = py; if (py > y1) y1 = py;
+      }
+      return { ring: r, x0, y0, x1, y1 };
+    });
 
     const isInsideWaterOrIsland = (x, y) => (
       flatWaterEntries.some(we => sampler._ptInWaterEntryLocal(x, y, we)) ||
@@ -272,7 +281,16 @@
         if (isInsideWaterOrIsland(a[0], a[1]) && isInsideWaterOrIsland(b[0], b[1]) && isInsideWaterOrIsland(mx, my)) continue;
         const segRings = core.clipperBufferOpenPaths([{ pts: [a, b], halfW }], 'Round', 1e-5);
         let clipped = segRings.length > 0 ? core.clipperIntersectPolys(segRings, plateClipPoly, 1e-5) : [];
-        if (clipped.length > 0 && slopedExcludePolys.length > 0) clipped = core.clipperDiffPolys(clipped, slopedExcludePolys, 1e-5);
+        if (clipped.length > 0 && slopedExcludeIndexed.length > 0) {
+          const sx0 = Math.min(a[0], b[0]) - halfW - 0.05, sx1 = Math.max(a[0], b[0]) + halfW + 0.05;
+          const sy0 = Math.min(a[1], b[1]) - halfW - 0.05, sy1 = Math.max(a[1], b[1]) + halfW + 0.05;
+          const localExcl = [];
+          for (let ei = 0; ei < slopedExcludeIndexed.length; ei++) {
+            const ex = slopedExcludeIndexed[ei];
+            if (ex.x1 >= sx0 && ex.x0 <= sx1 && ex.y1 >= sy0 && ex.y0 <= sy1) localExcl.push(ex.ring);
+          }
+          if (localExcl.length > 0) clipped = core.clipperDiffPolys(clipped, localExcl, 1e-5);
+        }
         const structured = clipped.length > 0 ? core.ringsToOutersWithHoles(clipped, 1e-4) : [];
         if (structured.length === 0) continue;
         for (const sp of structured) {

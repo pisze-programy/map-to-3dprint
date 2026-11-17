@@ -104,6 +104,8 @@
         if (!r.ok) {
           const httpErr = new Error(`HTTP ${r.status}`);
           httpErr.status = r.status;
+          httpErr.endpoint = ep;
+          if (r.status === 400) httpErr.isQueryTooHeavy = true;
           throw httpErr;
         }
         const text = await r.text();
@@ -113,8 +115,10 @@
         if (timedOutLocal && !(abortSignal && abortSignal.aborted)) {
           const tErr = new Error(`Mirror timeout (${perMirrorTimeoutMs}ms)`);
           tErr.isTimeout = true;
+          tErr.endpoint = ep;
           throw tErr;
         }
+        if (err && typeof err === 'object' && !err.endpoint) err.endpoint = ep;
         throw err;
       } finally {
         clearTimeout(timer);
@@ -133,20 +137,32 @@
       const hedgeTimers = [];
       const clearHedges = () => { while (hedgeTimers.length) clearTimeout(hedgeTimers.pop()); };
 
+      const _isConnFailure = (e) => {
+        const m = String(e && e.message ? e.message : e);
+        return (
+          !e.isTimeout &&
+          !e.isQueryTooHeavy &&
+          (m.includes('Failed to fetch') || m.includes('NetworkError') || m.includes('ECONNREFUSED') || m.includes('ENOTFOUND') || m.includes('Load failed'))
+        );
+      };
+
       const finishReject = () => {
         if (settled) return;
         settled = true;
         clearHedges();
         abortAllActive();
         const combined = new Error(`Mirrors failed: ${errors.join(', ')}`);
-        combined.allFatalNetwork = rawErrors.length > 0 && rawErrors.every((e) => {
-          const m = String(e && e.message ? e.message : e);
-          return (
-            !e.isTimeout &&
-            !e.isQueryTooHeavy &&
-            (m.includes('Failed to fetch') || m.includes('NetworkError') || m.includes('ECONNREFUSED') || m.includes('ENOTFOUND') || m.includes('Load failed'))
-          );
-        });
+        const sawQueryTooHeavy = rawErrors.some((e) => Boolean(e && (e.isQueryTooHeavy || e.status === 400)));
+        const sawGatewayOrReadTimeout = rawErrors.some((e) => Boolean(e && (e.isTimeout || e.status === 504)));
+        const proxyErr = rawErrors.find((e) => e && e.endpoint === '/api/interpreter');
+        const proxyUnreachable = Boolean(proxyErr && _isConnFailure(proxyErr));
+        const proxyUpstreamDown = Boolean(proxyErr && (proxyUnreachable || proxyErr.status === 502 || proxyErr.status === 503));
+
+        combined.allFatalNetwork = rawErrors.length > 0 && rawErrors.every(_isConnFailure);
+        combined.proxyUnreachable = proxyUnreachable;
+        combined.isQueryTooHeavy = sawQueryTooHeavy;
+        combined.canSplitHelp = sawQueryTooHeavy || (!proxyUpstreamDown && sawGatewayOrReadTimeout);
+        combined.isInfraOutage = !combined.canSplitHelp;
         reject(combined);
       };
 

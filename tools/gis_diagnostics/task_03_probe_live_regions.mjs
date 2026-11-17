@@ -83,6 +83,8 @@ export async function runLiveRegionsProbe({ serverOrigin = 'http://127.0.0.1:876
   for (const reg of targetRegions) {
     const vmRuntime = createPipelineRuntime({ offlineOnly: false, silent: true });
     await vmRuntime.sandbox.__ensureManifoldReady();
+    vmRuntime.sandbox.window.location.protocol = 'http:';
+    vmRuntime.sandbox.window.location.origin = serverOrigin;
 
     // Route relative '/api/interpreter' calls to the live local proxy server
     const origFetch = globalThis.fetch;
