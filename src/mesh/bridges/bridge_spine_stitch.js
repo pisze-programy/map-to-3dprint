@@ -112,7 +112,7 @@ function _extractCurvedSpineFromPolyJS(outer) {
   const spanU = Math.max(1e-4, maxU - minU), nSlices = Math.max(13, Math.min(65, Math.ceil(spanU / 1.0) + 1));
   const spine = [];
   for (let k = 0; k < nSlices; k++) {
-    const uk = minU + (0.015 + 0.97 * (k / (nSlices - 1))) * spanU;
+    const uk = minU + (0.002 + 0.996 * (k / (nSlices - 1))) * spanU;
     let minV = Infinity, maxV = -Infinity;
     for (let i = 0; i < uv.length; i++) {
       const a = uv[i], b = uv[(i + 1) % uv.length], du = b[0] - a[0];
@@ -311,6 +311,8 @@ function _stitchAndMergeLinearBridgesJS(roadBridges, opts = {}) {
       const medSpan = localSpans.length ? localSpans[localSpans.length >> 1] : base.width;
       base.pts = avgPts;
       base.width = Math.max(base.width, medSpan);
+      let mergedClipS = true, mergedClipE = true, mergedJoinS = false, mergedJoinE = false;
+      const r0 = avgPts[0], r1 = avgPts[avgPts.length - 1];
       for (const g of group) {
         if (!base.name && g.name) base.name = g.name;
         if (_structRankJS(g.structNorm) > _structRankJS(base.structNorm)) {
@@ -327,13 +329,20 @@ function _stitchAndMergeLinearBridgesJS(roadBridges, opts = {}) {
         if (base.heightM == null) base.heightM = g.heightM;
         if (base.minHeightM == null) base.minHeightM = g.minHeightM;
         if (base.clearanceM == null) base.clearanceM = g.clearanceM;
-        base.clippedStart = Boolean(base.clippedStart && g.clippedStart);
-        base.clippedEnd = Boolean(base.clippedEnd && g.clippedEnd);
-        base.joinPolyStart = Boolean(base.joinPolyStart || g.joinPolyStart);
-        base.joinPolyEnd = Boolean(base.joinPolyEnd || g.joinPolyEnd);
+        const g0 = g.pts[0], g1 = g.pts[g.pts.length - 1];
+        const isRev = (Math.hypot(g1[0] - r0[0], g1[1] - r0[1]) + Math.hypot(g0[0] - r1[0], g0[1] - r1[1])) + 1e-6 <
+          (Math.hypot(g0[0] - r0[0], g0[1] - r0[1]) + Math.hypot(g1[0] - r1[0], g1[1] - r1[1]));
+        mergedClipS = Boolean(mergedClipS && (isRev ? g.clippedEnd : g.clippedStart));
+        mergedClipE = Boolean(mergedClipE && (isRev ? g.clippedStart : g.clippedEnd));
+        mergedJoinS = Boolean(mergedJoinS || (isRev ? g.joinPolyEnd : g.joinPolyStart));
+        mergedJoinE = Boolean(mergedJoinE || (isRev ? g.joinPolyStart : g.joinPolyEnd));
         base.isPath = Boolean(base.isPath && g.isPath);
         if (!base.level && g.level) base.level = g.level;
       }
+      base.clippedStart = mergedClipS;
+      base.clippedEnd = mergedClipE;
+      base.joinPolyStart = mergedJoinS;
+      base.joinPolyEnd = mergedJoinE;
     }
     out.push(base);
   }

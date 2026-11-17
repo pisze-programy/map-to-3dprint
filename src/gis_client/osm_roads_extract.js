@@ -173,7 +173,9 @@ function processOsmRoadOrPlazaWayJS(wid, w, tags, nids, isClosed, ctx) {
     if ((!isBridge && layerVal < 0) || (tags.man_made === 'bridge' && isClosed)) return true;
 
     const hwy = tags.highway || tags.railway || (isRailPlatform ? 'platform' : '') || tags.man_made || 'bridge';
-    if (['proposed', 'construction', 'abandoned', 'disused', 'razed', 'miniature', 'bus_stop', 'elevator', 'rest_area', 'raceway', 'escape'].includes(hwy)) return true;
+    if (['proposed', 'construction', 'abandoned', 'disused', 'razed', 'demolished', 'planned', 'miniature', 'bus_stop', 'elevator', 'rest_area', 'raceway', 'escape'].includes(hwy)) return true;
+    if (tags.highway && ['proposed', 'construction', 'abandoned', 'disused', 'razed', 'demolished'].includes(String(tags.highway).toLowerCase())) return true;
+    if (tags.railway && ['proposed', 'construction', 'abandoned', 'disused', 'razed', 'demolished'].includes(String(tags.railway).toLowerCase())) return true;
     if (hwy === 'platform' && !isRailPlatform) return true;
     if (['subway', 'monorail'].includes(hwy) && !isBridge) return true;
 

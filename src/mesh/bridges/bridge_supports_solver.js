@@ -121,7 +121,14 @@ function _addBridgeSupportSolidsJS(spec, terrainWater, ctx, strutRU, parts, supp
       supportStationsS.push(sPos);
     } else {
       const colR = (ctx.waterCutout && terrainWater.isPointInWater(sup.pt[0], sup.pt[1])) ? minColR * 1.25 : minColR;
-      const zCap = capAt(sPos, colR);
+      let capSpanU = colR;
+      if (sup.outer && sup.outer.length >= 3) {
+        for (const op of sup.outer) {
+          const dAlong = Math.abs(tx * (op[0] - pt[0]) + ty * (op[1] - pt[1]));
+          if (dAlong > capSpanU) capSpanU = dAlong;
+        }
+      }
+      const zCap = capAt(sPos, capSpanU);
       if (zCap > zFloor + 0.02 / scaleMm) {
         const m = (sup.outer && sup.outer.length >= 3)
           ? extrudeRingSolid(mf, sup.outer, [], zFloor, zCap)

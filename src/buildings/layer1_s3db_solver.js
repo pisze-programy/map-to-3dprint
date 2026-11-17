@@ -51,6 +51,25 @@
     const normalGroups = new Map(), highlightGroups = new Map(), boundsOut = [];
     const consumedArchBuildingIds = new Set(), consumedArchGroups = new Set();
 
+    const elevatedBridgeRings = [];
+    for (const bp of ((scene && scene.bridgePolys) || [])) {
+      if (!bp || bp.isPier || (bp.layer ?? 1) < 1 || !bp.outer || bp.outer.length < 3) continue;
+      let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+      for (const p of bp.outer) {
+        if (p[0] < bx0) bx0 = p[0]; if (p[0] > bx1) bx1 = p[0];
+        if (p[1] < by0) by0 = p[1]; if (p[1] > by1) by1 = p[1];
+      }
+      elevatedBridgeRings.push({ outer: bp.outer, bx0, by0, bx1, by1 });
+    }
+    const _ptInBrRing = (px, py, ring) => {
+      let ins = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+        if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-12) + xi)) ins = !ins;
+      }
+      return ins;
+    };
+
     const clipLimX = halfW + padClip, clipLimY = halfH + padClip;
     const _prepMeta = buildingsList.map((b, idx) => {
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) return null;
@@ -70,14 +89,25 @@
         if (pt[0] < minX) minX = pt[0]; if (pt[0] > maxX) maxX = pt[0];
         if (pt[1] < minY) minY = pt[1]; if (pt[1] > maxY) maxY = pt[1];
       }
+      const cxMean = cx / b.outer.length, cyMean = cy / b.outer.length;
+      let rawHVal = Number((b.h !== undefined && b.h !== null) ? b.h : (b.height !== undefined ? b.height : 9.0));
+      if (elevatedBridgeRings.length > 0 && !tags.height && !tags['building:height'] && !tags['building:levels'] && !tags.name && (parseFloat(tags.layer) || 0) <= 0) {
+        for (let bi = 0; bi < elevatedBridgeRings.length; bi++) {
+          const br = elevatedBridgeRings[bi];
+          if (cxMean >= br.bx0 && cxMean <= br.bx1 && cyMean >= br.by0 && cyMean <= br.by1 && _ptInBrRing(cxMean, cyMean, br.outer)) {
+            rawHVal = Math.min(rawHVal, 3.4);
+            break;
+          }
+        }
+      }
       const terr = root.sampleFootprintTerrainZ([outerBed], ctx, terrainWater);
       return {
         idx, b, tags, terr, outerBed,
         strictlyInsidePlate: bMinX >= -clipLimX + 1e-3 && bMaxX <= clipLimX - 1e-3 && bMinY >= -clipLimY + 1e-3 && bMaxY <= clipLimY - 1e-3,
         isMultiGroup: false,
         areaM2: Math.abs(root._ringAreaSigned(b.outer)) / Math.max(1e-8, mToU * mToU),
-        cx: cx / b.outer.length, cy: cy / b.outer.length, minX, maxX, minY, maxY, bodyTopM: 0, bracedTopM: 0,
-        rawH: Number((b.h !== undefined && b.h !== null) ? b.h : (b.height !== undefined ? b.height : 9.0)),
+        cx: cxMean, cy: cyMean, minX, maxX, minY, maxY, bodyTopM: 0, bracedTopM: 0,
+        rawH: rawHVal,
         rawMinH: Math.max(0, Number(b.minH !== undefined ? b.minH : (tags.min_height || 0)) || 0),
         normRoof: root._normalizeRoofShape(tags['roof:shape'] || b.roof || 'flat'),
         skip: false, skipReason: null, flattened: false,

@@ -276,9 +276,22 @@ async function fetchRealGISInBrowser(south, west, north, east, title, options = 
       const role = m.role ?? 'outer';
       if (m.type === 'way' && ways.has(m.ref)) {
         if (role === 'part') continue;
-        if (isBridgeRel && (role === 'across' || role === 'forward' || role === 'backward')) { acrossWayIds.push(m.ref); continue; }
-        if (isBridgeRel && (role === 'support' || role === 'pier' || role === 'pylon' || role === 'under')) { supportWayIds.push(m.ref); continue; }
-        const wNodes = ways.get(m.ref).nodes || [];
+        const mw = ways.get(m.ref);
+        const mwt = (mw && mw.tags) || {};
+        const isSupWay = Boolean(
+          mwt['bridge:support'] &&
+          !['no', 'false', '0', 'none'].includes(String(mwt['bridge:support']).trim().toLowerCase()) &&
+          mwt.man_made !== 'bridge'
+        );
+        if (isBridgeRel) {
+          if (role === 'under') continue;
+          if (role === 'across' || role === 'forward' || role === 'backward') { acrossWayIds.push(m.ref); continue; }
+          if (isSupWay || role === 'support' || role === 'pier' || role === 'pylon') { supportWayIds.push(m.ref); continue; }
+        } else if (role === 'inner' && isSupWay && typeof isOsmWaterMultipolygonJS === 'function' && isOsmWaterMultipolygonJS(relTags)) {
+          // Do not cut dry-land dirt islands in rivers for concrete bridge:support=pier footprints
+          continue;
+        }
+        const wNodes = mw.nodes || [];
         if (role === 'inner') {
           innerWays.push(wNodes);
           memberWayIds.push(m.ref);

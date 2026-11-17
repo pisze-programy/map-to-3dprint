@@ -167,6 +167,9 @@
         (indoorVal === 'yes' || layerVal < 0 || (!bVal && !tags.height && !tags['building:height']))) {
       return true;
     }
+    if (layerVal < 0 && !tags.height && !tags['building:height'] && !tags['building:levels'] && !tags['roof:shape'] && !tags.name && tags.min_height === undefined) {
+      return true;
+    }
     return false;
   }
 

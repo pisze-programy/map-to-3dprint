@@ -231,17 +231,28 @@ function buildBankAbutments(spec, terrainWater, ctx) {
       }
     }
 
-    const meetZ = _safeSubDeckCapZJS(spec, isStart ? padIn * 0.5 : (spec.spanU - padIn * 0.5), padIn * 0.5, scaleMm);
+    const isPolyDeck = Boolean(spec.isAreaPoly && spec.outer && spec.outer.length >= 3);
+    const effPadIn = isPolyDeck ? Math.max(padIn, Math.min(spec.spanU * 0.16, 1.4 / scaleMm)) : padIn;
+    const meetZ = _safeSubDeckCapZJS(spec, isStart ? effPadIn * 0.5 : (spec.spanU - effPadIn * 0.5), effPadIn * 0.5, scaleMm);
     if (meetZ > floorZ + minThickU) {
-      const backPad = Math.min(0.08 / scaleMm, padIn * 0.18);
+      const backPad = isPolyDeck
+        ? Math.max(0.45 / scaleMm, Math.min(2.0, spec.spanU * 0.06))
+        : Math.min(0.08 / scaleMm, padIn * 0.18);
       const pA = isStart
         ? [pt[0] - tx * backPad, pt[1] - ty * backPad]
-        : [pt[0] - tx * padIn, pt[1] - ty * padIn];
+        : [pt[0] - tx * effPadIn, pt[1] - ty * effPadIn];
       const pB = isStart
-        ? [pt[0] + tx * padIn, pt[1] + ty * padIn]
+        ? [pt[0] + tx * effPadIn, pt[1] + ty * effPadIn]
         : [pt[0] + tx * backPad, pt[1] + ty * backPad];
-      let blk = _buildSlopedWedgeCorbelJS(pA, pB, Math.min(wHalf, spec.width * 0.46), floorZ, floorZ, meetZ, meetZ, mf, minThickU);
-      if (blk && spec.isAreaPoly && spec.outer && spec.outer.length >= 3) {
+      let blkHalfW = Math.min(wHalf, spec.width * 0.46);
+      if (isPolyDeck) {
+        for (const op of spec.outer) {
+          const lat = Math.abs(-ty * (op[0] - pt[0]) + tx * (op[1] - pt[1]));
+          if (lat < spec.width * 3.0 + 2.0 && lat + 0.15 > blkHalfW) blkHalfW = lat + 0.15;
+        }
+      }
+      let blk = _buildSlopedWedgeCorbelJS(pA, pB, blkHalfW, floorZ, floorZ, meetZ, meetZ, mf, minThickU);
+      if (blk && isPolyDeck) {
         const mask = extrudeRingSolid(mf, spec.outer, spec.holes || [], floorZ - 0.1, meetZ + 0.1);
         if (mask) {
           try {
@@ -257,7 +268,7 @@ function buildBankAbutments(spec, terrainWater, ctx) {
 
     // Smooth outward dry-land approach transition when a bridge ends elevated above an embankment/ground road
     const dzAboveGround = spec.zTopArr[idx] - surfZ;
-    if (!ptInWater && !spec.isAreaPoly && dzAboveGround > 0.12 / scaleMm && dzAboveGround < 3.2 / scaleMm) {
+    if (!ptInWater && dzAboveGround > 0.10 / scaleMm && dzAboveGround < 3.2 / scaleMm) {
       const outSign = isStart ? -1 : 1;
       const maxRampOut = Math.min(2.6 / scaleMm, Math.max(0.45 / scaleMm, dzAboveGround * 3.2));
       let rampOut = maxRampOut;
@@ -273,7 +284,8 @@ function buildBankAbutments(spec, terrainWater, ctx) {
         const endPt = [pt[0] + outSign * tx * rampOut, pt[1] + outSign * ty * rampOut];
         const endSurfZ = terrainWater.getSurfaceZ(endPt[0], endPt[1]);
         const endFloorZ = Math.max(0.0, Math.min(floorZ, endSurfZ - 0.25 / scaleMm));
-        const overlapPt = [pt[0] - outSign * tx * Math.min(0.08 / scaleMm, spec.spanU * 0.05), pt[1] - outSign * ty * Math.min(0.08 / scaleMm, spec.spanU * 0.05)];
+        const inOverlap = isPolyDeck ? Math.min(0.22 / scaleMm, spec.spanU * 0.08) : Math.min(0.08 / scaleMm, spec.spanU * 0.05);
+        const overlapPt = [pt[0] - outSign * tx * inOverlap, pt[1] - outSign * ty * inOverlap];
         const rampA = isStart ? endPt : overlapPt;
         const rampB = isStart ? overlapPt : endPt;
         const zTopA = isStart ? endSurfZ : spec.zTopArr[idx];

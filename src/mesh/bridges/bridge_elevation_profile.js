@@ -345,7 +345,8 @@ function solveSingleBridgeElevationProfileJS(sp, groundRoads, tinSampler, terrai
         if (landNeed[k] > cap) landNeed[k] = cap;
       }
     }
-    _applyLocalSmoothLiftJS(zTopArr, zBotArr, cumS, L, landNeed, Math.min(3.8, 6.8 / scaleMm), pinA, pinB, scaleMm);
+    const liftRampU = Math.max(Math.min(3.8, 6.8 / scaleMm), Math.min(L * 0.28, 14.0 / scaleMm));
+    _applyLocalSmoothLiftJS(zTopArr, zBotArr, cumS, L, landNeed, liftRampU, pinA, pinB, scaleMm);
   }
 
   for (let k = 0; k < n; k++) {
@@ -392,6 +393,22 @@ function solveSingleBridgeElevationProfileJS(sp, groundRoads, tinSampler, terrai
             zBotArr[k] = zNoSag - sp.deckThick;
           }
         }
+      }
+    }
+  }
+
+  // Unimodal concave-down vertical alignment hull: eliminates W-shaped double-hump roller-coasters
+  if (!sp.isElevatedViaduct && !sp.isPierGangway && spanMetersEst <= 1400.0 && n >= 4) {
+    const prefMax = new Array(n), suffMax = new Array(n);
+    prefMax[0] = zTopArr[0];
+    for (let k = 1; k < n; k++) prefMax[k] = Math.max(prefMax[k - 1], zTopArr[k]);
+    suffMax[n - 1] = zTopArr[n - 1];
+    for (let k = n - 2; k >= 0; k--) suffMax[k] = Math.max(suffMax[k + 1], zTopArr[k]);
+    for (let k = 1; k < n - 1; k++) {
+      const zUni = Math.min(prefMax[k], suffMax[k]);
+      if (zUni > zTopArr[k]) {
+        zTopArr[k] = zUni;
+        zBotArr[k] = zUni - sp.deckThick;
       }
     }
   }

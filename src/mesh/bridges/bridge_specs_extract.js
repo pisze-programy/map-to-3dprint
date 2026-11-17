@@ -146,15 +146,63 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
   const stepStationU = Math.max(0.06, Math.min(0.80, 1.25 / scaleMm));
   const roadLinkedPolyList = new Map();
   const specs = [];
+
+  const polyEntries = [];
   for (const bp of rawPolys) {
     const outer = bp.outer.map(toBed), pbb = _bbox2DJS(outer);
     if (pbb[2] < cMinX || pbb[0] > cMaxX || pbb[3] < cMinY || pbb[1] > cMaxY) continue;
-    const holes = (bp.holes || []).map(h => h.map(toBed));
     const linked = rawRoads.filter(rd =>
       rd._bridgePolyOsmId === bp.osmId ||
       (Array.isArray(rd._bridgePolyOsmIds) && rd._bridgePolyOsmIds.includes(bp.osmId)) ||
       (bp.acrossRoadIds && bp.acrossRoadIds.includes(rd.osmId))
     );
+    const spine = _extractCurvedSpineFromPolyJS(outer);
+    const spineLen = Math.max(0.15, _polyLenJS(spine));
+    polyEntries.push({ bp, outer, pbb, linked, spine, spineLen });
+  }
+
+  const suppressedEnvelopeOsmIds = new Set();
+  for (let peIdx = 0; peIdx < polyEntries.length; peIdx++) {
+    const { bp, outer, linked, spine, spineLen } = polyEntries[peIdx];
+    if (linked.length > 0) {
+      let coextUpper = null;
+      const proxTol = Math.max(1.5 * mToBedXY, 0.35 / scaleMm);
+      for (let hiIdx = 0; hiIdx < polyEntries.length; hiIdx++) {
+        if (hiIdx === peIdx) continue;
+        const cand = polyEntries[hiIdx];
+        if ((cand.bp.layer ?? 1) <= (bp.layer ?? 1)) continue;
+        const ratio = spineLen / Math.max(1e-5, cand.spineLen);
+        if (ratio < 0.78 || ratio > 1.28) continue;
+        let insideCnt = 0;
+        for (let q = 0; q < spine.length; q++) {
+          if (_ptInRingJS(spine[q][0], spine[q][1], cand.outer) || _ptToPolyDist2DJS(spine[q][0], spine[q][1], cand.spine) <= proxTol) insideCnt++;
+        }
+        if (insideCnt >= Math.ceil(spine.length * 0.65)) { coextUpper = cand; break; }
+      }
+      if (coextUpper) {
+        let maxInsideRoadSpan = 0;
+        for (const rd of linked) {
+          const rPts = rd.pts.map(toBed);
+          const rDense = _resamplePolyJS(rPts, Math.max(13, Math.min(80, Math.ceil(_polyLenJS(rPts) / 0.6) + 1)));
+          let inLen = 0;
+          for (let q = 0; q < rDense.length - 1; q++) {
+            const mx = 0.5 * (rDense[q][0] + rDense[q + 1][0]), my = 0.5 * (rDense[q][1] + rDense[q + 1][1]);
+            if (_ptInRingJS(mx, my, outer)) inLen += Math.hypot(rDense[q + 1][0] - rDense[q][0], rDense[q + 1][1] - rDense[q][1]);
+          }
+          if (inLen > maxInsideRoadSpan) maxInsideRoadSpan = inLen;
+        }
+        if (maxInsideRoadSpan >= 0.18 * spineLen && maxInsideRoadSpan < 0.72 * spineLen) {
+          if (bp.osmId != null) suppressedEnvelopeOsmIds.add(bp.osmId);
+          if (Array.isArray(bp.supportIds) && bp.supportIds.length > 0) {
+            coextUpper.bp.supportIds = coextUpper.bp.supportIds || [];
+            for (const sid of bp.supportIds) if (!coextUpper.bp.supportIds.includes(sid)) coextUpper.bp.supportIds.push(sid);
+          }
+          continue;
+        }
+      }
+    }
+
+    const holes = (bp.holes || []).map(h => h.map(toBed));
     for (const rd of linked) {
       if (!roadLinkedPolyList.has(rd)) roadLinkedPolyList.set(rd, []);
       roadLinkedPolyList.get(rd).push({ bp, outer });
@@ -222,7 +270,16 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
   for (const rd of rawRoads) {
     const linkedEntries = roadLinkedPolyList.get(rd) || [];
     const linkedPolyOsmIds = linkedEntries.map(e => e.bp && e.bp.osmId).filter(id => id != null);
-    const rawSt = rd.bridgeStructure || rd.structure || (rd.tags && (rd.tags['bridge:structure'] || rd.tags.bridge));
+    const fromSuppressedEnvelope = Boolean(
+      (rd._bridgePolyOsmId != null && suppressedEnvelopeOsmIds.has(rd._bridgePolyOsmId)) ||
+      (Array.isArray(rd._bridgePolyOsmIds) && rd._bridgePolyOsmIds.some(id => suppressedEnvelopeOsmIds.has(id)))
+    );
+    const hasOwnRoadStructTag = Boolean(
+      rd.tags && (rd.tags['bridge:structure'] || (rd.tags.bridge && !['yes', 'viaduct'].includes(String(rd.tags.bridge).trim().toLowerCase())))
+    );
+    const rawSt = (fromSuppressedEnvelope && !hasOwnRoadStructTag)
+      ? 'beam'
+      : (rd.bridgeStructure || rd.structure || (rd.tags && (rd.tags['bridge:structure'] || rd.tags.bridge)));
     const cov = rd.covered || (rd.tags && rd.tags.covered);
     const isRail = Boolean((rd.tags && rd.tags.railway) || ['rail', 'light_rail', 'tram', 'monorail', 'subway', 'narrow_gauge', 'funicular'].includes(rd.hwy));
     const isBoardwalk = String((rd.tags && rd.tags.bridge) || rawSt || '').trim().toLowerCase() === 'boardwalk';
@@ -270,6 +327,9 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
   for (const r of _stitchAndMergeLinearBridgesJS(freeRoadPieces, { mToBedXY, scaleMm })) {
     const rawSpanU = Math.max(0.12, _polyLenJS(r.pts));
     const spanMetersLinear = rawSpanU / Math.max(1e-5, mToBedXY);
+    if ((Boolean(r.joinPolyStart) !== Boolean(r.joinPolyEnd)) && spanMetersLinear < 9.0 && !_stationWaterFlagsJS(r.pts, terrainWater).some(Boolean)) {
+      continue;
+    }
     const slender = Boolean(r.isRail || r.isPath);
     const minW = slender ? Math.max(0.50 / scaleMm, minDeckU * 0.72) : Math.max(0.68 / scaleMm, minDeckU * 0.95);
     const widthU = Math.max(minW, r.width);

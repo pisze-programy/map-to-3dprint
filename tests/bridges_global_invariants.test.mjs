@@ -780,6 +780,177 @@ async function runSuite() {
     );
   }
 
+  // -------------------------------------------------------------------------
+  // [15/15] Gorge multi-level truss envelope, OSM support roles, proposed lifecycle & unimodal vertical hull
+  // -------------------------------------------------------------------------
+  console.log('\n[15/15] Gorge multi-level bridge envelope, OSM bridge:support roles, lifecycle filter & unimodal vertical hull...');
+  {
+    const dLat = 1 / 111320.0;
+    const dLon = 1 / (111320.0 * Math.cos((41.14 * Math.PI) / 180));
+    const cLat = 41.14, cLon = -8.61;
+    const mkNode = (id, xm, ym, tags) => ({
+      type: 'node', id,
+      lat: cLat + ym * dLat,
+      lon: cLon + xm * dLon,
+      ...(tags ? { tags } : {})
+    });
+    const rectNodes = (baseId, x0, y0, x1, y1) => [
+      mkNode(baseId + 0, x0, y0),
+      mkNode(baseId + 1, x1, y0),
+      mkNode(baseId + 2, x1, y1),
+      mkNode(baseId + 3, x0, y1),
+    ];
+    const rectWay = (id, baseId, tags) => ({
+      type: 'way', id,
+      nodes: [baseId + 0, baseId + 1, baseId + 2, baseId + 3, baseId + 0],
+      tags
+    });
+
+    const osmElements = [
+      // River outer ring (-300..300 X, -85..85 Y) + bridge:support=pier inner ring
+      ...rectNodes(100, -300, -85, 300, 85),
+      rectWay(1000, 100, {}),
+      ...rectNodes(110, 115, -35, 125, -25),
+      rectWay(1010, 110, { 'bridge:support': 'pier' }),
+      {
+        type: 'relation', id: 9001,
+        tags: { type: 'multipolygon', natural: 'water', water: 'river' },
+        members: [
+          { type: 'way', ref: 1000, role: 'outer' },
+          { type: 'way', ref: 1010, role: 'inner' },
+        ]
+      },
+
+      // Upper cliff-to-cliff arch bridge (layer=3, Y=-190..190) with role="outline" abutment support
+      ...rectNodes(200, -6, -190, 6, 190),
+      rectWay(2000, 200, { man_made: 'bridge', 'bridge:structure': 'arch', layer: '3' }),
+      ...rectNodes(210, -5, -194, 5, -188),
+      rectWay(2010, 210, { 'bridge:support': 'abutment' }),
+      mkNode(220, 0, -190), mkNode(221, 0, 190),
+      { type: 'way', id: 2020, nodes: [220, 221], tags: { railway: 'light_rail', bridge: 'yes', layer: '3' } },
+      // Lower riverside deck road (45% of upper span: Y=-86..86) + co-extensive lower envelope (Y=-190..190)
+      ...rectNodes(230, -5.5, -190, 5.5, 190),
+      rectWay(2030, 230, { man_made: 'bridge', 'bridge:structure': 'arch', layer: '1' }),
+      mkNode(240, 0, -86), mkNode(241, 0, 86),
+      { type: 'way', id: 2040, nodes: [240, 241], tags: { highway: 'secondary', bridge: 'yes', layer: '1', name: 'Lower Quay Deck' } },
+      {
+        type: 'relation', id: 9002,
+        tags: { type: 'bridge', man_made: 'bridge', 'bridge:structure': 'arch', layer: '3', name: 'Upper Gorge Arch' },
+        members: [
+          { type: 'way', ref: 2000, role: 'outline' },
+          { type: 'way', ref: 2010, role: 'outline' },
+          { type: 'way', ref: 2020, role: 'across' },
+          { type: 'way', ref: 2040, role: 'under' },
+        ]
+      },
+
+      // Dual-tagged man_made=bridge + bridge:support=pier arch bridge at X=-140
+      ...rectNodes(300, -144, -150, -136, 150),
+      rectWay(3000, 300, { man_made: 'bridge', 'bridge:structure': 'arch', 'bridge:support': 'pier', layer: '2', name: 'Dual Tagged Arch' }),
+      mkNode(310, -140, -150), mkNode(311, -140, 150),
+      { type: 'way', id: 3010, nodes: [310, 311], tags: { railway: 'rail', bridge: 'yes', layer: '2' } },
+
+      // Unbuilt proposed & construction ghost bridges at X=-220 (must be ignored)
+      ...rectNodes(400, -225, -120, -215, 120),
+      rectWay(4000, 400, { man_made: 'bridge', bridge: 'proposed', name: 'Ghost Proposed Poly' }),
+      mkNode(410, -220, -120), mkNode(411, -220, 120),
+      { type: 'way', id: 4010, nodes: [410, 411], tags: { highway: 'proposed', proposed: 'secondary', bridge: 'yes', name: 'Ghost Proposed Hwy' } },
+      { type: 'way', id: 4011, nodes: [410, 411], tags: { highway: 'construction', construction: 'primary', bridge: 'yes', name: 'Ghost Construction Hwy' } },
+
+      // Multi-span motorway bridge at X=+120 crossing shore roads on both banks + under-bridge sheds
+      ...rectNodes(500, 112, -160, 128, 160),
+      rectWay(5000, 500, { man_made: 'bridge', layer: '1', name: 'Shore Overpass Bridge' }),
+      mkNode(510, 120, -160), mkNode(511, 120, 160),
+      { type: 'way', id: 5010, nodes: [510, 511], tags: { highway: 'motorway', bridge: 'yes', layer: '1', name: 'Shore Overpass Bridge' } },
+      mkNode(520, 70, -115), mkNode(521, 170, -115),
+      { type: 'way', id: 5020, nodes: [520, 521], tags: { highway: 'secondary' } },
+      mkNode(530, 70, 115), mkNode(531, 170, 115),
+      { type: 'way', id: 5030, nodes: [530, 531], tags: { highway: 'secondary' } },
+      ...rectNodes(540, 115, -135, 125, -125),
+      rectWay(5040, 540, { building: 'yes', layer: '-1' }),
+    ];
+
+    const builtRaw = await loadSceneAndBuildModel({
+      title: 'ETAP4_GORGE_EXTRACT',
+      osmElements,
+      lat: cLat,
+      lon: cLon,
+      spanMeters: 600,
+      offlineOnly: true,
+      offlineFallbackDem: true,
+      waterCutout: false,
+      wantTrees: false,
+      showFrame: false,
+      cropRatio: 1.0,
+      skipTopologyAudit: true,
+      silent: true,
+    });
+    const parsedScene = builtRaw.scene;
+    const gridSize = 48;
+    const demGrid = Array.from({ length: gridSize }, (_, r) => {
+      const yFrac = (r / (gridSize - 1)) * 2 - 1;
+      const yMeters = Math.abs(yFrac) * 320;
+      let h = 0;
+      if (yMeters <= 85) h = 0;
+      else if (yMeters <= 95) h = 6;
+      else if (yMeters <= 175) h = 6 + ((yMeters - 95) / 80) * 54;
+      else h = 60;
+      return Array.from({ length: gridSize }, () => h);
+    });
+    parsedScene.dem = { gridSize, minElev: 0, maxElev: 60, grid: demGrid, zoom: 14 };
+
+    check(
+      parsedScene.waterPolys.length === 1 && (parsedScene.waterPolys[0].holes || []).length === 0 &&
+      parsedScene.bridgeSupports.some(s => String(s.osmId).endsWith('1010')) &&
+      parsedScene.bridgeSupports.some(s => String(s.osmId).endsWith('2010')),
+      'OSM water inner bridge:support=pier & bridge relation role=outline abutment route to bridgeSupports without dry river islands or phantom bridges',
+      `waterHoles=${parsedScene.waterPolys[0]?.holes?.length}, supports=${parsedScene.bridgeSupports.map(s => s.osmId).join(',')}`
+    );
+    check(
+      parsedScene.bridgePolys.some(bp => bp.name === 'Dual Tagged Arch') &&
+      !parsedScene.bridgePolys.some(bp => /Ghost/i.test(bp.name || '')) &&
+      !parsedScene.roads.some(r => /Ghost/i.test(r.name || '')),
+      'Dual-tagged man_made=bridge + bridge:support=pier is preserved while proposed/construction ghost bridges are skipped',
+      `polys=${parsedScene.bridgePolys.map(b => b.name).join('|')}`
+    );
+    check(
+      parsedScene.buildings.length === 0,
+      'Untagged layer=-1 shed under bridge is skipped cleanly during S3DB extraction',
+      `buildings=${parsedScene.buildings.length}`
+    );
+
+    const gorgeModel = buildComplete3DModel(parsedScene, makeState({ zScale: 1.4 }));
+    assertCleanManifold(gorgeModel.printMetrics, 'Gorge multi-level envelope & unimodal river overpass');
+    const gAudits = gorgeModel.audit.bridgeAudits || [];
+    const upperArch = gAudits.find(a => a.name === 'Upper Gorge Arch');
+    const lowerQuay = gAudits.find(a => a.name === 'Lower Quay Deck');
+    const dualArch = gAudits.find(a => a.name === 'Dual Tagged Arch');
+    const shoreOver = gAudits.find(a => a.name === 'Shore Overpass Bridge');
+    const phantomOutlineBridges = gAudits.filter(a => a.deckLayer === 3 && a.name !== 'Upper Gorge Arch');
+
+    check(
+      Boolean(upperArch && lowerQuay && dualArch && phantomOutlineBridges.length === 0 &&
+        upperArch.zStartDeck > lowerQuay.zDeckTop + 1.2 &&
+        lowerQuay.structure === 'beam'),
+      'Co-extensive lower bridge envelope is suppressed so upper cliff arch and lower riverside beam deck separate cleanly with 0 phantom outline bridges',
+      `upperStart=${upperArch?.zStartDeck}, lowerTop=${lowerQuay?.zDeckTop}, lowerStruct=${lowerQuay?.structure}, phantoms=${phantomOutlineBridges.length}`
+    );
+    let wDipDepth = 0;
+    if (shoreOver && Array.isArray(shoreOver.zTopArr)) {
+      const zt = shoreOver.zTopArr;
+      for (let i = 1; i < zt.length - 1; i++) {
+        const lMax = Math.max(...zt.slice(0, i + 1));
+        const rMax = Math.max(...zt.slice(i));
+        wDipDepth = Math.max(wDipDepth, Math.min(lMax, rMax) - zt[i]);
+      }
+    }
+    check(
+      Boolean(shoreOver && wDipDepth <= 1e-4 && shoreOver.zDeckTop >= Math.max(shoreOver.zStartDeck, shoreOver.zEndDeck) - 0.01),
+      'Double-shore overpass river bridge builds cleanly with strictly unimodal vertical profile (0 W-dip)',
+      `start=${shoreOver?.zStartDeck}, top=${shoreOver?.zDeckTop}, end=${shoreOver?.zEndDeck}, wDip=${wDipDepth.toFixed(5)}`
+    );
+  }
+
   console.log(`\nETAP 4 BRIDGES GLOBAL SUMMARY: ${passed} passed, ${failed} failed.`);
   if (failed > 0) process.exit(1);
 }

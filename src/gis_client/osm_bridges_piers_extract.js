@@ -90,8 +90,21 @@ function collectOsmBridgeSupportNodeJS(el, pt, bridgeSupports) {
   }
 }
 
-function isOsmBridgeMultipolygonJS(tags) {
+const OSM_INACTIVE_LIFECYCLE_SET = new Set(['proposed', 'construction', 'abandoned', 'disused', 'razed', 'demolished', 'removed', 'planned']);
+
+function _isInactiveBridgeLifecycleJS(tags) {
   if (!tags) return false;
+  if (tags['proposed:man_made'] || tags['construction:man_made'] || tags['abandoned:man_made'] || tags['razed:man_made']) return true;
+  if (OSM_INACTIVE_LIFECYCLE_SET.has(String(tags.man_made || '').trim().toLowerCase())) return true;
+  if (OSM_INACTIVE_LIFECYCLE_SET.has(String(tags.bridge || '').trim().toLowerCase())) return true;
+  if (tags.highway && OSM_INACTIVE_LIFECYCLE_SET.has(String(tags.highway).trim().toLowerCase())) return true;
+  if (tags.railway && OSM_INACTIVE_LIFECYCLE_SET.has(String(tags.railway).trim().toLowerCase())) return true;
+  if ((tags.proposed !== undefined || tags.construction !== undefined) && !tags.highway && !tags.railway && tags.man_made === 'bridge') return true;
+  return false;
+}
+
+function isOsmBridgeMultipolygonJS(tags) {
+  if (!tags || _isInactiveBridgeLifecycleJS(tags)) return false;
   if (isOsmPierTagsJS(tags)) return true;
   if (['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.indoor === 'yes') return false;
   if (tags['bridge:support']) return true;
@@ -104,7 +117,7 @@ function processOsmBridgeMultipolygonJS(rel, tags, _raw, ctx) {
   if (!st) return tags.type === 'bridge' || tags.man_made === 'bridge';
   for (const wid of st.memberWayIds) ctx.usedWays.add(wid);
 
-  if (tags['bridge:support']) {
+  if (tags['bridge:support'] && tags.man_made !== 'bridge' && tags.type !== 'bridge') {
     if (!ctx.bridgeSupports) ctx.bridgeSupports = [];
     for (const op of st.outerPolys) if (op && op.length >= 3) _pushSupportRecJS(ctx.bridgeSupports, tags, rel.id, false, _ringCentroidExtract2D(op), op, null);
     return true;
@@ -124,6 +137,17 @@ function processOsmBridgeMultipolygonJS(rel, tags, _raw, ctx) {
 }
 
 function processOsmBridgeOrPierWayJS(wid, _w, tags, nids, isClosed, ctx) {
+  if (_isInactiveBridgeLifecycleJS(tags)) return true;
+  const isAreaHwyBridge = isClosed && tags.area === 'yes' &&
+    ['pedestrian', 'footway', 'service', 'living_street'].includes(tags.highway) &&
+    tags.bridge && !['no', 'false', '0', 'none'].includes(String(tags.bridge).toLowerCase());
+  // Check man_made=bridge BEFORE bridge:support so historic arch bridges with dual tags are never swallowed as piers
+  if ((tags.man_made === 'bridge' && isClosed && tags.area !== 'no') || isAreaHwyBridge) {
+    if (ctx.usedWays.has(wid) || ['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.indoor === 'yes') return true;
+    const pts = ctx.nodesToPts(nids, 0.005);
+    if (pts.length >= 3) ctx.bridgePolys.push(_buildBridgeRecJS(pts, [], tags, wid));
+    return true;
+  }
   if (tags['bridge:support'] && !['no', 'false', '0', 'none'].includes(String(tags['bridge:support']).toLowerCase())) {
     if (ctx.usedWays.has(wid)) return true;
     if (!ctx.bridgeSupports) ctx.bridgeSupports = [];
@@ -132,15 +156,6 @@ function processOsmBridgeOrPierWayJS(wid, _w, tags, nids, isClosed, ctx) {
       const closedRing = isClosed && pts.length >= 3;
       _pushSupportRecJS(ctx.bridgeSupports, tags, wid, false, closedRing ? _ringCentroidExtract2D(pts) : pts[pts.length >> 1], closedRing ? pts : null, closedRing ? null : pts);
     }
-    return true;
-  }
-  const isAreaHwyBridge = isClosed && tags.area === 'yes' &&
-    ['pedestrian', 'footway', 'service', 'living_street'].includes(tags.highway) &&
-    tags.bridge && !['no', 'false', '0', 'none'].includes(String(tags.bridge).toLowerCase());
-  if ((tags.man_made === 'bridge' && isClosed && tags.area !== 'no') || isAreaHwyBridge) {
-    if (ctx.usedWays.has(wid) || ['yes', 'building_passage', 'culvert'].includes(tags.tunnel) || tags.indoor === 'yes') return true;
-    const pts = ctx.nodesToPts(nids, 0.005);
-    if (pts.length >= 3) ctx.bridgePolys.push(_buildBridgeRecJS(pts, [], tags, wid));
     return true;
   }
   if (isOsmPierTagsJS(tags)) {
@@ -170,7 +185,7 @@ function processOsmBridgeOrPierWayJS(wid, _w, tags, nids, isClosed, ctx) {
 }
 
 function isOsmLinearBridgeOrPierWayJS(tags) {
-  if (!tags || isOsmPierTagsJS(tags) || tags['bridge:support']) return false;
+  if (!tags || _isInactiveBridgeLifecycleJS(tags) || isOsmPierTagsJS(tags) || (tags['bridge:support'] && tags.man_made !== 'bridge')) return false;
   return Boolean((tags.bridge && !['no', 'false', '0', 'none'].includes(tags.bridge)) || tags.man_made === 'bridge');
 }
 
@@ -381,7 +396,15 @@ function finalizeOsmBridgesLayerJS(ctx) {
         _linkRoadAndBridgePolyJS(rd, bp, true);
       }
     }
-    for (const bp of bps) { _applyBridgeMetaToObjJS(meta.tags, bp); bp.parentBridgeRelId = meta.relId; }
+    const relSupIds = [...(meta.supportWayIds || []), ...(meta.supportNodeIds || [])];
+    for (const bp of bps) {
+      _applyBridgeMetaToObjJS(meta.tags, bp);
+      bp.parentBridgeRelId = meta.relId;
+      if (relSupIds.length > 0) {
+        bp.supportIds = bp.supportIds || [];
+        for (const sid of relSupIds) if (!bp.supportIds.includes(sid)) bp.supportIds.push(sid);
+      }
+    }
   }
 
   const validBps = (ctx.bridgePolys || []).filter(bp => bp && !bp.isPier && bp.outer && bp.outer.length >= 3);

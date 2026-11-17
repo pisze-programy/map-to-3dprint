@@ -17,7 +17,16 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
   let wStart = L * 0.06, wEnd = L * 0.94;
   if (spec.crossesWater) {
     const idxs = spec.inWater.map((w, i) => w ? i : -1).filter(i => i >= 0);
-    wStart = Math.max(0, spec.sArr[Math.max(0, idxs[0] - 1)]); wEnd = Math.min(L, spec.sArr[Math.min(spec.pts.length - 1, idxs[idxs.length - 1] + 1)]);
+    let iL = Math.max(0, idxs[0] - 1), iR = Math.min(spec.pts.length - 1, idxs[idxs.length - 1] + 1);
+    while (iL > 0 && terrainWater.isPointInWater(spec.pts[iL][0], spec.pts[iL][1])) iL--;
+    while (iR < spec.pts.length - 1 && terrainWater.isPointInWater(spec.pts[iR][0], spec.pts[iR][1])) iR++;
+    wStart = Math.max(0, spec.sArr[iL]);
+    wEnd = Math.min(L, spec.sArr[iR]);
+    const bankSnapMax = L * 0.25;
+    for (const sSup of (supportStationsS || [])) {
+      if (sSup < wStart && wStart - sSup <= bankSnapMax) wStart = sSup;
+      if (sSup > wEnd && sSup - wEnd <= bankSnapMax) wEnd = sSup;
+    }
   }
   const totalArchSpan = Math.max(0.4 / scaleMm, wEnd - wStart), nPts = spec.pts.length;
   const minBayU = Math.max(1.2 / scaleMm, Math.min(totalArchSpan * 0.45, 22.0 * mToBedXY));
@@ -47,15 +56,16 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
     : Math.max(1.25 / scaleMm, Math.min(2.5 / scaleMm, avgBaySpan * 0.085));
   const isThrough = !spec.isHumpback && Boolean(
     spec.explicitThroughArch ||
-    (spec.crossesWater ? (medW < waterThroughThresh) : (bayStops.length === 2 && minL < 1.2 / scaleMm))
+    (spec.crossesWater && medW < waterThroughThresh)
   );
   metrics.isThroughArch = isThrough;
   const ribR = Math.max(strutRU * 1.15, spec.deckThick * 0.34), lat = Math.max(halfW * 0.86, ribR * 1.4) * (isThrough ? 1 : 0.85);
 
   if (!isThrough) {
-    for (const sEnd of [wStart, wEnd]) {
-      const { pt } = _samplePtAtSJS(spec, sEnd);
-      if (!terrainWater.isPointInWater(pt[0], pt[1])) {
+    for (const sEnd of bayStops) {
+      const { pt, tx, ty } = _samplePtAtSJS(spec, sEnd);
+      const hasExplicitNear = (spec.explicitSupports || []).some(es => Math.abs(es.sProj - sEnd) <= Math.max(0.5 / scaleMm, spec.width * 0.8));
+      if (!terrainWater.isPointInWater(pt[0], pt[1]) && !hasExplicitNear) {
         const pR = Math.max(ribR * 1.25, halfW * 0.4);
         const zCap = typeof _safeSubDeckCapZJS === 'function'
           ? _safeSubDeckCapZJS(spec, sEnd, pR, scaleMm)
@@ -63,6 +73,18 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
         const zFl = _anchorFloorZJS(pt[0], pt[1], terrainWater, ctx);
         const pier = zCap > zFl + 0.03 / scaleMm ? beamManifoldBetween(mf, [pt[0], pt[1], zFl], [pt[0], pt[1], zCap], pR) : null;
         if (pier) parts.push(pier);
+      } else if (!terrainWater.isPointInWater(pt[0], pt[1]) && hasExplicitNear) {
+        // Ensure lateral arch rib springings also ground cleanly into steep cliffside slopes
+        for (const sign of [-1, 1]) {
+          const sp = _sidePtJS(pt, tx, ty, sign * lat, 0);
+          if (terrainWater.isPointInWater(sp[0], sp[1])) continue;
+          const zCap = typeof _safeSubDeckCapZJS === 'function' ? _safeSubDeckCapZJS(spec, sEnd, ribR, scaleMm) : _lerpArrAtSJS(spec.sArr, spec.zBotArr, sEnd);
+          const zFl = _anchorFloorZJS(sp[0], sp[1], terrainWater, ctx);
+          if (zCap > zFl + 0.04 / scaleMm) {
+            const leg = beamManifoldBetween(mf, [sp[0], sp[1], zFl], [sp[0], sp[1], zCap], ribR * 1.05);
+            if (leg) parts.push(leg);
+          }
+        }
       }
     }
   }
@@ -79,6 +101,14 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
       ? Math.max(1.8 / scaleMm, Math.min(baySpan * 0.28, spec.heightM ? spec.heightM * mToBedZ : baySpan * 0.22))
       : Math.max(0.45 / scaleMm, Math.min(baySpan * 0.32, Math.max(0.45 / scaleMm, zDeckMid - zFloorLim)));
     if (isThrough) metrics.zPylonTop = Math.max(metrics.zPylonTop, _lerpArrAtSJS(spec.sArr, spec.zTopArr, sMid) + riseOrDrop);
+    if (!isThrough) {
+      for (const sEnd of [b0, b1]) {
+        const { pt, tx, ty } = _samplePtAtSJS(spec, sEnd);
+        const zSpring = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sEnd) - riseOrDrop;
+        const tie = _beamOverlapJS(mf, _sidePtJS(pt, tx, ty, -lat, zSpring), _sidePtJS(pt, tx, ty, lat, zSpring), ribR * 1.02);
+        if (tie) parts.push(tie);
+      }
+    }
     for (const sign of [-1, 1]) {
       let prev = null;
       for (let k = 0; k <= 8; k++) {
