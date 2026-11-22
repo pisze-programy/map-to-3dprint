@@ -58,7 +58,11 @@
       const inWater = Boolean(terrainWater && terrainWater.isPointInWater(px, py));
       if (ctx.waterCutout && inWater) touchesWaterCutout = true;
       const z = (ctx.waterCutout && inWater) ? 0.0
-        : (terrainWater && typeof terrainWater.getSurfaceZ === 'function' ? terrainWater.getSurfaceZ(px, py) : ctx.getTerrainZ(px, py));
+        : (inWater
+          ? (terrainWater && typeof terrainWater.getSurfaceZ === 'function' ? terrainWater.getSurfaceZ(px, py) : ctx.getTerrainZ(px, py))
+          : (terrainWater && typeof terrainWater.getDrySurfaceZ === 'function'
+            ? terrainWater.getDrySurfaceZ(px, py)
+            : (terrainWater && typeof terrainWater.getSurfaceZ === 'function' ? terrainWater.getSurfaceZ(px, py) : ctx.getTerrainZ(px, py))));
       if (z < minZ) minZ = z; if (z > maxZ) maxZ = z; sumZ += z; cntZ++;
       if (!inWater) {
         if (z < dryMinZ) dryMinZ = z;

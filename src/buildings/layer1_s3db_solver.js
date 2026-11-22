@@ -31,7 +31,7 @@
     return require('../geometry/manifold_core.js');
   }
 
-  function buildLayer1S3DBBuildings(ctx, scene, terrainWater) {
+  function* _buildLayer1S3DBBuildingsGen(ctx, scene, terrainWater) {
     const core = _getCore();
     const { mf, halfW, halfH, toBed, mToU, scaleMm, maxZUnits } = ctx;
     const buildingsList = (scene && scene.buildings) || [];
@@ -71,10 +71,13 @@
     };
 
     const clipLimX = halfW + padClip, clipLimY = halfH + padClip;
-    const _prepMeta = buildingsList.map((b, idx) => {
-      if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) return null;
+    const _prepMeta = new Array(buildingsList.length);
+    for (let idx = 0; idx < buildingsList.length; idx++) {
+      if ((idx & 255) === 0 && idx > 0) yield;
+      const b = buildingsList[idx];
+      if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) { _prepMeta[idx] = null; continue; }
       const tags = Object.assign({}, rawTagById.get(b.osmId) || {}, b.tags || {});
-      if (root.isLayer2ArchetypeRecord(b, tags)) return null;
+      if (root.isLayer2ArchetypeRecord(b, tags)) { _prepMeta[idx] = null; continue; }
       const outerBed = b.outer.map(toBed);
       let bMinX = Infinity, bMaxX = -Infinity, bMinY = Infinity, bMaxY = -Infinity;
       for (let k = 0; k < outerBed.length; k++) {
@@ -82,7 +85,7 @@
         if (px < bMinX) bMinX = px; if (px > bMaxX) bMaxX = px;
         if (py < bMinY) bMinY = py; if (py > bMaxY) bMaxY = py;
       }
-      if (bMaxX <= -clipLimX || bMinX >= clipLimX || bMaxY <= -clipLimY || bMinY >= clipLimY) return null;
+      if (bMaxX <= -clipLimX || bMinX >= clipLimX || bMaxY <= -clipLimY || bMinY >= clipLimY) { _prepMeta[idx] = null; continue; }
       let cx = 0, cy = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const pt of b.outer) {
         cx += pt[0]; cy += pt[1];
@@ -101,7 +104,7 @@
         }
       }
       const terr = root.sampleFootprintTerrainZ([outerBed], ctx, terrainWater);
-      return {
+      _prepMeta[idx] = {
         idx, b, tags, terr, outerBed,
         strictlyInsidePlate: bMinX >= -clipLimX + 1e-3 && bMaxX <= clipLimX - 1e-3 && bMinY >= -clipLimY + 1e-3 && bMaxY <= clipLimY - 1e-3,
         isMultiGroup: false,
@@ -112,7 +115,8 @@
         normRoof: root._normalizeRoofShape(tags['roof:shape'] || b.roof || 'flat'),
         skip: false, skipReason: null, flattened: false,
       };
-    });
+    }
+    yield;
 
     const groupGroundedMinEle = new Map(), groupFallbackMinEle = new Map();
     for (const m of _prepMeta) {
@@ -151,6 +155,7 @@
     const seenStamp = new Int32Array(_prepMeta.length);
     let stampToken = 0;
     for (let i = 0; i < _prepMeta.length; i++) {
+      if ((i & 511) === 0 && i > 0) yield;
       const m = _prepMeta[i];
       if (!m) continue;
       const tok = ++stampToken, candIdx = [];
@@ -196,6 +201,7 @@
         }
       }
     }
+    yield;
 
     const maxSafeZMm = maxZUnits * scaleMm;
     let maxRawZMm = 0;
@@ -232,6 +238,7 @@
     }
 
     for (let i = 0; i < buildingsList.length; i++) {
+      if ((i & 127) === 0 && i > 0) yield;
       const b = buildingsList[i];
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) continue;
       const tags = Object.assign({}, rawTagById.get(b.osmId) || {}, b.tags || {});
@@ -266,13 +273,17 @@
       grp.minY = Math.min(grp.minY, bb.min[1]); grp.maxY = Math.max(grp.maxY, bb.max[1]);
       grp.minZ = Math.min(grp.minZ, bb.min[2]); grp.maxZ = Math.max(grp.maxZ, bb.max[2]);
     }
+    yield;
 
     const allClusters = [...normalGroups.values(), ...highlightGroups.values()];
     root.anchorAndMergeS3DBClusters(core, mf, ctx, allClusters, consumedArchGroups, platePoly);
+    yield;
 
-    const emitClusterGroup = (isHiFlag) => {
+    function* emitClusterGroupGen(isHiFlag) {
       const out = [];
-      for (const c of allClusters) {
+      for (let ci = 0; ci < allClusters.length; ci++) {
+        if ((ci & 255) === 0 && ci > 0) yield;
+        const c = allClusters[ci];
         if (c.mergedOut || c.isHi !== isHiFlag || c.records.length === 0) continue;
         const bestNamed = c.records.find(r => r.name && !/^(Building|Part|Budynek|Część)\s+#/i.test(r.name));
         const primary = bestNamed || c.records.find(r => !r.isElevated) || c.records[0];
@@ -301,13 +312,31 @@
         }
       }
       return out;
-    };
+    }
 
-    const buildingManifolds = emitClusterGroup(false), highlightedManifolds = emitClusterGroup(true);
+    const buildingManifolds = yield* emitClusterGroupGen(false);
+    const highlightedManifolds = yield* emitClusterGroupGen(true);
     return { buildingManifolds, highlightedManifolds, buildingBounds: boundsOut, consumedArchBuildingIds, count: buildingManifolds.length + highlightedManifolds.length };
   }
 
-  const exportsObj = { buildLayer1S3DBBuildings };
+  function buildLayer1S3DBBuildings(ctx, scene, terrainWater) {
+    const gen = _buildLayer1S3DBBuildingsGen(ctx, scene, terrainWater);
+    let step;
+    do { step = gen.next(); } while (!step.done);
+    return step.value;
+  }
+
+  async function buildLayer1S3DBBuildingsAsync(ctx, scene, terrainWater, yieldCtrl = null) {
+    const gen = _buildLayer1S3DBBuildingsGen(ctx, scene, terrainWater);
+    let step;
+    while (true) {
+      step = gen.next();
+      if (step.done) return step.value;
+      if (yieldCtrl) await yieldCtrl.yieldIfNeeded(step.value === 'force');
+    }
+  }
+
+  const exportsObj = { buildLayer1S3DBBuildings, buildLayer1S3DBBuildingsAsync };
   Object.assign(root, exportsObj);
   if (typeof window !== 'undefined') Object.assign(window, exportsObj);
   if (typeof module !== 'undefined' && module.exports) module.exports = exportsObj;

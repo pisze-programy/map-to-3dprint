@@ -186,7 +186,7 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
   const opts = options || {};
   const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
   const onStageReady = typeof opts.onStageReady === 'function' ? opts.onStageReady : () => {};
-  const yieldCtrl = new TimeBudgetYieldController(opts.signal || null, opts.budgetMs || 14);
+  const yieldCtrl = new TimeBudgetYieldController(opts.signal || null, opts.budgetMs || opts.timeBudgetMs || 14);
 
   if (typeof ensureManifoldLibAsync === 'function') {
     await ensureManifoldLibAsync();
@@ -201,21 +201,34 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
   }
 
   onProgress(12, 'Etap 1/5: Teren DEM (Delatin) i maski wody/dróg...', 'Konstrukcja siatki bazowej Manifold 3D');
+  await yieldCtrl.yieldIfNeeded(true);
   const ctx = createBuildContext(scene, state, opts);
-  const terrainWater = buildLayer1TerrainAndWater(ctx, scene, opts);
+  const terrainWater = (typeof buildLayer1TerrainAndWaterAsync === 'function')
+    ? await buildLayer1TerrainAndWaterAsync(ctx, scene, opts, yieldCtrl)
+    : buildLayer1TerrainAndWater(ctx, scene, opts);
   await yieldCtrl.yieldIfNeeded(true);
 
   onProgress(32, 'Etap 2/5: Budynki S3DB i dachy architektoniczne...', 'Straight Skeleton + CSG 2-manifold');
-  const s3db = buildLayer1S3DBBuildings(ctx, scene, terrainWater);
+  await yieldCtrl.yieldIfNeeded(true);
+  const s3db = (typeof buildLayer1S3DBBuildingsAsync === 'function')
+    ? await buildLayer1S3DBBuildingsAsync(ctx, scene, terrainWater, yieldCtrl)
+    : buildLayer1S3DBBuildings(ctx, scene, terrainWater);
   await yieldCtrl.yieldIfNeeded(true);
 
   onProgress(52, 'Etap 3/5: Mosty i archetypy semantyczne OSM...', 'Mosty bridge:structure + obiekty specjalne');
+  await yieldCtrl.yieldIfNeeded(true);
   const bridges = buildLayer1Bridges(ctx, scene, terrainWater);
-  const archetypes = buildLayer2Archetypes(ctx, scene, terrainWater, s3db);
+  await yieldCtrl.yieldIfNeeded(true);
+  const archetypes = (typeof buildLayer2ArchetypesAsync === 'function')
+    ? await buildLayer2ArchetypesAsync(ctx, scene, terrainWater, s3db, yieldCtrl)
+    : buildLayer2Archetypes(ctx, scene, terrainWater, s3db);
   await yieldCtrl.yieldIfNeeded(true);
 
   onProgress(68, 'Etap 4/5: Podział na kafle, drążenie SLA i audyt fizyczny...', 'Weryfikacja niezmienników 2-manifold');
-  const result = finalize3LayerTilesAndInvariants(ctx, { terrainWater, s3db, bridges, archetypes }, opts);
+  await yieldCtrl.yieldIfNeeded(true);
+  const result = (typeof finalize3LayerTilesAndInvariantsAsync === 'function')
+    ? await finalize3LayerTilesAndInvariantsAsync(ctx, { terrainWater, s3db, bridges, archetypes }, opts, yieldCtrl)
+    : finalize3LayerTilesAndInvariants(ctx, { terrainWater, s3db, bridges, archetypes }, opts);
   await yieldCtrl.yieldIfNeeded(true);
 
   const { meshes } = result;

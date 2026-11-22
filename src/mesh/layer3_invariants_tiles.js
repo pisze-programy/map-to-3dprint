@@ -41,8 +41,8 @@
     }
   }
 
-  // O(T log K) 2D KD-tree binary spatial clipper for full-plate manifolds across K>=6 tiles
-  function _clipSolidAcrossTilesKD(core, mf, fullMan, tileBounds, zMin, zMax) {
+  // O(T log K) 2D KD-tree binary spatial clipper with incremental yields
+  function* _clipSolidAcrossTilesKDGen(core, mf, fullMan, tileBounds, zMin, zMax) {
     const K = tileBounds.length;
     const out = new Array(K).fill(null);
     if (!fullMan || fullMan.numTri() === 0 || K === 0) return out;
@@ -50,11 +50,12 @@
       for (let i = 0; i < K; i++) {
         const tb = tileBounds[i];
         out[i] = _clipSolidToBox(core, mf, fullMan, { minX: tb.minX, maxX: tb.maxX, minY: tb.minY, maxY: tb.maxY, minZ: zMin, maxZ: zMax });
+        yield;
       }
       return out;
     }
 
-    const recurse = (man, indices, ownsMan) => {
+    function* recurseGen(man, indices, ownsMan) {
       if (!man || man.numTri() === 0 || indices.length === 0) {
         if (ownsMan) core.safeDeleteManifold(man);
         return;
@@ -64,6 +65,7 @@
         const clipped = _clipSolidToBox(core, mf, man, { minX: tb.minX, maxX: tb.maxX, minY: tb.minY, maxY: tb.maxY, minZ: zMin, maxZ: zMax });
         if (ownsMan && clipped !== man) core.safeDeleteManifold(man);
         out[idx] = clipped;
+        yield;
         return;
       }
 
@@ -98,16 +100,18 @@
 
       const mbb = man.boundingBox();
       const leftMan = _clipSolidToBox(core, mf, man, boundOf(leftIdx), mbb);
+      yield;
       const rightMan = _clipSolidToBox(core, mf, man, boundOf(rightIdx), mbb);
+      yield;
       const leftIsOrig = leftMan === man;
       const rightIsOrig = rightMan === man;
 
-      if (leftMan) recurse(leftMan, leftIdx, !leftIsOrig || (ownsMan && !rightIsOrig));
-      if (rightMan) recurse(rightMan, rightIdx, !rightIsOrig || (ownsMan && !leftIsOrig));
+      if (leftMan) yield* recurseGen(leftMan, leftIdx, !leftIsOrig || (ownsMan && !rightIsOrig));
+      if (rightMan) yield* recurseGen(rightMan, rightIdx, !rightIsOrig || (ownsMan && !leftIsOrig));
       if (ownsMan && !leftIsOrig && !rightIsOrig) core.safeDeleteManifold(man);
-    };
+    }
 
-    recurse(fullMan, Array.from({ length: K }, (_, i) => i), false);
+    yield* recurseGen(fullMan, Array.from({ length: K }, (_, i) => i), false);
     return out;
   }
 
@@ -120,7 +124,7 @@
     core.appendManifoldToTriangles(man, outArr, layerId, buildingId, tid, nextSidFn());
   }
 
-  function finalize3LayerTilesAndInvariants(ctx, layerOutputs, options = {}) {
+  function* _finalize3LayerTilesAndInvariantsGen(ctx, layerOutputs, options = {}) {
     const { core, vault, auditor } = _getDeps();
     const { mf, scaleMm, tileBounds, maxZUnits, hollowBase, waterCutout } = ctx;
     const { terrainWater, s3db, bridges, archetypes } = layerOutputs;
@@ -157,6 +161,7 @@
         waterMarginRings2D = hShrunk.length > 0 ? core.clipperDiffPolys(oBuf, hShrunk, 1e-5) : oBuf;
       } else waterMarginRings2D = oBuf;
     }
+    yield;
 
     const allRoadSolids = [];
     if (terrainWater.roadManifold && terrainWater.roadManifold.numTri() > 0) {
@@ -216,9 +221,11 @@
     const DRY_CELL = 4.0;
     const dryBldGrid = new Map();
     if (waterCutout && terrainWater && typeof terrainWater.isPointInWater === 'function') {
-      for (const bi of allBldItems) {
+      for (let biIdx = 0; biIdx < allBldItems.length; biIdx++) {
+        if ((biIdx & 511) === 0 && biIdx > 0) yield;
+        const bi = allBldItems[biIdx];
         if (!bi || !bi.manifold || bi.manifold.numTri() === 0 || bi.isFloatingPart) continue;
-        const bbb = bi.manifold.boundingBox();
+        const bbb = bi.bb || bi.manifold.boundingBox();
         const bcx = (bbb.min[0] + bbb.max[0]) * 0.5, bcy = (bbb.min[1] + bbb.max[1]) * 0.5;
         if (!terrainWater.isPointInWater(bcx, bcy)) {
           const rec = { man: bi.manifold, bb: bbb };
@@ -235,6 +242,7 @@
         }
       }
     }
+    yield;
 
     const _isCompPhysicallyAnchored = (comp, bb) => {
       if (_manifoldsTouch3D(comp, terrainWater.terrainManifold, -0.25 / scaleMm)) return true;
@@ -284,7 +292,9 @@
       });
     };
 
-    for (const item of allBldItems) {
+    for (let biIdx = 0; biIdx < allBldItems.length; biIdx++) {
+      if ((biIdx & 255) === 0 && biIdx > 0) yield;
+      const item = allBldItems[biIdx];
       if (!item || !item.manifold || item.manifold.numTri() === 0) continue;
       if (item.isSingleGroundedSolid && !waterCutout && item.bb) {
         if (item.bb.max[2] >= zTopCap - 0.02) zCapApplied = true;
@@ -314,6 +324,7 @@
       }
       if (Array.isArray(comps)) for (const c of comps) core.safeDeleteManifold(c);
     }
+    yield;
 
     const emitGreenTurf = !ctx.state || !ctx.state.layerVisible || ctx.state.layerVisible.greenery !== false;
 
@@ -325,15 +336,15 @@
     }
     let nextPosShellId = maxTreeShellId + 1, nextTurfShellId = -2;
 
-    const baseTilesKD = _clipSolidAcrossTilesKD(core, mf, terrainWater.terrainManifold, tileBounds, -1.5, zTopCap);
+    const baseTilesKD = yield* _clipSolidAcrossTilesKDGen(core, mf, terrainWater.terrainManifold, tileBounds, -1.5, zTopCap);
     const waterTilesKD = (!waterCutout && terrainWater.waterManifold)
-      ? _clipSolidAcrossTilesKD(core, mf, terrainWater.waterManifold, tileBounds, -1.5, zTopCap)
+      ? (yield* _clipSolidAcrossTilesKDGen(core, mf, terrainWater.waterManifold, tileBounds, -1.5, zTopCap))
       : null;
     const greenTilesKD = (emitGreenTurf && terrainWater.greeneryManifold)
-      ? _clipSolidAcrossTilesKD(core, mf, terrainWater.greeneryManifold, tileBounds, -1.5, zTopCap)
+      ? (yield* _clipSolidAcrossTilesKDGen(core, mf, terrainWater.greeneryManifold, tileBounds, -1.5, zTopCap))
       : null;
     const mainRoadTilesKD = terrainWater.roadManifold
-      ? _clipSolidAcrossTilesKD(core, mf, terrainWater.roadManifold, tileBounds, -1.5, zTopCap)
+      ? (yield* _clipSolidAcrossTilesKDGen(core, mf, terrainWater.roadManifold, tileBounds, -1.5, zTopCap))
       : null;
 
     const extraRoadSolids = allRoadSolids.filter(rs => rs && rs.man && rs.man !== terrainWater.roadManifold);
@@ -360,6 +371,7 @@
     bucketItems(extraRoadSolids, it => it && it.man, tileExtraRoads);
     bucketItems(allNormalBuildings, it => it && it.manifold, tileNormalBlds);
     bucketItems(allHiBuildings, it => it && it.manifold, tileHiBlds);
+    yield;
 
     for (let tIdx = 0; tIdx < tileBounds.length; tIdx++) {
       const tb = tileBounds[tIdx], tid = tb.tileId;
@@ -384,6 +396,7 @@
         _emitDecomposed(core, baseTile, meshes.base, 1, -1, tid, () => nextPosShellId++);
         if (baseTile !== terrainWater.terrainManifold) core.safeDeleteManifold(baseTile);
       }
+      yield;
 
       if (waterTilesKD && waterTilesKD[tIdx]) {
         const wTile = waterTilesKD[tIdx];
@@ -397,7 +410,10 @@
         _emitDecomposed(core, gTile, meshes.greenery, 2, -1, tid, () => nextTurfShellId--);
         if (gTile !== terrainWater.greeneryManifold) core.safeDeleteManifold(gTile);
       }
-      for (const tr of tileTrees[tIdx]) {
+      yield;
+      for (let tri = 0; tri < tileTrees[tIdx].length; tri++) {
+        if ((tri & 255) === 0 && tri > 0) yield;
+        const tr = tileTrees[tIdx][tri];
         const tClip = _clipSolidToBox(core, mf, tr.manifold, clipBox, tr.bb);
         if (tClip) {
           recordSolids(tClip, tid, false);
@@ -416,6 +432,7 @@
         _emitDecomposed(core, mrTile, meshes.roads, 3, -1, tid, () => nextPosShellId++);
         if (mrTile !== terrainWater.roadManifold) core.safeDeleteManifold(mrTile);
       }
+      yield;
       for (const rs of tileExtraRoads[tIdx]) {
         const rTile = _clipSolidToBox(core, mf, rs.man, clipBox, rs.bb);
         if (rTile) {
@@ -424,7 +441,9 @@
           if (rTile !== rs.man) core.safeDeleteManifold(rTile);
         }
       }
-      for (const item of tileNormalBlds[tIdx]) {
+      for (let bi = 0; bi < tileNormalBlds[tIdx].length; bi++) {
+        if ((bi & 255) === 0 && bi > 0) yield;
+        const item = tileNormalBlds[tIdx][bi];
         const bTile = _clipSolidToBox(core, mf, item.manifold, clipBox, item.bb);
         if (bTile) {
           recordSolids(bTile, tid, true, bTile === item.manifold ? item.bb : null);
@@ -436,7 +455,9 @@
           if (bTile !== item.manifold) core.safeDeleteManifold(bTile);
         }
       }
-      for (const item of tileHiBlds[tIdx]) {
+      for (let hi = 0; hi < tileHiBlds[tIdx].length; hi++) {
+        if ((hi & 255) === 0 && hi > 0) yield;
+        const item = tileHiBlds[tIdx][hi];
         const hTile = _clipSolidToBox(core, mf, item.manifold, clipBox, item.bb);
         if (hTile) {
           recordSolids(hTile, tid, true, hTile === item.manifold ? item.bb : null);
@@ -448,6 +469,7 @@
           if (hTile !== item.manifold) core.safeDeleteManifold(hTile);
         }
       }
+      yield;
     }
 
     if (terrainWater.frameManifold && terrainWater.frameManifold.numTri() > 0) {
@@ -459,6 +481,7 @@
     for (const tr of allTrees) core.safeDeleteManifold(tr.manifold);
     for (const b of allNormalBuildings) core.safeDeleteManifold(b.manifold);
     for (const b of allHiBuildings) core.safeDeleteManifold(b.manifold);
+    yield;
 
     const embossMetrics = {
       engravedTiles: embossStats.engravedTiles,
@@ -482,7 +505,24 @@
     return { meshes, buildingBounds: allBounds, pickIdMap: ctx.pickIdMap, totalTriangles: printMetrics.totalTriangles, printMetrics, audit: ctx.audit };
   }
 
-  const exportsObj = { finalize3LayerTilesAndInvariants };
+  function finalize3LayerTilesAndInvariants(ctx, layerOutputs, options = {}) {
+    const gen = _finalize3LayerTilesAndInvariantsGen(ctx, layerOutputs, options);
+    let step;
+    do { step = gen.next(); } while (!step.done);
+    return step.value;
+  }
+
+  async function finalize3LayerTilesAndInvariantsAsync(ctx, layerOutputs, options = {}, yieldCtrl = null) {
+    const gen = _finalize3LayerTilesAndInvariantsGen(ctx, layerOutputs, options);
+    let step;
+    while (true) {
+      step = gen.next();
+      if (step.done) return step.value;
+      if (yieldCtrl) await yieldCtrl.yieldIfNeeded(step.value === 'force');
+    }
+  }
+
+  const exportsObj = { finalize3LayerTilesAndInvariants, finalize3LayerTilesAndInvariantsAsync };
   Object.assign(root, exportsObj);
   if (typeof module !== 'undefined' && module.exports) module.exports = exportsObj;
 })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : global));

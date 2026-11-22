@@ -16,7 +16,12 @@
       ? { buildDelatinTerrainManifold, buildLayer1WaterAndCarve }
       : require('./terrain_delatin_water.js');
     const drapeMod = (typeof collectSurfacePolys === 'function' && typeof buildSurfaceDrapesAndFrame === 'function')
-      ? { collectSurfacePolys, buildSurfaceDrapesAndFrame }
+      ? {
+          collectSurfacePolys,
+          _collectSurfacePolysGen: (typeof _collectSurfacePolysGen === 'function') ? _collectSurfacePolysGen : null,
+          buildSurfaceDrapesAndFrame,
+          _buildSurfaceDrapesAndFrameGen: (typeof _buildSurfaceDrapesAndFrameGen === 'function') ? _buildSurfaceDrapesAndFrameGen : null
+        }
       : require('./terrain_surface_drape.js');
     return { core, waterMod, drapeMod };
   }
@@ -25,7 +30,11 @@
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
       const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
-      if (((yi > py) !== (yj > py)) && (px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
+      if ((yi > py) !== (yj > py)) {
+        if (xi <= px && xj <= px) continue;
+        if (xi > px && xj > px) { inside = !inside; continue; }
+        if (px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-12) + xi) inside = !inside;
+      }
     }
     return inside;
   }
@@ -45,16 +54,17 @@
     const [minX, minY, maxX, maxY] = _ringBBox(poly);
     const n = poly.length, spanY = maxY - minY;
     if (n < 32 || spanY <= 1e-9) return { poly, minX, minY, maxX, maxY, slabs: null, invH: 0, nSlabs: 0 };
-    const nSlabs = Math.min(256, Math.max(32, n >> 3)), invH = nSlabs / spanY;
-    const slabs = Array.from({ length: nSlabs }, () => []);
+    const nSlabs = Math.min(2048, Math.max(32, n >> 2)), invH = nSlabs / spanY;
+    const slabLists = Array.from({ length: nSlabs }, () => []);
     for (let i = 0, j = n - 1; i < n; j = i++) {
       const yi = poly[i][1], yj = poly[j][1];
       if (yi === yj) continue;
       const yLo = yi < yj ? yi : yj, yHi = yi < yj ? yj : yi;
       const s0 = Math.max(0, Math.floor((yLo - minY) * invH - 1e-6));
       const s1 = Math.min(nSlabs - 1, Math.floor((yHi - minY) * invH + 1e-6));
-      for (let s = s0; s <= s1; s++) slabs[s].push(i);
+      for (let s = s0; s <= s1; s++) slabLists[s].push(i);
     }
+    const slabs = slabLists.map(arr => Int32Array.from(arr));
     return { poly, minX, minY, maxX, maxY, slabs, invH, nSlabs };
   }
 
@@ -67,9 +77,44 @@
     for (let k = 0; k < idxs.length; k++) {
       const i = idxs[k], j = i === 0 ? n - 1 : i - 1;
       const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
-      if (((yi > py) !== (yj > py)) && (px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
+      if ((yi > py) !== (yj > py)) {
+        if (xi <= px && xj <= px) continue;
+        if (xi > px && xj > px) { inside = !inside; continue; }
+        if (px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-12) + xi) inside = !inside;
+      }
     }
     return inside;
+  }
+
+  function _buildBBoxGrid(items, getBox, maxGrid) {
+    if (!items || items.length < 16) return null;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < items.length; i++) {
+      const b = getBox(items[i]);
+      if (b.minX < minX) minX = b.minX; if (b.maxX > maxX) maxX = b.maxX;
+      if (b.minY < minY) minY = b.minY; if (b.maxY > maxY) maxY = b.maxY;
+    }
+    const spanX = maxX - minX, spanY = maxY - minY;
+    if (spanX <= 1e-9 || spanY <= 1e-9) return null;
+    const gSize = Math.min(maxGrid, Math.max(16, Math.ceil(Math.sqrt(items.length))));
+    const invW = gSize / spanX, invH = gSize / spanY;
+    const cells = new Array(gSize * gSize);
+    for (let i = 0; i < items.length; i++) {
+      const b = getBox(items[i]);
+      const x0 = Math.max(0, Math.min(gSize - 1, Math.floor((b.minX - minX) * invW - 1e-6)));
+      const x1 = Math.max(0, Math.min(gSize - 1, Math.floor((b.maxX - minX) * invW + 1e-6)));
+      const y0 = Math.max(0, Math.min(gSize - 1, Math.floor((b.minY - minY) * invH - 1e-6)));
+      const y1 = Math.max(0, Math.min(gSize - 1, Math.floor((b.maxY - minY) * invH + 1e-6)));
+      for (let gy = y0; gy <= y1; gy++) {
+        const row = gy * gSize;
+        for (let gx = x0; gx <= x1; gx++) {
+          let cell = cells[row + gx];
+          if (!cell) { cell = []; cells[row + gx] = cell; }
+          cell.push(i);
+        }
+      }
+    }
+    return { gSize, minX, maxX, minY, maxY, invW, invH, cells };
   }
 
   function _indexStructuredPolys(polys) {
@@ -78,20 +123,51 @@
       const outer = wp && _indexRing2D(wp.outer);
       if (!outer) continue;
       const holes = (wp.holes || []).map(_indexRing2D).filter(Boolean);
-      out.push({ outer, holes });
+      const holeGrid = _buildBBoxGrid(holes, h => h, 96);
+      out.push({ outer, holes, holeGrid });
     }
+    out._polyGrid = _buildBBoxGrid(out, wp => wp.outer, 64);
     return out;
   }
 
-  function _pointInIndexedPolys(x, y, idxPolys) {
-    for (let i = 0; i < idxPolys.length; i++) {
-      const wp = idxPolys[i];
-      if (!_ptInIndexedRing(x, y, wp.outer)) continue;
-      let inHole = false;
-      for (let h = 0; h < wp.holes.length; h++) {
-        if (_ptInIndexedRing(x, y, wp.holes[h])) { inHole = true; break; }
+  function _pointInIndexedPoly(x, y, wp) {
+    if (!_ptInIndexedRing(x, y, wp.outer)) return false;
+    const hg = wp.holeGrid;
+    if (hg) {
+      if (x >= hg.minX - 1e-9 && x <= hg.maxX + 1e-9 && y >= hg.minY - 1e-9 && y <= hg.maxY + 1e-9) {
+        const gx = Math.max(0, Math.min(hg.gSize - 1, Math.floor((x - hg.minX) * hg.invW)));
+        const gy = Math.max(0, Math.min(hg.gSize - 1, Math.floor((y - hg.minY) * hg.invH)));
+        const cell = hg.cells[gy * hg.gSize + gx];
+        if (cell) {
+          for (let k = 0; k < cell.length; k++) {
+            if (_ptInIndexedRing(x, y, wp.holes[cell[k]])) return false;
+          }
+        }
       }
-      if (!inHole) return true;
+      return true;
+    }
+    for (let h = 0; h < wp.holes.length; h++) {
+      if (_ptInIndexedRing(x, y, wp.holes[h])) return false;
+    }
+    return true;
+  }
+
+  function _pointInIndexedPolys(x, y, idxPolys) {
+    if (!idxPolys || idxPolys.length === 0) return false;
+    const pg = idxPolys._polyGrid;
+    if (pg) {
+      if (x < pg.minX - 1e-9 || x > pg.maxX + 1e-9 || y < pg.minY - 1e-9 || y > pg.maxY + 1e-9) return false;
+      const gx = Math.max(0, Math.min(pg.gSize - 1, Math.floor((x - pg.minX) * pg.invW)));
+      const gy = Math.max(0, Math.min(pg.gSize - 1, Math.floor((y - pg.minY) * pg.invH)));
+      const cell = pg.cells[gy * pg.gSize + gx];
+      if (!cell) return false;
+      for (let k = 0; k < cell.length; k++) {
+        if (_pointInIndexedPoly(x, y, idxPolys[cell[k]])) return true;
+      }
+      return false;
+    }
+    for (let i = 0; i < idxPolys.length; i++) {
+      if (_pointInIndexedPoly(x, y, idxPolys[i])) return true;
     }
     return false;
   }
@@ -120,6 +196,14 @@
       if (bs.pt) seeds.push(toBed(bs.pt));
       else if (bs.outer && bs.outer.length > 0) seeds.push(toBed(bs.outer[0]));
     }
+    // Precompute building footprint bounding boxes once to avoid full-scene Clipper intersections per islet
+    const fpEntries = [];
+    for (let i = 0; i < (bldFootprintPolys || []).length; i++) {
+      const r = bldFootprintPolys[i];
+      if (!r || r.length < 3) continue;
+      const fbb = _ringBBox(r);
+      fpEntries.push({ ring: r, minX: fbb[0], minY: fbb[1], maxX: fbb[2], maxY: fbb[3] });
+    }
     const minIsletU2 = ((ctx.cfg && ctx.cfg.minCutoutIsletMm2) || 6.0) / (scaleMm * scaleMm);
     return (h) => {
       if (!waterCutout) return true;
@@ -131,16 +215,24 @@
       if (seeds.some(pt => pt[0] >= bb[0] && pt[0] <= bb[2] && pt[1] >= bb[1] && pt[1] <= bb[3] && _ptInRing(pt[0], pt[1], h))) {
         return true;
       }
-      if (bldFootprintPolys && bldFootprintPolys.length > 0) {
-        try {
-          if (core.clipperIntersectPolys([h], bldFootprintPolys, 1e-6).length > 0) return true;
-        } catch (_) {}
+      if (fpEntries.length > 0) {
+        const overlapping = [];
+        for (let i = 0; i < fpEntries.length; i++) {
+          const fp = fpEntries[i];
+          if (fp.maxX < bb[0] - 1e-6 || fp.minX > bb[2] + 1e-6 || fp.maxY < bb[1] - 1e-6 || fp.minY > bb[3] + 1e-6) continue;
+          overlapping.push(fp.ring);
+        }
+        if (overlapping.length > 0) {
+          try {
+            if (core.clipperIntersectPolys([h], overlapping, 1e-6).length > 0) return true;
+          } catch (_) {}
+        }
       }
       return false;
     };
   }
 
-  function buildLayer1TerrainAndWater(ctx, scene, _options = {}) {
+  function* _buildLayer1TerrainAndWaterGen(ctx, scene, _options = {}) {
     const { core, waterMod, drapeMod } = _getDeps();
     const { mf, halfW, halfH, waterCutout } = ctx;
 
@@ -150,17 +242,24 @@
     const plateClipPoly = [[[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]]];
 
     const rawTerrain = waterMod.buildDelatinTerrainManifold(ctx, minX, maxX, minY, maxY);
-    const surfaceData = drapeMod.collectSurfacePolys(core, ctx, scene, plateClipPoly);
+    yield;
+    const surfaceData = typeof drapeMod._collectSurfacePolysGen === 'function'
+      ? (yield* drapeMod._collectSurfacePolysGen(core, ctx, scene, plateClipPoly))
+      : drapeMod.collectSurfacePolys(core, ctx, scene, plateClipPoly);
+    yield;
     const keepIslet = _buildIsletKeeper(core, ctx, scene, surfaceData.bldFootprintPolys);
+    yield;
 
     const waterRes = waterMod.buildLayer1WaterAndCarve(
       core, mf, ctx, scene, rawTerrain, plateClipPoly, surfaceData.protectedWaterfrontPolys, keepIslet
     );
+    yield;
     const { terrainManifold, waterManifold, unionedWaterRings, waterMaskPolys2D, queryWaterZAt, slopedRiverSegments } = waterRes;
 
-    const drapeRes = drapeMod.buildSurfaceDrapesAndFrame(
-      core, mf, ctx, terrainManifold, plateClipPoly, unionedWaterRings, surfaceData
-    );
+    const drapeRes = typeof drapeMod._buildSurfaceDrapesAndFrameGen === 'function'
+      ? (yield* drapeMod._buildSurfaceDrapesAndFrameGen(core, mf, ctx, terrainManifold, plateClipPoly, unionedWaterRings, surfaceData))
+      : drapeMod.buildSurfaceDrapesAndFrame(core, mf, ctx, terrainManifold, plateClipPoly, unionedWaterRings, surfaceData);
+    yield;
     const {
       greeneryManifold, roadManifold, frameManifold,
       roadPolys2D, streetPolys2D, footpathPolys2D, greenPolys2D,
@@ -181,13 +280,17 @@
     const isPointOnFootpath = (x, y) => footpathIdx.length > 0 && _pointInIndexedPolys(x, y, footpathIdx);
     const isPointInGreen = (x, y) => _pointInIndexedPolys(x, y, greenIdx);
 
-    const getSurfaceZ = (x, y) => {
-      if (isPointInWater(x, y)) return queryWaterZAt(x, y, false);
+    const getDrySurfaceZ = (x, y) => {
       let z = ctx.getTerrainZ(x, y);
       if (isPointOnStreet(x, y)) z += hRoadU;
       else if (isPointInGreen(x, y)) z += hGreenU + (isPointOnFootpath(x, y) ? hFootpathU : 0);
       else if (isPointOnFootpath(x, y)) z += hFootpathU;
       return z;
+    };
+
+    const getSurfaceZ = (x, y) => {
+      if (isPointInWater(x, y)) return queryWaterZAt(x, y, false);
+      return getDrySurfaceZ(x, y);
     };
 
     const getWaterFloorZ = (x, y) => (Number.isFinite(x) && Number.isFinite(y) ? queryWaterZAt(x, y, true, false) : (waterCutout ? 0.0 : ctx.zWaterCarveFloor));
@@ -213,11 +316,28 @@
     return {
       terrainManifold, waterManifold, greeneryManifold, roadManifold, frameManifold,
       waterMaskPolys2D, roadPolys2D, greenPolys2D, hGreenU, hRoadU,
-      isPointInWater, isPointOnRoad, isPointInGreen, getSurfaceZ, getWaterFloorZ, getWaterTopZ, getNominalWaterTopZ,
+      isPointInWater, isPointOnRoad, isPointInGreen, getDrySurfaceZ, getSurfaceZ, getWaterFloorZ, getWaterTopZ, getNominalWaterTopZ,
     };
   }
 
-  const exportsObj = { buildLayer1TerrainAndWater };
+  function buildLayer1TerrainAndWater(ctx, scene, options = {}) {
+    const gen = _buildLayer1TerrainAndWaterGen(ctx, scene, options);
+    let step;
+    do { step = gen.next(); } while (!step.done);
+    return step.value;
+  }
+
+  async function buildLayer1TerrainAndWaterAsync(ctx, scene, options = {}, yieldCtrl = null) {
+    const gen = _buildLayer1TerrainAndWaterGen(ctx, scene, options);
+    let step;
+    while (true) {
+      step = gen.next();
+      if (step.done) return step.value;
+      if (yieldCtrl) await yieldCtrl.yieldIfNeeded(step.value === 'force');
+    }
+  }
+
+  const exportsObj = { buildLayer1TerrainAndWater, buildLayer1TerrainAndWaterAsync };
   Object.assign(root, exportsObj);
   if (typeof module !== 'undefined' && module.exports) module.exports = exportsObj;
 })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : global));

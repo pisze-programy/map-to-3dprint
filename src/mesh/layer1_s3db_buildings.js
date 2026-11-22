@@ -31,6 +31,7 @@
         _groundPortalOnEndPiers: root._groundPortalOnEndPiers,
         anchorAndMergeS3DBClusters: root.anchorAndMergeS3DBClusters,
         buildLayer1S3DBBuildings: root.buildLayer1S3DBBuildings,
+        buildLayer1S3DBBuildingsAsync: root.buildLayer1S3DBBuildingsAsync,
       };
 
   Object.assign(root, mod);

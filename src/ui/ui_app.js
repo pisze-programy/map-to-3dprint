@@ -422,7 +422,7 @@ function initMap3DApp(initialScene) {
     state.selectedBuildingId = firstLandmark ? firstLandmark.id : null;
     draw2DMap();
     if (!isPartial) {
-      rebuildModel3D({ explicitSceneRotDeg: rotToApply });
+      rebuildModel3D({ explicitSceneRotDeg: rotToApply }).catch(() => {});
     }
   }
 
@@ -494,6 +494,7 @@ function initMap3DApp(initialScene) {
       watchdogRebuildTimer = null;
     }
     if (activeGisAbortCtrl) { try { activeGisAbortCtrl.abort(); } catch (_) {} }
+    if (activeBuildAbortCtrl) { try { activeBuildAbortCtrl.abort(); } catch (_) {} }
     const abortCtrl = new AbortController();
     activeGisAbortCtrl = abortCtrl;
 
@@ -557,7 +558,7 @@ function initMap3DApp(initialScene) {
         onProgress: (info) => {
           const kind = (info && typeof info === 'object') ? info.progressKind : null;
           const isRealSubchunkData = kind === 'subchunk' && (info.subChunkPhase === 'done' || info.subChunkPhase === 'retry-done');
-          if (typeof info === 'number' || !kind || kind === 'init' || kind === 'dem' || kind === 'chunk' || isRealSubchunkData || kind === 'assemble') {
+          if (typeof info === 'number' || !kind || kind === 'init' || kind === 'dem' || kind === 'chunk' || kind === 'chunk-retry' || kind === 'retry-start' || isRealSubchunkData || kind === 'assemble') {
             resetWatchdog();
           }
           let pct = 10;

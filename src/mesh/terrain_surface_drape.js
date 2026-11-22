@@ -9,7 +9,7 @@
       return {
         signedArea2D, ensureWinding, clipperUnionPolys, clipperIntersectPolys, clipperDiffPolys,
         clipperOffsetPolys, clipperBufferOpenPaths, ringsToOutersWithHoles,
-        safeDeleteManifold, batchUnionManifolds, extrudeRingSolid
+        safeDeleteManifold, batchUnionManifolds, extrudeRingSolid, boxManifoldFromBounds
       };
     }
     return require('../geometry/manifold_core.js');
@@ -298,7 +298,7 @@
     return null;
   }
 
-  function collectSurfacePolys(core, ctx, scene, plateClipPoly) {
+  function* _collectSurfacePolysGen(core, ctx, scene, plateClipPoly) {
     const { toBed, scaleToBed, scaleMm } = ctx;
     const mToBedXY = ((ctx.mToU || ctx.metersToUnits || (scene && scene.metersToUnits) || (scene && scene.meta && scene.meta.metersToUnits)) || 0.141) * (scaleToBed || 1.0);
     const lod = (ctx.state && ctx.state.lodSettings) || {};
@@ -364,14 +364,18 @@
         else openStreetLines.push({ pts: bedPts, halfW });
       }
     }
+    yield;
     if (openStreetLines.length > 0) {
       for (const r of core.clipperBufferOpenPaths(openStreetLines, 'Round', 1e-5)) roadRawPolys.push(r);
+      yield;
     }
     if (openFootpathLines.length > 0) {
       for (const r of core.clipperBufferOpenPaths(openFootpathLines, 'Round', 1e-5)) footpathRawPolys.push(r);
+      yield;
     }
     if (openQuayLines.length > 0) {
       for (const r of core.clipperBufferOpenPaths(openQuayLines, 'Round', 1e-5)) waterfrontRawPolys.push(r);
+      yield;
     }
 
     const ringBb2D = (ring) => {
@@ -399,6 +403,7 @@
         greenWithArea.push({ ring: r, area: Math.abs(core.signedArea2D(r)), bb: ringBb2D(r) });
       }
     }
+    yield;
 
     for (const rp of (scene && scene.roadPolys) || []) {
       if (!rp || !rp.outer || rp.outer.length < 3) continue;
@@ -424,17 +429,26 @@
         else roadRawPolys.push(r);
       }
     }
+    yield;
 
     let protectedWaterfrontPolys = waterfrontRawPolys.length > 0 ? core.clipperUnionPolys(waterfrontRawPolys, 1e-5) : [];
     if (protectedWaterfrontPolys.length > 0) {
       protectedWaterfrontPolys = core.clipperIntersectPolys(protectedWaterfrontPolys, plateClipPoly, 1e-5);
     }
+    yield;
 
     const bldFootprintPolys = collectPrintedBuildingFootprints2D(core, ctx, scene, plateClipPoly);
     return { roadRawPolys, footpathRawPolys, protectedWaterfrontPolys, greenRawPolys, bldFootprintPolys };
   }
 
-  function buildSurfaceDrapesAndFrame(core, mf, ctx, terrainManifold, plateClipPoly, unionedWaterRings, surfaceData) {
+  function collectSurfacePolys(core, ctx, scene, plateClipPoly) {
+    const gen = _collectSurfacePolysGen(core, ctx, scene, plateClipPoly);
+    let step;
+    do { step = gen.next(); } while (!step.done);
+    return step.value;
+  }
+
+  function* _buildSurfaceDrapesAndFrameGen(core, mf, ctx, terrainManifold, plateClipPoly, unionedWaterRings, surfaceData) {
     const { halfW, halfH, scaleMm } = ctx;
     const {
       roadRawPolys,
@@ -445,50 +459,63 @@
     } = surfaceData;
 
     let regularStreetRings = roadRawPolys.length > 0 ? core.clipperUnionPolys(roadRawPolys, 1e-5) : [];
+    yield;
     if (regularStreetRings.length > 0) {
       regularStreetRings = core.clipperIntersectPolys(regularStreetRings, plateClipPoly, 1e-5);
+      yield;
     }
     if (regularStreetRings.length > 0 && unionedWaterRings.length > 0) {
       regularStreetRings = core.clipperDiffPolys(regularStreetRings, unionedWaterRings, 1e-5);
+      yield;
     }
 
     let streetUnionRings = (regularStreetRings.length > 0 || protectedWaterfrontPolys.length > 0)
       ? core.clipperUnionPolys([...regularStreetRings, ...protectedWaterfrontPolys], 1e-5)
       : [];
+    yield;
     if (streetUnionRings.length > 0 && bldFootprintPolys.length > 0) {
       streetUnionRings = core.clipperDiffPolys(streetUnionRings, bldFootprintPolys, 1e-5);
+      yield;
     }
     const streetPolys2D = _regularizePolys2D(core, core.ringsToOutersWithHoles(streetUnionRings, 6e-4), 6e-4, 3.5e-4);
+    yield;
 
-    // Greenery is carved ONLY by water, grounded buildings, and vehicular streets/plazas — NEVER by footpaths!
+    // Greenery is carved ONLY by water, grounded buildings, and vehicular streets/plazas -- NEVER by footpaths
     let greenUnionRings = greenRawPolys.length > 0 ? core.clipperUnionPolys(greenRawPolys, 1e-5) : [];
     greenUnionRings = greenUnionRings.length > 0 ? core.clipperIntersectPolys(greenUnionRings, plateClipPoly, 1e-5) : [];
+    yield;
     if (greenUnionRings.length > 0 && unionedWaterRings.length > 0) {
       greenUnionRings = core.clipperDiffPolys(greenUnionRings, unionedWaterRings, 1e-5);
     }
     if (greenUnionRings.length > 0 && bldFootprintPolys.length > 0) {
       greenUnionRings = core.clipperDiffPolys(greenUnionRings, bldFootprintPolys, 1e-5);
     }
+    yield;
     if (greenUnionRings.length > 0 && streetUnionRings.length > 0) {
       greenUnionRings = core.clipperDiffPolys(greenUnionRings, streetUnionRings, 1e-5);
     }
     const greenPolys2D = _regularizePolys2D(core, core.ringsToOutersWithHoles(greenUnionRings, 6e-4), 6e-4, 3.5e-4);
+    yield;
 
-    // Footpaths & park alleys: subtracted by water and buildings, tucked slightly into streets, and draped ON TOP of parks
+    // Footpaths and park alleys: subtracted by water and buildings, tucked slightly into streets, draped on top of parks
     let footpathRings = footpathRawPolys.length > 0 ? core.clipperUnionPolys(footpathRawPolys, 1e-5) : [];
     if (footpathRings.length > 0) {
       footpathRings = core.clipperIntersectPolys(footpathRings, plateClipPoly, 1e-5);
     }
+    yield;
     if (footpathRings.length > 0 && unionedWaterRings.length > 0) {
       footpathRings = core.clipperDiffPolys(footpathRings, unionedWaterRings, 1e-5);
     }
     if (footpathRings.length > 0 && bldFootprintPolys.length > 0) {
       footpathRings = core.clipperDiffPolys(footpathRings, bldFootprintPolys, 1e-5);
     }
+    yield;
     if (footpathRings.length > 0 && streetPolys2D.length > 0) {
       const streetCoreBlock = _shrinkStructuredPolys2D(core, streetPolys2D, Math.min(0.04 / scaleMm, 0.03));
+      yield;
       if (streetCoreBlock.length > 0) {
         footpathRings = core.clipperDiffPolys(footpathRings, streetCoreBlock, 1e-5);
+        yield;
       }
     }
 
@@ -497,37 +524,181 @@
       if (greenPolys2D.length > 0) {
         const greenOnParkMask = _shrinkStructuredPolys2D(core, greenPolys2D, 0.025 / scaleMm);
         const greenGroundCutMask = _shrinkStructuredPolys2D(core, greenPolys2D, 0.065 / scaleMm);
+        yield;
         const onGreenRings = greenOnParkMask.length > 0 ? core.clipperIntersectPolys(footpathRings, greenOnParkMask, 1e-5) : [];
         const onGroundRings = greenGroundCutMask.length > 0 ? core.clipperDiffPolys(footpathRings, greenGroundCutMask, 1e-5) : footpathRings;
+        yield;
         footpathGreenPolys2D = _regularizePolys2D(core, core.ringsToOutersWithHoles(onGreenRings, 6e-4), 6e-4, 2.5e-4);
         footpathGroundPolys2D = _regularizePolys2D(core, core.ringsToOutersWithHoles(onGroundRings, 6e-4), 6e-4, 2.5e-4);
       } else {
         footpathGroundPolys2D = _regularizePolys2D(core, core.ringsToOutersWithHoles(footpathRings, 6e-4), 6e-4, 2.5e-4);
       }
+      yield;
     }
 
     const hGreenU = Math.max(0.22 / scaleMm, ((ctx.cfg && ctx.cfg.greeneryHeightMm) || 0.454) / scaleMm);
     const hRoadU = Math.max(0.26 / scaleMm, ((ctx.cfg && ctx.cfg.roadHeightMm) || 0.567) / scaleMm);
     const hFootpathU = Math.max(0.15 / scaleMm, ((ctx.cfg && ctx.cfg.footpathHeightMm) || 0.303) / scaleMm);
 
-    const drapePolysOntoTerrain = (structuredPolys, zOffBotU, zOffTopU) => {
+    // Lazily partition terrainManifold into spatial cells for large 3D drape booleans
+    let cachedTerrCells = null;
+    const ensureTerrCells = () => {
+      if (cachedTerrCells) return cachedTerrCells;
+      const tbb = terrainManifold.boundingBox();
+      const x0 = tbb.min[0] - 0.05, x1 = tbb.max[0] + 0.05;
+      const y0 = tbb.min[1] - 0.05, y1 = tbb.max[1] + 0.05;
+      const z0 = tbb.min[2] - 0.5, z1 = tbb.max[2] + 5.0;
+      const nx = (x1 - x0) > (y1 - y0) * 1.15 ? 3 : 2;
+      const ny = (y1 - y0) > (x1 - x0) * 1.15 ? 3 : 2;
+      const dx = (x1 - x0) / nx, dy = (y1 - y0) / ny;
+      const seamPad = 2e-4;
+      const cells = [];
+      for (let iy = 0; iy < ny; iy++) {
+        for (let ix = 0; ix < nx; ix++) {
+          const cx0 = x0 + ix * dx - (ix > 0 ? seamPad : 0);
+          const cx1 = x0 + (ix + 1) * dx + (ix < nx - 1 ? seamPad : 0);
+          const cy0 = y0 + iy * dy - (iy > 0 ? seamPad : 0);
+          const cy1 = y0 + (iy + 1) * dy + (iy < ny - 1 ? seamPad : 0);
+          const cBox = core.boxManifoldFromBounds(mf, cx0, cx1, cy0, cy1, z0, z1);
+          if (!cBox) continue;
+          let tCell = null;
+          try {
+            tCell = terrainManifold.intersect(cBox);
+          } catch (_) {
+            tCell = null;
+          } finally {
+            core.safeDeleteManifold(cBox);
+          }
+          if (tCell && tCell.numTri() > 0) {
+            cells.push({ cx0, cx1, cy0, cy1, terr: tCell });
+          } else {
+            core.safeDeleteManifold(tCell);
+          }
+        }
+      }
+      cachedTerrCells = cells;
+      return cells;
+    };
+
+    function* drapePolysOntoTerrainGen(structuredPolys, zOffBotU, zOffTopU) {
       if (!structuredPolys || structuredPolys.length === 0 || !terrainManifold || terrainManifold.numTri() === 0 || !(zOffTopU > zOffBotU + 1e-5)) return null;
       if (ctx.elevReliefM <= 0.35) {
-        return _buildClippedPolysExtrude(core, mf, structuredPolys, ctx.zLandDatum + zOffBotU, ctx.zLandDatum + zOffTopU, plateClipPoly);
+        const flatRes = _buildClippedPolysExtrude(core, mf, structuredPolys, ctx.zLandDatum + zOffBotU, ctx.zLandDatum + zOffTopU, plateClipPoly);
+        yield;
+        return flatRes;
       }
+
+      let totalContours = 0;
+      for (let i = 0; i < structuredPolys.length; i++) {
+        if (structuredPolys[i] && structuredPolys[i].outer) {
+          totalContours += 1 + (structuredPolys[i].holes ? structuredPolys[i].holes.length : 0);
+        }
+      }
+
       const tMaxZ = terrainManifold.boundingBox().max[2] + zOffTopU + 5.0;
+      if (totalContours >= 250 && mf && mf.CrossSection && typeof core.boxManifoldFromBounds === 'function') {
+        const directRings = [];
+        for (let i = 0; i < structuredPolys.length; i++) {
+          const pp = structuredPolys[i];
+          if (!pp || !pp.outer || pp.outer.length < 3) continue;
+          const o = core.ensureWinding(pp.outer, true, 6e-4);
+          if (o.length < 3) continue;
+          directRings.push(o);
+          for (const h of (pp.holes || [])) {
+            const hc = core.ensureWinding(h, false, 6e-4);
+            if (hc.length >= 3) directRings.push(hc);
+          }
+        }
+        if (directRings.length > 0) {
+          let csSubj = null, csClip = null, csPlate = null;
+          const cellSlabs = [];
+          let chunkedOk = false;
+          try {
+            csSubj = mf.CrossSection.ofPolygons(directRings, 'Positive');
+            yield;
+            if (plateClipPoly && plateClipPoly.length > 0) {
+              csClip = mf.CrossSection.ofPolygons(plateClipPoly.map(r => core.ensureWinding(r, true, 1e-4)), 'Positive');
+              csPlate = csSubj.intersect(csClip);
+            } else {
+              csPlate = csSubj;
+              csSubj = null;
+            }
+            yield;
+            const cells = ensureTerrCells();
+            if (csPlate && (!csPlate.isEmpty || !csPlate.isEmpty()) && cells.length > 0) {
+              for (let ci = 0; ci < cells.length; ci++) {
+                const cell = cells[ci];
+                let csBox = null, csCell = null, cellPrism = null, raisedTop = null, raisedBot = null, clippedTop = null, slab = null;
+                try {
+                  csBox = mf.CrossSection.ofPolygons([[[cell.cx0, cell.cy0], [cell.cx1, cell.cy0], [cell.cx1, cell.cy1], [cell.cx0, cell.cy1]]], 'Positive');
+                  csCell = csPlate.intersect(csBox);
+                  if (csCell && (!csCell.isEmpty || !csCell.isEmpty())) {
+                    cellPrism = csCell.extrude(tMaxZ - (-0.5));
+                    const shifted = cellPrism.translate([0, 0, -0.5]);
+                    cellPrism.delete();
+                    cellPrism = shifted;
+                    yield;
+                    raisedTop = cell.terr.translate([0, 0, zOffTopU]);
+                    clippedTop = raisedTop.intersect(cellPrism);
+                    yield;
+                    if (zOffBotU > 1e-5) {
+                      raisedBot = cell.terr.translate([0, 0, zOffBotU]);
+                      slab = clippedTop.subtract(raisedBot);
+                    } else {
+                      slab = clippedTop.subtract(cell.terr);
+                    }
+                    if (slab && slab.numTri() > 0) {
+                      cellSlabs.push(slab);
+                      slab = null;
+                    }
+                  }
+                } finally {
+                  core.safeDeleteManifold(csBox);
+                  core.safeDeleteManifold(csCell);
+                  core.safeDeleteManifold(cellPrism);
+                  core.safeDeleteManifold(raisedTop);
+                  core.safeDeleteManifold(raisedBot);
+                  core.safeDeleteManifold(clippedTop);
+                  core.safeDeleteManifold(slab);
+                }
+                yield;
+              }
+              chunkedOk = true;
+            }
+          } catch (_) {
+            for (let k = 0; k < cellSlabs.length; k++) core.safeDeleteManifold(cellSlabs[k]);
+            cellSlabs.length = 0;
+            chunkedOk = false;
+          } finally {
+            core.safeDeleteManifold(csSubj);
+            core.safeDeleteManifold(csClip);
+            core.safeDeleteManifold(csPlate);
+          }
+          if (chunkedOk) {
+            if (cellSlabs.length === 0) return null;
+            const merged = cellSlabs.length === 1 ? cellSlabs[0] : core.batchUnionManifolds(mf, cellSlabs);
+            yield;
+            if (!merged || merged.numTri() === 0) { core.safeDeleteManifold(merged); return null; }
+            return merged;
+          }
+        }
+      }
+
       const maskPrism = _buildClippedPolysExtrude(core, mf, structuredPolys, -0.5, tMaxZ, plateClipPoly);
+      yield;
       if (!maskPrism) return null;
       let raisedTop = null, raisedBot = null, clippedTop = null, slab = null;
       try {
         raisedTop = terrainManifold.translate([0, 0, zOffTopU]);
         clippedTop = raisedTop.intersect(maskPrism);
+        yield;
         if (zOffBotU > 1e-5) {
           raisedBot = terrainManifold.translate([0, 0, zOffBotU]);
           slab = clippedTop.subtract(raisedBot);
         } else {
           slab = clippedTop.subtract(terrainManifold);
         }
+        yield;
         if (!slab || slab.numTri() === 0) { core.safeDeleteManifold(slab); return null; }
         return slab;
       } catch (_) {
@@ -539,22 +710,32 @@
         core.safeDeleteManifold(raisedBot);
         core.safeDeleteManifold(clippedTop);
       }
-    };
+    }
 
-    const greeneryManifold = drapePolysOntoTerrain(greenPolys2D, 0, hGreenU);
-    const streetManifold = drapePolysOntoTerrain(streetPolys2D, 0, hRoadU);
-    const fpGroundManifold = drapePolysOntoTerrain(footpathGroundPolys2D, 0, hFootpathU);
-    const zParkAnchorBotU = Math.min(hFootpathU * 0.58, hGreenU * 0.45);
-    const fpGreenManifold = drapePolysOntoTerrain(footpathGreenPolys2D, zParkAnchorBotU, hGreenU + hFootpathU);
+    let greeneryManifold = null, streetManifold = null, fpGroundManifold = null, fpGreenManifold = null;
+    try {
+      greeneryManifold = yield* drapePolysOntoTerrainGen(greenPolys2D, 0, hGreenU);
+      streetManifold = yield* drapePolysOntoTerrainGen(streetPolys2D, 0, hRoadU);
+      fpGroundManifold = yield* drapePolysOntoTerrainGen(footpathGroundPolys2D, 0, hFootpathU);
+      const zParkAnchorBotU = Math.min(hFootpathU * 0.58, hGreenU * 0.45);
+      fpGreenManifold = yield* drapePolysOntoTerrainGen(footpathGreenPolys2D, zParkAnchorBotU, hGreenU + hFootpathU);
+    } finally {
+      if (cachedTerrCells) {
+        for (let ci = 0; ci < cachedTerrCells.length; ci++) core.safeDeleteManifold(cachedTerrCells[ci].terr);
+      }
+    }
     const roadParts = [streetManifold, fpGroundManifold, fpGreenManifold].filter(Boolean);
     const roadManifold = roadParts.length === 0 ? null : (roadParts.length === 1 ? roadParts[0] : core.batchUnionManifolds(mf, roadParts));
+    yield;
 
     const allRoadAndPathRings = (streetUnionRings.length > 0 || footpathRings.length > 0)
       ? core.clipperUnionPolys([...streetUnionRings, ...footpathRings], 1e-5)
       : [];
+    yield;
     const roadPolys2D = allRoadAndPathRings.length > 0
       ? _regularizePolys2D(core, core.ringsToOutersWithHoles(allRoadAndPathRings, 6e-4), 6e-4, 2.5e-4)
       : streetPolys2D;
+    yield;
     const footpathPolys2D = footpathRings.length > 0
       ? core.ringsToOutersWithHoles(footpathRings, 6e-4)
       : [];
@@ -581,12 +762,21 @@
     };
   }
 
+  function buildSurfaceDrapesAndFrame(core, mf, ctx, terrainManifold, plateClipPoly, unionedWaterRings, surfaceData) {
+    const gen = _buildSurfaceDrapesAndFrameGen(core, mf, ctx, terrainManifold, plateClipPoly, unionedWaterRings, surfaceData);
+    let step;
+    do { step = gen.next(); } while (!step.done);
+    return step.value;
+  }
+
   const exportsObj = {
     isFootpathRoad,
     _regularizePolys2D,
     _buildClippedPolysExtrude,
     collectPrintedBuildingFootprints2D,
+    _collectSurfacePolysGen,
     collectSurfacePolys,
+    _buildSurfaceDrapesAndFrameGen,
     buildSurfaceDrapesAndFrame
   };
   Object.assign(root, exportsObj);

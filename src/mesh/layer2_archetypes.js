@@ -10,6 +10,7 @@
         _computeGroupDatums: root._computeGroupDatums,
         _mergeLayeredGroupManifolds: root._mergeLayeredGroupManifolds,
         buildLayer2Archetypes: root.buildLayer2Archetypes,
+        buildLayer2ArchetypesAsync: root.buildLayer2ArchetypesAsync,
       };
 
   Object.assign(root, mod);

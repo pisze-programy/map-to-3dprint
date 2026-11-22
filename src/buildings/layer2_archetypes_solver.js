@@ -20,17 +20,22 @@
   const IND_SET = new Set(['storage_tank', 'silo', 'chimney', 'cooling_tower', 'crane']);
   const TOWER_SET = new Set(['tower', 'mast', 'communications_tower', 'lighthouse']);
 
-  function _computeGroupDatums(ctx, scene, terrainWater) {
+  function _computeGroupDatums(ctx, scene, terrainWater, targetGroupIds = null) {
     const grd = new Map(), fbk = new Map(), { toBed } = ctx;
+    if (targetGroupIds && targetGroupIds.size === 0) return grd;
     for (const b of (scene && scene.buildings) || []) {
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3 || b.groupId == null) continue;
-      const gKey = String(b.groupId), tags = b.tags || {};
+      const gKey = String(b.groupId);
+      if (targetGroupIds && !targetGroupIds.has(gKey)) continue;
+      const tags = b.tags || {};
       const rawMinH = Math.max(0, Number(b.minH !== undefined ? b.minH : (tags.min_height || 0)) || 0);
       let dryMinZ = Infinity, waterMinZ = Infinity;
       for (const p of b.outer) {
         const bp = toBed(p), inW = Boolean(terrainWater && terrainWater.isPointInWater(bp[0], bp[1]));
         if (!inW) {
-          const z = (terrainWater && typeof terrainWater.getSurfaceZ === 'function') ? terrainWater.getSurfaceZ(bp[0], bp[1]) : ctx.getTerrainZ(bp[0], bp[1]);
+          const z = (terrainWater && typeof terrainWater.getDrySurfaceZ === 'function')
+            ? terrainWater.getDrySurfaceZ(bp[0], bp[1])
+            : ((terrainWater && typeof terrainWater.getSurfaceZ === 'function') ? terrainWater.getSurfaceZ(bp[0], bp[1]) : ctx.getTerrainZ(bp[0], bp[1]));
           if (z < dryMinZ) dryMinZ = z;
         } else {
           const zw = (terrainWater && typeof terrainWater.getNominalWaterTopZ === 'function') ? terrainWater.getNominalWaterTopZ(bp[0], bp[1]) : ctx.zWaterTop;
@@ -148,11 +153,10 @@
     else counts.tanksAndSilos++;
   }
 
-  function buildLayer2Archetypes(ctx, scene, terrainWater, s3db = null) {
+  function* _buildLayer2ArchetypesGen(ctx, scene, terrainWater, s3db = null) {
     const { core, pierMod, structMod, treeMod } = _getDeps();
     const { mf, halfW, halfH, toBed, latLonToScene } = ctx;
     const utils = { computeFootprintOBB: pierMod.computeFootprintOBB, resolveGroundZ: pierMod.resolveGroundZ };
-    const groupDatumById = _computeGroupDatums(ctx, scene, terrainWater);
     const buildingLayerManifolds = [], highlightedLayerManifolds = [], buildingBounds = [], roadLayerManifolds = [], handledOsmIds = new Set();
     const counts = { wheels: 0, windTurbines: 0, latticeTowers: 0, towers: 0, tanksAndSilos: 0, chimneys: 0, coolingTowers: 0, cranes: 0, marinePiers: 0, trees: 0 };
 
@@ -183,10 +187,27 @@
       const el = els[i];
       if (el && el.type === 'node' && neededNodeIds.has(el.id) && Number.isFinite(el.lat) && Number.isFinite(el.lon)) nodeCoords.set(el.id, el);
     }
+    yield;
+
+    // Collect only group IDs referenced by lattice towers before computing group datums
+    const latticeGroupIds = new Set();
+    const allSceneBlds = (scene && scene.buildings) || [];
+    for (let i = 0; i < allSceneBlds.length; i++) {
+      const b = allSceneBlds[i];
+      if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3 || b.groupId == null) continue;
+      const tags = Object.assign({}, rawTagMap.get(b.osmId) || {}, b.tags || {});
+      if (classifyTags(tags, b).isLattice) latticeGroupIds.add(String(b.groupId));
+    }
+    const groupDatumById = latticeGroupIds.size > 0
+      ? _computeGroupDatums(ctx, scene, terrainWater, latticeGroupIds)
+      : new Map();
+    yield;
 
     const hasTrees = Array.isArray(scene && scene.trees) && scene.trees.length > 0;
     const buildingFootprints2D = [], limX = halfW + 2.0, limY = halfH + 2.0;
-    for (const b of (scene && scene.buildings) || []) {
+    for (let bi = 0; bi < allSceneBlds.length; bi++) {
+      if ((bi & 511) === 0 && bi > 0) yield;
+      const b = allSceneBlds[bi];
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) continue;
       const tags = Object.assign({}, rawTagMap.get(b.osmId) || {}, b.tags || {}), cl = classifyTags(tags, b);
       if (!cl.isL2 && !hasTrees) continue;
@@ -225,8 +246,10 @@
         buildingBounds.push({ id: b.id != null ? b.id : pickId, pickId, building: b, layerId: isHi ? 5 : 4, osmId: b.osmId || null, name: b.name || tags.name || '', minX: bb.min[0], minY: bb.min[1], minZ: bb.min[2], maxX: bb.max[0], maxY: bb.max[1], maxZ: bb.max[2], cx: bcx, cy: bcy, interiorPt: [bcx, bcy], roof: b.roof || 'flat', minH: b.minH || 0, h: hM || 60, archType });
       }
     }
+    yield;
 
     for (let i = 0; i < l2Candidates.length; i++) {
+      if ((i & 63) === 0 && i > 0) yield;
       const el = l2Candidates[i];
       if (!el || !el.tags || el.tags.building || handledOsmIds.has(el.id)) continue;
       const tags = el.tags, cl = classifyTags(tags);
@@ -270,12 +293,15 @@
         buildingBounds.push({ id: pickId, pickId, building: stubB, layerId: 4, osmId: el.id, name: tags.name || '', minX: bb.min[0], minY: bb.min[1], minZ: bb.min[2], maxX: bb.max[0], maxY: bb.max[1], maxZ: bb.max[2], cx: bcx, cy: bcy, interiorPt: [bcx, bcy], roof: 'flat', minH: 0, h: hM || 40, archType });
       }
     }
+    yield;
 
     _mergeLayeredGroupManifolds(core, mf, ctx, buildingLayerManifolds, buildingBounds, s3db);
+    yield;
     if (highlightedLayerManifolds.length > 0 && s3db && Array.isArray(s3db.highlightedManifolds)) {
       for (const hm of highlightedLayerManifolds) s3db.highlightedManifolds.push(hm);
     }
     const pierRes = pierMod.buildMarinePiersAndBreakwaters(core, mf, ctx, scene, terrainWater);
+    yield;
     for (const ps of (pierRes.solids || [])) roadLayerManifolds.push(ps);
     counts.marinePiers = pierRes.pierCount || 0;
     const greeneryTreeManifolds = treeMod.buildTreesArchetypeList(mf, ctx, scene, terrainWater, buildingFootprints2D);
@@ -285,7 +311,24 @@
     return { buildingLayerManifolds, buildingBounds, roadLayerManifolds, greeneryTreeManifolds, counts };
   }
 
-  const exportsObj = { _computeGroupDatums, _mergeLayeredGroupManifolds, buildLayer2Archetypes };
+  function buildLayer2Archetypes(ctx, scene, terrainWater, s3db = null) {
+    const gen = _buildLayer2ArchetypesGen(ctx, scene, terrainWater, s3db);
+    let step;
+    do { step = gen.next(); } while (!step.done);
+    return step.value;
+  }
+
+  async function buildLayer2ArchetypesAsync(ctx, scene, terrainWater, s3db = null, yieldCtrl = null) {
+    const gen = _buildLayer2ArchetypesGen(ctx, scene, terrainWater, s3db);
+    let step;
+    while (true) {
+      step = gen.next();
+      if (step.done) return step.value;
+      if (yieldCtrl) await yieldCtrl.yieldIfNeeded(step.value === 'force');
+    }
+  }
+
+  const exportsObj = { _computeGroupDatums, _mergeLayeredGroupManifolds, buildLayer2Archetypes, buildLayer2ArchetypesAsync };
   Object.assign(root, exportsObj);
   if (typeof window !== 'undefined') Object.assign(window, exportsObj);
   if (typeof module !== 'undefined' && module.exports) module.exports = exportsObj;
