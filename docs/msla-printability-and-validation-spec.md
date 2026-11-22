@@ -93,6 +93,10 @@ When Resin Mode (`state.isResin` or `printerPreset === 'photon_mono_4'`) is acti
   - When placing multiple disjoint parts on one build plate, maintain **`>= 14.0 mm` XY separation** between adjacent high-area bases (or limit paired tile footprints to `<= 72 x 84 mm` with `>= 8.0 mm` gap and `>= 8.5 mm` Z lift).
 - **`DFM-10` (Constant Physical Base Thickness and Z-Height Envelope)**:
   - Lock physical base thickness `baseBottomZ * scaleMm` to **`2.40 - 2.60 mm`** across all map frame sizes (`10 cm` to `150 cm`) and clamp total Z height to **`<= 163.0 mm`** (or detach supertall spires above `35 mm` as plug-in pins).
+- **`DFM-11` (Bed Safe Area)**:
+  - Every tile must fit inside the bed safe area: `153.45 x 87.05 mm` minus `state.bedSafeMarginMm` on every side (default **`4.0 mm`** -> **`145.45 x 79.05 mm`**; UI options `2.5 / 3.0 / 4.0 / 5.0 mm`).
+  - Implementation: `resolveMono4SafeArea(state)` in `src/geometry/print_physics_config.js` is the single source. The tile grid (`computeOptimalMono4GridForState`), fixed-size presets (`resolveMono4ProfileGrid`), the fit warning, STL auto-rotation, the ZIP report and frame segment splitting use it.
+  - Two tiles on one plate need the safe area plus a **`>= 8.0 mm`** gap between them (`DFM-09`), which gives `68.7 x 79.05 mm` per tile at the default margin.
 
 ---
 

@@ -149,7 +149,7 @@ const PRINT_PROFILES = {
   },
   mono4_150_1x2: {
     id: 'mono4_150_1x2',
-    name: 'Anycubic Photon Mono 4 • 150×150 mm (2 Kafle 1×2 po 150×75 mm)',
+    name: 'Anycubic Photon Mono 4 • 150×150 mm (Auto-Siatka w strefie bezpiecznej)',
     printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
     bedX: 153.45, bedY: 87.05, bedZ: 165.0,
     totalWidthMm: 150, totalHeightMm: 150,
@@ -160,7 +160,7 @@ const PRINT_PROFILES = {
   },
   mono4_296_2x4: {
     id: 'mono4_296_2x4',
-    name: 'Anycubic Photon Mono 4 • 296×296 mm (8 Kafli 2×4 po 148×74 mm)',
+    name: 'Anycubic Photon Mono 4 • 296×296 mm (Auto-Siatka w strefie bezpiecznej)',
     printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
     bedX: 153.45, bedY: 87.05, bedZ: 165.0,
     totalWidthMm: 296, totalHeightMm: 296,
@@ -213,24 +213,47 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-function checkTileFitsMono4(tileWidthMm, tileHeightMm, maxZMm = 22.0) {
+function _mono4SafeArea(state) {
+  if (typeof resolveMono4SafeArea === 'function') return resolveMono4SafeArea(state);
+  if (typeof require === 'function') {
+    try { return require('../geometry/print_physics_config.js').resolveMono4SafeArea(state); } catch (_) {}
+  }
+  const raw = state && Number(state.bedSafeMarginMm);
+  const marginMm = Number.isFinite(raw) ? Math.min(10, Math.max(0, raw)) : 4.0;
+  const maxWMm = 153.45 - 2 * marginMm, maxHMm = 87.05 - 2 * marginMm;
+  return { marginMm, bedXMm: 153.45, bedYMm: 87.05, maxWMm, maxHMm, dualMaxWMm: (maxWMm - 8.0) / 2, dualMaxHMm: maxHMm, dualGapMm: 8.0 };
+}
+
+/**
+ * True when the tile fits the Mono 4 plate inside the bed safe area (state.bedSafeMarginMm per side).
+ */
+function checkTileFitsMono4(tileWidthMm, tileHeightMm, maxZMm = 22.0, state = null) {
   const w = Number(tileWidthMm), h = Number(tileHeightMm), z = Number(maxZMm);
   if (!Number.isFinite(w) || !Number.isFinite(h) || !Number.isFinite(z) || w <= 0 || h <= 0 || z <= 0) return false;
-  const fits0 = (w <= 153.45 && h <= 87.05);
-  const fits90 = (h <= 153.45 && w <= 87.05);
+  const sa = _mono4SafeArea(state);
+  const fits0 = (w <= sa.maxWMm + 1e-6 && h <= sa.maxHMm + 1e-6);
+  const fits90 = (h <= sa.maxWMm + 1e-6 && w <= sa.maxHMm + 1e-6);
   return (fits0 || fits90) && z <= 165.0;
 }
 
-function checkTileDualPackableMono4(tileWidthMm, tileHeightMm) {
+/**
+ * True when two tiles fit side by side on one plate inside the safe area with the FEP gap between them.
+ */
+function checkTileDualPackableMono4(tileWidthMm, tileHeightMm, state = null) {
   const w = Number(tileWidthMm);
   const h = Number(tileHeightMm);
   if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return false;
-  return (w <= 75.45 && h <= 87.05) || (h <= 75.45 && w <= 87.05);
+  const sa = _mono4SafeArea(state);
+  return (w <= sa.dualMaxWMm + 1e-6 && h <= sa.dualMaxHMm + 1e-6) || (h <= sa.dualMaxWMm + 1e-6 && w <= sa.dualMaxHMm + 1e-6);
 }
 
-function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH = 85.0, dualPack = false) {
-  const effectiveMaxW = dualPack ? 75.0 : safeMaxW;
-  const effectiveMaxH = dualPack ? 84.0 : safeMaxH;
+function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = null, safeMaxH = null, dualPack = false) {
+  // Defaults come from the bed safe area (default margin 4.0 mm per side -> 145.45 x 79.05 mm).
+  const saDef = _mono4SafeArea(null);
+  const maxW = Number.isFinite(Number(safeMaxW)) && safeMaxW !== null ? Number(safeMaxW) : saDef.maxWMm;
+  const maxH = Number.isFinite(Number(safeMaxH)) && safeMaxH !== null ? Number(safeMaxH) : saDef.maxHMm;
+  const effectiveMaxW = dualPack ? (maxW - saDef.dualGapMm) / 2 : maxW;
+  const effectiveMaxH = maxH;
   const w = Math.max(10.0, Number(widthMm) || 200.0);
   const h = Math.max(10.0, Number(heightMm) || 200.0);
 
@@ -292,7 +315,29 @@ function computeOptimalMono4Grid(widthMm, heightMm, safeMaxW = 150.0, safeMaxH =
   };
 }
 
-function computeZHeightPairingSchedule(tiles, tileW = 75, tileH = 84) {
+/**
+ * Optimal Mono 4 tile grid for the bed safe area stored in state (state.bedSafeMarginMm).
+ */
+function computeOptimalMono4GridForState(state, widthMm, heightMm) {
+  const sa = _mono4SafeArea(state);
+  return computeOptimalMono4Grid(widthMm, heightMm, sa.maxWMm, sa.maxHMm, false);
+}
+
+/**
+ * Grid for a fixed-size preset. Keeps the preset cols x rows when its tiles fit the safe area,
+ * otherwise computes the optimal grid for the preset frame size.
+ */
+function resolveMono4ProfileGrid(prof, state) {
+  const w = Number(prof && prof.totalWidthMm) || 150;
+  const h = Number(prof && prof.totalHeightMm) || 150;
+  const cols = Math.max(1, Number(prof && prof.cols) || 1);
+  const rows = Math.max(1, Number(prof && prof.rows) || 1);
+  if (checkTileFitsMono4(w / cols, h / rows, 22.0, state)) return { cols, rows };
+  const opt = computeOptimalMono4GridForState(state, w, h);
+  return { cols: opt.cols, rows: opt.rows };
+}
+
+function computeZHeightPairingSchedule(tiles, tileW = 75, tileH = 84, state = null) {
   if (!tiles || tiles.length === 0) {
     return {
       runs: [],
@@ -307,7 +352,7 @@ function computeZHeightPairingSchedule(tiles, tileW = 75, tileH = 84) {
     };
   }
 
-  const isDual = checkTileDualPackableMono4(tileW, tileH);
+  const isDual = checkTileDualPackableMono4(tileW, tileH, state);
   const tileList = tiles.map((t, idx) => ({
     ...t,
     index: idx + 1,
@@ -384,6 +429,8 @@ if (typeof window !== 'undefined') {
   window.checkTileDualPackableMono4 = checkTileDualPackableMono4;
   window.computeOptimalMono4Grid = computeOptimalMono4Grid;
   window.computeZHeightPairingSchedule = computeZHeightPairingSchedule;
+  window.computeOptimalMono4GridForState = computeOptimalMono4GridForState;
+  window.resolveMono4ProfileGrid = resolveMono4ProfileGrid;
   window.safeClosest = safeClosest;
   if (typeof Window !== 'undefined' && Window.prototype && !Window.prototype.closest) {
     Window.prototype.closest = function() { return null; };
@@ -405,6 +452,6 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     PALETTES, LAYERS_META, WORLD_LOCATIONS, PRINT_PROFILES, resolveMono4ProfileId, escapeHtml,
-    checkTileFitsMono4, checkTileDualPackableMono4, computeOptimalMono4Grid, computeZHeightPairingSchedule, safeClosest
+    checkTileFitsMono4, checkTileDualPackableMono4, computeOptimalMono4Grid, computeOptimalMono4GridForState, resolveMono4ProfileGrid, computeZHeightPairingSchedule, safeClosest
   };
 }

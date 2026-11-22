@@ -32,7 +32,13 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   const kerfMm = (state && state.kerfMm !== undefined) ? state.kerfMm : resinCfg.defaultKerfMm;
   const fitsNormal = tileW <= mono4.bedXMm && tileH <= mono4.bedYMm;
   const fitsRotated = tileH <= mono4.bedXMm && tileW <= mono4.bedYMm;
-  const isAutoRotated = !fitsNormal && fitsRotated;
+  const safeArea = (typeof resolveMono4SafeArea === 'function') ? resolveMono4SafeArea(state)
+    : ((typeof require !== 'undefined') ? require('../geometry/print_physics_config.js').resolveMono4SafeArea(state) : null);
+  const saW = safeArea ? safeArea.maxWMm : mono4.bedXMm, saH = safeArea ? safeArea.maxHMm : mono4.bedYMm;
+  const saMargin = safeArea ? safeArea.marginMm : 0;
+  const fitsSafeN = tileW <= saW + 1e-6 && tileH <= saH + 1e-6;
+  const fitsSafeR = tileH <= saW + 1e-6 && tileW <= saH + 1e-6;
+  const isAutoRotated = (!fitsSafeN && fitsSafeR) || (!fitsSafeN && !fitsSafeR && !fitsNormal && fitsRotated);
 
   const zipFiles = [], tileEntries = [];
   let fileIdx = 1;
@@ -85,7 +91,8 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
     `Maksymalna wysokość reliefu: ${(pm.maxZMm || 20).toFixed(1)} mm (oś Z)` + (pm.zCapApplied ? ` [Z-Cap: ograniczono do <= ${(pm.zCapLimitMm || 163).toFixed(1)} mm dla osi Z drukarki]` : ''),
     `Podział na kafle:            ${tileCols} kolumn x ${tileRows} wierszy (${numTiles} kafli ogółem)`,
     `Wymiar pojedynczego kafla:   ${tileW.toFixed(1)} x ${tileH.toFixed(1)} mm`,
-    `Auto-rotacja dla Mono 4:     ${isAutoRotated ? `TAK (+90° XY: wymiar na stole ${tileH.toFixed(1)} x ${tileW.toFixed(1)} mm <= 153.4 x 87.0 mm)` : `NIE (mieści się w układzie standardowym <= 153.4 x 87.0 mm)`}`,
+    `Strefa bezpieczna stołu:     ${saW.toFixed(1)} x ${saH.toFixed(1)} mm (stół 153.4 x 87.0 mm, margines ${saMargin} mm z każdej strony) — kafel ${(fitsSafeN || fitsSafeR) ? 'MIEŚCI SIĘ' : 'NIE MIEŚCI SIĘ (zmień siatkę kafli)'}`,
+    `Auto-rotacja dla Mono 4:     ${isAutoRotated ? `TAK (+90° XY: wymiar na stole ${tileH.toFixed(1)} x ${tileW.toFixed(1)} mm)` : `NIE (układ standardowy ${tileW.toFixed(1)} x ${tileH.toFixed(1)} mm)`}`,
     `Odchudzona baza (Hollow):    ${state && state.hollowBase ? `TAK (Ścianka >= ${Math.max(0.8, Number(state.hollowWallMm) || 1.8).toFixed(1)} mm + żebra 45° + kanały SLA, oszczędność ~${pm.hollowSavingsPct || 0}%)` : 'NIE (Pełna baza z=0 pod lity wydruk SLA/MSLA)'}`,
     `Wycięcie wody (Cutout):      ${waterCutout ? 'TAK (Woda wycięta do Z=0 pod czarny/drewniany podkład)' : 'NIE (Pełna tafla wody 3D)'}`,
     `Objętość żywicy całkowita:   ~${(pm.totalVolumeMl || 0).toFixed(1)} ml (~${pm.resinGrams || 0} g żywicy Mono 4)`,
@@ -123,10 +130,10 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   const pairingFn = getPairingSchedFn();
   const printableTiles = tileEntries.filter(e => !e.skippedEmptyWater);
   if (printableTiles.length > 1 && typeof pairingFn === 'function') {
-    const sched = pairingFn(printableTiles, tileW, tileH);
+    const sched = pairingFn(printableTiles, tileW, tileH, state);
     reportLines.push(``,
       `HARMONOGRAM DRUKU WSADOWEGO (PHOTON MONO 4 DUAL-TILE PAIRING):`, `--------------------------------------------------------------------------------`,
-      `Podwójne pakowanie na stół 153.4 x 87.0 mm: ${sched.isDualPackable ? 'TAK (2 kafle na wsad)' : 'NIE (kafel przekracza 75 x 84 mm)'}`,
+      `Podwójne pakowanie na stół 153.4 x 87.0 mm: ${sched.isDualPackable ? `TAK (2 kafle na wsad, odstęp ${safeArea ? safeArea.dualGapMm : 8} mm)` : 'NIE (2 kafle nie mieszczą się w strefie bezpiecznej)'}`,
       `Liczba wsadów drukarki:                      ${sched.totalRuns} (zamiast ${sched.numTiles} osobnych wydruków)`,
       `Suma wysokości Z w kolejności:              ${sched.sequentialSumZMm.toFixed(1)} mm`,
       `Suma wysokości Z po optymalizacji:          ${sched.pairedSumZMm.toFixed(1)} mm`,

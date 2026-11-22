@@ -94,7 +94,12 @@ function buildBinarySTLBytes(state, layerFilter = 'all', tileIdFilter = -1) {
 
   const fitsNormal = targetW <= mono4.bedXMm && targetH <= mono4.bedYMm;
   const fitsRotated = targetH <= mono4.bedXMm && targetW <= mono4.bedYMm;
-  const shouldRotateMono4 = (tileIdFilter >= 0) && (!fitsNormal && fitsRotated);
+  // Prefer the orientation that fits the bed safe area (state.bedSafeMarginMm per side)
+  const safeArea = (typeof resolveMono4SafeArea === 'function') ? resolveMono4SafeArea(state)
+    : ((typeof require !== 'undefined') ? require('../geometry/print_physics_config.js').resolveMono4SafeArea(state) : null);
+  const fitsSafeN = safeArea ? (targetW <= safeArea.maxWMm + 1e-6 && targetH <= safeArea.maxHMm + 1e-6) : fitsNormal;
+  const fitsSafeR = safeArea ? (targetH <= safeArea.maxWMm + 1e-6 && targetW <= safeArea.maxHMm + 1e-6) : fitsRotated;
+  const shouldRotateMono4 = (tileIdFilter >= 0) && ((!fitsSafeN && fitsSafeR) || (!fitsSafeN && !fitsSafeR && !fitsNormal && fitsRotated));
 
   let allTris = [];
   const vaultMod = _getStlVaultSolver();

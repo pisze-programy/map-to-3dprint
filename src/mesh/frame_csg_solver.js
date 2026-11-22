@@ -78,7 +78,12 @@
     const { core, cfgMod } = _getDeps();
     const { scaleMm, halfW, halfH } = cfgMod.resolveSceneScaleAndSpec(state, null);
     const cfg = cfgMod.PRINT_PHYSICS_CONFIG || {};
-    const mono4 = cfg.photonMono4 || { bedXMm: 153.45, bedYMm: 87.05, frameSplitMaxMm: 148.0 };
+    const mono4Raw = cfg.photonMono4 || { bedXMm: 153.45, bedYMm: 87.05, frameSplitMaxMm: 148.0 };
+    // Frame segments use the bed safe area (state.bedSafeMarginMm per side) instead of the full LCD
+    const safeArea = (typeof cfgMod.resolveMono4SafeArea === 'function') ? cfgMod.resolveMono4SafeArea(state) : null;
+    const mono4 = safeArea
+      ? { ...mono4Raw, bedXMm: safeArea.maxWMm, bedYMm: safeArea.maxHMm, frameSplitMaxMm: Math.min(mono4Raw.frameSplitMaxMm || 148.0, safeArea.maxWMm) }
+      : mono4Raw;
     const mf = typeof core.getManifoldLib === 'function' ? core.getManifoldLib() : null;
     if (!mf) return [];
 

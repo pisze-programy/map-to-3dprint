@@ -291,7 +291,7 @@ function createUILayersStatsController(state, onRebuildNeeded) {
     if (wCmInp && document.activeElement !== wCmInp) wCmInp.value = Math.round(dimW / 10);
     if (hCmInp && document.activeElement !== hCmInp) hCmInp.value = Math.round(dimH / 10);
 
-    const optGrid = computeOptimalMono4Grid(dimW, dimH);
+    const optGrid = computeOptimalMono4GridForState(state, dimW, dimH);
     const monoBadge = document.getElementById('mono4GridBadge');
     if (monoBadge) {
       monoBadge.textContent = `Mono 4: ${optGrid.cols}×${optGrid.rows} (${optGrid.totalTiles} k. • ${optGrid.tileW}×${optGrid.tileH}mm${optGrid.rotated90 ? ' ↻' : ''})`;
@@ -314,10 +314,17 @@ function createUILayersStatsController(state, onRebuildNeeded) {
       tileGridSel.value = curKey;
     }
 
-    const fitsMono4 = checkTileFitsMono4(tileW, tileH, maxZ);
+    const fitsMono4 = checkTileFitsMono4(tileW, tileH, maxZ, state);
     const fitWarn = document.getElementById('mono4FitWarning');
     const autoFitBtn = document.getElementById('btnAutoFitMono4');
-    if (fitWarn) fitWarn.classList.toggle('hidden', fitsMono4);
+    if (fitWarn) {
+      fitWarn.classList.toggle('hidden', fitsMono4);
+      const sa = (typeof resolveMono4SafeArea === 'function') ? resolveMono4SafeArea(state) : null;
+      if (sa) {
+        fitWarn.textContent = `⚠ kafel > ${sa.maxWMm.toFixed(1)}×${sa.maxHMm.toFixed(1)}mm (margines ${sa.marginMm} mm)`;
+        fitWarn.title = `Kafel ${tileW}×${tileH} mm nie mieści się w strefie bezpiecznej stołu Mono 4 (153.45×87.05 mm minus ${sa.marginMm} mm z każdej strony)`;
+      }
+    }
     if (autoFitBtn) autoFitBtn.classList.toggle('hidden', fitsMono4);
 
     const kerfInp = document.getElementById('kerfMmInput');

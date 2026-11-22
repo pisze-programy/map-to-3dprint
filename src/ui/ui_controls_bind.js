@@ -89,7 +89,7 @@ function bindStudioPanelControls(ctx) {
     state.totalHeightMm = Math.round(hVal * 10);
     state.lastFetchBbox = null;
     state.lastFetchTitle = null;
-    const optGrid = computeOptimalMono4Grid(state.bedSizeMm, state.totalHeightMm);
+    const optGrid = computeOptimalMono4GridForState(state, state.bedSizeMm, state.totalHeightMm);
     state.tileCols = optGrid.cols;
     state.tileRows = optGrid.rows;
     syncFrameSizeChips();
@@ -112,7 +112,7 @@ function bindStudioPanelControls(ctx) {
   const btnAutoFitMono4 = document.getElementById('btnAutoFitMono4');
   if (btnAutoFitMono4) {
     btnAutoFitMono4.addEventListener('click', () => {
-      const opt = computeOptimalMono4Grid(state.bedSizeMm || 320, state.totalHeightMm || 320);
+      const opt = computeOptimalMono4GridForState(state, state.bedSizeMm || 320, state.totalHeightMm || 320);
       state.tileCols = opt.cols;
       state.tileRows = opt.rows;
       draw2DMap();
@@ -128,6 +128,30 @@ function bindStudioPanelControls(ctx) {
   });
   const chkExportFrame = document.getElementById('chkExportFrame');
   if (chkExportFrame) chkExportFrame.addEventListener('change', e => { state.exportFrame = e.target.checked; });
+
+  // Bed safe area: free margin per side of each tile on the Mono 4 plate (default 4.0 mm)
+  const bedSafeMarginSelect = document.getElementById('bedSafeMarginSelect');
+  if (bedSafeMarginSelect) {
+    const curMargin = (typeof state.bedSafeMarginMm === 'number') ? state.bedSafeMarginMm : 4.0;
+    bedSafeMarginSelect.value = String(curMargin);
+    if (bedSafeMarginSelect.value !== String(curMargin)) bedSafeMarginSelect.value = '4';
+    bedSafeMarginSelect.addEventListener('change', e => {
+      const v = parseFloat(e.target.value);
+      state.bedSafeMarginMm = Number.isFinite(v) ? Math.min(10, Math.max(0, v)) : 4.0;
+      const prof = (typeof PRINT_PROFILES !== 'undefined') ? (PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.mono4_custom) : null;
+      if (prof && !prof.isCustomMono4) {
+        const pg = resolveMono4ProfileGrid(prof, state);
+        state.tileCols = pg.cols; state.tileRows = pg.rows;
+      } else {
+        const opt = computeOptimalMono4GridForState(state, state.bedSizeMm || 320, state.totalHeightMm || 320);
+        state.tileCols = opt.cols; state.tileRows = opt.rows;
+      }
+      state.exportTileFilter = 'all';
+      draw2DMap();
+      rebuildModel3D();
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+    });
+  }
 
   const explodeSlider = document.getElementById('explodeSlider');
   const tileExplodeSlider = document.getElementById('tileExplodeSlider');
@@ -207,12 +231,13 @@ function bindStudioPanelControls(ctx) {
       const curH = state.targetHeightCm || Math.round(prof.totalHeightMm / 10) || 50;
       state.targetWidthCm = curW; state.targetHeightCm = curH;
       state.bedSizeMm = curW * 10; state.totalHeightMm = curH * 10;
-      const opt = computeOptimalMono4Grid(state.bedSizeMm, state.totalHeightMm);
+      const opt = computeOptimalMono4GridForState(state, state.bedSizeMm, state.totalHeightMm);
       state.tileCols = opt.cols; state.tileRows = opt.rows;
     } else {
       state.bedSizeMm = prof.totalWidthMm; state.totalHeightMm = prof.totalHeightMm;
       state.targetWidthCm = Math.round(prof.totalWidthMm / 10); state.targetHeightCm = Math.round(prof.totalHeightMm / 10);
-      state.tileCols = prof.cols; state.tileRows = prof.rows;
+      const pg = resolveMono4ProfileGrid(prof, state);
+      state.tileCols = pg.cols; state.tileRows = pg.rows;
     }
     state.exportTileFilter = 'all';
     state.isResin = true;

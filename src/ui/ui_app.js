@@ -86,6 +86,9 @@ function initMap3DApp(initialScene) {
     roadDetail: initLodRoads
   };
 
+  const initBedSafeMarginMm = (savedConfig && typeof savedConfig.bedSafeMarginMm === 'number' && Number.isFinite(savedConfig.bedSafeMarginMm))
+    ? Math.min(10, Math.max(0, savedConfig.bedSafeMarginMm))
+    : 4.0;
   const initProf = (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES[initPrinter]) || (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES.mono4_custom);
   const initBedZ = (initProf && initProf.bedZ) || 165.0;
 
@@ -101,6 +104,7 @@ function initMap3DApp(initialScene) {
     targetWidthCm: initW,
     targetHeightCm: initH,
     kerfMm: 0.08,
+    bedSafeMarginMm: initBedSafeMarginMm,
     exportFrame: false,
     mapSpanMeters: initSpanM,
     mapRotationDeg: initRot,
@@ -225,13 +229,13 @@ function initMap3DApp(initialScene) {
           });
         }
         if (typeof computeZHeightPairingSchedule === 'function') {
-          const sched = computeZHeightPairingSchedule(tileItems, tileW, tileH);
+          const sched = computeZHeightPairingSchedule(tileItems, tileW, tileH, state);
           const pBadge = document.getElementById('mono4PairingBadge');
           const pList = document.getElementById('mono4PairingList');
           if (pBadge) {
             pBadge.textContent = sched.isDualPackable
               ? `${sched.numTiles} kafli = ${sched.totalRuns} wsady (-${sched.savingsPct}% Z)`
-              : `${sched.numTiles} kafli = ${sched.totalRuns} wsadów (kafel > 75×84mm)`;
+              : `${sched.numTiles} kafli = ${sched.totalRuns} wsadów (2 kafle nie mieszczą się w strefie bezpiecznej)`;
           }
           if (pList) {
             pList.innerHTML = sched.runs.map(r => {

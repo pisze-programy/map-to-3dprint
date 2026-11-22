@@ -56,6 +56,7 @@ function saveActiveConfig(state) {
       supportlessMode: Boolean(state.supportlessMode),
       backingStyle: state.backingStyle || 'black_wood',
       printerProfileId: typeof resolveMono4ProfileId === 'function' ? resolveMono4ProfileId(state.printerProfileId) : (state.printerProfileId || 'mono4_custom'),
+      bedSafeMarginMm: typeof state.bedSafeMarginMm === 'number' && Number.isFinite(state.bedSafeMarginMm) ? Number(state.bedSafeMarginMm.toFixed(2)) : 4.0,
       camera: cam ? {
         yaw: typeof cam.yaw === 'number' ? Number(cam.yaw.toFixed(4)) : -0.48,
         pitch: typeof cam.pitch === 'number' ? Number(cam.pitch.toFixed(4)) : 0.50,
@@ -175,6 +176,9 @@ function loadActiveConfig() {
       sanitized.printerProfileId = typeof resolveMono4ProfileId === 'function'
         ? resolveMono4ProfileId(parsed.printerProfileId)
         : parsed.printerProfileId.trim();
+    }
+    if (typeof parsed.bedSafeMarginMm === 'number' && Number.isFinite(parsed.bedSafeMarginMm) && parsed.bedSafeMarginMm >= 0 && parsed.bedSafeMarginMm <= 10) {
+      sanitized.bedSafeMarginMm = parsed.bedSafeMarginMm;
     }
     if (parsed.camera && typeof parsed.camera === 'object' && !Array.isArray(parsed.camera)) {
       const c = parsed.camera;
@@ -436,8 +440,8 @@ async function applyMap3DUrlParams(ctx) {
         state.targetHeightCm = curH;
         state.bedSizeMm = Math.round(curW * 10);
         state.totalHeightMm = Math.round(curH * 10);
-        if (!hasGridParam && typeof computeOptimalMono4Grid === 'function') {
-          const opt = computeOptimalMono4Grid(state.bedSizeMm, state.totalHeightMm);
+        if (!hasGridParam && typeof computeOptimalMono4GridForState === 'function') {
+          const opt = computeOptimalMono4GridForState(state, state.bedSizeMm, state.totalHeightMm);
           state.tileCols = opt.cols;
           state.tileRows = opt.rows;
         }
@@ -453,8 +457,9 @@ async function applyMap3DUrlParams(ctx) {
           if (hInp) hInp.value = state.targetHeightCm;
         }
         if (!hasGridParam) {
-          state.tileCols = prof.cols;
-          state.tileRows = prof.rows;
+          const pg = resolveMono4ProfileGrid(prof, state);
+          state.tileCols = pg.cols;
+          state.tileRows = pg.rows;
         }
       }
       if (hollowParam !== '0' && hollowParam !== '1') {
@@ -687,8 +692,8 @@ async function applyMap3DUrlParams(ctx) {
       if (videoStudio && isStandalone && !params.get('grid')) {
         const wMm = (videoStudio.vState.targetWidthCm || 30) * 10;
         const hMm = (videoStudio.vState.targetHeightCm || 30) * 10;
-        if (typeof computeOptimalMono4Grid === 'function') {
-          const opt = computeOptimalMono4Grid(wMm, hMm);
+        if (typeof computeOptimalMono4GridForState === 'function') {
+          const opt = computeOptimalMono4GridForState(state, wMm, hMm);
           videoStudio.vState.tileCols = opt.cols;
           videoStudio.vState.tileRows = opt.rows;
         } else if (wMm >= 300 || hMm >= 300) {

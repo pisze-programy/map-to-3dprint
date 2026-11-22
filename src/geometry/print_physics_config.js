@@ -20,7 +20,14 @@ const PRINT_PHYSICS_CONFIG = Object.freeze({
     frameSplitMaxMm: 148.0,
     safeGridMaxWMm: 150.0,
     safeGridMaxHMm: 85.0,
-    dualPackMaxWMm: 75.45
+    dualPackMaxWMm: 75.45,
+    // Bed safe area: free margin on every side of a tile on the 153.45 x 87.05 mm LCD.
+    // Default 4.0 mm (printed calibration plate used 4.2 / 4.0 mm). UI options 2.5 .. 5.0 mm.
+    bedSafeMarginDefaultMm: 4.0,
+    bedSafeMarginMinMm: 0.0,
+    bedSafeMarginMaxMm: 10.0,
+    // Minimum gap between two tiles printed together on one plate (classic FEP tenting, DFM-09)
+    dualPackGapMm: 8.0
   }),
   resin: Object.freeze({
     xyPixelMm: 0.017,
@@ -156,6 +163,32 @@ function resolveSceneScaleAndSpec(state, scene) {
   };
 }
 
+/**
+ * Resolves the usable tile area on the Photon Mono 4 plate for the bed safe margin in state.
+ * @param {object|null} state - reads state.bedSafeMarginMm (mm per side); null uses the default.
+ * @returns {{marginMm:number, bedXMm:number, bedYMm:number, maxWMm:number, maxHMm:number,
+ *            dualMaxWMm:number, dualMaxHMm:number, dualGapMm:number}}
+ */
+function resolveMono4SafeArea(state) {
+  const m4 = PRINT_PHYSICS_CONFIG.photonMono4;
+  const raw = state && Number(state.bedSafeMarginMm);
+  const marginMm = Number.isFinite(raw)
+    ? Math.min(m4.bedSafeMarginMaxMm, Math.max(m4.bedSafeMarginMinMm, raw))
+    : m4.bedSafeMarginDefaultMm;
+  const maxWMm = m4.bedXMm - 2 * marginMm;
+  const maxHMm = m4.bedYMm - 2 * marginMm;
+  return {
+    marginMm,
+    bedXMm: m4.bedXMm,
+    bedYMm: m4.bedYMm,
+    maxWMm,
+    maxHMm,
+    dualMaxWMm: (maxWMm - m4.dualPackGapMm) / 2,
+    dualMaxHMm: maxHMm,
+    dualGapMm: m4.dualPackGapMm
+  };
+}
+
 function resolveTriangleTileId(t, halfW, halfH, tileCols, tileRows) {
   if (t && t.tileId !== undefined && t.tileId !== null && t.tileId >= 0) {
     return t.tileId;
@@ -182,6 +215,7 @@ if (typeof window !== 'undefined') {
   window.resolvePrintPhysicsSpec = resolvePrintPhysicsSpec;
   window.resolveSceneScaleAndSpec = resolveSceneScaleAndSpec;
   window.resolveTriangleTileId = resolveTriangleTileId;
+  window.resolveMono4SafeArea = resolveMono4SafeArea;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -193,6 +227,7 @@ if (typeof module !== 'undefined' && module.exports) {
     OSM_METRIC_CONFIG,
     resolvePrintPhysicsSpec,
     resolveSceneScaleAndSpec,
-    resolveTriangleTileId
+    resolveTriangleTileId,
+    resolveMono4SafeArea
   };
 }
