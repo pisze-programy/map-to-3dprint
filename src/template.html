@@ -120,12 +120,12 @@
           <div class="grid grid-cols-2 gap-1.5">
             <div class="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1">
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">Szer:</span>
-              <input id="targetWidthCmInput" type="number" min="7.5" max="150" step="0.5" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
+              <input id="targetWidthCmInput" type="number" min="3" max="150" step="0.1" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">cm</span>
             </div>
             <div class="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1">
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">Wys:</span>
-              <input id="targetHeightCmInput" type="number" min="7.5" max="150" step="0.5" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
+              <input id="targetHeightCmInput" type="number" min="3" max="150" step="0.1" value="50" class="w-full bg-transparent text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none" />
               <span class="text-xs text-[var(--muted-foreground)] shrink-0">cm</span>
             </div>
           </div>
@@ -133,6 +133,8 @@
           <!-- Quick Standard Picture Frame Chips -->
           <div class="flex flex-wrap gap-1 items-center">
             <span class="text-[11px] text-[var(--muted-foreground)] shrink-0">Ramka:</span>
+            <button id="btnFrameMono4Single" type="button" data-frame-size="mono4-1x1" title="Maksymalny pojedynczy kafel 1×1 w strefie bezpiecznej stołu Anycubic Photon Mono 4" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">Mono 4 1×1 (14.5×7.9)</button>
+            <button type="button" data-frame-size="13x18" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">13×18</button>
             <button type="button" data-frame-size="20x20" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">20×20</button>
             <button type="button" data-frame-size="30x30" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">30×30</button>
             <button type="button" data-frame-size="30x40" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">30×40</button>

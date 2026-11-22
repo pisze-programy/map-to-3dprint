@@ -301,8 +301,8 @@ function createMap2DController(canvas2d, ctx2d, osmTileCache, state) {
 
     const pill = document.getElementById('mapStatusPill');
     if (pill) {
-      const dimW = (state.bedSizeMm ? state.bedSizeMm / 10 : (state.targetWidthCm || 50)).toFixed(0);
-      const dimH = (state.totalHeightMm ? state.totalHeightMm / 10 : (state.targetHeightCm || 50)).toFixed(0);
+      const dimW = Number((state.bedSizeMm ? state.bedSizeMm / 10 : (state.targetWidthCm || 50)).toFixed(1));
+      const dimH = Number((state.totalHeightMm ? state.totalHeightMm / 10 : (state.targetHeightCm || 50)).toFixed(1));
       const rotSuffix = rotDeg ? ` • ↻${rotDeg > 0 ? '+' : ''}${Math.round(rotDeg)}°` : '';
       pill.textContent = `N ${south.toFixed(4)}°..${north.toFixed(4)}° • E ${west.toFixed(4)}°..${east.toFixed(4)}° • ${dimW}×${dimH} cm${rotSuffix}`;
     }

@@ -55,3 +55,16 @@ test('dual packing keeps the 8 mm FEP gap inside the safe area', () => {
   assert.equal(ui.checkTileDualPackableMono4(68, 79, st), true);
   assert.equal(ui.checkTileDualPackableMono4(75, 84, st), false);
 });
+
+test('single 1x1 Mono 4 preset fits 1x1 cleanly for every margin option', () => {
+  for (const margin of [2.5, 3, 4, 5]) {
+    const st = { bedSafeMarginMm: margin };
+    const sa = cfg.resolveMono4SafeArea(st);
+    const wMm = Math.floor(sa.maxWMm);
+    const hMm = Math.floor(sa.maxHMm);
+    const g = ui.computeOptimalMono4GridForState(st, wMm, hMm);
+    assert.equal(g.cols, 1, `margin ${margin}: expected cols=1`);
+    assert.equal(g.rows, 1, `margin ${margin}: expected rows=1`);
+    assert.equal(ui.checkTileFitsMono4(wMm, hMm, 22, st), true);
+  }
+});

@@ -71,18 +71,45 @@ function bindStudioPanelControls(ctx) {
 
   const targetWidthCmInput = document.getElementById('targetWidthCmInput');
   const targetHeightCmInput = document.getElementById('targetHeightCmInput');
+  function getMono4SingleTilePreset(st) {
+    const sa = (typeof resolveMono4SafeArea === 'function')
+      ? resolveMono4SafeArea(st)
+      : { maxWMm: 145.45, maxHMm: 79.05, marginMm: 4.0 };
+    const wMm = Math.floor(sa.maxWMm);
+    const hMm = Math.floor(sa.maxHMm);
+    return { wMm, hMm, wCm: wMm / 10, hCm: hMm / 10, marginMm: sa.marginMm };
+  }
+  function isMono4SingleTileMatch(dimWMm, dimHMm, preset) {
+    return (Math.abs(dimWMm - preset.wMm) <= 0.6 && Math.abs(dimHMm - preset.hMm) <= 0.6) ||
+           (Math.abs(dimWMm - preset.hMm) <= 0.6 && Math.abs(dimHMm - preset.wMm) <= 0.6);
+  }
   function syncFrameSizeChips() {
-    const activeKey = `${Math.round(Number(state.targetWidthCm) || 50)}x${Math.round(Number(state.targetHeightCm) || 50)}`;
+    const curWMm = state.bedSizeMm || Math.round((Number(state.targetWidthCm) || 50) * 10);
+    const curHMm = state.totalHeightMm || Math.round((Number(state.targetHeightCm) || 50) * 10);
+    const activeKey = `${Number((curWMm / 10).toFixed(1))}x${Number((curHMm / 10).toFixed(1))}`;
+    const single = getMono4SingleTilePreset(state);
     document.querySelectorAll('[data-frame-size]').forEach(chip => {
-      const isMatch = chip.getAttribute('data-frame-size') === activeKey;
+      const attr = chip.getAttribute('data-frame-size');
+      let isMatch = false;
+      if (attr === 'mono4-1x1') {
+        chip.textContent = `Mono 4 1×1 (${single.wCm.toFixed(1)}×${single.hCm.toFixed(1)})`;
+        chip.title = `Pojedynczy kafel 1×1 (${single.wMm}×${single.hMm} mm) dopasowany do strefy bezpiecznej Mono 4 (margines ${single.marginMm} mm z każdej strony)`;
+        isMatch = isMono4SingleTileMatch(curWMm, curHMm, single);
+      } else {
+        isMatch = attr === activeKey;
+      }
       chip.className = isMatch
         ? 'px-1.5 py-0.5 rounded bg-blue-600 text-white border border-blue-500 text-[11px] font-mono transition'
         : 'px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition';
     });
   }
   function handleTargetDimensionChange() {
-    const wVal = Math.max(8, Math.min(150, parseFloat(targetWidthCmInput ? targetWidthCmInput.value : 32) || 32));
-    const hVal = Math.max(8, Math.min(150, parseFloat(targetHeightCmInput ? targetHeightCmInput.value : 32) || 32));
+    const rawW = parseFloat(targetWidthCmInput ? targetWidthCmInput.value : 32);
+    const rawH = parseFloat(targetHeightCmInput ? targetHeightCmInput.value : 32);
+    const wVal = Math.round(Math.max(3, Math.min(150, Number.isFinite(rawW) ? rawW : 32)) * 10) / 10;
+    const hVal = Math.round(Math.max(3, Math.min(150, Number.isFinite(rawH) ? rawH : 32)) * 10) / 10;
+    if (targetWidthCmInput) targetWidthCmInput.value = wVal;
+    if (targetHeightCmInput) targetHeightCmInput.value = hVal;
     state.targetWidthCm = wVal;
     state.targetHeightCm = hVal;
     state.bedSizeMm = Math.round(wVal * 10);
@@ -94,6 +121,7 @@ function bindStudioPanelControls(ctx) {
     state.tileRows = optGrid.rows;
     syncFrameSizeChips();
     draw2DMap();
+    updateStatsUI();
     if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
   }
   syncFrameSizeChips();
@@ -102,7 +130,15 @@ function bindStudioPanelControls(ctx) {
   document.querySelectorAll('[data-frame-size]').forEach(btn => {
     btn.addEventListener('click', e => {
       const b = (typeof safeClosest === 'function' ? safeClosest(e && e.target, '[data-frame-size]') : null) || btn;
-      const [w, h] = b.getAttribute('data-frame-size').split('x').map(v => parseInt(v, 10));
+      const attr = b.getAttribute('data-frame-size');
+      let w, h;
+      if (attr === 'mono4-1x1') {
+        const single = getMono4SingleTilePreset(state);
+        w = single.wCm;
+        h = single.hCm;
+      } else {
+        [w, h] = attr.split('x').map(v => parseFloat(v));
+      }
       if (targetWidthCmInput) targetWidthCmInput.value = w;
       if (targetHeightCmInput) targetHeightCmInput.value = h;
       handleTargetDimensionChange();
@@ -136,10 +172,24 @@ function bindStudioPanelControls(ctx) {
     bedSafeMarginSelect.value = String(curMargin);
     if (bedSafeMarginSelect.value !== String(curMargin)) bedSafeMarginSelect.value = '4';
     bedSafeMarginSelect.addEventListener('change', e => {
+      const prevPreset = getMono4SingleTilePreset(state);
+      const wasSingleMono4 = (state.tileCols === 1 && state.tileRows === 1) &&
+        isMono4SingleTileMatch(state.bedSizeMm || 0, state.totalHeightMm || 0, prevPreset);
+      const wasPortrait = (state.totalHeightMm || 0) > (state.bedSizeMm || 0);
       const v = parseFloat(e.target.value);
       state.bedSafeMarginMm = Number.isFinite(v) ? Math.min(10, Math.max(0, v)) : 4.0;
       const prof = (typeof PRINT_PROFILES !== 'undefined') ? (PRINT_PROFILES[state.printerProfileId] || PRINT_PROFILES.mono4_custom) : null;
-      if (prof && !prof.isCustomMono4) {
+      if (wasSingleMono4) {
+        const nextPreset = getMono4SingleTilePreset(state);
+        state.bedSizeMm = wasPortrait ? nextPreset.hMm : nextPreset.wMm;
+        state.totalHeightMm = wasPortrait ? nextPreset.wMm : nextPreset.hMm;
+        state.targetWidthCm = state.bedSizeMm / 10;
+        state.targetHeightCm = state.totalHeightMm / 10;
+        if (targetWidthCmInput) targetWidthCmInput.value = state.targetWidthCm;
+        if (targetHeightCmInput) targetHeightCmInput.value = state.targetHeightCm;
+        state.tileCols = 1;
+        state.tileRows = 1;
+      } else if (prof && !prof.isCustomMono4) {
         const pg = resolveMono4ProfileGrid(prof, state);
         state.tileCols = pg.cols; state.tileRows = pg.rows;
       } else {
@@ -147,6 +197,7 @@ function bindStudioPanelControls(ctx) {
         state.tileCols = opt.cols; state.tileRows = opt.rows;
       }
       state.exportTileFilter = 'all';
+      syncFrameSizeChips();
       draw2DMap();
       rebuildModel3D();
       if (typeof saveActiveConfig === 'function') saveActiveConfig(state);

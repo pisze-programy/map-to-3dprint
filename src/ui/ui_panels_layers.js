@@ -288,14 +288,16 @@ function createUILayersStatsController(state, onRebuildNeeded) {
 
     const wCmInp = document.getElementById('targetWidthCmInput');
     const hCmInp = document.getElementById('targetHeightCmInput');
-    if (wCmInp && document.activeElement !== wCmInp) wCmInp.value = Math.round(dimW / 10);
-    if (hCmInp && document.activeElement !== hCmInp) hCmInp.value = Math.round(dimH / 10);
+    const dimWCm = Number((dimW / 10).toFixed(1));
+    const dimHCm = Number((dimH / 10).toFixed(1));
+    if (wCmInp && document.activeElement !== wCmInp) wCmInp.value = dimWCm;
+    if (hCmInp && document.activeElement !== hCmInp) hCmInp.value = dimHCm;
 
     const optGrid = computeOptimalMono4GridForState(state, dimW, dimH);
     const monoBadge = document.getElementById('mono4GridBadge');
     if (monoBadge) {
       monoBadge.textContent = `Mono 4: ${optGrid.cols}×${optGrid.rows} (${optGrid.totalTiles} k. • ${optGrid.tileW}×${optGrid.tileH}mm${optGrid.rotated90 ? ' ↻' : ''})`;
-      monoBadge.title = `Optymalny podział dla wymiaru ${Math.round(dimW / 10)}×${Math.round(dimH / 10)} cm na stół Anycubic Photon Mono 4`;
+      monoBadge.title = `Optymalny podział dla wymiaru ${dimWCm}×${dimHCm} cm na stół Anycubic Photon Mono 4`;
     }
 
     const tileGridSel = document.getElementById('tileGridSelect');
@@ -361,9 +363,20 @@ function createUILayersStatsController(state, onRebuildNeeded) {
         : 'px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition';
     });
 
-    const curFrameKey = `${Math.round(dimW / 10)}x${Math.round(dimH / 10)}`;
+    const curFrameKey = `${dimWCm}x${dimHCm}`;
+    const saCur = (typeof resolveMono4SafeArea === 'function') ? resolveMono4SafeArea(state) : { maxWMm: 145.45, maxHMm: 79.05, marginMm: 4.0 };
+    const singleWMm = Math.floor(saCur.maxWMm), singleHMm = Math.floor(saCur.maxHMm);
     document.querySelectorAll('[data-frame-size]').forEach(btn => {
-      const isActive = btn.getAttribute('data-frame-size') === curFrameKey;
+      const attr = btn.getAttribute('data-frame-size');
+      let isActive = false;
+      if (attr === 'mono4-1x1') {
+        btn.textContent = `Mono 4 1×1 (${(singleWMm / 10).toFixed(1)}×${(singleHMm / 10).toFixed(1)})`;
+        btn.title = `Pojedynczy kafel 1×1 (${singleWMm}×${singleHMm} mm) dopasowany do strefy bezpiecznej Mono 4 (margines ${saCur.marginMm} mm z każdej strony)`;
+        isActive = (Math.abs(dimW - singleWMm) <= 0.6 && Math.abs(dimH - singleHMm) <= 0.6) ||
+                   (Math.abs(dimW - singleHMm) <= 0.6 && Math.abs(dimH - singleWMm) <= 0.6);
+      } else {
+        isActive = attr === curFrameKey;
+      }
       btn.className = isActive
         ? 'px-1.5 py-0.5 rounded bg-blue-600 text-white border border-blue-500 text-[11px] font-mono transition'
         : 'px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition';

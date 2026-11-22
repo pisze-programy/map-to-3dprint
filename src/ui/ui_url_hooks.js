@@ -394,11 +394,11 @@ async function applyMap3DUrlParams(ctx) {
 
     // Frame dimensions (`frame=WxH` in 3D print studio mode)
     const frameParam = !isVideoMode ? params.get('frame') : null;
-    const hasFrameParam3D = Boolean(frameParam && /^\d+x\d+$/.test(frameParam));
+    const hasFrameParam3D = Boolean(frameParam && /^\d+(?:\.\d+)?x\d+(?:\.\d+)?$/.test(frameParam));
     if (hasFrameParam3D && state) {
       const [fw, fh] = frameParam.split('x').map(Number);
-      const nextW = Math.max(8, Math.min(150, fw || 50));
-      const nextH = Math.max(8, Math.min(150, fh || 50));
+      const nextW = Math.round(Math.max(3, Math.min(150, fw || 50)) * 10) / 10;
+      const nextH = Math.round(Math.max(3, Math.min(150, fh || 50)) * 10) / 10;
       const nextBedMm = Math.round(nextW * 10);
       const nextHeightMm = Math.round(nextH * 10);
       if (state.bedSizeMm !== nextBedMm || state.totalHeightMm !== nextHeightMm) {
