@@ -94,15 +94,60 @@
     return null;
   }
 
-  function buildIdEngravingSolids(mf, label, pad, scaleMm, markDepthU) {
+  /**
+   * Computes exact baseline underline span linking all tile ID glyphs.
+   */
+  function computeLabelUnderlineSpec(label, pad, scaleMm) {
+    const safeScale = Math.max(1e-4, Number(scaleMm) || 1.0);
+    const labelStrokes = buildTileIdLabelPolys(label, pad.cx, pad.cy, pad.glyphH, safeScale);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (let i = 0; i < labelStrokes.length; i++) {
+      const pts = labelStrokes[i].pts;
+      for (let j = 0; j < pts.length; j++) {
+        if (pts[j][0] < minX) minX = pts[j][0];
+        if (pts[j][0] > maxX) maxX = pts[j][0];
+      }
+    }
+    const yBase = pad.cy - pad.glyphH * 0.5;
+    const overlapU = 0.20 / safeScale;
+    const xLeft = Number.isFinite(minX) ? (minX - overlapU) : (pad.cx - pad.glyphH);
+    const xRight = Number.isFinite(maxX) ? (maxX + overlapU) : (pad.cx + pad.glyphH);
+    return {
+      labelStrokes,
+      xLeft,
+      xRight,
+      yBase,
+      halfW: 0.48 / safeScale,
+    };
+  }
+
+  /**
+   * Builds 3D solid cutters for the tile ID glyphs, baseline bar, and vent paths.
+   */
+  function buildIdEngravingSolids(mf, label, pad, scaleMm, markDepthU, ventPaths = []) {
     const { core } = _getDeps();
-    const gRings = core.clipperBufferOpenPaths(
-      buildTileIdLabelPolys(label, pad.cx, pad.cy, pad.glyphH, scaleMm),
+    const uSpec = computeLabelUnderlineSpec(label, pad, scaleMm);
+    // Connect every glyph bottom stroke into one shared baseline channel.
+    const underline = {
+      pts: [[uSpec.xLeft, uSpec.yBase], [uSpec.xRight, uSpec.yBase]],
+      halfW: uSpec.halfW,
+      squareEnd: true,
+    };
+    let gRings = core.clipperBufferOpenPaths(
+      uSpec.labelStrokes.concat([underline]),
       'Miter', 1e-4
     );
+    if (Array.isArray(ventPaths) && ventPaths.length > 0) {
+      const vRings = core.clipperBufferOpenPaths(ventPaths, 'Round', 1e-4);
+      if (vRings.length > 0) {
+        gRings = gRings.length > 0 ? core.clipperUnionPolys(gRings, 1e-4, vRings) : vRings;
+      }
+    }
+    const grouped = core.ringsToOutersWithHoles(gRings, 1e-5);
     const solids = [];
-    for (const gr of gRings) {
-      const gm = core.extrudeRingSolid(mf, gr, [], -0.15, markDepthU);
+    for (const item of grouped) {
+      const gm = core.extrudeRingSolid(mf, item.outer, item.holes, -0.15, markDepthU);
       if (gm) solids.push(gm);
     }
     return solids;
@@ -110,7 +155,7 @@
 
   const exportsObj = {
     buildTileIdLabelPolys, _buildTileIdLabelPolys: buildTileIdLabelPolys,
-    findSafeIdPad, buildIdEngravingSolids,
+    findSafeIdPad, computeLabelUnderlineSpec, buildIdEngravingSolids,
   };
   Object.assign(root, exportsObj);
   if (typeof module !== 'undefined' && module.exports) module.exports = exportsObj;

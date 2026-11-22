@@ -11,6 +11,7 @@ Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/print_physics_co
 Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/sla_print_laws.js')));
 Object.assign(globalThis, require(path.join(ROOT, 'src/export/export_io_utils.js')));
 const { buildComplete3DModel } = require(path.join(ROOT, 'src/mesh/mesh_builder.js'));
+const coreMod = require(path.join(ROOT, 'src/geometry/manifold_core.js'));
 const vaultMod = require(path.join(ROOT, 'src/mesh/tile_sla_vault_solver.js'));
 const stlMod = require(path.join(ROOT, 'src/export/stl_writer.js'));
 const zipMod = require(path.join(ROOT, 'src/export/zip_packager.js'));
@@ -108,6 +109,276 @@ function auditRaw3mfXml(zipBytes) {
   return { objects: meshBlocks.length, totalTris, openEdges, nonManifoldEdges };
 }
 
+function auditRawStlSliceRasterCavities(bytes, zListMm, cellMm = 0.25) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const nTris = view.getUint32(80, true);
+  const tris = new Float64Array(nTris * 9);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < nTris; i++) {
+    const base = 84 + i * 50;
+    for (let v = 0; v < 3; v++) {
+      const vo = base + 12 + v * 12;
+      const x = view.getFloat32(vo, true);
+      const y = view.getFloat32(vo + 4, true);
+      const z = view.getFloat32(vo + 8, true);
+      tris[i * 9 + v * 3] = x;
+      tris[i * 9 + v * 3 + 1] = y;
+      tris[i * 9 + v * 3 + 2] = z;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  const xOrigin = minX - cellMm;
+  const yOrigin = minY - cellMm;
+  const w = Math.ceil((maxX - minX) / cellMm) + 3;
+  const h = Math.ceil((maxY - minY) / cellMm) + 3;
+  const total = w * h;
+  const grid = new Uint8Array(total);
+  const seen = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  const results = [];
+
+  for (const zTarget of zListMm) {
+    const zProbe = zTarget + 0.0013;
+    const segs = [];
+    for (let i = 0; i < nTris; i++) {
+      const o = i * 9;
+      const z0 = tris[o + 2], z1 = tris[o + 5], z2 = tris[o + 8];
+      const b0 = z0 >= zProbe, b1 = z1 >= zProbe, b2 = z2 >= zProbe;
+      if ((b0 && b1 && b2) || (!b0 && !b1 && !b2)) continue;
+      const pts = [];
+      const edges = [[0, 1, b0, b1], [1, 2, b1, b2], [2, 0, b2, b0]];
+      for (const [ia, ib, ba, bb] of edges) {
+        if (ba === bb) continue;
+        const ao = o + ia * 3, bo = o + ib * 3;
+        const t = (zProbe - tris[ao + 2]) / (tris[bo + 2] - tris[ao + 2]);
+        pts.push([
+          tris[ao] + t * (tris[bo] - tris[ao]),
+          tris[ao + 1] + t * (tris[bo + 1] - tris[ao + 1]),
+        ]);
+      }
+      if (pts.length === 2) segs.push([pts[0][0], pts[0][1], pts[1][0], pts[1][1]]);
+    }
+
+    grid.fill(0);
+    let solidPixels = 0;
+    for (let iy = 0; iy < h; iy++) {
+      const yc = yOrigin + (iy + 0.5) * cellMm;
+      const xs = [];
+      for (let si = 0; si < segs.length; si++) {
+        const s = segs[si];
+        if ((s[1] <= yc && s[3] > yc) || (s[3] <= yc && s[1] > yc)) {
+          xs.push(s[0] + ((yc - s[1]) * (s[2] - s[0])) / (s[3] - s[1]));
+        }
+      }
+      if (xs.length < 2) continue;
+      xs.sort((a, b) => a - b);
+      const rowOff = iy * w;
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const ix0 = Math.max(0, Math.ceil((xs[k] - xOrigin) / cellMm - 0.5));
+        const ix1 = Math.min(w - 1, Math.floor((xs[k + 1] - xOrigin) / cellMm - 0.5));
+        for (let ix = ix0; ix <= ix1; ix++) {
+          if (grid[rowOff + ix] === 0) {
+            grid[rowOff + ix] = 1;
+            solidPixels++;
+          }
+        }
+      }
+    }
+
+    // Flood-fill exterior air from padded corner (0, 0).
+    seen.fill(0);
+    let qHead = 0, qTail = 0;
+    seen[0] = 1;
+    queue[qTail++] = 0;
+    while (qHead < qTail) {
+      const cur = queue[qHead++];
+      const cx = cur % w;
+      const cy = (cur - cx) / w;
+      if (cx > 0 && grid[cur - 1] === 0 && !seen[cur - 1]) { seen[cur - 1] = 1; queue[qTail++] = cur - 1; }
+      if (cx + 1 < w && grid[cur + 1] === 0 && !seen[cur + 1]) { seen[cur + 1] = 1; queue[qTail++] = cur + 1; }
+      if (cy > 0 && grid[cur - w] === 0 && !seen[cur - w]) { seen[cur - w] = 1; queue[qTail++] = cur - w; }
+      if (cy + 1 < h && grid[cur + w] === 0 && !seen[cur + w]) { seen[cur + w] = 1; queue[qTail++] = cur + w; }
+    }
+
+    let maxSealedCavityMm2 = 0;
+    let sealedCavitiesGe2Mm2 = 0;
+    for (let idx = 0; idx < total; idx++) {
+      if (grid[idx] !== 0 || seen[idx]) continue;
+      let ch = 0, ct = 0;
+      seen[idx] = 1;
+      queue[ct++] = idx;
+      while (ch < ct) {
+        const cur = queue[ch++];
+        const cx = cur % w;
+        const cy = (cur - cx) / w;
+        if (cx > 0 && grid[cur - 1] === 0 && !seen[cur - 1]) { seen[cur - 1] = 1; queue[ct++] = cur - 1; }
+        if (cx + 1 < w && grid[cur + 1] === 0 && !seen[cur + 1]) { seen[cur + 1] = 1; queue[ct++] = cur + 1; }
+        if (cy > 0 && grid[cur - w] === 0 && !seen[cur - w]) { seen[cur - w] = 1; queue[ct++] = cur - w; }
+        if (cy + 1 < h && grid[cur + w] === 0 && !seen[cur + w]) { seen[cur + w] = 1; queue[ct++] = cur + w; }
+      }
+      const compAreaMm2 = ct * cellMm * cellMm;
+      if (compAreaMm2 > maxSealedCavityMm2) maxSealedCavityMm2 = compAreaMm2;
+      if (compAreaMm2 >= 2.0) sealedCavitiesGe2Mm2++;
+    }
+    results.push({ zMm: zTarget, areaMm2: solidPixels * cellMm * cellMm, maxSealedCavityMm2, sealedCavitiesGe2Mm2 });
+  }
+  return results;
+}
+
+function auditRawStlOverhangsVal04(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const nTris = view.getUint32(80, true);
+  const tris = [];
+  let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  const r4 = (v) => Math.round(v * 1e4) / 1e4;
+  for (let i = 0; i < nTris; i++) {
+    const base = 84 + i * 50;
+    const pts = [];
+    for (let v = 0; v < 3; v++) {
+      const vo = base + 12 + v * 12;
+      const x = r4(view.getFloat32(vo, true));
+      const y = r4(view.getFloat32(vo + 4, true));
+      const z = r4(view.getFloat32(vo + 8, true));
+      pts.push([x, y, z]);
+      if (x < xmin) xmin = x; if (x > xmax) xmax = x;
+      if (y < ymin) ymin = y; if (y > ymax) ymax = y;
+    }
+    tris.push(pts);
+  }
+  const cands = [];
+  const vMap = new Map();
+  for (let ti = 0; ti < tris.length; ti++) {
+    const [p0, p1, p2] = tris[ti];
+    const zmin = Math.min(p0[2], p1[2], p2[2]);
+    if (zmin <= 0.25) continue;
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+    const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+    const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+    const norm = Math.hypot(cx, cy, cz);
+    if (norm < 1e-8) continue;
+    if ((cz / norm) < -0.80) {
+      const ci = cands.length;
+      cands.push({ ti, area: 0.5 * norm });
+      for (const p of [p0, p1, p2]) {
+        const pk = `${p[0].toFixed(4)},${p[1].toFixed(4)},${p[2].toFixed(4)}`;
+        let arr = vMap.get(pk);
+        if (!arr) { arr = []; vMap.set(pk, arr); }
+        arr.push(ci);
+      }
+    }
+  }
+  const seen = new Uint8Array(cands.length);
+  const rawClusters = [];
+  for (let i = 0; i < cands.length; i++) {
+    if (seen[i]) continue;
+    seen[i] = 1;
+    const q = [i];
+    let area = 0, zLo = Infinity;
+    const tList = [];
+    for (let h = 0; h < q.length; h++) {
+      const cur = cands[q[h]];
+      tList.push(cur.ti);
+      area += cur.area;
+      for (const p of tris[cur.ti]) {
+        if (p[2] < zLo) zLo = p[2];
+        const pk = `${p[0].toFixed(4)},${p[1].toFixed(4)},${p[2].toFixed(4)}`;
+        for (const nb of (vMap.get(pk) || [])) {
+          if (!seen[nb]) { seen[nb] = 1; q.push(nb); }
+        }
+      }
+    }
+    if (area >= 2.5) rawClusters.push({ area, zLo, tList });
+  }
+
+  const step = 0.35;
+  const nx = Math.ceil((xmax - xmin) / step) + 4;
+  const ny = Math.ceil((ymax - ymin) / step) + 4;
+  const ox = xmin - 2 * step;
+  const oy = ymin - 2 * step;
+  const sliceCache = new Map();
+
+  const getSupportDist = (zSup) => {
+    const zq = Math.round(Math.max(0.05, zSup) * 100) / 100;
+    if (sliceCache.has(zq)) return sliceCache.get(zq);
+    const segsByRow = Array.from({ length: ny }, () => []);
+    for (let ti = 0; ti < tris.length; ti++) {
+      const [p0, p1, p2] = tris[ti];
+      const lo = Math.min(p0[2], p1[2], p2[2]), hi = Math.max(p0[2], p1[2], p2[2]);
+      if (!(lo <= zq && zq < hi)) continue;
+      const pts = [];
+      for (const [a, b] of [[p0, p1], [p1, p2], [p2, p0]]) {
+        if ((a[2] <= zq && zq < b[2]) || (b[2] <= zq && zq < a[2])) {
+          const t = (zq - a[2]) / (b[2] - a[2]);
+          pts.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]);
+        }
+      }
+      if (pts.length === 2) {
+        const [x1, y1] = pts[0], [x2, y2] = pts[1];
+        const r0 = Math.max(0, Math.floor((Math.min(y1, y2) - oy) / step));
+        const r1 = Math.min(ny - 1, Math.floor((Math.max(y1, y2) - oy) / step));
+        for (let r = r0; r <= r1; r++) {
+          const yv = oy + (r + 0.5) * step;
+          if ((y1 <= yv && yv < y2) || (y2 <= yv && yv < y1)) {
+            segsByRow[r].push(x1 + ((yv - y1) / (y2 - y1)) * (x2 - x1));
+          }
+        }
+      }
+    }
+    const dist = new Int16Array(nx * ny).fill(999);
+    const dq = new Int32Array(nx * ny);
+    let qh = 0, qt = 0;
+    for (let r = 0; r < ny; r++) {
+      const xs = segsByRow[r].sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const c0 = Math.max(0, Math.floor((xs[k] - ox) / step));
+        const c1 = Math.min(nx - 1, Math.floor((xs[k + 1] - ox) / step));
+        for (let c = c0; c <= c1; c++) {
+          const xv = ox + (c + 0.5) * step;
+          if (xs[k] <= xv && xv <= xs[k + 1]) {
+            const idx = r * nx + c;
+            if (dist[idx] !== 0) { dist[idx] = 0; dq[qt++] = idx; }
+          }
+        }
+      }
+    }
+    while (qh < qt) {
+      const cur = dq[qh++];
+      const nd = dist[cur] + 1;
+      if (nd > 25) continue;
+      const cc = cur % nx, rr = (cur - cc) / nx;
+      if (cc > 0 && dist[cur - 1] > nd) { dist[cur - 1] = nd; dq[qt++] = cur - 1; }
+      if (cc + 1 < nx && dist[cur + 1] > nd) { dist[cur + 1] = nd; dq[qt++] = cur + 1; }
+      if (rr > 0 && dist[cur - nx] > nd) { dist[cur - nx] = nd; dq[qt++] = cur - nx; }
+      if (rr + 1 < ny && dist[cur + nx] > nd) { dist[cur + nx] = nd; dq[qt++] = cur + nx; }
+    }
+    sliceCache.set(zq, dist);
+    return dist;
+  };
+
+  let maxHalfSpanMm = 0;
+  const clusterStats = [];
+  for (const cl of rawClusters) {
+    const dGrid = getSupportDist(cl.zLo - 0.15);
+    let maxCells = 0;
+    for (const ti of cl.tList) {
+      const [p0, p1, p2] = tris[ti];
+      const samples = [p0, p1, p2, [(p0[0] + p1[0] + p2[0]) / 3, (p0[1] + p1[1] + p2[1]) / 3, cl.zLo]];
+      for (const sp of samples) {
+        const cc = Math.max(0, Math.min(nx - 1, Math.floor((sp[0] - ox) / step)));
+        const rr = Math.max(0, Math.min(ny - 1, Math.floor((sp[1] - oy) / step)));
+        if (dGrid[rr * nx + cc] > maxCells) maxCells = dGrid[rr * nx + cc];
+      }
+    }
+    const halfSpanMm = maxCells * step;
+    if (halfSpanMm > maxHalfSpanMm) maxHalfSpanMm = halfSpanMm;
+    clusterStats.push({ areaMm2: cl.area, zLoMm: cl.zLo, halfSpanMm });
+  }
+  return { maxHalfSpanMm, clusters: clusterStats };
+}
+
 function makeSq(cx, cy, h) {
   return [[cx - h, cy - h], [cx + h, cy - h], [cx + h, cy + h], [cx - h, cy + h]];
 }
@@ -118,7 +389,7 @@ async function runAudit() {
   const tStart = Date.now();
 
   // 1. Overlapping multi-layer 2x2 plate + segmented frame
-  console.log('[1/4] Raw .STL CSG Union, Raw .3MF XML & Segmented Frame Mono 4 Audit');
+  console.log('[1/5] Raw .STL CSG Union, Raw .3MF XML & Segmented Frame Mono 4 Audit');
   const scene1 = {
     spanMeters: 700,
     dem: { grid: [[28, 32, 28], [24, 24, 24], [28, 32, 28]], minElev: 2, maxElev: 32 },
@@ -191,7 +462,7 @@ async function runAudit() {
   console.log(`  PASS: 4 tiles & ${frameSegNames.length} frame CSG segments verified 0-open/0-nm, Mono4 bed OK, STL=${stlTotalMl.toFixed(1)}ml <= raw=${rawLayerVolMl.toFixed(1)}ml`);
 
   // 2. Hollow vault: 45 deg diagonal ribs (pitch <= 12mm), >=2 drains/chamber & legible R1C1^
-  console.log('[2/4] Anti-Suction 45 deg Ribs, >=2 Drains & R1C1^ Engraving Dimensions');
+  console.log('[2/5] Anti-Suction 45 deg Ribs, >=2 Drains & R1C1^ Engraving Dimensions');
   const hillScene = {
     spanMeters: 500,
     dem: { grid: [[5, 35, 35, 5], [35, 48, 48, 35], [35, 48, 48, 35], [5, 35, 35, 5]], minElev: 5, maxElev: 48 },
@@ -223,7 +494,7 @@ async function runAudit() {
   console.log(`  PASS: pitch=${hpm.embossMetrics.ribPitchMm}mm, diagTris=${diagRibTris.length}, drains=${hpm.drainCount}, R1C1^ stroke=${hpm.embossMetrics.strokeWidthMm}mm depth=${hpm.embossMetrics.carveDepthMm}mm roof=${hpm.embossMetrics.minRoofClearanceMm}mm`);
 
   // 3. Water-locked island tile fallback -> auto fills solid (0 suction cups)
-  console.log('[3/4] Island Tile (<2 dry perimeter exits) -> Automatic Solid Fallback');
+  console.log('[3/5] Island Tile (<2 dry perimeter exits) -> Automatic Solid Fallback');
   const ringPtsOuter = makeSq(0, 0, 84);
   const islandHole = [[42, -34], [-42, -34], [-42, 34], [42, 34]]; // CW hole = dry central island!
   const islandScene = {
@@ -242,7 +513,7 @@ async function runAudit() {
   console.log(`  PASS: Island filled solid (kept=${ipm.hollowChambersKept}, filledSolid=${ipm.hollowChambersFilledSolid}, drains=${ipm.drainCount})`);
 
   // 4. Real dense OSM STL CSG performance & watertightness check (Porto & Millau Viaduct)
-  console.log('[4/4] Real Dense OSM Tile CSG .STL Performance & Topology Check');
+  console.log('[4/5] Real Dense OSM Tile CSG .STL Performance & Topology Check');
   const SCRATCH = '/Users/krystianblaszczyk/.gemini/antigravity/brain/acf68bd7-959f-4001-b031-f431964aa593/scratch';
   const DEM_DIR = path.join(SCRATCH, 'scenes_15_dem_cache');
   const targets = [
@@ -281,6 +552,205 @@ async function runAudit() {
       console.log(`  PASS ${tgt.slug} T${tid}: CSG STL=${dt}ms tris=${a.nTris} open=0 nm=0 dup=0 degen=0 comps=${a.components}`);
     }
   }
+  // 5. Flat coastal 145x79mm tile: hole plug, shallow anti-peel relief, vented R1C1^
+  console.log('[5/5] Flat Coastal 145x79mm Tile (Plugs + Shallow Relief + Vented ID + 2D Raster Cavity Audit)');
+  const coastalFlatScene = {
+    spanMeters: 700,
+    dem: {
+      grid: [
+        [0.25, 0.25, 0.25, 0.25, 0.25],
+        [0.25, 0.25, 0.25, 0.25, 0.25],
+        [-0.25, -0.25, -0.25, -0.25, -0.25],
+        [0.25, 0.25, 0.25, 0.25, 0.25],
+        [0.25, 0.25, 0.25, 0.25, 0.25],
+      ],
+      minElev: -0.25,
+      maxElev: 0.25,
+    },
+    waterPolys: [
+      { outer: [[-90, -5], [90, -5], [90, 5], [-90, 5]], holes: [] },
+      { outer: makeSq(-25, 22, 1.17), holes: [] },
+    ],
+    waterLines: [],
+    greenPolys: [],
+    trees: [],
+    roads: [],
+    bridgePolys: [],
+    buildings: [
+      { id: 501, outer: makeSq(25, 22, 7), holes: [], h: 14, roof: 'hipped', roofH: 3 },
+      { id: 502, outer: makeSq(-20, -24, 6), holes: [], h: 18, roof: 'gabled', roofH: 3 },
+    ],
+  };
+  const coastalBaseState = {
+    plaqueText: 'COASTAL_FLAT', bedSizeMm: 145, totalHeightMm: 79, tileCols: 1, tileRows: 1,
+    hollowWallMm: 1.8, waterCutout: true, showFrame: false, exportFrame: false,
+    isResin: true, zScale: 1.0, terrainScale: 1.0,
+  };
+  const coastalSolidBuilt = buildComplete3DModel(coastalFlatScene, { ...coastalBaseState, hollowBase: false });
+  const coastalHollowBuilt = buildComplete3DModel(coastalFlatScene, { ...coastalBaseState, hollowBase: true });
+  const cpm = coastalHollowBuilt.printMetrics;
+  assert.equal(cpm.openEdgesCount, 0);
+  assert.equal(cpm.nonManifoldEdgesCount, 0);
+  assert.equal(cpm.floatingBuildingsCount, 0);
+  assert.ok(cpm.embossMetrics.engravedTiles >= 1);
+  assert.ok(cpm.embossMetrics.strokeWidthMm >= 0.70, `strokeWidthMm=${cpm.embossMetrics.strokeWidthMm}`);
+  assert.ok(cpm.embossMetrics.carveDepthMm >= 0.65, `carveDepthMm=${cpm.embossMetrics.carveDepthMm}`);
+  assert.ok(cpm.embossMetrics.minRoofClearanceMm >= 0.75, `minRoofClearanceMm=${cpm.embossMetrics.minRoofClearanceMm}`);
+
+  const solidBytes = stlMod.buildBinarySTLBytes({ ...coastalBaseState, hollowBase: false, layerMeshes: coastalSolidBuilt.meshes }, 'all', 0);
+  const hollowBytes = stlMod.buildBinarySTLBytes({ ...coastalBaseState, hollowBase: true, layerMeshes: coastalHollowBuilt.meshes }, 'all', 0);
+  const hollowStlAudit = parseAndAuditRawStlBytes(hollowBytes);
+  assert.equal(hollowStlAudit.openEdges, 0, `coastal hollow open=${hollowStlAudit.openEdges}`);
+  assert.equal(hollowStlAudit.nonManifoldEdges, 0, `coastal hollow nm=${hollowStlAudit.nonManifoldEdges}`);
+  assert.equal(hollowStlAudit.sameDirDupEdges, 0, `coastal hollow dup=${hollowStlAudit.sameDirDupEdges}`);
+  assert.equal(hollowStlAudit.degenerateTris, 0, `coastal hollow degen=${hollowStlAudit.degenerateTris}`);
+
+  const solidSlice015 = auditRawStlSliceRasterCavities(solidBytes, [0.15], 0.25)[0];
+  assert.equal(solidSlice015.sealedCavitiesGe2Mm2, 0, `Expected 0 sealed cavities >= 2.0 mm2 in solid coastal tile at Z=0.15mm, got ${solidSlice015.sealedCavitiesGe2Mm2}`);
+  const hollowSlices = auditRawStlSliceRasterCavities(hollowBytes, [0.15, 0.55, 0.95, 1.15], 0.25);
+  const areaReduction = (solidSlice015.areaMm2 - hollowSlices[0].areaMm2) / solidSlice015.areaMm2;
+  assert.ok(areaReduction >= 0.25, `Expected Z=0.15mm area reduction >= 25%, got ${(areaReduction * 100).toFixed(1)}% (${solidSlice015.areaMm2.toFixed(1)} -> ${hollowSlices[0].areaMm2.toFixed(1)} mm2)`);
+  for (const sl of hollowSlices) {
+    assert.equal(sl.sealedCavitiesGe2Mm2, 0, `Expected 0 sealed cavities >= 2.0 mm2 at Z=${sl.zMm}mm, got ${sl.sealedCavitiesGe2Mm2} (max=${sl.maxSealedCavityMm2.toFixed(2)} mm2)`);
+  }
+  console.log(`  PASS: 145x79mm coastal STL open=0 nm=0 degen=0 dup=0, Z=0.15 area -${(areaReduction * 100).toFixed(1)}% (${solidSlice015.areaMm2.toFixed(1)}->${hollowSlices[0].areaMm2.toFixed(1)}mm2), 0 sealed cavities >=2mm2 at Z=[0.15,0.55,0.95,1.15]`);
+
+  // 6. Post-union MSLA print guard: capillary pockets, narrow-gap courtyards, sloped ramps & building safety
+  console.log('[6/6] Post-Union MSLA Guard: Capillary Pocket + Narrow-Gap Courtyard + Sloped Ramp + Building Safety');
+  assert.equal(PRINT_PHYSICS_CONFIG.roadHeightMm, 0.567, 'roadHeightMm must stay 0.567');
+  const bayWithCapillaryPocket = [
+    [-90, -52], [90, -52], [90, -32],
+    [-54.43, -32], [-54.43, -29], [-51, -29], [-51, -23], [-58, -23], [-58, -29], [-54.57, -29], [-54.57, -32],
+    [-90, -32],
+  ];
+  const guardScene = {
+    spanMeters: 700,
+    dem: {
+      grid: [
+        [0.25, 0.25, 0.25, 0.25, 0.25],
+        [0.25, 0.25, 0.25, 0.25, 0.25],
+        [0.25, 0.25, 0.25, 0.25, 0.25],
+        [0.25, 0.25, 0.25, 0.25, 0.25],
+        [0.25, 0.25, 0.25, 0.25, 0.25],
+      ],
+      minElev: -0.25,
+      maxElev: 0.25,
+    },
+    waterPolys: [
+      { outer: bayWithCapillaryPocket, holes: [] },
+      { outer: [[73.0, 4], [95, 4], [95, 32], [73.0, 32]], holes: [] },
+    ],
+    waterLines: [],
+    greenPolys: [],
+    trees: [],
+    roads: [
+      { pts: [[-18.56, -2], [-10, -2], [-10, 16], [-30, 16], [-30, -2], [-21.10, -2]], width: 2.4, layer: 0 },
+      { pts: [[38.0, 39.5], [56.0, 39.5]], width: 2.0, layer: 0 },
+      { pts: [[46.5, 34.0], [46.5, 52.0]], width: 2.4, isBridge: true, isPath: true, layer: 2, bridgeStructure: 'truss', clearanceM: 8.0 },
+      { pts: [[71.5, 18], [92.0, 18]], width: 2.4, isBridge: true, isPath: true, layer: 2, bridgeStructure: 'truss', clearanceM: 7.5 },
+    ],
+    bridgePolys: [],
+    buildings: [
+      { id: 601, outer: makeSq(-20, 20.5, 3.2), holes: [], h: 24, roof: 'hipped', roofH: 4 },
+    ],
+  };
+  const guardState = {
+    plaqueText: 'MSLA_GUARD', bedSizeMm: 145, totalHeightMm: 79, tileCols: 1, tileRows: 1, cropRatio: 1.0,
+    hollowBase: true, hollowWallMm: 1.8, waterCutout: true, showFrame: false, exportFrame: false,
+    isResin: true, zScale: 1.0, terrainScale: 1.0,
+  };
+  const guardSpec = resolveSceneScaleAndSpec(guardState, null);
+  const guardBuilt = buildComplete3DModel(guardScene, guardState);
+  let preBldMaxZMm = 0;
+  for (const t of guardBuilt.meshes.buildings) {
+    const cx = (t.v0[0] + t.v1[0] + t.v2[0]) / 3;
+    const cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3;
+    if (cx >= -23.3 && cx <= -16.7 && cy >= 17.2 && cy <= 23.8) {
+      preBldMaxZMm = Math.max(preBldMaxZMm, t.v0[2] * guardSpec.scaleMm, t.v1[2] * guardSpec.scaleMm, t.v2[2] * guardSpec.scaleMm);
+    }
+  }
+  assert.ok(preBldMaxZMm > 5.0, `Expected pre-export adjacent building height > 5mm, got ${preBldMaxZMm}`);
+  let preBridgeMaxX = -Infinity;
+  let preRampMinZMm = Infinity;
+  let preRampMaxZMm = -Infinity;
+  for (const t of guardBuilt.meshes.roads) {
+    for (const p of [t.v0, t.v1, t.v2]) {
+      if (p[0] > 70 && t.n && t.n[2] < -0.80 && p[2] * guardSpec.scaleMm > 2.35) {
+        if (p[0] > preBridgeMaxX) preBridgeMaxX = p[0];
+        preRampMinZMm = Math.min(preRampMinZMm, p[2] * guardSpec.scaleMm);
+        preRampMaxZMm = Math.max(preRampMaxZMm, p[2] * guardSpec.scaleMm);
+      }
+    }
+  }
+  assert.ok(preBridgeMaxX >= guardSpec.halfW - 0.1, `Expected border-clipped sloped ramp reaching halfW, got maxX=${preBridgeMaxX}`);
+  assert.ok(preRampMinZMm <= 2.65 && preRampMaxZMm >= 3.70, `Expected sloped ramp 2.40..3.70+ mm, got ${preRampMinZMm.toFixed(2)}..${preRampMaxZMm.toFixed(2)}`);
+
+  // Inject a 0.25 mm (< 0.44 mm) hairline wall directly under the sloped ramp to prove structural opening ignores slivers.
+  const mfGuard = coreMod.getManifoldLib();
+  const hx0 = (138.83 / guardSpec.scaleMm) - guardSpec.halfW;
+  const hx1 = hx0 + (0.25 / guardSpec.scaleMm);
+  const hairlineWall = coreMod.boxManifoldFromBounds(mfGuard, hx0, hx1, 17.0, 19.0, 0.0, 4.3 / guardSpec.scaleMm);
+  assert.ok(hairlineWall && hairlineWall.numTri() > 0, 'Expected hairline wall manifold');
+  coreMod.appendManifoldToTriangles(hairlineWall, guardBuilt.meshes.buildings, 5, 602, 0, 99);
+  coreMod.safeDeleteManifold(hairlineWall);
+
+  const guardBytes = stlMod.buildBinarySTLBytes({ ...guardState, layerMeshes: guardBuilt.meshes }, 'all', 0);
+  const guardStlAudit = parseAndAuditRawStlBytes(guardBytes);
+  assert.equal(guardStlAudit.openEdges, 0, `guard STL open=${guardStlAudit.openEdges}`);
+  assert.equal(guardStlAudit.nonManifoldEdges, 0, `guard STL nm=${guardStlAudit.nonManifoldEdges}`);
+  assert.equal(guardStlAudit.sameDirDupEdges, 0, `guard STL dup=${guardStlAudit.sameDirDupEdges}`);
+  assert.equal(guardStlAudit.degenerateTris, 0, `guard STL degen=${guardStlAudit.degenerateTris}`);
+  assert.ok(guardStlAudit.spanX <= 145.05 && guardStlAudit.spanY <= 79.05, `Expected guard STL within 145x79mm bounds, got ${guardStlAudit.spanX.toFixed(2)}x${guardStlAudit.spanY.toFixed(2)}`);
+
+  const guardCavSlices025 = auditRawStlSliceRasterCavities(guardBytes, [0.15, 0.55, 0.95, 1.15, 2.65, 2.90], 0.25);
+  const guardCavSlices030 = auditRawStlSliceRasterCavities(guardBytes, [1.40, 1.65, 1.90, 2.15, 2.65, 2.90], 0.30);
+  for (const sl of guardCavSlices025) {
+    if (sl.zMm <= 1.20) {
+      assert.equal(sl.sealedCavitiesGe2Mm2, 0, `Guard Z=${sl.zMm}mm cavity >=2mm2: ${sl.sealedCavitiesGe2Mm2}`);
+    } else {
+      assert.ok(sl.maxSealedCavityMm2 < 75.0, `Expected 0 courtyards >= 75 mm2 at Z=${sl.zMm}mm (0.25mm grid), got max=${sl.maxSealedCavityMm2.toFixed(2)} mm2`);
+    }
+  }
+  for (const sl of guardCavSlices030) {
+    if (sl.zMm <= 2.20) {
+      assert.equal(sl.sealedCavitiesGe2Mm2, 0, `Guard capillary Z=${sl.zMm}mm cavity >=2mm2: ${sl.sealedCavitiesGe2Mm2}`);
+    } else {
+      assert.ok(sl.maxSealedCavityMm2 < 75.0, `Expected 0 courtyards >= 75 mm2 at Z=${sl.zMm}mm (0.30mm grid), got max=${sl.maxSealedCavityMm2.toFixed(2)} mm2`);
+    }
+  }
+
+  const overhangAudit = auditRawStlOverhangsVal04(guardBytes);
+  assert.ok(overhangAudit.maxHalfSpanMm <= 2.2, `Expected sloped ramp VAL-04 half-span <= 2.2 mm, got ${overhangAudit.maxHalfSpanMm.toFixed(2)} mm`);
+
+  const bldX0 = (-23.1 + guardSpec.halfW) * guardSpec.scaleMm;
+  const bldX1 = (-16.9 + guardSpec.halfW) * guardSpec.scaleMm;
+  const bldY0 = (17.4 + guardSpec.halfH) * guardSpec.scaleMm;
+  const bldY1 = (23.6 + guardSpec.halfH) * guardSpec.scaleMm;
+  const gView = new DataView(guardBytes.buffer, guardBytes.byteOffset, guardBytes.byteLength);
+  const gNTris = gView.getUint32(80, true);
+  let postBldMaxZMm = 0;
+  let postBldInteriorTris = 0;
+  for (let i = 0; i < gNTris; i++) {
+    const base = 84 + i * 50;
+    let sx = 0, sy = 0, maxTriZ = 0;
+    for (let v = 0; v < 3; v++) {
+      const vo = base + 12 + v * 12;
+      const vx = gView.getFloat32(vo, true);
+      const vy = gView.getFloat32(vo + 4, true);
+      const vz = gView.getFloat32(vo + 8, true);
+      sx += vx; sy += vy;
+      if (vz > maxTriZ) maxTriZ = vz;
+    }
+    const cx = sx / 3, cy = sy / 3;
+    if (cx >= bldX0 && cx <= bldX1 && cy >= bldY0 && cy <= bldY1) {
+      postBldInteriorTris++;
+      if (maxTriZ > postBldMaxZMm) postBldMaxZMm = maxTriZ;
+    }
+  }
+  assert.ok(postBldInteriorTris >= 8, `Expected adjacent building tris >= 8, got ${postBldInteriorTris}`);
+  assert.ok(Math.abs(postBldMaxZMm - preBldMaxZMm) <= 0.05, `Expected building full height preserved (${preBldMaxZMm.toFixed(2)} -> ${postBldMaxZMm.toFixed(2)} mm)`);
+  console.log(`  PASS: 145x79mm MSLA guard open=0 nm=0 degen=0, capillary Z=[0.15..2.15] cav=0, courtyard Z=[2.65,2.90] maxCav=${Math.max(guardCavSlices030[4].maxSealedCavityMm2, guardCavSlices030[5].maxSealedCavityMm2).toFixed(1)}mm2 (<75), sloped ramp overhang=${overhangAudit.maxHalfSpanMm.toFixed(2)}mm (<=2.2), bldZ=${postBldMaxZMm.toFixed(2)}mm`);
+
   console.log(`\nETAP 6 AUDIT PASSED in ${Date.now() - tStart} ms.`);
 }
 

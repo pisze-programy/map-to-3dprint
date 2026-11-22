@@ -835,23 +835,35 @@
     return added;
   }
 
-  // Convert a Manifold to STL triangles while separating pinched/near-coincident vertices
-  // so Float32 serialization preserves strict 0-open, 0-non-manifold, 0-degenerate topology.
+  // Convert a Manifold to STL triangles. Remove floating micro-shells on grounded meshes.
+  // Keep shared Float32 vertices separate and non-collinear for zero-defect topology.
   function extractDePinchedStlTriangles(mf, man, tid = 0, scaleMm = 1) {
     if (!man || man.numTri() === 0) return [];
     const scMm = Math.max(1e-4, Number(scaleMm) || 1);
-    let src = man, ownsSrc = false;
+    let src = man;
+    let ownsSrc = false;
     if (typeof man.simplify === 'function') {
       try {
         const tol = Math.max(1e-5, Math.min(1e-3, 0.0015 / scMm));
         const simp = man.simplify(tol);
-        if (simp && simp.numTri() > 0) { src = simp; ownsSrc = true; }
-        else safeDeleteManifold(simp);
+        if (simp && simp.numTri() > 0) {
+          src = simp;
+          ownsSrc = true;
+        } else {
+          safeDeleteManifold(simp);
+        }
       } catch (_) {}
     }
     const m = src.getMesh();
-    const rawVp = m.vertProperties, tv = m.triVerts, np = m.numProp || 3;
-    const nv = Math.floor(rawVp.length / np), nTri = Math.floor(tv.length / 3);
+    const rawVp = m.vertProperties;
+    const tv = m.triVerts;
+    const np = m.numProp || 3;
+    const nv = Math.floor(rawVp.length / np);
+    const nTri = Math.floor(tv.length / 3);
+    if (nv <= 0 || nTri <= 0) {
+      if (ownsSrc) safeDeleteManifold(src);
+      return [];
+    }
     const vp = new Float64Array(nv * 3);
     for (let v = 0; v < nv; v++) {
       vp[v * 3] = rawVp[v * np];
@@ -861,45 +873,106 @@
 
     const vNorm = new Float64Array(nv * 3);
     for (let t = 0; t < nTri; t++) {
-      const i0 = tv[t * 3], i1 = tv[t * 3 + 1], i2 = tv[t * 3 + 2];
-      const a = i0 * 3, b = i1 * 3, c = i2 * 3;
-      const ux = vp[b] - vp[a], uy = vp[b + 1] - vp[a + 1], uz = vp[b + 2] - vp[a + 2];
-      const vx = vp[c] - vp[a], vy = vp[c + 1] - vp[a + 1], vz = vp[c + 2] - vp[a + 2];
-      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const i0 = tv[t * 3];
+      const i1 = tv[t * 3 + 1];
+      const i2 = tv[t * 3 + 2];
+      if (i0 === i1 || i1 === i2 || i2 === i0) continue;
+      const a = i0 * 3;
+      const b = i1 * 3;
+      const c = i2 * 3;
+      const ux = vp[b] - vp[a];
+      const uy = vp[b + 1] - vp[a + 1];
+      const uz = vp[b + 2] - vp[a + 2];
+      const vx = vp[c] - vp[a];
+      const vy = vp[c + 1] - vp[a + 1];
+      const vz = vp[c + 2] - vp[a + 2];
+      const nx = uy * vz - uz * vy;
+      const ny = uz * vx - ux * vz;
+      const nz = ux * vy - uy * vx;
       vNorm[a] += nx; vNorm[a + 1] += ny; vNorm[a + 2] += nz;
       vNorm[b] += nx; vNorm[b + 1] += ny; vNorm[b + 2] += nz;
       vNorm[c] += nx; vNorm[c + 1] += ny; vNorm[c + 2] += nz;
     }
 
-    const cellU = 0.001 / scMm, shiftU = 0.0015 / scMm;
-    const minDistSq = (cellU * 0.5) * (cellU * 0.5);
-    const grid = new Map();
-    const cellKey = (x, y, z) => `${Math.floor(x / cellU)},${Math.floor(y / cellU)},${Math.floor(z / cellU)}`;
-    const hasCloseVert = (x, y, z) => {
-      const cx = Math.floor(x / cellU), cy = Math.floor(y / cellU), cz = Math.floor(z / cellU);
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dz = -1; dz <= 1; dz++) {
-            const list = grid.get(`${cx + dx},${cy + dy},${cz + dz}`);
-            if (!list) continue;
-            for (let k = 0; k < list.length; k++) {
-              const oi = list[k] * 3;
-              const ddx = x - vp[oi], ddy = y - vp[oi + 1], ddz = z - vp[oi + 2];
-              if (ddx * ddx + ddy * ddy + ddz * ddz < minDistSq) return true;
+    // Build a 3D spatial hash helper reused by unit depinching and mm collision checks.
+    const createSpatialGrid = (cellSize, minDistSq, readX, readY, readZ) => {
+      const cells = new Map();
+      const key = (x, y, z) => `${Math.floor(x / cellSize)},${Math.floor(y / cellSize)},${Math.floor(z / cellSize)}`;
+      const add = (id) => {
+        const ck = key(readX(id), readY(id), readZ(id));
+        let arr = cells.get(ck);
+        if (!arr) { arr = []; cells.set(ck, arr); }
+        arr.push(id);
+      };
+      const remove = (id, x, y, z) => {
+        const list = cells.get(key(x, y, z));
+        if (!list) return;
+        const idx = list.indexOf(id);
+        if (idx >= 0) list.splice(idx, 1);
+      };
+      const hasClose = (x, y, z, skipId = -1) => {
+        const cx = Math.floor(x / cellSize);
+        const cy = Math.floor(y / cellSize);
+        const cz = Math.floor(z / cellSize);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dz = -1; dz <= 1; dz++) {
+              const list = cells.get(`${cx + dx},${cy + dy},${cz + dz}`);
+              if (!list) continue;
+              for (let k = 0; k < list.length; k++) {
+                const oid = list[k];
+                if (oid === skipId) continue;
+                const ddx = x - readX(oid);
+                const ddy = y - readY(oid);
+                const ddz = z - readZ(oid);
+                if (ddx * ddx + ddy * ddy + ddz * ddz < minDistSq) return true;
+              }
             }
           }
         }
-      }
-      return false;
+        return false;
+      };
+      return { add, remove, hasClose };
     };
+
+    const findClearSpiralXY = (bx, by, bz, stepSize, skipId, gridRef, roundF32) => {
+      for (let step = 1; step <= 6; step++) {
+        const rad = stepSize * step;
+        for (let ai = 0; ai < 16; ai++) {
+          const ang = (ai * Math.PI) / 8;
+          const rawX = bx + Math.cos(ang) * rad;
+          const rawY = by + Math.sin(ang) * rad;
+          const tx = roundF32 ? Math.fround(rawX) : rawX;
+          const ty = roundF32 ? Math.fround(rawY) : rawY;
+          if (!gridRef.hasClose(tx, ty, bz, skipId)) return [tx, ty];
+        }
+      }
+      return null;
+    };
+
+    // Separate pinched or coincident vertices in scene units.
+    const cellU = 0.001 / scMm;
+    const shiftU = 0.0015 / scMm;
+    const unitGrid = createSpatialGrid(
+      cellU,
+      (cellU * 0.5) * (cellU * 0.5),
+      (v) => vp[v * 3],
+      (v) => vp[v * 3 + 1],
+      (v) => vp[v * 3 + 2]
+    );
 
     for (let v = 0; v < nv; v++) {
       const b = v * 3;
-      let x = vp[b], y = vp[b + 1], z = vp[b + 2];
+      let x = vp[b];
+      let y = vp[b + 1];
+      let z = vp[b + 2];
       const origZ = z;
-      if (hasCloseVert(x, y, z)) {
-        const nx = vNorm[b], ny = vNorm[b + 1], nz = vNorm[b + 2];
+      if (unitGrid.hasClose(x, y, z, -1)) {
+        const nx = vNorm[b];
+        const ny = vNorm[b + 1];
+        const nz = vNorm[b + 2];
         const dirs = [[nx, ny, nz], [nx, ny, 0], [1, 0, 0], [0, 1, 0], [0, 0, origZ <= shiftU * 2 ? -1 : 1]];
+        let moved = false;
         outer: for (let di = 0; di < dirs.length; di++) {
           let [dx, dy, dz] = dirs[di];
           const dl = Math.hypot(dx, dy, dz);
@@ -910,32 +983,244 @@
             const ty = vp[b + 1] - dy * shiftU * step;
             const tz = vp[b + 2] - dz * shiftU * step;
             if (origZ >= 0 && tz < 0) continue;
-            if (!hasCloseVert(tx, ty, tz)) { x = tx; y = ty; z = tz; break outer; }
+            if (!unitGrid.hasClose(tx, ty, tz, -1)) {
+              x = tx; y = ty; z = tz;
+              moved = true;
+              break outer;
+            }
           }
+        }
+        if (!moved) {
+          const xy = findClearSpiralXY(vp[b], vp[b + 1], origZ, shiftU, -1, unitGrid, false);
+          if (xy) { x = xy[0]; y = xy[1]; z = origZ; }
         }
         vp[b] = x; vp[b + 1] = y; vp[b + 2] = z;
       }
-      const ck = cellKey(x, y, z);
-      let arr = grid.get(ck);
-      if (!arr) { arr = []; grid.set(ck, arr); }
-      arr.push(v);
+      unitGrid.add(v);
     }
 
-    const out = [];
+    // Build Union-Find components over surviving triangles to filter floating shells (VAL-05).
+    const parent = new Int32Array(nv);
+    for (let i = 0; i < nv; i++) parent[i] = i;
+    const find = (x) => {
+      while (parent[x] !== x) {
+        parent[x] = parent[parent[x]];
+        x = parent[x];
+      }
+      return x;
+    };
+    const usedVerts = new Uint8Array(nv);
     for (let t = 0; t < nTri; t++) {
-      const i0 = tv[t * 3], i1 = tv[t * 3 + 1], i2 = tv[t * 3 + 2];
+      const i0 = tv[t * 3];
+      const i1 = tv[t * 3 + 1];
+      const i2 = tv[t * 3 + 2];
       if (i0 === i1 || i1 === i2 || i2 === i0) continue;
-      const b0 = i0 * 3, b1 = i1 * 3, b2 = i2 * 3;
-      const x0 = vp[b0], y0 = vp[b0 + 1], z0 = vp[b0 + 2];
-      const x1 = vp[b1], y1 = vp[b1 + 1], z1 = vp[b1 + 2];
-      const x2 = vp[b2], y2 = vp[b2 + 1], z2 = vp[b2 + 2];
-      const ux = x1 - x0, uy = y1 - y0, uz = z1 - z0;
-      const vx = x2 - x0, vy = y2 - y0, vz = z2 - z0;
-      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      usedVerts[i0] = 1;
+      usedVerts[i1] = 1;
+      usedVerts[i2] = 1;
+      const r0 = find(i0);
+      const r1 = find(i1);
+      if (r0 !== r1) parent[r1] = r0;
+      const r2 = find(i2);
+      const r0b = find(r0);
+      if (r0b !== r2) parent[r2] = r0b;
+    }
+
+    const compMinZ = new Float64Array(nv);
+    compMinZ.fill(Infinity);
+    let globalMinZ = Infinity;
+    for (let v = 0; v < nv; v++) {
+      if (!usedVerts[v]) continue;
+      const z = vp[v * 3 + 2];
+      if (z < globalMinZ) globalMinZ = z;
+      const r = find(v);
+      if (z < compMinZ[r]) compMinZ[r] = z;
+    }
+    if (!Number.isFinite(globalMinZ)) {
+      if (ownsSrc) safeDeleteManifold(src);
+      return [];
+    }
+
+    const groundThreshU = 0.05 / scMm;
+    const isGroundedMesh = globalMinZ <= groundThreshU;
+
+    // Quantize surviving vertices to Float32 in mm while keeping Manifold index sharing.
+    const vToId = new Int32Array(nv);
+    vToId.fill(-1);
+    const verts = [];
+    const tris = [];
+    let hasNegativeZClamp = false;
+    for (let t = 0; t < nTri; t++) {
+      const i0 = tv[t * 3];
+      const i1 = tv[t * 3 + 1];
+      const i2 = tv[t * 3 + 2];
+      if (i0 === i1 || i1 === i2 || i2 === i0) continue;
+      if (isGroundedMesh && compMinZ[find(i0)] > groundThreshU) continue;
+      const tri = [0, 0, 0];
+      for (let k = 0; k < 3; k++) {
+        const vi = k === 0 ? i0 : (k === 1 ? i1 : i2);
+        let id = vToId[vi];
+        if (id < 0) {
+          id = verts.length;
+          vToId[vi] = id;
+          const b = vi * 3;
+          const xMm = Math.fround(vp[b] * scMm);
+          const yMm = Math.fround(vp[b + 1] * scMm);
+          let zMm = Math.fround(vp[b + 2] * scMm);
+          if (isGroundedMesh && zMm < 0) {
+            zMm = 0;
+            hasNegativeZClamp = true;
+          }
+          verts.push([xMm, yMm, zMm]);
+        }
+        tri[k] = id;
+      }
+      tris.push(tri);
+    }
+    if (tris.length === 0) {
+      if (ownsSrc) safeDeleteManifold(src);
+      return [];
+    }
+
+    // Build an mm spatial grid on demand so vertex nudges never create new pinches.
+    let mmGrid = null;
+    const ensureMmGrid = () => {
+      if (mmGrid) return mmGrid;
+      mmGrid = createSpatialGrid(
+        0.001,
+        0.0005 * 0.0005,
+        (id) => verts[id][0],
+        (id) => verts[id][1],
+        (id) => verts[id][2]
+      );
+      for (let id = 0; id < verts.length; id++) mmGrid.add(id);
+      return mmGrid;
+    };
+    const moveVertMm = (id, nx, ny, nz) => {
+      const p = verts[id];
+      if (mmGrid) mmGrid.remove(id, p[0], p[1], p[2]);
+      p[0] = nx;
+      p[1] = ny;
+      p[2] = nz;
+      if (mmGrid) mmGrid.add(id);
+    };
+
+    if (hasNegativeZClamp) {
+      const g = ensureMmGrid();
+      for (let id = 0; id < verts.length; id++) {
+        const p = verts[id];
+        if (!g.hasClose(p[0], p[1], p[2], id)) continue;
+        const xy = findClearSpiralXY(p[0], p[1], p[2], 0.0015, id, g, true);
+        if (xy) moveVertMm(id, xy[0], xy[1], p[2]);
+      }
+    }
+
+    // Repair near-collinear Float32 triangles by nudging shared vertices (VAL-01).
+    for (let pass = 0; pass < 10; pass++) {
+      let found = 0;
+      for (let i = 0; i < tris.length; i++) {
+        const tri = tris[i];
+        const a = tri[0];
+        const b = tri[1];
+        const c = tri[2];
+        if (a === b || b === c || c === a) continue;
+        const p0 = verts[a];
+        const p1 = verts[b];
+        const p2 = verts[c];
+        const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+        const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+        const wx = p2[0] - p1[0], wy = p2[1] - p1[1], wz = p2[2] - p1[2];
+        const nx = uy * vz - uz * vy;
+        const ny = uz * vx - ux * vz;
+        const nz = ux * vy - uy * vx;
+        const len2 = nx * nx + ny * ny + nz * nz;
+        const e01 = ux * ux + uy * uy + uz * uz;
+        const e02 = vx * vx + vy * vy + vz * vz;
+        const e12 = wx * wx + wy * wy + wz * wz;
+        const maxE2 = Math.max(e01, e02, e12);
+        if (len2 > 1e-8 && len2 > 1.6e-7 * maxE2) continue;
+
+        found++;
+        const g = ensureMmGrid();
+        const best = (e12 >= e02 && e12 >= e01) ? 0 : (e02 >= e01 ? 1 : 2);
+        const pick = (best + pass) % 3;
+        const cand = pick === 0 ? a : (pick === 1 ? b : c);
+        const o1 = cand === a ? p1 : p0;
+        const o2 = cand === c ? p1 : p2;
+        const ex = o2[0] - o1[0];
+        const ey = o2[1] - o1[1];
+        const elen = Math.hypot(ex, ey);
+        const vpC = verts[cand];
+        let baseSign = (((cand + pass) * 2654435761) & 1) ? 1 : -1;
+        if (elen > 1e-5) {
+          const d = (vpC[0] - o1[0]) * (-ey / elen) + (vpC[1] - o1[1]) * (ex / elen);
+          if (Math.abs(d) > 1e-6) baseSign = d >= 0 ? 1 : -1;
+        }
+        const scales = [1, -1, 1.37, -1.37, 1.91, -1.91];
+        let chosenX = vpC[0];
+        let chosenY = vpC[1];
+        let chosenZ = vpC[2];
+        for (let si = 0; si < scales.length; si++) {
+          const eps = 0.0025 * baseSign * scales[si];
+          let tx, ty;
+          let tz = vpC[2];
+          if (elen > 1e-5) {
+            tx = Math.fround(vpC[0] + (-ey / elen) * eps);
+            ty = Math.fround(vpC[1] + (ex / elen) * eps);
+          } else {
+            tx = Math.fround(vpC[0] + eps);
+            ty = Math.fround(vpC[1] - eps * 0.73);
+            if (vpC[2] > 0.05) tz = Math.fround(vpC[2] + eps * 0.5);
+          }
+          const isClear = !g.hasClose(tx, ty, tz, cand);
+          if (isClear || si === scales.length - 1) {
+            chosenX = tx;
+            chosenY = ty;
+            chosenZ = tz;
+            if (isClear) break;
+          }
+        }
+        moveVertMm(cand, chosenX, chosenY, chosenZ);
+      }
+      if (found === 0) break;
+    }
+
+    const outVerts = new Array(verts.length);
+    for (let id = 0; id < verts.length; id++) {
+      const p = verts[id];
+      outVerts[id] = [p[0] / scMm, p[1] / scMm, p[2] / scMm];
+    }
+
+    const out = new Array(tris.length);
+    for (let i = 0; i < tris.length; i++) {
+      const tri = tris[i];
+      const p0 = verts[tri[0]];
+      const p1 = verts[tri[1]];
+      const p2 = verts[tri[2]];
+      const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+      const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+      let nx = uy * vz - uz * vy;
+      let ny = uz * vx - ux * vz;
+      let nz = ux * vy - uy * vx;
       const nl = Math.hypot(nx, ny, nz);
-      if (nl >= 1e-18 && Number.isFinite(nl)) { nx /= nl; ny /= nl; nz /= nl; }
-      else { nx = 0; ny = 0; nz = 1; }
-      out.push({ v0: [x0, y0, z0], v1: [x1, y1, z1], v2: [x2, y2, z2], n: [nx, ny, nz], layerId: 1, buildingId: -1, tileId: tid, shellId: 1 });
+      if (nl >= 1e-18 && Number.isFinite(nl)) {
+        nx /= nl; ny /= nl; nz /= nl;
+      } else {
+        nx = 0; ny = 0; nz = 1;
+      }
+      const o0 = outVerts[tri[0]];
+      const o1 = outVerts[tri[1]];
+      const o2 = outVerts[tri[2]];
+      out[i] = {
+        v0: [o0[0], o0[1], o0[2]],
+        v1: [o1[0], o1[1], o1[2]],
+        v2: [o2[0], o2[1], o2[2]],
+        n: [nx, ny, nz],
+        layerId: 1,
+        buildingId: -1,
+        tileId: tid,
+        shellId: 1,
+      };
     }
     if (ownsSrc) safeDeleteManifold(src);
     return out;

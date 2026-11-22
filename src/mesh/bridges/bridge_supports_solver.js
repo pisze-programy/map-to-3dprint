@@ -100,6 +100,75 @@ function _extrudePylonOuterSolidJS(mf, outer, pt, tx, ty, halfW, zFloor, zTop, z
   return { solid, latMin, latMax, cLat: (latMin + latMax) * 0.5, isCentral: (latMax - latMin) < halfW * 1.15 };
 }
 
+function _collectInsideBedSpansJS(pts, sArr, bedHalfW, bedHalfH) {
+  const spans = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const s0 = sArr[i], s1 = sArr[i + 1], ds = s1 - s0;
+    if (ds <= 1e-8) continue;
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const ts = [0, 1];
+    if (Math.abs(dx) > 1e-9) {
+      const tPos = (bedHalfW - a[0]) / dx;
+      const tNeg = (-bedHalfW - a[0]) / dx;
+      if (tPos > 1e-5 && tPos < 1 - 1e-5) ts.push(tPos);
+      if (tNeg > 1e-5 && tNeg < 1 - 1e-5) ts.push(tNeg);
+    }
+    if (Math.abs(dy) > 1e-9) {
+      const tPos = (bedHalfH - a[1]) / dy;
+      const tNeg = (-bedHalfH - a[1]) / dy;
+      if (tPos > 1e-5 && tPos < 1 - 1e-5) ts.push(tPos);
+      if (tNeg > 1e-5 && tNeg < 1 - 1e-5) ts.push(tNeg);
+    }
+    ts.sort((u, v) => u - v);
+    for (let k = 0; k < ts.length - 1; k++) {
+      const tA = ts[k], tB = ts[k + 1];
+      if (tB - tA <= 1e-5) continue;
+      const tm = 0.5 * (tA + tB);
+      const xm = a[0] + dx * tm, ym = a[1] + dy * tm;
+      const inBed = Math.abs(xm) < bedHalfW && Math.abs(ym) < bedHalfH;
+      const subA = s0 + ds * tA, subB = s0 + ds * tB;
+      if (spans.length && spans[spans.length - 1].inBed === inBed) {
+        spans[spans.length - 1].sB = subB;
+      } else {
+        spans.push({ sA: subA, sB: subB, inBed });
+      }
+    }
+  }
+  return spans;
+}
+
+function _addBorderCrossingStationsJS(spec, ctx, scaleMm, pierStationsS) {
+  if (!Number.isFinite(ctx.halfW) || !Number.isFinite(ctx.halfH)) return;
+  if (!Array.isArray(spec.pts) || spec.pts.length < 2 || !Array.isArray(spec.sArr) || spec.sArr.length !== spec.pts.length) return;
+  const clampMin = 0.25 / scaleMm, clampMax = spec.spanU - 0.25 / scaleMm;
+  if (clampMin >= clampMax) return;
+
+  // Add piers inside the bed at border crossings so clipped stubs do not cantilever.
+  const spans = _collectInsideBedSpansJS(spec.pts, spec.sArr, ctx.halfW, ctx.halfH);
+  const insetU = Math.min(spec.spanU * 0.15, 0.55 / scaleMm);
+  const minSepU = 1.2 / scaleMm;
+  const candidates = [];
+  for (let idx = 0; idx < spans.length; idx++) {
+    const spn = spans[idx];
+    if (!spn.inBed) continue;
+    const localInset = Math.min(insetU, (spn.sB - spn.sA) * 0.5);
+    if (idx > 0) candidates.push(spn.sA + localInset);
+    if (idx < spans.length - 1) candidates.push(spn.sB - localInset);
+  }
+  for (const rawS of candidates) {
+    const sCand = Math.max(clampMin, Math.min(clampMax, rawS));
+    const { pt } = _samplePtAtSJS(spec, sCand);
+    if (Math.abs(pt[0]) >= ctx.halfW || Math.abs(pt[1]) >= ctx.halfH) continue;
+    if (pierStationsS.some(ps => Math.abs(ps - sCand) < minSepU)) continue;
+    const nearExplicit = spec.explicitSupports.some(es => {
+      if (es.pt && (Math.abs(es.pt[0]) >= ctx.halfW || Math.abs(es.pt[1]) >= ctx.halfH)) return false;
+      return Math.abs(es.sProj - sCand) < minSepU;
+    });
+    if (!nearExplicit) pierStationsS.push(sCand);
+  }
+}
+
 function _addBridgeSupportSolidsJS(spec, terrainWater, ctx, strutRU, parts, supportStationsS, pylonStations, metrics) {
   const mf = ctx.mf, halfW = spec.width * 0.5, scaleMm = ctx.scaleMm || 1.89;
   const minColR = Math.max(strutRU * 1.15, Math.min(halfW * 0.25, 0.45 / scaleMm));
@@ -162,22 +231,63 @@ function _addBridgeSupportSolidsJS(spec, terrainWater, ctx, strutRU, parts, supp
       const pm = extrudeRingSolid(mf, [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]], [], zB, zT);
       if (pm) parts.push(pm);
     }
-  } else if (!channelProtected && spec.structNorm !== 'floating' && spec.spanU > 3.6 / scaleMm) {
-    const step = isDryMultiBayArchViaduct
-      ? Math.max(4.5 / scaleMm, Math.min(45.0 * mToBedXY, spec.spanU / 3))
-      : Math.max(3.2 / scaleMm, spec.width * 2.3);
-    for (let s = step; s < spec.spanU - step * 0.45; s += step) {
-      if (spec.explicitSupports.some(es => Math.abs(es.sProj - s) < step * 0.72)) continue;
-      const { pt } = _samplePtAtSJS(spec, s), zFloor = _anchorFloorZJS(pt[0], pt[1], terrainWater, ctx);
-      const inWater = terrainWater.isPointInWater(pt[0], pt[1]);
-      const colR = Math.min(halfW * 0.44, (ctx.waterCutout && inWater) ? minColR * 1.25 : minColR);
-      const zCap = capAt(s, colR);
-      if (zCap <= zFloor + 0.04 / scaleMm) continue;
-      if (inWater) metrics.syntheticWaterPiers++;
-      metrics.pierMinZ = Math.min(metrics.pierMinZ, zFloor);
-      const col = beamManifoldBetween(mf, [pt[0], pt[1], zFloor], [pt[0], pt[1], zCap], colR);
-      if (col) parts.push(col);
-      supportStationsS.push(s);
+  } else if (!channelProtected && spec.structNorm !== 'floating') {
+    const pierStationsS = [];
+    const hasBedBounds = Number.isFinite(ctx.halfW) && Number.isFinite(ctx.halfH);
+    if (isDryMultiBayArchViaduct) {
+      if (spec.spanU > 3.6 / scaleMm) {
+        const step = Math.max(4.5 / scaleMm, Math.min(45.0 * mToBedXY, spec.spanU / 3));
+        const guardDist = step * 0.72;
+        for (let s = step; s < spec.spanU - step * 0.45; s += step) {
+          if (!spec.explicitSupports.some(es => Math.abs(es.sProj - s) < guardDist)) pierStationsS.push(s);
+        }
+      }
+    } else {
+      if (spec.spanU > 3.6 / scaleMm) {
+        // Limit unsupported bay span to 4.2 mm (2.1 mm half-span).
+        const maxClearSpanU = 4.2 / scaleMm;
+        const desiredStep = Math.min(maxClearSpanU, Math.max(3.0 / scaleMm, spec.width * 2.1));
+        const nBays = spec.spanU > maxClearSpanU ? Math.max(2, Math.ceil(spec.spanU / desiredStep)) : 2;
+        const bayStep = spec.spanU / nBays;
+        const guardDist = bayStep * 0.65;
+        for (let bi = 1; bi < nBays; bi++) {
+          const sBay = bi * bayStep;
+          if (spec.explicitSupports.some(es => Math.abs(es.sProj - sBay) < guardDist)) continue;
+          if (hasBedBounds) {
+            const { pt } = _samplePtAtSJS(spec, sBay);
+            if (Math.abs(pt[0]) >= ctx.halfW || Math.abs(pt[1]) >= ctx.halfH) continue;
+          }
+          pierStationsS.push(sBay);
+        }
+      }
+      _addBorderCrossingStationsJS(spec, ctx, scaleMm, pierStationsS);
+      pierStationsS.sort((a, b) => a - b);
+    }
+
+    // Place twin lateral piers under wide flat decks to keep deck edges supported.
+    const placeTwin = !isDryMultiBayArchViaduct && spec.width * scaleMm > 4.2;
+    const latOffU = placeTwin ? Math.max(minColR * 1.35, halfW - 1.4 / scaleMm) : 0;
+    for (const s of pierStationsS) {
+      const { pt, tx, ty } = _samplePtAtSJS(spec, s);
+      const colPts = placeTwin
+        ? [_sidePtJS(pt, tx, ty, latOffU, 0), _sidePtJS(pt, tx, ty, -latOffU, 0)]
+        : [pt];
+      let placedAny = false;
+      for (const lp of colPts) {
+        const zFloor = _anchorFloorZJS(lp[0], lp[1], terrainWater, ctx);
+        const inWater = terrainWater.isPointInWater(lp[0], lp[1]);
+        const colR = Math.min(halfW * 0.44, (ctx.waterCutout && inWater) ? minColR * 1.25 : minColR);
+        const zCap = capAt(s, colR);
+        if (zCap <= zFloor + 0.04 / scaleMm) continue;
+        if (inWater) metrics.syntheticWaterPiers++;
+        metrics.pierMinZ = Math.min(metrics.pierMinZ, zFloor);
+        const col = beamManifoldBetween(mf, [lp[0], lp[1], zFloor], [lp[0], lp[1], zCap], colR);
+        if (col) {
+          parts.push(col);
+          placedAny = true;
+        }
+      }
+      if (placedAny) supportStationsS.push(s);
     }
   }
 }
