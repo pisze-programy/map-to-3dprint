@@ -234,7 +234,10 @@
     const rawRoofHU = roofShape !== 'flat' ? Math.max(0.20 / scaleMm, roofH_m * mToU * hMult) : 0;
     let roofHU = roofShape !== 'flat' ? Math.max(0.20 / scaleMm, zTop - compressZ(zRawTop - rawRoofHU)) : 0;
     if (!hasExplicitRoofH && roofHU > availHU * 0.72) roofHU = availHU * 0.65;
-    roofHU = Math.min(roofHU, Math.max(0, availHU - (0.15 / scaleMm)));
+    const isZeroWallElevatedSkillion = hasExplicitRoofH && roofShape === 'skillion' && minHU > 0 && rawRoofHU >= availHU - (0.05 / scaleMm);
+    roofHU = isZeroWallElevatedSkillion
+      ? Math.min(roofHU, availHU)
+      : Math.min(roofHU, Math.max(0, availHU - (0.15 / scaleMm)));
     if (roofHU * scaleMm < 0.12) { roofShape = 'flat'; roofHU = 0; }
     const zEaves = (roofShape !== 'flat' && roofHU > 0.12 / scaleMm) ? (zTop - roofHU) : zTop;
 
@@ -251,7 +254,9 @@
         const wM = core.extrudeRingSolid(mf, sr.outer, sr.holes, zBase, zSplit); if (wM) partSolids.push(wM);
         const tM = _buildRoofManifold(core, mf, sr.outer, sr.holes, zSplit, zTop - zSplit, 'pyramidal', roofDir, roofOrient, effRotDeg); if (tM) partSolids.push(tM);
       } else {
-        const wallM = core.extrudeRingSolid(mf, sr.outer, sr.holes, zBase, zEaves); if (wallM) partSolids.push(wallM);
+        if (zEaves > zBase + 1e-4) {
+          const wallM = core.extrudeRingSolid(mf, sr.outer, sr.holes, zBase, zEaves); if (wallM) partSolids.push(wallM);
+        }
         if (roofShape !== 'flat' && zTop > zEaves + 1e-4) {
           const roofM = _buildRoofManifold(core, mf, sr.outer, sr.holes, zEaves, zTop - zEaves, roofShape, roofDir, roofOrient, effRotDeg); if (roofM) partSolids.push(roofM);
         }

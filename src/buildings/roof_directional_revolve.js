@@ -116,7 +116,9 @@
       const tx = obb.cx + axU[0] * uStart, ty = obb.cy + axU[1] * uStart;
       rawPrism = ex.transform([axV[0], axV[1], 0, 0, 0, 0, 1, 0, axU[0], axU[1], 0, 0, tx, ty, 0, 1]);
       ex.delete();
-      cutter = core.extrudeRingSolid(mf, outer, holes, zEaves - 0.12, zTop + 0.5);
+      let maxProfZ = zTop;
+      for (let i = 0; i < pts2D.length; i++) if (pts2D[i][1] > maxProfZ) maxProfZ = pts2D[i][1];
+      cutter = core.extrudeRingSolid(mf, outer, holes, zEaves - 0.12, maxProfZ + 0.5);
       if (!cutter) return null;
       const clipped = rawPrism.intersect(cutter);
       if (!clipped || (clipped.isEmpty && clipped.isEmpty()) || clipped.numTri() === 0) { core.safeDeleteManifold(clipped); return null; }
@@ -167,9 +169,15 @@
     const vMin = obb.vMin - 0.15, vMax = obb.vMax + 0.15, spanV = vMax - vMin, vMid = (vMin + vMax) * 0.5;
 
     if (roofShape === 'skillion') {
-      return _extrudeProfileRoofClipped(core, mf, outer, holes, zEaves, zTop, obb, [
-        [vMin, zOverlapBot], [vMax, zOverlapBot], [vMax, zTop], [vMin, zEaves],
-      ]);
+      // Extrapolate the exact linear slope over [obb.vMin, obb.vMax] so padding does not flatten steep wedges
+      const exactSpanV = Math.max(1e-5, obb.vMax - obb.vMin);
+      const slope = roofH / exactSpanV;
+      const zAtVMax = zTop + slope * 0.15;
+      const zAtVMin = zEaves - slope * 0.15;
+      const skillionProf = zAtVMin >= zOverlapBot + 1e-4
+        ? [[vMin, zOverlapBot], [vMax, zOverlapBot], [vMax, zAtVMax], [vMin, zAtVMin]]
+        : [[obb.vMin - (zEaves - zOverlapBot) / Math.max(1e-5, slope), zOverlapBot], [vMax, zOverlapBot], [vMax, zAtVMax]];
+      return _extrudeProfileRoofClipped(core, mf, outer, holes, zEaves, zTop, obb, skillionProf);
     }
     if (roofShape === 'saltbox') {
       const ridgeV = vMin + spanV * 0.30;

@@ -116,7 +116,7 @@
       }
       if (minH >= h - 0.5) minH = (explicitH !== null && h > 12.0) ? Math.max(0.0, h - 2.0) : 0.0;
       if (roof !== 'flat') {
-        const availH = Math.max(0.0, h - minH - 0.1);
+        const availH = hasExplicitRoofH ? Math.max(0.0, h - minH) : Math.max(0.0, h - minH - 0.1);
         roofH = hasExplicitRoofH ? Math.min(roofH, availH) : Math.min(roofH, availH, h * 0.55);
       }
 

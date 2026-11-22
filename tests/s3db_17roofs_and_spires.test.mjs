@@ -304,5 +304,31 @@ console.log('\n[7/7] supportlessMode Switch (false vs true)');
     `volFalse=${rFalse.printMetrics.totalVolumeMl.toFixed(2)}, volTrue=${rTrue.printMetrics.totalVolumeMl.toFixed(2)}`);
 }
 
+// ---------------------------------------------------------------------------
+// 8. Exact Skillion Slope & Zero-Wall Elevated Wedge (roof:height == h - minH)
+// ---------------------------------------------------------------------------
+console.log('\n[8/8] Exact Skillion Slope & Zero-Wall Elevated Wedge');
+{
+  const sceneSk = {
+    spanMeters: 200, dem: { grid: [[2, 2], [2, 2]], minElev: 2, maxElev: 2 },
+    waterPolys: [], waterLines: [], greenPolys: [], trees: [], roads: [], bridgePolys: [],
+    buildings: [
+      { id: 9001, groupId: 9000, part: true, outer: makeRect(0, 0, 14, 14), holes: [], h: 20, minH: 0, roof: 'flat', tags: { 'building:part': 'yes', height: '20' } },
+      { id: 9002, groupId: 9000, part: true, outer: [[-6, -6], [6, -6], [-6, 6]], holes: [], h: 52, minH: 20, roof: 'skillion', roofH: 32, roofDir: 45, hasExplicitRoofH: true, tags: { 'building:part': 'yes', height: '52', min_height: '20', 'roof:shape': 'skillion', 'roof:height': '32', 'roof:direction': '45' } },
+    ],
+  };
+  const rSk = buildComplete3DModel(sceneSk, makeState({ supportlessMode: false }));
+  assertClean(rSk, 'Zero-wall elevated skillion wedge');
+  const podPrep = rSk.audit.preparedList.find(p => p.id === 9001);
+  const wedPrep = rSk.audit.preparedList.find(p => p.id === 9002);
+  const wedBounds = rSk.buildingBounds.find(b => b.id === 9002);
+  check(podPrep && wedPrep && Math.abs(wedPrep.zEaves - podPrep.zTop) < 0.02,
+    'Zero-wall elevated skillion zEaves sits flush on podium top (no artificial stub wall)',
+    `wedEaves=${wedPrep?.zEaves?.toFixed(4)}, podTop=${podPrep?.zTop?.toFixed(4)}`);
+  check(wedBounds && wedPrep && Math.abs(wedBounds.maxZ - wedPrep.zTop) < 0.05,
+    'Steep skillion wedge reaches exact zTop peak without OBB padding flattening',
+    `maxZ=${wedBounds?.maxZ?.toFixed(4)}, zTop=${wedPrep?.zTop?.toFixed(4)}`);
+}
+
 console.log(`\nS3DB ETAP 3 TEST SUMMARY: ${passed} passed, ${failed} failed.`);
 if (failed > 0) process.exit(1);
