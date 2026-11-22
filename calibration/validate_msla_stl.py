@@ -146,8 +146,19 @@ def check_val01_topology_and_shells(tris):
     }
 
 
-def slice_grid_2d(tris, z_level, xmin, xmax, ymin, ymax, step=0.40):
-    """Rasterize 2D solid occupancy at z_level on a regular grid with 1-cell exterior border."""
+def slice_grid_2d(tris, z_level, xmin, xmax, ymin, ymax, step=0.40, vent_seed=None, return_masks=False,
+                  vent_seed_z=None):
+    """
+    Rasterize 2D solid occupancy at z_level on a regular grid with 1-cell exterior border.
+
+    vent_seed: optional boolean grid (same bounds and step) of vented air cells from the
+    slice below. A cavity cell that sits on a vented air cell of the slice below is vented,
+    because the resin column connects to the VAT through a lower opening.
+    vent_seed_z: Z of the slice that produced vent_seed. A seed cell is ignored when any
+    non-vertical triangle crosses the vertical ray at the cell center strictly between
+    vent_seed_z and z_level (a solid floor between the two slices blocks the column).
+    return_masks: when True, also return the vented-air mask for the next slice.
+    """
     nx = int(math.ceil((xmax - xmin) / step)) + 4
     ny = int(math.ceil((ymax - ymin) / step)) + 4
     ox = xmin - 2 * step
@@ -199,6 +210,54 @@ def slice_grid_2d(tris, z_level, xmin, xmax, ymin, ymax, step=0.40):
                 ext[nr][nc] = True
                 q.append((nr, nc))
 
+    # Propagate venting upward from the slice below through connected cavity cells
+    if vent_seed is not None:
+        blocked = set()
+        if vent_seed_z is not None and vent_seed_z < z_level:
+            # Mark grid cells where a surface crosses the vertical ray between the two slices
+            for p0, p1, p2, _ in tris:
+                tz0 = min(p0[2], p1[2], p2[2])
+                tz1 = max(p0[2], p1[2], p2[2])
+                if tz1 <= vent_seed_z or tz0 >= z_level:
+                    continue
+                ux, uy, uz = p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]
+                wx, wy, wz = p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]
+                den = ux * wy - uy * wx
+                if abs(den) < 1e-10:
+                    continue  # vertical triangle: it cannot cross a vertical ray
+                c0 = max(0, int((min(p0[0], p1[0], p2[0]) - ox) / step))
+                c1 = min(nx - 1, int((max(p0[0], p1[0], p2[0]) - ox) / step))
+                r0 = max(0, int((min(p0[1], p1[1], p2[1]) - oy) / step))
+                r1 = min(ny - 1, int((max(p0[1], p1[1], p2[1]) - oy) / step))
+                for r in range(r0, r1 + 1):
+                    yv = oy + (r + 0.5) * step - p0[1]
+                    row_seed = vent_seed[r]
+                    for c in range(c0, c1 + 1):
+                        if not row_seed[c] or (r, c) in blocked:
+                            continue
+                        xv = ox + (c + 0.5) * step - p0[0]
+                        a = (xv * wy - yv * wx) / den
+                        b = (ux * yv - uy * xv) / den
+                        if a < -1e-9 or b < -1e-9 or a + b > 1.0 + 1e-9:
+                            continue
+                        z_hit = p0[2] + a * uz + b * wz
+                        if vent_seed_z < z_hit < z_level:
+                            blocked.add((r, c))
+        vq = collections.deque()
+        for r in range(ny):
+            row_seed = vent_seed[r]
+            for c in range(nx):
+                if row_seed[c] and not solid[r][c] and not ext[r][c] and (r, c) not in blocked:
+                    ext[r][c] = True
+                    vq.append((r, c))
+        while vq:
+            r, c = vq.popleft()
+            for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < ny and 0 <= nc < nx and not ext[nr][nc] and not solid[nr][nc]:
+                    ext[nr][nc] = True
+                    vq.append((nr, nc))
+
     # Measure trapped internal air cavities (neither solid nor exterior)
     seen_cav = [[False] * nx for _ in range(ny)]
     cavities = []
@@ -224,6 +283,8 @@ def slice_grid_2d(tris, z_level, xmin, xmax, ymin, ymax, step=0.40):
                 if area >= 2.0:
                     cavities.append((round(area, 2), round(sum_x / cnt, 1), round(sum_y / cnt, 1)))
 
+    if return_masks:
+        return solid_cells * cell_area, sorted(cavities, reverse=True), ext
     return solid_cells * cell_area, sorted(cavities, reverse=True)
 
 
@@ -461,14 +522,54 @@ def main():
     if any(topo[k] > 0 for k in ("nan_inf", "degen", "open_edges", "non_manifold_edges", "bad_half_edges", "non_manifold_verts")):
         failures.append("VAL-01: Mesh is not a clean 2-manifold (will trigger slicer repair warnings).")
 
-    # VAL-02 & VAL-03: Suction-cup cavities and transition-zone vent height (Z <= 1.15 mm)
+    # VAL-02 & VAL-03: Suction-cup cavities.
+    # Base and transition zone (Z <= 1.15 mm): strict in-slice check (a vent must be open in the slice).
     for zv in (0.15, 0.55, 0.95, 1.15):
-        if zv < zmax:
-            s_area, cavs = slice_grid_2d(tris, zv, xmin, xmax, ymin, ymax, step=0.40)
-            print(f"[VAL-02/03] Slice Z={zv:.2f} mm: solid_area={s_area:.0f} mm2, sealed_cavities={cavs[:4]}")
+        if zv >= zmax:
+            continue
+        s_area, cavs = slice_grid_2d(tris, zv, xmin, xmax, ymin, ymax, step=0.25)
+        print(f"[VAL-02/03] Slice Z={zv:.2f} mm: solid_area={s_area:.0f} mm2, sealed_cavities={cavs[:4]}")
+        if cavs:
+            label = "VAL-02" if zv <= 0.60 else "VAL-03"
+            failures.append(f"{label}: Sealed suction-cup cavity at Z={zv:.2f} mm: {cavs[:3]}")
+
+    # Upper stories (Z > 1.15 mm): a cavity is vented when it is open in its own slice OR when its
+    # resin column connects downward to vented air. Seeding starts at Z = 1.15 mm with in-slice
+    # openings only, so vents that close inside the transition zone do not count.
+    upper_levels = []
+    zu = 1.40
+    while zu < zmax - 0.05:
+        upper_levels.append(round(zu, 2))
+        zu += 0.25 if zu < 3.0 else 0.50
+    upper_cav_hits = []
+    if zmax > 1.20 and upper_levels:
+        _, _, vent_mask = slice_grid_2d(tris, 1.15, xmin, xmax, ymin, ymax, step=0.30, return_masks=True)
+        z_prev = 1.15
+        for zv in upper_levels:
+            _, cavs, vent_mask = slice_grid_2d(
+                tris, zv, xmin, xmax, ymin, ymax, step=0.30, vent_seed=vent_mask, return_masks=True,
+                vent_seed_z=z_prev,
+            )
+            z_prev = zv
             if cavs:
-                label = "VAL-02" if zv <= 0.60 else "VAL-03"
-                failures.append(f"{label}: Sealed suction-cup cavity at Z={zv:.2f} mm: {cavs[:3]}")
+                upper_cav_hits.append((zv, cavs[:3]))
+    print(f"[VAL-02] Upper-story sealed cavity scan with 3D column venting (Z=1.40..{max(1.40, zmax):.2f} mm): "
+          f"{len(upper_cav_hits)} slices with sealed cavities {upper_cav_hits[:3]}")
+    # Empirical thresholds: closed courtyards up to 75.7 mm2 printed without defects (ABS White Stage 2, Krakow),
+    # a 714 mm2 unvented cavity tore the part off the plate (ABS White Stage 1, E2). FAIL at >= 100 mm2.
+    upper_fail = [(zv, [cv for cv in cavs if cv[0] >= 100.0]) for zv, cavs in upper_cav_hits]
+    upper_fail = [(zv, cavs) for zv, cavs in upper_fail if cavs]
+    if upper_fail:
+        failures.append(
+            f"VAL-02: Sealed upper-story suction-cup cavity >= 100 mm2 from Z={upper_fail[0][0]:.2f} "
+            f"to Z={upper_fail[-1][0]:.2f} mm: {upper_fail[0][1]}"
+        )
+    elif upper_cav_hits:
+        max_area = max(cv[0] for _, cavs in upper_cav_hits for cv in cavs)
+        warnings.append(
+            f"VAL-02: Small sealed upper-story cavities (max {max_area:.1f} mm2 < 100 mm2) from "
+            f"Z={upper_cav_hits[0][0]:.2f} to Z={upper_cav_hits[-1][0]:.2f} mm; add a vent if the part is thin."
+        )
 
     # VAL-04: Unsupported shallow overhangs
     overhangs = check_overhangs_val04(tris, xmin, xmax, ymin, ymax)
