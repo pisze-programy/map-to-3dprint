@@ -373,6 +373,38 @@ async function run() {
       assertSliceConnectivity05mm(mf, rebuilt, 280 / 120, `${label} (soup)`);
       rebuilt.delete();
     }
+
+    // Building-mounted micro VAWT wind generator nodes (min_height > 0, vertical_axis, rotor:diameter < 12m)
+    // must NOT be inflated into freestanding ground-mast utility wind turbines.
+    {
+      const scMicro = {
+        center: [48.858, 2.294], bbox: [48.856, 2.291, 48.860, 2.297],
+        bounds: { widthM: 320, heightM: 320 }, halfW: 60, halfH: 60, metersToUnits: 60 / 160,
+        dem: { minElev: 30, maxElev: 30, gridSize: 4, grid: Array.from({ length: 4 }, () => Array(4).fill(30)) },
+        waterPolys: [], waterLines: [], greenery: [], roads: [], treePoints: [], treeRows: [], bridgePolys: [],
+        buildings: [],
+        osmElements: [
+          {
+            type: 'node', id: 990001, lat: 48.858, lon: 2.294,
+            tags: {
+              power: 'generator',
+              'generator:source': 'wind',
+              'generator:type': 'vertical_axis',
+              height: '134',
+              min_height: '127',
+              level: '2',
+              'rotor:diameter': '3.2',
+            },
+          },
+        ],
+      };
+      const builtMicro = buildComplete3DModel(scMicro, makeState({ supportlessMode: false }));
+      check(
+        builtMicro.meshes.buildings.length === 0,
+        'Elevated vertical-axis micro wind generator is skipped instead of emitting ground mast + giant blades',
+        `buildingTris=${builtMicro.meshes.buildings.length}`
+      );
+    }
   }
 
   // [7/7] Pier/Island Rotation Invariance (±42°), Marina Pier Z-Height, Waterfront Building Datum, 3D Picking & Video Prism

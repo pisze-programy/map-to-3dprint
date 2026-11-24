@@ -1299,7 +1299,19 @@
     const safeBaseMm = (Number(baseBottomMm) > 0) ? Number(baseBottomMm) : 2.35;
     const minHoleAreaU2 = 75.0 / (scaleMm * scaleMm);
     const closeRadU = 0.22 / scaleMm;
-    const zListMm = [safeBaseMm + 0.30, safeBaseMm + 0.55, safeBaseMm + 0.05, safeBaseMm + 1.05];
+    // Scan from base top up through DEM terrain plateaus (up to +3.55 mm above base)
+    // so closed park/terrain basins cannot form upper-story VAL-02 suction cups.
+    const zListMm = [
+      safeBaseMm + 0.30,
+      safeBaseMm + 0.55,
+      safeBaseMm + 0.05,
+      safeBaseMm + 1.05,
+      safeBaseMm + 1.55,
+      safeBaseMm + 2.05,
+      safeBaseMm + 2.55,
+      safeBaseMm + 3.05,
+      safeBaseMm + 3.55,
+    ];
     const zSlabCheckMm = Math.max(1.85, safeBaseMm - 0.50);
     const zBotFloorMm = Math.max(2.30, safeBaseMm - 0.05);
 
@@ -2005,12 +2017,17 @@
     const minZMax = 0.05 / scaleMm;
     const minVol = 2.5 / (scaleMm ** 3);
     const minSpan = 3.5 / scaleMm;
+    const narrowPadMinU = 2.2 / scaleMm;
+    const narrowPadMaxAreaU2 = 24.0 / (scaleMm * scaleMm);
     const kept = [];
     for (let i = 0; i < meta.length; i++) {
       const { c, vol, bb } = meta[i];
       const dx = bb.max[0] - bb.min[0];
       const dy = bb.max[1] - bb.min[1];
-      const keep = !(bb.min[2] > minZMax) && !(vol < minVol && Math.max(dx, dy) < minSpan);
+      const isFloating = bb.min[2] > minZMax;
+      const isTinyBorderSliver = vol < minVol && Math.max(dx, dy) < minSpan;
+      const isLooseNarrowIsland = vol < maxVol * 0.01 && Math.min(dx, dy) < narrowPadMinU && (dx * dy) < narrowPadMaxAreaU2;
+      const keep = !isFloating && !isTinyBorderSliver && !isLooseNarrowIsland;
       if (keep) kept.push(c);
       else core.safeDeleteManifold(c);
     }

@@ -85,14 +85,18 @@
     } catch (_) { for (const p of parts) core.safeDeleteManifold(p); return null; }
   }
 
-  function buildWindTurbineManifold(core, mf, ctx, terrainWater, cx, cy, heightM, yawDeg, utils) {
+  function buildWindTurbineManifold(core, mf, ctx, terrainWater, cx, cy, heightM, yawDeg, utils, tags = null) {
     const { scaleMm, mToU, zScale, scaleToBed, minPrintU, maxZUnits, supportlessMode } = ctx;
     const zGround = utils.resolveGroundZ(ctx, terrainWater, cx, cy, 0.20);
     const mastH = Math.min(maxZUnits - zGround - 2.0 / scaleMm, Math.max(5.0 / scaleMm, (heightM || 75) * mToU * zScale * scaleToBed));
     const minStrutR = _minStrutRadU(ctx);
     const rBot = Math.max(minPrintU * 0.9, minStrutR * 1.15, mastH * 0.052);
     const rTop = Math.max(minPrintU * 0.55, minStrutR * 0.9, rBot * 0.52);
-    const bladeLen = mastH * 0.48, zNacelle = zGround + mastH, bladeR = Math.max(minStrutR, minPrintU * 0.45, rTop * 0.72);
+    const explicitRotorDiaM = tags ? parseFloat(tags['rotor:diameter']) : NaN;
+    const bladeLen = (Number.isFinite(explicitRotorDiaM) && explicitRotorDiaM > 0)
+      ? Math.max(mastH * 0.20, Math.min(mastH * 0.55, explicitRotorDiaM * 0.5 * mToU * scaleToBed))
+      : mastH * 0.48;
+    const zNacelle = zGround + mastH, bladeR = Math.max(minStrutR, minPrintU * 0.45, rTop * 0.72);
     const yawRad = ((yawDeg || 0) * Math.PI) / 180.0, dirX = Math.cos(yawRad), dirY = Math.sin(yawRad), perpX = -dirY, perpY = dirX;
     const parts = [mf.Manifold.cylinder(mastH, rBot, rTop, 12, false).translate([cx, cy, zGround])];
     const hubX = cx + dirX * rBot * 1.35, hubY = cy + dirY * rBot * 1.35;

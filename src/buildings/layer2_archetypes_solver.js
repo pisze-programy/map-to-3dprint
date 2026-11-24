@@ -19,6 +19,34 @@
   const WHEEL_ATTR = new Set(['big_wheel', 'ferris_wheel', 'observation_wheel']);
   const IND_SET = new Set(['storage_tank', 'silo', 'chimney', 'cooling_tower', 'crane']);
   const TOWER_SET = new Set(['tower', 'mast', 'communications_tower', 'lighthouse']);
+  const MICRO_WIND_TYPES = new Set(['vertical_axis', 'darrieus', 'savonius', 'helix', 'helical']);
+
+  /**
+   * Returns true when an OSM wind generator is a small building-mounted or vertical-axis
+   * micro-turbine rather than a freestanding ground-mast utility wind turbine.
+   * @param {Record<string, string>|null|undefined} tags
+   * @returns {boolean}
+   */
+  function _isMicroOrBuildingMountedWindGenerator(tags) {
+    if (!tags) return false;
+    const minH = parseFloat(tags.min_height);
+    if (Number.isFinite(minH) && minH > 0.5) return true;
+    const lvl = parseFloat(tags.level);
+    if (Number.isFinite(lvl) && lvl > 0) return true;
+    const loc = String(tags.location || '').toLowerCase().trim();
+    if (loc === 'roof' || loc === 'rooftop' || loc === 'indoor' || String(tags.indoor || '').toLowerCase() === 'yes') {
+      return true;
+    }
+    const gType = String(tags['generator:type'] || '').toLowerCase().trim();
+    if (MICRO_WIND_TYPES.has(gType)) return true;
+    const rotorDia = parseFloat(tags['rotor:diameter']);
+    if (Number.isFinite(rotorDia) && rotorDia > 0 && rotorDia < 12.0) return true;
+    const hM = parseFloat(tags.height);
+    if (Number.isFinite(hM) && hM > 0 && (hM - (Number.isFinite(minH) ? Math.max(0, minH) : 0)) < 15.0) {
+      return true;
+    }
+    return false;
+  }
 
   function _computeGroupDatums(ctx, scene, terrainWater, targetGroupIds = null) {
     const grd = new Map(), fbk = new Map(), { toBed } = ctx;
@@ -167,7 +195,8 @@
       const mm = String(tags.man_made || '').toLowerCase().trim(), attr = String(tags.attraction || '').toLowerCase().trim();
       const tt = String(tags['tower:type'] || '').toLowerCase().trim(), tc = String(tags['tower:construction'] || (b && b.towerConstruction) || '').toLowerCase().trim();
       const isWheel = Boolean((b && (b.archType === 'ferris_wheel' || b.btype === 'observation_wheel')) || WHEEL_ATTR.has(attr) || tt === 'observation_wheel');
-      const isWind = mm === 'wind_turbine' || (tags.power === 'generator' && tags['generator:source'] === 'wind');
+      const isWind = (mm === 'wind_turbine' || (tags.power === 'generator' && tags['generator:source'] === 'wind'))
+        && !_isMicroOrBuildingMountedWindGenerator(tags);
       const isLattice = tc === 'lattice' || tc === 'guyed_lattice';
       return { mm, isWheel, isWind, isLattice, isL2: isWheel || isWind || isLattice || TOWER_SET.has(mm) || IND_SET.has(mm) };
     };
@@ -224,7 +253,7 @@
       const hM = Number(b.h !== undefined ? b.h : (b.height || tags.height || 0)) || 0;
       let solid = null;
       if (cl.isWheel) { solid = structMod.buildObservationWheelManifold(core, mf, ctx, terrainWater, oBed, hM, utils); if (solid) counts.wheels++; }
-      else if (cl.isWind) { const obb = pierMod.computeFootprintOBB(oBed); solid = structMod.buildWindTurbineManifold(core, mf, ctx, terrainWater, obb.cx, obb.cy, hM || 75, 0, utils); if (solid) counts.windTurbines++; }
+      else if (cl.isWind) { const obb = pierMod.computeFootprintOBB(oBed); solid = structMod.buildWindTurbineManifold(core, mf, ctx, terrainWater, obb.cx, obb.cy, hM || 75, 0, utils, tags); if (solid) counts.windTurbines++; }
       else if (cl.isLattice) {
         const gDatum = b.groupId != null ? groupDatumById.get(String(b.groupId)) : undefined;
         solid = structMod.buildParametricLatticeManifold(core, mf, ctx, terrainWater, Number.isFinite(gDatum) ? Object.assign({}, b, { groupDatumZ: gDatum }) : b, oBed, tags, hM, utils);
@@ -274,7 +303,7 @@
 
       const hM = Number(parseFloat(tags.height)) || 0;
       let solid = null;
-      if (cl.isWind) { solid = structMod.buildWindTurbineManifold(core, mf, ctx, terrainWater, cx, cy, hM || 75, 0, utils); if (solid) counts.windTurbines++; }
+      if (cl.isWind) { solid = structMod.buildWindTurbineManifold(core, mf, ctx, terrainWater, cx, cy, hM || 75, 0, utils, tags); if (solid) counts.windTurbines++; }
       else if (cl.isWheel) { solid = structMod.buildObservationWheelManifold(core, mf, ctx, terrainWater, oBed, hM, utils); if (solid) counts.wheels++; }
       else if (cl.isLattice) { solid = structMod.buildParametricLatticeManifold(core, mf, ctx, terrainWater, null, oBed, tags, hM, utils); if (solid) counts.latticeTowers++; }
       else {
