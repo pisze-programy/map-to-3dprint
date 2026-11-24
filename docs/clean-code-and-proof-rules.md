@@ -23,10 +23,18 @@ Follow these engineering rules on every change in `map-to-3dprint`.
 Unit tests catch logic regressions, but unit tests alone do not prove correctness.
 Collect real end-to-end proof for the exact layer you changed:
 
-- **Mesh or STL export edits**: Run `npm run test:headless` and `python3 calibration/validate_msla_stl.py <file.stl>`.
+- **Mesh or STL export edits**: Run `npm run test:headless`, run `calibration/validate_msla_stl.py`, and pass landmark visual QA.
 - **Browser UI or GIS edits**: Rebuild with `python3 build_app.py`, run Playwright E2E on uncached cities, and inspect screenshots.
 - **Blender studio edits**: Run real Cycles renders and inspect output images and video frames directly.
 - **Documentation edits**: Check every CLI flag, preset name, and file path against real source files.
+
+### Architectural Likeness and Landmark Visual QA Gate
+
+- Never report a city STL as print-ready from `calibration/validate_msla_stl.py` alone.
+- Inspect the hero landmark and top nearby landmarks from four close-up angles before sign-off.
+- Use `inspect-landmark`, `audit-scene` (`tools/mcp_map3d_inspector.mjs`), and macro Cycles renders to check real-world form.
+- Reject overlapping archetype and S3DB parts, deformed towers, blocked arches, or wrong roofs before export approval.
+- Fix every geometry defect at the systemic builder level, never with city or landmark hacks.
 
 ## 4. Mandatory Defect-Prevention Guards
 
