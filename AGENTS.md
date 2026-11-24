@@ -8,7 +8,7 @@ Read this map first. Open only the focused guide that matches your task.
 - Split large monolithic files into small focused modules.
 - Add strict types: JSDoc or TypeScript types in JS, full type hints in Python.
 - Never treat unit tests alone as proof. Collect real E2E, visual, or validator proof.
-- Never approve a city STL from validator output alone. Inspect hero and nearby landmarks from four close-up angles.
+- Run `docs/city-model-and-packshot-qa-checklist.md` before you generate or approve any city STL, tile, or packshot render.
 - Keep `SLA_PRINT_LAWS`, `roadHeightMm`, pure ASCII in `src/` and `tests/`, and zero city hacks.
 - Delegate multi-part tasks to subagents or a swarm with clear file ownership.
 - Check claims against Antigravity transcripts and real artifacts on disk before you act.
@@ -20,6 +20,7 @@ Read this map first. Open only the focused guide that matches your task.
 | Read this file | When you work on this task |
 | :--- | :--- |
 | [clean-code-and-proof-rules.md](docs/clean-code-and-proof-rules.md) | Code edits, typing, proof gates, defect guards, or agent delegation. |
+| [city-model-and-packshot-qa-checklist.md](docs/city-model-and-packshot-qa-checklist.md) | Generating city STLs, checking tiles, verifying bridges/landmarks, or rendering packshots. |
 | [msla-printability-and-validation-spec.md](docs/msla-printability-and-validation-spec.md) | Mesh generation, STL export, `DFM-01`..`DFM-11`, or `VAL-01`..`VAL-08` rules. |
 | [calibration-history-mono4.md](docs/calibration-history-mono4.md) | Photon Mono 4 hardware setup, slicer settings, or verified print milestones. |
 | [mono4-slicer-profile.md](docs/mono4-slicer-profile.md) | Photon Workshop `0.100 mm` ABS White profile and `4.0 mm` solid-base tweaks. |
