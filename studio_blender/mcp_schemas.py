@@ -36,7 +36,7 @@ def _common_scene_properties() -> Dict[str, Any]:
             "type": "string",
             "enum": ENV_ENUM,
             "default": "01_architect_window_desk",
-            "description": "One of the 11 cohesive studio environments (or legacy alias).",
+            "description": "Any cohesive studio or customer persona environment (or alias).",
         },
         "frame": {
             "type": "string",
@@ -114,6 +114,31 @@ def build_tools_schema() -> List[Dict[str, Any]]:
     vid_props = _common_scene_properties()
     vid_props.update(
         {
+            "camera_mode": {
+                "type": "string",
+                "enum": ["kinder_continuous", "shots"],
+                "default": "kinder_continuous",
+                "description": "kinder_continuous (default C2 speed-ramp single-take) or legacy 4-shot cuts.",
+            },
+            "packshot_end": {
+                "type": "boolean",
+                "default": True,
+                "description": "End kinder_continuous video with a spatially-locked dissolve into 11_packshot_white.",
+            },
+            "duration_sec": {
+                "type": "number",
+                "minimum": 4.0,
+                "maximum": 30.0,
+                "default": 11.0,
+                "description": "Total duration in seconds for kinder_continuous mode (default 11.0).",
+            },
+            "shutter": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.55,
+                "description": "Cycles optical motion blur shutter fraction (default 0.55).",
+            },
             "aspect": {"type": "string", "enum": ASPECT_ENUM, "default": "9:16"},
             "resolution": {"type": "string"},
             "samples": {"type": "integer", "minimum": 8, "maximum": 256, "default": 32},
@@ -127,8 +152,8 @@ def build_tools_schema() -> List[Dict[str, Any]]:
         {
             "name": "list_studio_presets",
             "description": (
-                "List all 11 cohesive Cycles studio environments (desk_flat & wall_mount), "
-                "frame styles (single_13x18, triptych_3x1, quartet_2x2), still presets, and video shots."
+                "List all cohesive Cycles studio and customer persona environments (desk_flat & wall_mount), "
+                "frame styles (single_13x18, single_thin, triptych_3x1, quartet_2x2), still presets, and video shots."
             ),
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
         },

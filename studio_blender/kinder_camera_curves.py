@@ -1,9 +1,9 @@
 """C2-smooth continuous cinema camera rig for Kinder-style 9:16 city commercials.
 
-Computes city-agnostic choreography waypoints from landmark analysis and
-model bounds, interpolates via monotone PCHIP + Gaussian C-infinity smoothing
-(zero Runge overshoot, zero dead pauses, smooth speed-ramps), and validates
-NDC framing, spire headroom, and floor/mesh clearance on every frame.
+Computes city-agnostic choreography waypoints from landmark analysis and model
+bounds, adapts cleanly to both tall skylines (NYC 82.6 mm) and low-relief
+tiles (Dubai 20.6 mm), supports prop-safe room envelopes for lifestyle/persona
+interiors, and validates NDC framing, spire headroom, and clearance per frame.
 """
 
 from __future__ import annotations
@@ -14,10 +14,12 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from studio_blender import camera_rig
 
+RAW_STUDIO_ENVS = frozenset({"09_dark_cinematic", "10_macro_editorial", "11_packshot_white"})
+
 
 @dataclass(frozen=True)
 class CameraKnot:
-    """Single timed choreography waypoint along the continuous 11s timeline."""
+    """Single timed choreography waypoint along the continuous commercial timeline."""
 
     t: float
     yaw_deg: float
@@ -94,12 +96,11 @@ def _gaussian_smooth_1d(values: Sequence[float], dt: float, sigma_sec: float) ->
         acc = 0.0
         for k, w in enumerate(weights):
             idx = i + k - radius
-            if idx < 0:
-                val = values[0] + s_left * idx
-            elif idx >= n:
-                val = values[-1] + s_right * (idx - (n - 1))
-            else:
-                val = values[idx]
+            val = (
+                values[0] + s_left * idx
+                if idx < 0
+                else (values[-1] + s_right * (idx - (n - 1)) if idx >= n else values[idx])
+            )
             acc += w * val
         out.append(acc)
     return out
@@ -136,14 +137,14 @@ class SmoothChannelSpline:
         return self.samples[i0] * (1.0 - frac) + self.samples[i0 + 1] * frac
 
 
-def _canyon_yaw(analysis: Dict[str, Any], rec_yaw: float) -> float:
-    """Compute a front-side canyon approach yaw strictly in [-44, +44] deg."""
+def _canyon_yaw(analysis: Dict[str, Any], rec_yaw: float, max_abs: float) -> float:
+    """Compute a front-side canyon approach yaw strictly within [-max_abs, +max_abs] deg."""
     portal = analysis.get("canyon_portal", {})
     dx, dy = portal.get("direction", [0.0, 1.0])
-    raw = math.degrees(math.atan2(-dx, max(dy, 0.20)))
-    if abs(raw - rec_yaw) < 22.0:
-        raw = -rec_yaw * 0.95
-    return max(-44.0, min(44.0, raw))
+    raw = math.degrees(math.atan2(-dx, max(dy, 0.22)))
+    if abs(raw - rec_yaw) < 20.0:
+        raw = -rec_yaw * 0.90
+    return max(-max_abs, min(max_abs, raw))
 
 
 def build_kinder_knots(
@@ -152,31 +153,33 @@ def build_kinder_knots(
     aspect: float = 9.0 / 16.0,
     base_sun_az: float = 54.0,
     duration_sec: float = 11.0,
+    room_safe: bool = False,
 ) -> List[CameraKnot]:
-    """Build city-agnostic choreography knots for the 11.0s Kinder commercial.
+    """Build city-agnostic choreography knots for any city STL and studio/persona room.
 
-    Beats (11.0s total, zero dead pauses):
-      0.0 - 2.0s : Hook - instant full 13x18 framed product recognition on dark basalt
-      2.0 - 3.3s : Continuous speed-ramp crash-zoom straight into One WTC & towers
-      3.3 - 5.8s : Velvety low-angle crane rise-up + 72 deg sweeping raking key light
-      5.8 - 8.2s : Continuous overhead-to-canyon whip-arc swoop across city grid
-      8.2 - 9.8s : Smooth decelerating crane pull-out to iconic 3/4 hero reveal
-      9.8 - 11.0s: Velocity-matched settling drift (spatial lock for white dissolve)
+    When room_safe=True (interiors 01-08 & 12-17), keeps yaw within a prop-free
+    front corridor ([-30, +26] deg), raises minimum elevation cleanly above desk
+    props, and frames Hook/Reveal slightly wider so persona props & windows read.
     """
     sc = duration_sec / 11.0
-    rec_yaw = float(analysis.get("recommended_yaw_deg", -26.0))
-    arc_yaw = _canyon_yaw(analysis, rec_yaw)
+    rec_yaw = float(analysis.get("recommended_yaw_deg", -24.0))
+    side = -1.0 if rec_yaw <= 0.0 else 1.0
+    yaw_lim = 30.0 if room_safe else 42.0
+    base_yaw = max(-22.0, min(22.0, rec_yaw)) if room_safe else rec_yaw
+    arc_yaw = _canyon_yaw(analysis, base_yaw, max_abs=24.0 if room_safe else 42.0)
+
     hx, hy, hz = (float(v) for v in analysis["hero_peak"])
     htx, hty = (float(v) for v in analysis.get("hero_tower_xy", [hx, hy]))
     sx, sy, _ = (float(v) for v in analysis["skyline_centroid"])
     fw = float(analysis["frame_width_m"])
-    max_z = float(analysis["max_z"])
+    fh = float(analysis["frame_height_m"])
+    max_z = max(float(analysis["max_z"]), 0.008)
 
     full_c = camera_rig.compute_full_model_corners(model_bounds, analysis, mount="desk_flat")
     _, cluster_c = camera_rig.compute_hero_cluster_corners(analysis, mount="desk_flat")
-    tower_r = max(0.018, 0.19 * fw, 0.23 * hz)
+    tower_r = max(0.018, 0.19 * min(fw, fh), 0.23 * hz)
     spire_c = camera_rig.bbox_corners(
-        htx - tower_r, htx + tower_r, hty - tower_r, hty + tower_r, 0.05 * max_z, max_z * 1.10
+        htx - tower_r, htx + tower_r, hty - tower_r, hty + tower_r, 0.05 * max_z, max_z * 1.12
     )
 
     hero_tgt = (0.0, 0.0, 0.28 * max_z)
@@ -188,41 +191,65 @@ def build_kinder_knots(
     over_tgt = (0.18 * sx, 0.18 * sy, 0.24 * max_z)
     cany_tgt = (0.62 * htx + 0.38 * sx, 0.62 * hty + 0.38 * sy, 0.42 * max_z)
 
-    def _fit(yaw: float, el: float, tgt: Tuple[float, float, float], crn: Sequence[Tuple[float, float, float]], lens: float, fx: float, fy: float, sy_off: float = 0.0) -> float:
-        return camera_rig.compute_fit_distance(yaw, el, tgt, crn, lens, aspect, fx, fy, sy_off)
+    def _fit(
+        yaw: float, el: float, tgt: Tuple[float, float, float],
+        crn: Sequence[Tuple[float, float, float]], lens: float,
+        fx: float, fy: float, sy_off: float = 0.0,
+    ) -> float:
+        d = camera_rig.compute_fit_distance(yaw, el, tgt, crn, lens, aspect, fx, fy, sy_off)
+        return min(d, 0.72) if room_safe else d
 
-    h0_d = _fit(rec_yaw - 12.0, 26.0, hero_tgt, full_c, 45.0, 0.88, 0.74, 0.008)
-    h1_d = _fit(rec_yaw - 3.0, 22.5, hero_tgt, full_c, 49.0, 0.90, 0.76, 0.008)
-    z1_d = max(0.16, _fit(rec_yaw * 0.68, 10.5, sp_lo_tgt, spire_c, 84.0, 0.90, 0.84))
+    def _clamp_yaw(y: float) -> float:
+        return max(-yaw_lim, min(yaw_lim, y))
+
+    # Room-safe profiles frame persona props/windows on Hook while staying crisp on Packshot
+    h_fx, h_fy, h_sy = (0.76, 0.64, 0.024) if room_safe else (0.88, 0.74, 0.008)
+    h0_lens, h1_lens = (42.0, 46.0) if room_safe else (45.0, 49.0)
+    z_el = 14.0 if room_safe else 10.5
+    ov_el = 50.0 if room_safe else 58.0
+    cn_el = 16.5 if room_safe else 14.5
+
+    h0_yaw = _clamp_yaw(base_yaw + side * (8.0 if room_safe else 12.0))
+    h1_yaw = _clamp_yaw(base_yaw + side * 0.5)
+    z0_yaw = _clamp_yaw(base_yaw * 0.72)
+    z1_yaw = _clamp_yaw(base_yaw * 0.50)
+    r0_yaw = _clamp_yaw(base_yaw * 0.05)
+    r1_yaw = _clamp_yaw(-side * (15.0 if room_safe else 16.0))
+    ov_yaw = _clamp_yaw(-side * 24.0 if room_safe else arc_yaw)
+    cn_yaw = _clamp_yaw(-side * 10.0 if room_safe else arc_yaw * 0.45)
+    rv_yaw = _clamp_yaw(base_yaw + side * 2.5)
+    pm_yaw = _clamp_yaw(base_yaw - side * 2.5)
+    pe_yaw = _clamp_yaw(base_yaw - side * 7.5)
+
+    h0_d = _fit(h0_yaw, 25.5, hero_tgt, full_c, h0_lens, h_fx, h_fy, h_sy)
+    h1_d = _fit(h1_yaw, 22.0, hero_tgt, full_c, h1_lens, h_fx + 0.02, h_fy + 0.02, h_sy * 0.8)
+    z1_d = max(0.15, _fit(z1_yaw, z_el, sp_lo_tgt, spire_c, 82.0, 0.88, 0.82))
     z0_d = math.sqrt(h1_d * z1_d)
-    r0_d = max(0.16, _fit(rec_yaw * 0.12, 16.5, sp_hi_tgt, spire_c, 82.0, 0.88, 0.82))
-    r1_yaw = 16.0 if rec_yaw < 0.0 else -16.0
-    r1_d = max(0.17, _fit(r1_yaw, 22.5, sp_hi_tgt, spire_c, 74.0, 0.86, 0.78))
-    ov_yaw = max(-42.0, min(42.0, arc_yaw))
-    ov_d = _fit(ov_yaw, 58.0, over_tgt, full_c, 46.0, 0.86, 0.74)
-    cn_yaw = max(-42.0, min(42.0, arc_yaw * 0.45))
-    cn_d = max(0.16, _fit(cn_yaw, 14.5, cany_tgt, cluster_c, 62.0, 0.88, 0.76))
-    rv_d = _fit(rec_yaw - 2.0, 25.5, hero_tgt, full_c, 50.0, 0.90, 0.76, -0.010)
-    pm_d = _fit(rec_yaw + 2.0, 27.0, hero_tgt, full_c, 52.0, 0.89, 0.76, -0.012)
-    pe_d = _fit(rec_yaw + 6.5, 28.5, hero_tgt, full_c, 54.0, 0.86, 0.74, -0.012)
+    r0_d = max(0.15, _fit(r0_yaw, z_el + 4.5, sp_hi_tgt, spire_c, 80.0, 0.86, 0.80))
+    r1_d = max(0.16, _fit(r1_yaw, 22.5, sp_hi_tgt, spire_c, 72.0, 0.84, 0.76))
+    ov_d = _fit(ov_yaw, ov_el, over_tgt, full_c, 45.0, 0.82 if room_safe else 0.86, 0.72)
+    cn_d = max(0.16, _fit(cn_yaw, cn_el, cany_tgt, cluster_c, 60.0, 0.86, 0.76))
+    rv_d = _fit(rv_yaw, 25.5, hero_tgt, full_c, 50.0, 0.84 if room_safe else 0.90, 0.72, -0.008)
+    pm_d = _fit(pm_yaw, 27.0, hero_tgt, full_c, 52.0, 0.84 if room_safe else 0.89, 0.72, -0.012)
+    pe_d = _fit(pe_yaw, 28.5, hero_tgt, full_c, 54.0, 0.82 if room_safe else 0.86, 0.70, -0.012)
 
     return [
-        CameraKnot(0.00 * sc, rec_yaw - 12.0, 26.0, math.log(h0_d), hero_tgt, hero_foc, 45.0, math.log(5.6), 0.008, base_sun_az - 16.0, 31.0),
-        CameraKnot(1.85 * sc, rec_yaw - 3.0, 22.5, math.log(h1_d * 0.94), hero_tgt, hero_foc, 49.0, math.log(4.8), 0.008, base_sun_az - 18.0, 28.0),
-        CameraKnot(2.65 * sc, rec_yaw * 0.82, 15.5, math.log(z0_d), sp_lo_tgt, sp_lo_foc, 68.0, math.log(2.5), 0.004, base_sun_az - 19.0, 24.0),
-        CameraKnot(3.35 * sc, rec_yaw * 0.68, 10.5, math.log(z1_d), sp_lo_tgt, sp_lo_foc, 84.0, math.log(1.8), 0.000, base_sun_az - 18.0, 21.0),
-        CameraKnot(4.60 * sc, rec_yaw * 0.12, 16.5, math.log(r0_d), sp_hi_tgt, sp_hi_foc, 82.0, math.log(1.9), 0.000, base_sun_az + 18.0, 25.0),
-        CameraKnot(5.80 * sc, r1_yaw, 22.5, math.log(r1_d), sp_hi_tgt, sp_hi_foc, 74.0, math.log(2.2), 0.000, base_sun_az + 54.0, 30.0),
-        CameraKnot(7.00 * sc, ov_yaw, 58.0, math.log(ov_d), over_tgt, hero_foc, 46.0, math.log(3.6), 0.000, base_sun_az + 30.0, 38.0),
-        CameraKnot(8.15 * sc, cn_yaw, 14.5, math.log(cn_d), cany_tgt, sp_lo_foc, 62.0, math.log(2.2), 0.004, base_sun_az + 8.0, 25.0),
-        CameraKnot(9.65 * sc, rec_yaw - 2.0, 25.5, math.log(rv_d), hero_tgt, hero_foc, 50.0, math.log(4.5), -0.010, base_sun_az - 4.0, 30.0),
-        CameraKnot(10.30 * sc, rec_yaw + 2.0, 27.0, math.log(pm_d), hero_tgt, hero_foc, 52.0, math.log(5.4), -0.012, base_sun_az - 2.0, 32.0),
-        CameraKnot(11.00 * sc, rec_yaw + 6.5, 28.5, math.log(pe_d), hero_tgt, hero_foc, 54.0, math.log(6.3), -0.012, base_sun_az + 2.0, 34.0),
+        CameraKnot(0.00 * sc, h0_yaw, 25.0, math.log(h0_d), hero_tgt, hero_foc, h0_lens, math.log(4.5 if room_safe else 5.6), h_sy, base_sun_az - 14.0, 32.0),
+        CameraKnot(1.85 * sc, h1_yaw, 22.5, math.log(h1_d * 0.94), hero_tgt, hero_foc, h1_lens, math.log(4.0 if room_safe else 4.8), h_sy * 0.8, base_sun_az - 16.0, 30.0),
+        CameraKnot(2.65 * sc, z0_yaw, 17.5 if room_safe else 15.5, math.log(z0_d), sp_lo_tgt, sp_lo_foc, 66.0, math.log(2.4), 0.004, base_sun_az - 17.0, 26.0),
+        CameraKnot(3.35 * sc, z1_yaw, z_el, math.log(z1_d), sp_lo_tgt, sp_lo_foc, 82.0, math.log(1.8), 0.000, base_sun_az - 16.0, 23.0),
+        CameraKnot(4.60 * sc, r0_yaw, z_el + 4.5, math.log(r0_d), sp_hi_tgt, sp_hi_foc, 80.0, math.log(1.9), 0.000, base_sun_az + 14.0, 27.0),
+        CameraKnot(5.80 * sc, r1_yaw, 22.5, math.log(r1_d), sp_hi_tgt, sp_hi_foc, 72.0, math.log(2.2), 0.000, base_sun_az + 44.0, 32.0),
+        CameraKnot(7.00 * sc, ov_yaw, ov_el, math.log(ov_d), over_tgt, hero_foc, 45.0, math.log(3.5), 0.000, base_sun_az + 24.0, 38.0),
+        CameraKnot(8.15 * sc, cn_yaw, cn_el, math.log(cn_d), cany_tgt, sp_lo_foc, 60.0, math.log(2.2), 0.004, base_sun_az + 6.0, 27.0),
+        CameraKnot(9.65 * sc, rv_yaw, 25.5, math.log(rv_d), hero_tgt, hero_foc, 50.0, math.log(4.2), -0.008, base_sun_az - 4.0, 31.0),
+        CameraKnot(10.30 * sc, pm_yaw, 27.0, math.log(pm_d), hero_tgt, hero_foc, 52.0, math.log(5.2), -0.012, base_sun_az - 2.0, 33.0),
+        CameraKnot(11.00 * sc, pe_yaw, 28.5, math.log(pe_d), hero_tgt, hero_foc, 54.0, math.log(6.3), -0.012, base_sun_az + 2.0, 35.0),
     ]
 
 
 class KinderCameraRig:
-    """Continuous C2-smooth camera + key-light evaluator for the full 11.0s commercial."""
+    """Continuous C2-smooth camera + key-light evaluator for any city & environment."""
 
     def __init__(
         self,
@@ -232,13 +259,17 @@ class KinderCameraRig:
         base_sun_az: float = 54.0,
         duration_sec: float = 11.0,
         smooth_sigma_sec: float = 0.14,
+        room_safe: bool = False,
     ) -> None:
         self.analysis = analysis
         self.model_bounds = model_bounds
         self.aspect = float(aspect)
         self.duration_sec = float(duration_sec)
+        self.room_safe = bool(room_safe)
         self.desk_z = float(model_bounds.get("desk_z", model_bounds.get("desk_z_m", -0.005)))
-        self.knots = build_kinder_knots(analysis, model_bounds, aspect, base_sun_az, duration_sec)
+        self.knots = build_kinder_knots(
+            analysis, model_bounds, aspect, base_sun_az, duration_sec, room_safe=room_safe
+        )
         ts = [k.t for k in self.knots]
         t0, t1 = -0.35, duration_sec + 0.35
 
@@ -263,7 +294,7 @@ class KinderCameraRig:
     def evaluate(self, t_sec: float) -> Dict[str, Any]:
         """Evaluate exact camera pose and key-light angles at continuous time t_sec."""
         yaw = self._yaw.eval(t_sec)
-        elev = max(7.0, min(82.0, self._elev.eval(t_sec)))
+        elev = max(9.0 if self.room_safe else 7.0, min(80.0, self._elev.eval(t_sec)))
         dist = max(0.11, math.exp(self._log_dist.eval(t_sec)))
         target = (self._tx.eval(t_sec), self._ty.eval(t_sec), self._tz.eval(t_sec))
         focus = (self._fx.eval(t_sec), self._fy.eval(t_sec), self._fz.eval(t_sec))
@@ -274,7 +305,8 @@ class KinderCameraRig:
         sun_el = max(16.0, min(68.0, self._sun_el.eval(t_sec)))
 
         off = camera_rig.spherical_offset(yaw, elev, dist)
-        eye = (target[0] + off[0], target[1] + off[1], max(self.desk_z + 0.016, target[2] + off[2]))
+        min_z = self.desk_z + (0.042 if self.room_safe else 0.016)
+        eye = (target[0] + off[0], target[1] + off[1], max(min_z, target[2] + off[2]))
         return {
             "t_sec": round(t_sec, 5), "eye": eye, "target": target, "focus_point": focus,
             "lens_mm": lens_mm, "fstop": fstop, "shift_x": 0.0, "shift_y": shift_y,
@@ -323,11 +355,11 @@ def validate_kinder_trajectory(rig: KinderCameraRig, fps: int = 24) -> Dict[str,
             min_spd = min(min_spd, spd)
             max_spd = max(max_spd, spd)
         prev_eye = eye
-        if t <= 1.65:
+        if t <= rig.duration_sec * 0.15:
             for c in full_c:
                 nx, ny, _ = project_point_ndc(c, st, rig.aspect)
                 max_hook = max(max_hook, abs(nx), abs(ny))
-        if t >= rig.duration_sec - 1.35:
+        if t >= rig.duration_sec * 0.88:
             for c in full_c:
                 nx, ny, _ = project_point_ndc(c, st, rig.aspect)
                 max_pack = max(max_pack, abs(nx), abs(ny))
@@ -336,7 +368,7 @@ def validate_kinder_trajectory(rig: KinderCameraRig, fps: int = 24) -> Dict[str,
             max_sp_y = max(max_sp_y, sy)
 
     return {
-        "frame_count": n_frames, "duration_sec": rig.duration_sec,
+        "frame_count": n_frames, "duration_sec": rig.duration_sec, "room_safe": rig.room_safe,
         "min_floor_clearance_m": round(min_floor, 5), "min_spire_clearance_m": round(min_spire, 5),
         "max_hook_ndc": round(max_hook, 4), "max_packshot_ndc": round(max_pack, 4),
         "max_spire_ndc_y": round(max_sp_y, 4),
@@ -351,6 +383,6 @@ def validate_kinder_trajectory(rig: KinderCameraRig, fps: int = 24) -> Dict[str,
 
 
 __all__ = [
-    "CameraKnot", "KinderCameraRig", "SmoothChannelSpline",
+    "CameraKnot", "KinderCameraRig", "RAW_STUDIO_ENVS", "SmoothChannelSpline",
     "build_kinder_knots", "project_point_ndc", "validate_kinder_trajectory",
 ]

@@ -22,7 +22,7 @@ _REPO_ROOT = _THIS_FILE.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from studio_blender import render_studio
+from studio_blender import kinder_video, render_studio
 from studio_blender.mcp_schemas import TOOLS_SCHEMA
 
 
@@ -98,16 +98,33 @@ def _handle_tool_call(name: str, arguments: Dict[str, Any]) -> Tuple[Any, bool]:
 
         if name == "render_commercial_video":
             kw = _common_render_kwargs(arguments)
-            result = render_studio.run_studio_render(
-                **kw,
-                mode="video",
-                aspect=arguments.get("aspect", "9:16"),
-                resolution=arguments.get("resolution"),
-                samples=arguments.get("samples", 32),
-                fps=arguments.get("fps", 24),
-                video_name=arguments.get("video_name"),
-                shots=arguments.get("shots", "1,2,3,4"),
-            )
+            camera_mode = str(arguments.get("camera_mode", "kinder_continuous"))
+            if camera_mode == "kinder_continuous":
+                kw.pop("mount", None)
+                packshot_end = bool(arguments.get("packshot_end", True))
+                result = kinder_video.run_kinder_video(
+                    **kw,
+                    packshot_env="11_packshot_white" if packshot_end else "none",
+                    aspect=arguments.get("aspect", "9:16"),
+                    resolution=arguments.get("resolution"),
+                    samples=int(arguments.get("samples", 32)),
+                    fps=int(arguments.get("fps", 24)),
+                    duration_sec=float(arguments.get("duration_sec", 11.0)),
+                    shutter=float(arguments.get("shutter", 0.55)),
+                    video_name=arguments.get("video_name"),
+                    verbose=False,
+                )
+            else:
+                result = render_studio.run_studio_render(
+                    **kw,
+                    mode="video",
+                    aspect=arguments.get("aspect", "9:16"),
+                    resolution=arguments.get("resolution"),
+                    samples=arguments.get("samples", 32),
+                    fps=arguments.get("fps", 24),
+                    video_name=arguments.get("video_name"),
+                    shots=arguments.get("shots", "1,2,3,4"),
+                )
             return (result, False)
 
         return ({"error": f"Unknown tool: {name}"}, True)
