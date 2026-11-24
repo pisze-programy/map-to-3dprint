@@ -59,11 +59,12 @@ Swap only `--stl`, `--frame`, and `--env` to render any city in any of the 17 ro
 python3 studio_blender/kinder_video.py \
   --stl calibration/Map3D_DUBAI_Pelna_Bryla_145x79mm.stl \
   --env 16_persona_realestate --frame single_thin --packshot-env 11_packshot_white \
-  --resolution 540x960 --fps 24 --duration 9.5 --samples 28 \
-  --shutter 0.55 --out ./renders/dubai_realestate_video
+  --camera-mode kinder_multishot --resolution 540x960 --fps 24 \
+  --duration 9.5 --samples 56 --shutter 0.68 --out ./renders/dubai_video
 ```
-This script runs one prop-safe C2 camera path with Cycles motion blur and builds a 12-frame filmstrip.
-Pass `--packshot-env none` to skip the white dissolve, or `--preview-only` for a fast 12-beat strip.
+Default `--camera-mode kinder_multishot` runs five contrasting Kinder angles with whip match-cuts (`studio_blender/kinder_shots.py`).
+The anti-flicker Cycles stack combines `samples=56`, `use_animated_seed`, `OIDN ACCURATE`, `shutter=0.68`, and `hqdn3d`.
+Pass `--camera-mode kinder_continuous` for a single-take spline, `--packshot-env none` to skip dissolve, or `--preview-only`.
 
 ## 5. Registered MCP Server (`studio-blender`)
 
@@ -76,4 +77,4 @@ Command: `python3 /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/st
 | `list_studio_props` | Return all 26 composable props and placement syntax. | None |
 | `render_city_stills` | Render Cycles PNG stills with prop and scene overrides. | `stl_paths`, `out_dir`, `env`, `frame`, `mount`, `add_props`, `remove_props`, `samples` |
 | `render_flow_keyframes` | Render `9:16` `Start -> End` frames and prompts. | `stl_paths`, `out_dir`, `env`, `frame`, `mount`, `add_props`, `shots`, `samples` |
-| `render_commercial_video` | Render continuous Kinder or multi-shot Cycles MP4. | `stl_paths`, `out_dir`, `env`, `frame`, `camera_mode`, `packshot_end`, `duration_sec`, `shutter` |
+| `render_commercial_video` | Render 5-angle Kinder (`kinder_multishot` default) or continuous MP4. | `stl_paths`, `out_dir`, `env`, `camera_mode`, `packshot_end`, `samples`, `shutter`, `duration_sec` |

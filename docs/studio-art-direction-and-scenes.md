@@ -13,8 +13,9 @@ Draw visual restraint from Architectural Digest, Dieter Rams, and Kinfolk editor
 - **Zero nameplates**: Keep `--show-nameplate` OFF by default so architecture speaks without cheap text plaques.
 - **Zero stands**: Place frames flat on desks (`desk_flat`) or mount flush on walls (`wall_mount`). Never tilt or add stands.
 - **Real materials**: Use Poly Haven CC0 textures, props, and HDRIs (cached in gitignored `studio_blender/assets/`).
-- **DSLR compositor finish**: Apply Blender DSLR Compositor grading (`studio_blender/envs/compositor.py`) on lifestyle and persona rooms.
-- **Zero AI slop**: Never add logos on mugs, text on book spines, cramped smartphones, or plastic clutter.
+- **Cinema grade and negative fill**: Apply teal-shadow and warm-gold split-tone grading (`studio_blender/envs/compositor.py`) plus negative-fill flags (`studio_blender/envs/lighting.py`).
+- **Real 2K artwork**: Build Natural Earth globe maps, CAD blueprints (`studio_blender/artwork_gen.py`), and 3D foil spines (`studio_blender/props/spine_text.py`) with macOS fonts.
+- **Zero AI slop**: Never add cheap mug logos, AI-garbled text, cramped smartphones, or plastic clutter.
 
 ## 2. Core 11 Environments (Verified v3)
 
@@ -36,13 +37,13 @@ Draw visual restraint from Architectural Digest, Dieter Rams, and Kinfolk editor
 
 Each persona room keeps wide orbital camera clearance for sweeping `kinder_video.py` commercial shots.
 
-| Environment ID | Target Audience | Surface and Room Style | Default Real-Scale Props (Zero Text/Logos) |
+| Environment ID | Target Audience | Surface and Room Style | Default Real-Scale Props (Zero AI Slop) |
 | :--- | :--- | :--- | :--- |
-| `12_persona_architect` | Architects and designers | Pale ash-oak studio desk, skyline window | `drafting_vellum_rolls`, `concrete_pencil_cup`, `basswood_maquette`, `desk_lamp_edge`, `architect_pen` |
-| `13_persona_traveler` | Travelers and explorers | Oiled walnut desk, golden-hour window | `vintage_camera`, `travel_monograph_stack`, `brass_tabletop_globe`, `vintage_compass`, `potted_plant` |
-| `14_persona_lawyer` | Lawyers and advisors | Oiled mahogany study, dark shelves | `law_volumes_row`, `leather_desk_folio`, `gold_fountain_pen` |
+| `12_persona_architect` | Architects and designers | Oiled smoked oak desk, skyline window | `drafting_vellum_rolls` (CAD blueprints), `concrete_pencil_cup`, `basswood_maquette`, `desk_lamp_edge`, `architect_pen` |
+| `13_persona_traveler` | Travelers and explorers | Oiled walnut desk, golden-hour window | `vintage_camera`, `travel_monograph_stack`, `brass_tabletop_globe` (Natural Earth), `vintage_compass`, `potted_plant` |
+| `14_persona_lawyer` | Lawyers and advisors | Oiled mahogany study, dark shelves | `law_volumes_row` (3D foil spines), `leather_desk_folio`, `gold_fountain_pen` |
 | `15_persona_corporate` | Corporate executives | Smoked walnut high-rise glass office | `desk_mat_laptop`, `matte_black_mug`, `concrete_planter_plant` |
-| `16_persona_realestate` | Real estate showrooms | Honed Calacatta Gold marble, tower view | `fluted_crystal_vase_greenery`, `material_sample_board` |
+| `16_persona_realestate` | Real estate showrooms | Deepened Pietra-Calacatta marble, tower view | `fluted_crystal_vase_greenery`, `material_sample_board` |
 | `17_persona_executive_study` | Home office and design | Oiled walnut desk, dark built-in bookcase | `brass_dome_lamp`, `brass_arch_print_frame`, `leather_notebook` |
 
 ## 4. Recommended First Paid Meta and TikTok Ad (`15 s`, `9:16`)
