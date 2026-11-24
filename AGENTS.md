@@ -22,9 +22,12 @@ Read this map first. Open only the focused guide that matches your task.
 | [clean-code-and-proof-rules.md](docs/clean-code-and-proof-rules.md) | Code edits, typing, proof gates, defect guards, or agent delegation. |
 | [msla-printability-and-validation-spec.md](docs/msla-printability-and-validation-spec.md) | Mesh generation, STL export, `DFM-01`..`DFM-11`, or `VAL-01`..`VAL-08` rules. |
 | [calibration-history-mono4.md](docs/calibration-history-mono4.md) | Photon Mono 4 hardware setup, slicer settings, or verified print milestones. |
+| [mono4-slicer-profile.md](docs/mono4-slicer-profile.md) | Photon Workshop `0.100 mm` ABS White profile and `4.0 mm` solid-base tweaks. |
 | [blender-studio-workflow.md](docs/blender-studio-workflow.md) | Photorealistic Cycles stills, Google Flow keyframes, videos, or studio MCP. |
 | [studio-art-direction-and-scenes.md](docs/studio-art-direction-and-scenes.md) | Studio art direction, 18 render environments, prop swaps, or first ad sequence. |
+| [detail-chalk-gallery-mode.md](docs/detail-chalk-gallery-mode.md) | Frameless chalk-plaster detail gallery (`18_detail_chalk_gallery`, `--frame none`). |
 | [product-and-ads-decisions.md](docs/product-and-ads-decisions.md) | Frame formats, pricing, set layouts, seam finish, or 15 s social ads. |
+| [a4-vs-13x18-ads-audit.md](docs/a4-vs-13x18-ads-audit.md) | Blind 3-model CRO and paid-ads audit locking heavy A4 over `13 x 18 cm`. |
 | [lichtbild-vs-map3d-analysis.md](docs/lichtbild-vs-map3d-analysis.md) | Architecture, data, or render comparison against the Lichtbild benchmark. |
 | [lichtbild-buildings-diagnosis.md](docs/lichtbild-buildings-diagnosis.md) | Tall spire geometry or OSM building-part extrusion debugging. |
 
