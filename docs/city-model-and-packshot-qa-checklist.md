@@ -7,11 +7,12 @@ Read and execute all four gates before you approve any city STL, tile, or packsh
 - Pick `spanMeters` first so hero landmarks keep natural width-to-height proportions.
 - Keep `zScale` inside `1.0x..1.4x`. Prefer `1.0x..1.25x` for spires, arches, cantilevers, and supertalls.
 - Never raise `zScale` above `1.5x` to fix a wide `span`. High `zScale` distorts towers into thin needles.
-- Place the A4 `120x170 mm` (`2x 120x85 mm`, `4.0 mm` solid base) `Y=0` seam clear of fragile landmarks. Keep cantilevers intact.
+- Use the A4 `120x170 mm` `1x3` grid (`3x 120x56.7 mm`, `4.0 mm` solid base, `4.0 mm` bed safe margin).
+- Keep the `Y = +/-28.3 mm` seams clear of fragile landmarks so the `56.7 mm` center band stays unbroken.
 
 ## Gate 2: Per-Tile MSLA Validation (`calibration/validate_msla_stl.py`)
 
-- Run `python3 calibration/validate_msla_stl.py <tile.stl>` on every exported tile (`Top` and `Bottom`).
+- Run `python3 calibration/validate_msla_stl.py <tile.stl>` on every exported tile (`Top`, `Middle`, and `Bottom`).
 - Require `FINAL VERDICT: PASS`, `0` blocking issues, `open_edges=0`, and `non_manifold_edges=0`.
 - Require `VAL-04=[]`, zero `VAL-02` sealed cavities `>= 100 mm2`, and `Mono 4 normal=True`.
 - Inspect every extra shell whenever `shells > 1`. Verify it sits grounded at `Z = 0.00` as a real island or quay.

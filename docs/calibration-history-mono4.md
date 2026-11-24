@@ -57,19 +57,19 @@ Do not change any setting without a single-parameter A/B print test.
 - **Verification**: All 3 tiles passed `calibration/validate_msla_stl.py` (`shells=1`, `0` blocking errors).
 - **Physical result**: All 3 elements printed with 100% success, sharp `8.26 cm` spire, crisp skyscrapers, and zero defects.
 
-## 6. A4 `12x17 cm` (`2x1`) Solid-Base No-Tunnel Mode
+## 6. A4 `12x17 cm` (`1x3`) Solid-Base No-Tunnel Mode
 
-- **Preset**: `A4 12x17 (2x1)` splits the city into two flush `120 x 85 mm` tiles for the Mono 4 bed.
+- **Production preset (`1x3`)**: Splits `120x170 mm` into three `120x56.7 mm` strips (`Top`, `Middle`, `Bottom`). Fits inside `4.0 mm` safe bed margin.
+- **Unbroken center band**: Seams sit at `Y = +/-28.3 mm`. The `56.7 mm` center hero zone stays intact (`docs/a4-tile-grid-audit.md`).
 - **Solid base (`4.0 mm`)**: Enable `solidBaseNoTunnels` (`baseBottomMm = 4.0 mm`) to remove underside grooves and keep walls smooth and stiff.
 - **Solid-base slicer tweaks**:
   - Set `Normal Off Time` to `2.5-3.0 s`. Set `Normal Z Lift` to `3.5+4.0 mm` (or `3.5+4.5 mm`).
   - Keep `Anti-alias = Off (1)` and print `100%` solid with zero slicer hollowing.
   - Cure top and bottom faces evenly under UV light to prevent bow warp.
-- **Verified NYC A4 tiles** (`exports/nyc_wtc_a4_120x170_2x1/`): `Map3D_NYC_A4_Top_120x85mm.stl` and `Map3D_NYC_A4_Bottom_120x85mm.stl` (`0` blocking errors, `0.0 mm` frame edge gaps).
-- **Verified Paris Tour Eiffel A4 tiles** (`exports/paris_eiffel_a4_120x170_2x1/`):
-  - Files: `Map3D_PARIS_A4_Top_120x85mm.stl` and `Map3D_PARIS_A4_Bottom_120x85mm.stl`.
-  - Scene setup: `lat=48.8576`, `lon=2.2956`, `span=1.78 km`, `rot=-46 deg`, `zScale=1.7`.
-  - Verification: Passed `calibration/validate_msla_stl.py` (`PASS`, `0` blocking errors, `shells=1`).
+- **Early `1x2` (`120 x 85 mm`) calibrator pairs** (superseded by `1x3` for safe `Y` bed margins):
+  - NYC WTC (`exports/nyc_wtc_a4_120x170_2x1/`): `0` blocking errors, `0.0 mm` frame edge gaps.
+  - Paris Tour Eiffel (`exports/paris_eiffel_a4_120x170_2x1/`): `lat=48.8576, lon=2.2956, span=1.78 km, rot=-46 deg, zScale=1.7`, `PASS`, `shells=1`.
+  - Singapore Marina Bay & NYC Central Park (`exports/singapore_marina_bay_a4_120x170_2x1/`, `exports/nyc_central_park_a4_120x170_2x1/`): all 4 tiles `PASS`, `shells=1`.
 
 ## 7. Production Readiness Status
 

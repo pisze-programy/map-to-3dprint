@@ -29,6 +29,7 @@ Read this map first. Open only the focused guide that matches your task.
 | [detail-chalk-gallery-mode.md](docs/detail-chalk-gallery-mode.md) | Frameless chalk-plaster detail gallery (`18_detail_chalk_gallery`, `--frame none`). |
 | [product-and-ads-decisions.md](docs/product-and-ads-decisions.md) | Frame formats, pricing, set layouts, seam finish, or 15 s social ads. |
 | [a4-vs-13x18-ads-audit.md](docs/a4-vs-13x18-ads-audit.md) | Blind 3-model CRO and paid-ads audit locking heavy A4 over `13 x 18 cm`. |
+| [a4-tile-grid-audit.md](docs/a4-tile-grid-audit.md) | Blind 3-model Mono 4 tile grid audit locking `1x3` (`120 x 56.67 mm`) over `1x2` and `2x2`. |
 | [lichtbild-vs-map3d-analysis.md](docs/lichtbild-vs-map3d-analysis.md) | Architecture, data, or render comparison against the Lichtbild benchmark. |
 | [lichtbild-buildings-diagnosis.md](docs/lichtbild-buildings-diagnosis.md) | Tall spire geometry or OSM building-part extrusion debugging. |
 
