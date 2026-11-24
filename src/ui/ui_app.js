@@ -43,6 +43,15 @@ function initMap3DApp(initialScene) {
   const initHollow = (urlParams && (urlParams.get('hollow') === '0' || urlParams.get('hollow') === '1'))
     ? (urlParams.get('hollow') === '1')
     : ((savedConfig && typeof savedConfig.hollowBase === 'boolean') ? savedConfig.hollowBase : true);
+  const initSolidBase = (urlParams && (urlParams.get('solid_base') === '0' || urlParams.get('solid_base') === '1' || urlParams.get('solid_base') === 'true' || urlParams.get('solid_base') === 'false'))
+    ? (urlParams.get('solid_base') === '1' || urlParams.get('solid_base') === 'true')
+    : ((savedConfig && typeof savedConfig.solidBaseNoTunnels === 'boolean') ? savedConfig.solidBaseNoTunnels : false);
+  const rawUrlBaseMm = urlParams ? urlParams.get('base_mm') : null;
+  const initBaseHeightMm = (rawUrlBaseMm !== null && rawUrlBaseMm !== '' && Number.isFinite(Number(rawUrlBaseMm)))
+    ? Math.min(12.0, Math.max(1.8, Number(rawUrlBaseMm)))
+    : ((savedConfig && typeof savedConfig.baseHeightMm === 'number' && Number.isFinite(savedConfig.baseHeightMm))
+        ? Math.min(12.0, Math.max(1.8, savedConfig.baseHeightMm))
+        : null);
   const initWaterCutout = (urlParams && (urlParams.get('water_cutout') === '0' || urlParams.get('water_cutout') === '1' || urlParams.get('water_cutout') === 'true' || urlParams.get('water_cutout') === 'false'))
     ? (urlParams.get('water_cutout') === '1' || urlParams.get('water_cutout') === 'true')
     : ((savedConfig && typeof savedConfig.waterCutout === 'boolean') ? savedConfig.waterCutout : false);
@@ -86,9 +95,12 @@ function initMap3DApp(initialScene) {
     roadDetail: initLodRoads
   };
 
-  const initBedSafeMarginMm = (savedConfig && typeof savedConfig.bedSafeMarginMm === 'number' && Number.isFinite(savedConfig.bedSafeMarginMm))
-    ? Math.min(10, Math.max(0, savedConfig.bedSafeMarginMm))
-    : 4.0;
+  const rawUrlMargin = urlParams ? urlParams.get('bed_margin') : null;
+  const initBedSafeMarginMm = (rawUrlMargin !== null && rawUrlMargin !== '' && Number.isFinite(Number(rawUrlMargin)))
+    ? Math.min(10, Math.max(0, Number(rawUrlMargin)))
+    : ((savedConfig && typeof savedConfig.bedSafeMarginMm === 'number' && Number.isFinite(savedConfig.bedSafeMarginMm))
+        ? Math.min(10, Math.max(0, savedConfig.bedSafeMarginMm))
+        : 4.0);
   const initProf = (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES[initPrinter]) || (typeof PRINT_PROFILES !== 'undefined' && PRINT_PROFILES.mono4_custom);
   const initBedZ = (initProf && initProf.bedZ) || 165.0;
 
@@ -115,6 +127,8 @@ function initMap3DApp(initialScene) {
     xyPixelMm: (initProf && initProf.xyPixelMm) || 0.017,
     layerHeightMm: (initProf && initProf.layerHeightMm) || 0.05,
     hollowBase: initHollow,
+    solidBaseNoTunnels: initSolidBase,
+    baseHeightMm: initBaseHeightMm,
     waterCutout: initWaterCutout,
     supportlessMode: Boolean(initSupportless),
     hollowWallMm: 1.8,
@@ -745,6 +759,15 @@ function initMap3DApp(initialScene) {
   if (mapRotSlider) mapRotSlider.value = state.mapRotationDeg;
   const chkHollow = document.getElementById('chkHollowBase');
   if (chkHollow) chkHollow.checked = state.hollowBase;
+  const chkSolidBase = document.getElementById('chkSolidBaseNoTunnels');
+  if (chkSolidBase) chkSolidBase.checked = Boolean(state.solidBaseNoTunnels);
+  const baseHeightInp = document.getElementById('baseHeightMmInput');
+  if (baseHeightInp) {
+    const resolvedBaseMm = (typeof resolveBaseBottomMm === 'function')
+      ? resolveBaseBottomMm(state)
+      : (state.baseHeightMm || 2.35);
+    baseHeightInp.value = String(Number(resolvedBaseMm.toFixed(2)));
+  }
   const chkWaterCutout = document.getElementById('chkWaterCutout');
   if (chkWaterCutout) chkWaterCutout.checked = Boolean(state.waterCutout);
   const chkPreviewWaterCutout = document.getElementById('chkPreviewWaterCutout');

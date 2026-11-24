@@ -68,3 +68,28 @@ test('single 1x1 Mono 4 preset fits 1x1 cleanly for every margin option', () => 
     assert.equal(ui.checkTileFitsMono4(wMm, hMm, 22, st), true);
   }
 });
+
+test('A4 Passe-Partout 12x17 cm (2x1) preset resolves to 2 tiles of 120x85 mm with 4.0 mm solid base', () => {
+  const prof = ui.PRINT_PROFILES.mono4_a4_passepartout_12x17_2x1;
+  assert.ok(prof, 'Expected mono4_a4_passepartout_12x17_2x1 profile');
+  assert.equal(prof.totalWidthMm, 120);
+  assert.equal(prof.totalHeightMm, 170);
+  assert.equal(prof.cols, 1);
+  assert.equal(prof.rows, 2);
+  assert.equal(prof.solidBaseNoTunnels, true);
+  assert.equal(prof.baseHeightMm, 4.0);
+  assert.ok(prof.bedSafeMarginMm <= 1.0, `Expected margin <= 1.0 mm, got ${prof.bedSafeMarginMm}`);
+
+  const st = { bedSafeMarginMm: prof.bedSafeMarginMm };
+  const sa = cfg.resolveMono4SafeArea(st);
+  assert.ok(120 <= sa.maxWMm + 1e-6 && 85 <= sa.maxHMm + 1e-6, `120x85 must fit ${sa.maxWMm}x${sa.maxHMm}`);
+  assert.equal(ui.checkTileFitsMono4(120, 85, 95, st), true);
+  assert.deepEqual(ui.resolveMono4ProfileGrid(prof, st), { cols: 1, rows: 2 });
+  assert.deepEqual(ui.resolveMono4ProfileGrid(prof, null), { cols: 1, rows: 2 });
+
+  assert.equal(cfg.resolveBaseBottomMm(null), 2.35);
+  assert.equal(cfg.resolveBaseBottomMm({ solidBaseNoTunnels: true }), 4.0);
+  assert.equal(cfg.resolveBaseBottomMm({ solidBaseNoTunnels: true, baseHeightMm: 4.5 }), 4.5);
+  assert.equal(cfg.resolveBaseBottomMm({ baseBottomMm: 3.5 }), 3.5);
+  assert.equal(cfg.PRINT_PHYSICS_CONFIG.roadHeightMm, 0.567);
+});

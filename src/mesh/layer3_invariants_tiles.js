@@ -153,7 +153,7 @@
     const rawWallMm = Number(ctx.hollowWallMm);
     const marginU = Math.max(0.8, (Number.isFinite(rawWallMm) && rawWallMm > 0) ? rawWallMm : 1.8) / scaleMm;
     let waterMarginRings2D = [];
-    if (hollowBase && terrainWater.waterMaskPolys2D.length > 0) {
+    if (hollowBase && !ctx.solidBaseNoTunnels && terrainWater.waterMaskPolys2D.length > 0) {
       const oBuf = core.clipperOffsetPolys(terrainWater.waterMaskPolys2D.map(w => w.outer), marginU, 'Miter', 1e-5);
       const holes = terrainWater.waterMaskPolys2D.flatMap(w => w.holes || []);
       if (holes.length > 0 && oBuf.length > 0) {

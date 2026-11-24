@@ -52,6 +52,8 @@ function saveActiveConfig(state) {
       terrainScale: typeof state.terrainScale === 'number' ? Number(state.terrainScale.toFixed(2)) : 1.15,
       mapRotationDeg: typeof state.mapRotationDeg === 'number' ? Math.round(state.mapRotationDeg) : 0,
       hollowBase: typeof state.hollowBase === 'boolean' ? state.hollowBase : true,
+      solidBaseNoTunnels: Boolean(state.solidBaseNoTunnels),
+      baseHeightMm: (typeof state.baseHeightMm === 'number' && Number.isFinite(state.baseHeightMm)) ? Number(state.baseHeightMm.toFixed(2)) : undefined,
       waterCutout: Boolean(state.waterCutout),
       supportlessMode: Boolean(state.supportlessMode),
       backingStyle: state.backingStyle || 'black_wood',
@@ -163,6 +165,12 @@ function loadActiveConfig() {
     if (typeof parsed.hollowBase === 'boolean') {
       sanitized.hollowBase = parsed.hollowBase;
     }
+    if (typeof parsed.solidBaseNoTunnels === 'boolean') {
+      sanitized.solidBaseNoTunnels = parsed.solidBaseNoTunnels;
+    }
+    if (typeof parsed.baseHeightMm === 'number' && Number.isFinite(parsed.baseHeightMm) && parsed.baseHeightMm >= 1.8 && parsed.baseHeightMm <= 12.0) {
+      sanitized.baseHeightMm = parsed.baseHeightMm;
+    }
     if (typeof parsed.waterCutout === 'boolean') {
       sanitized.waterCutout = parsed.waterCutout;
     }
@@ -247,6 +255,21 @@ function updateUrlQueryParams(cfg) {
     }
     if (typeof cfg.hollowBase === 'boolean') {
       params.set('hollow', cfg.hollowBase ? '1' : '0');
+    }
+    if (cfg.solidBaseNoTunnels) {
+      params.set('solid_base', '1');
+    } else {
+      params.delete('solid_base');
+    }
+    if (typeof cfg.baseHeightMm === 'number' && Number.isFinite(cfg.baseHeightMm)) {
+      params.set('base_mm', cfg.baseHeightMm.toFixed(2));
+    } else {
+      params.delete('base_mm');
+    }
+    if (typeof cfg.bedSafeMarginMm === 'number' && Number.isFinite(cfg.bedSafeMarginMm) && Math.abs(cfg.bedSafeMarginMm - 4.0) > 1e-4) {
+      params.set('bed_margin', String(cfg.bedSafeMarginMm));
+    } else {
+      params.delete('bed_margin');
     }
     if (cfg.waterCutout) {
       params.set('water_cutout', '1');
@@ -418,7 +441,20 @@ async function applyMap3DUrlParams(ctx) {
     const gridParam = params.get('grid');
     const hasGridParam = Boolean(gridParam && /^\d+x\d+$/.test(gridParam));
     const hollowParam = params.get('hollow');
+    const solidBaseParam = params.get('solid_base');
+    const baseMmParam = params.get('base_mm');
+    const bedMarginParam = params.get('bed_margin');
     const tileExplodeParam = params.get('tile_explode');
+
+    if (bedMarginParam !== null && bedMarginParam !== '' && Number.isFinite(Number(bedMarginParam)) && state) {
+      const nextMargin = Math.min(10, Math.max(0, Number(bedMarginParam)));
+      if (Math.abs((state.bedSafeMarginMm ?? 4.0) - nextMargin) > 1e-6) {
+        state.bedSafeMarginMm = nextMargin;
+        needs2DUpdate = true;
+      }
+      const mSel = document.getElementById('bedSafeMarginSelect');
+      if (mSel) mSel.value = String(nextMargin);
+    }
 
     // Printer profile (applied without premature rebuild/save so explicit grid/hollow/rot stay intact)
     const printerParam = params.get('printer');
@@ -427,12 +463,17 @@ async function applyMap3DUrlParams(ctx) {
         ? resolveMono4ProfileId(printerParam)
         : (PRINT_PROFILES[printerParam] ? printerParam : 'mono4_custom');
       const prof = PRINT_PROFILES[resolvedId] || PRINT_PROFILES.mono4_custom;
-      const prevGeomSig = `${state.printerProfileId}|${state.bedSizeMm}|${state.totalHeightMm}|${state.tileCols}|${state.tileRows}|${state.isResin}|${state.hollowBase}|${Boolean(state.supportlessMode)}`;
+      const prevGeomSig = `${state.printerProfileId}|${state.bedSizeMm}|${state.totalHeightMm}|${state.tileCols}|${state.tileRows}|${state.isResin}|${state.hollowBase}|${Boolean(state.solidBaseNoTunnels)}|${state.baseHeightMm ?? ''}|${Boolean(state.supportlessMode)}`;
       state.printerProfileId = prof.id;
       state.bedZ = prof.bedZ || state.bedZ || 165.0;
       state.isResin = true;
       state.xyPixelMm = prof.xyPixelMm || 0.017;
       state.layerHeightMm = prof.layerHeightMm || 0.05;
+      if (!bedMarginParam && typeof prof.bedSafeMarginMm === 'number' && Number.isFinite(prof.bedSafeMarginMm)) {
+        state.bedSafeMarginMm = Math.min(state.bedSafeMarginMm ?? 4.0, prof.bedSafeMarginMm);
+        const mSel = document.getElementById('bedSafeMarginSelect');
+        if (mSel) mSel.value = String(state.bedSafeMarginMm);
+      }
       if (prof.isCustomMono4) {
         const curW = state.targetWidthCm || Math.round(prof.totalWidthMm / 10) || 50;
         const curH = state.targetHeightCm || Math.round(prof.totalHeightMm / 10) || 50;
@@ -449,8 +490,8 @@ async function applyMap3DUrlParams(ctx) {
         if (!hasFrameParam3D) {
           state.bedSizeMm = prof.totalWidthMm;
           state.totalHeightMm = prof.totalHeightMm;
-          state.targetWidthCm = Math.round(prof.totalWidthMm / 10);
-          state.targetHeightCm = Math.round(prof.totalHeightMm / 10);
+          state.targetWidthCm = Number((prof.totalWidthMm / 10).toFixed(1));
+          state.targetHeightCm = Number((prof.totalHeightMm / 10).toFixed(1));
           const wInp = document.getElementById('targetWidthCmInput');
           const hInp = document.getElementById('targetHeightCmInput');
           if (wInp) wInp.value = state.targetWidthCm;
@@ -466,9 +507,15 @@ async function applyMap3DUrlParams(ctx) {
         state.hollowBase = true;
         if (chkHollowBase) chkHollowBase.checked = state.hollowBase;
       }
+      if (solidBaseParam === null) {
+        state.solidBaseNoTunnels = Boolean(prof.solidBaseNoTunnels);
+      }
+      if (baseMmParam === null) {
+        state.baseHeightMm = (typeof prof.baseHeightMm === 'number' && Number.isFinite(prof.baseHeightMm)) ? prof.baseHeightMm : null;
+      }
       const pSel = document.getElementById('printerSelect');
       if (pSel) pSel.value = prof.id;
-      const nextGeomSig = `${state.printerProfileId}|${state.bedSizeMm}|${state.totalHeightMm}|${state.tileCols}|${state.tileRows}|${state.isResin}|${state.hollowBase}|${Boolean(state.supportlessMode)}`;
+      const nextGeomSig = `${state.printerProfileId}|${state.bedSizeMm}|${state.totalHeightMm}|${state.tileCols}|${state.tileRows}|${state.isResin}|${state.hollowBase}|${Boolean(state.solidBaseNoTunnels)}|${state.baseHeightMm ?? ''}|${Boolean(state.supportlessMode)}`;
       if (nextGeomSig !== prevGeomSig) {
         needs2DUpdate = true;
         needs3DRebuild = true;
@@ -512,6 +559,29 @@ async function applyMap3DUrlParams(ctx) {
         needs3DRebuild = true;
       }
       if (chkHollowBase) chkHollowBase.checked = state.hollowBase;
+    }
+    if ((solidBaseParam === '0' || solidBaseParam === '1' || solidBaseParam === 'true' || solidBaseParam === 'false') && state) {
+      const nextSolidBase = (solidBaseParam === '1' || solidBaseParam === 'true');
+      if (Boolean(state.solidBaseNoTunnels) !== nextSolidBase) {
+        state.solidBaseNoTunnels = nextSolidBase;
+        needs3DRebuild = true;
+      }
+    }
+    if (baseMmParam !== null && baseMmParam !== '' && Number.isFinite(Number(baseMmParam)) && state) {
+      const nextBaseMm = Math.min(12.0, Math.max(1.8, Number(baseMmParam)));
+      if (Math.abs((Number(state.baseHeightMm) || 0) - nextBaseMm) > 1e-6) {
+        state.baseHeightMm = nextBaseMm;
+        needs3DRebuild = true;
+      }
+    }
+    if (state) {
+      const chkSB = document.getElementById('chkSolidBaseNoTunnels');
+      if (chkSB) chkSB.checked = Boolean(state.solidBaseNoTunnels);
+      const baseInp = document.getElementById('baseHeightMmInput');
+      if (baseInp) {
+        const effBaseMm = (typeof resolveBaseBottomMm === 'function') ? resolveBaseBottomMm(state) : (state.baseHeightMm || 2.35);
+        baseInp.value = String(Number(effBaseMm.toFixed(2)));
+      }
     }
 
     const waterCutoutParam = params.get('water_cutout');

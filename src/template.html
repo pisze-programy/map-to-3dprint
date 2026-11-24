@@ -77,6 +77,7 @@
             <option value="mono4_225x252_3x3">Photon Mono 4 • 225×252 mm (9 Kafli 3×3 po 75×84 mm)</option>
             <option value="mono4_150_1x2">Photon Mono 4 • 150×150 mm (2 Kafle 1×2 po 150×75 mm)</option>
             <option value="mono4_296_2x4">Photon Mono 4 • Format XL 296×296 mm (8 Kafli 2×4 po 148×74 mm)</option>
+            <option value="mono4_a4_passepartout_12x17_2x1">A4 Passe-Partout 12x17 cm (2x1: 120x85 mm, 4.0 mm solid)</option>
           </optgroup>
         </select>
       </div>
@@ -134,6 +135,7 @@
           <div class="flex flex-wrap gap-1 items-center">
             <span class="text-[11px] text-[var(--muted-foreground)] shrink-0">Ramka:</span>
             <button id="btnFrameMono4Single" type="button" data-frame-size="mono4-1x1" title="Maksymalny pojedynczy kafel 1×1 w strefie bezpiecznej stołu Anycubic Photon Mono 4" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">Mono 4 1×1 (14.5×7.9)</button>
+            <button id="btnFrameA4PassePartout" type="button" data-frame-size="a4-12x17" title="A4 Passe-Partout 12x17 cm (2x1: 2x 120x85 mm, 4.0 mm solid base, no tunnels, margin 1.0 mm)" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">A4 12x17 (2x1)</button>
             <button type="button" data-frame-size="13x18" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">13×18</button>
             <button type="button" data-frame-size="20x20" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">20×20</button>
             <button type="button" data-frame-size="30x30" class="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 text-[11px] font-mono transition">30×30</button>
@@ -472,6 +474,18 @@
           <span id="hollowSavingsBadge" class="text-xs font-mono font-bold text-amber-400 shrink-0">Pełna bryła</span>
         </label>
 
+        <!-- Solid Tunnel-Free Rigid Base Toggle & Height -->
+        <div class="flex items-center justify-between gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
+          <label class="flex items-center gap-1.5 min-w-0 cursor-pointer" title="Solid rigid base without underside tunnels or side notches (flex-plate friendly)">
+            <input id="chkSolidBaseNoTunnels" type="checkbox" class="rounded accent-amber-500 shrink-0" />
+            <span class="text-xs font-semibold text-[var(--foreground)] truncate">Solid base (no tunnels)</span>
+          </label>
+          <div class="flex items-center gap-1 shrink-0" title="Physical solid base height in mm (default 2.35 mm, rigid step 4.0 mm)">
+            <input id="baseHeightMmInput" type="number" min="1.8" max="12.0" step="0.05" value="2.35" class="w-14 bg-[var(--card)] border border-[var(--border)] rounded px-1 py-0.5 text-xs font-mono font-bold text-[var(--foreground)] text-right focus:outline-none" />
+            <span class="text-[11px] text-[var(--muted-foreground)]">mm</span>
+          </div>
+        </div>
+
         <!-- Water Cutout Backing Board Toggle (Expose Mounting Board Under Water) -->
         <label class="flex items-center justify-between gap-2 bg-sky-500/10 border border-sky-500/30 rounded-lg px-2.5 py-1.5 cursor-pointer" title="Wycina otwartą wodę całkowicie do Z=0, aby ląd i budynki nakleić na czarną lub drewnianą płytę bazową">
           <div class="flex items-center gap-1.5 min-w-0">
@@ -504,6 +518,7 @@
           <div class="col-span-2 flex items-center justify-between gap-1 min-w-0" title="Wolny margines z każdej strony kafla na stole Anycubic Photon Mono 4 (153.45×87.05 mm). Kafle są dzielone tak, aby zmieściły się w strefie bezpiecznej.">
             <span class="text-[11px] text-[var(--muted-foreground)] whitespace-nowrap">Strefa bezpieczna stołu (margines z każdej strony):</span>
             <select id="bedSafeMarginSelect" class="bg-[var(--card)] border border-[var(--border)] rounded px-1 py-0.5 text-xs font-mono font-bold text-[var(--foreground)] focus:outline-none cursor-pointer">
+              <option value="1">1.0 mm</option>
               <option value="2.5">2.5 mm</option>
               <option value="3">3.0 mm</option>
               <option value="4" selected>4.0 mm</option>

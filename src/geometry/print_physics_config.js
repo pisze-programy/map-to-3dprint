@@ -40,6 +40,9 @@ const PRINT_PHYSICS_CONFIG = Object.freeze({
   }),
   // Physical layer heights & tolerances in millimeters
   baseBottomMm: 2.35,
+  solidBaseBottomMm: 4.0,
+  baseBottomMinMm: 1.8,
+  baseBottomMaxMm: 12.0,
   deepWaterMm: 1.68,
   subWaterMm: 1.30,
   drainVaultMm: 0.70,
@@ -52,6 +55,21 @@ const PRINT_PHYSICS_CONFIG = Object.freeze({
   frameSkirtDepthMm: 1.6,
   frameLipAboveBaseMm: 1.1,
   minCutoutIsletMm2: 6.0
+});
+
+const A4_PASSEPARTOUT_PRESET = Object.freeze({
+  id: 'mono4_a4_passepartout_12x17_2x1',
+  name: 'A4 Passe-Partout 12x17 cm (2x1)',
+  targetWidthCm: 12.0,
+  targetHeightCm: 17.0,
+  totalWidthMm: 120,
+  totalHeightMm: 170,
+  cols: 1,
+  rows: 2,
+  bedSafeMarginMm: 1.0,
+  solidBaseNoTunnels: true,
+  baseHeightMm: 4.0,
+  baseBottomMm: 4.0
 });
 
 const OSM_METRIC_CONFIG = Object.freeze({
@@ -164,6 +182,32 @@ function resolveSceneScaleAndSpec(state, scene) {
 }
 
 /**
+ * Resolves the physical base thickness (mm) from state and print config.
+ * Uses PRINT_PHYSICS_CONFIG.baseBottomMm (2.35 mm) by default for backwards compatibility.
+ * @param {object|null} state - optional state carrying baseBottomMm, baseHeightMm, or solidBaseNoTunnels.
+ * @param {object|null} [cfg] - optional PRINT_PHYSICS_CONFIG override.
+ * @returns {number}
+ */
+function resolveBaseBottomMm(state, cfg = PRINT_PHYSICS_CONFIG) {
+  const conf = cfg || PRINT_PHYSICS_CONFIG;
+  const defaultMm = Number(conf.baseBottomMm) > 0 ? Number(conf.baseBottomMm) : 2.35;
+  const minMm = Number(conf.baseBottomMinMm) > 0 ? Number(conf.baseBottomMinMm) : 1.8;
+  const maxMm = Number(conf.baseBottomMaxMm) > 0 ? Number(conf.baseBottomMaxMm) : 12.0;
+  const s = state || {};
+  const rawExplicit = (s.baseBottomMm !== undefined && s.baseBottomMm !== null && s.baseBottomMm !== '')
+    ? Number(s.baseBottomMm)
+    : ((s.baseHeightMm !== undefined && s.baseHeightMm !== null && s.baseHeightMm !== '') ? Number(s.baseHeightMm) : NaN);
+  if (Number.isFinite(rawExplicit) && rawExplicit > 0) {
+    return Math.min(maxMm, Math.max(minMm, rawExplicit));
+  }
+  if (s.solidBaseNoTunnels === true) {
+    const solidDefault = Number(conf.solidBaseBottomMm) > 0 ? Number(conf.solidBaseBottomMm) : 4.0;
+    return Math.min(maxMm, Math.max(minMm, solidDefault));
+  }
+  return defaultMm;
+}
+
+/**
  * Resolves the usable tile area on the Photon Mono 4 plate for the bed safe margin in state.
  * @param {object|null} state - reads state.bedSafeMarginMm (mm per side); null uses the default.
  * @returns {{marginMm:number, bedXMm:number, bedYMm:number, maxWMm:number, maxHMm:number,
@@ -211,10 +255,12 @@ if (typeof window !== 'undefined') {
   window.SCENE_CANONICAL_HALF_UNITS = SCENE_CANONICAL_HALF_UNITS;
   window.DEFAULT_BED_SIZE_MM = DEFAULT_BED_SIZE_MM;
   window.PRINT_PHYSICS_CONFIG = PRINT_PHYSICS_CONFIG;
+  window.A4_PASSEPARTOUT_PRESET = A4_PASSEPARTOUT_PRESET;
   window.OSM_METRIC_CONFIG = OSM_METRIC_CONFIG;
   window.resolvePrintPhysicsSpec = resolvePrintPhysicsSpec;
   window.resolveSceneScaleAndSpec = resolveSceneScaleAndSpec;
   window.resolveTriangleTileId = resolveTriangleTileId;
+  window.resolveBaseBottomMm = resolveBaseBottomMm;
   window.resolveMono4SafeArea = resolveMono4SafeArea;
 }
 
@@ -224,10 +270,12 @@ if (typeof module !== 'undefined' && module.exports) {
     SCENE_CANONICAL_HALF_UNITS,
     DEFAULT_BED_SIZE_MM,
     PRINT_PHYSICS_CONFIG,
+    A4_PASSEPARTOUT_PRESET,
     OSM_METRIC_CONFIG,
     resolvePrintPhysicsSpec,
     resolveSceneScaleAndSpec,
     resolveTriangleTileId,
+    resolveBaseBottomMm,
     resolveMono4SafeArea
   };
 }

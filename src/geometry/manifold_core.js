@@ -1288,6 +1288,7 @@
     const terrainScale = Math.max(0.1, Number((state && state.terrainScale) ?? 1.15));
     const waterCutout = Boolean(state && state.waterCutout);
     const hollowBase = Boolean(state && state.hollowBase);
+    const solidBaseNoTunnels = Boolean(state && state.solidBaseNoTunnels);
     const hollowWallMm = Math.max(0.8, Number((state && state.hollowWallMm) ?? 1.8));
     const isExport = Boolean((options && options.isExport) || (state && state.isExport));
     const minFeatureMm = (printSpec && printSpec.minFeatureMm) || 0.12;
@@ -1369,9 +1370,13 @@
       return (e00 * (1 - tx) + e10 * tx) * (1 - ty) + (e01 * (1 - tx) + e11 * tx) * ty;
     };
 
-    const baseBottomMm = cfg.baseBottomMm || 2.35;
-    const deepWaterMm = cfg.deepWaterMm || 1.68;
-    const subWaterMm = cfg.subWaterMm || 1.30;
+    const defaultBaseBottomMm = cfg.baseBottomMm || 2.35;
+    const baseBottomMm = (typeof root.resolveBaseBottomMm === 'function')
+      ? root.resolveBaseBottomMm(state, cfg)
+      : defaultBaseBottomMm;
+    const baseDeltaMm = baseBottomMm - defaultBaseBottomMm;
+    const deepWaterMm = Math.max(0.8, (cfg.deepWaterMm || 1.68) + baseDeltaMm);
+    const subWaterMm = Math.max(0.5, (cfg.subWaterMm || 1.30) + baseDeltaMm);
     const drainVaultMm = cfg.drainVaultMm || 0.70;
     const zLandDatum = baseBottomMm / scaleMm;
     const baseThickU = zLandDatum;
@@ -1449,6 +1454,8 @@
       toBed,
       waterCutout,
       hollowBase,
+      solidBaseNoTunnels,
+      baseBottomMm,
       hollowWallMm,
       isExport,
       isResin,

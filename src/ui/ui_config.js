@@ -169,6 +169,21 @@ const PRINT_PROFILES = {
     xyPixelMm: 0.017,
     layerHeightMm: 0.05
   },
+  mono4_a4_passepartout_12x17_2x1: {
+    id: 'mono4_a4_passepartout_12x17_2x1',
+    name: 'A4 Passe-Partout 12x17 cm (2x1)',
+    printer: 'Anycubic Photon Mono 4 (153.45x87.05x165 mm)',
+    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
+    totalWidthMm: 120, totalHeightMm: 170,
+    targetWidthCm: 12.0, targetHeightCm: 17.0,
+    cols: 1, rows: 2,
+    isResin: true,
+    xyPixelMm: 0.017,
+    layerHeightMm: 0.05,
+    bedSafeMarginMm: 1.0,
+    solidBaseNoTunnels: true,
+    baseHeightMm: 4.0
+  },
   mono4_custom: {
     id: 'mono4_custom',
     name: 'Anycubic Photon Mono 4 • Dowolny Format cm (Auto-Siatka)',
@@ -326,14 +341,22 @@ function computeOptimalMono4GridForState(state, widthMm, heightMm) {
 /**
  * Grid for a fixed-size preset. Keeps the preset cols x rows when its tiles fit the safe area,
  * otherwise computes the optimal grid for the preset frame size.
+ * @param {object|null} prof - printer profile definition.
+ * @param {object|null} state - UI state carrying optional bedSafeMarginMm.
+ * @returns {{cols: number, rows: number}}
  */
 function resolveMono4ProfileGrid(prof, state) {
   const w = Number(prof && prof.totalWidthMm) || 150;
   const h = Number(prof && prof.totalHeightMm) || 150;
   const cols = Math.max(1, Number(prof && prof.cols) || 1);
   const rows = Math.max(1, Number(prof && prof.rows) || 1);
-  if (checkTileFitsMono4(w / cols, h / rows, 22.0, state)) return { cols, rows };
-  const opt = computeOptimalMono4GridForState(state, w, h);
+  const effectiveState = (state && typeof state.bedSafeMarginMm === 'number' && Number.isFinite(state.bedSafeMarginMm))
+    ? state
+    : ((prof && typeof prof.bedSafeMarginMm === 'number' && Number.isFinite(prof.bedSafeMarginMm))
+        ? { bedSafeMarginMm: prof.bedSafeMarginMm }
+        : state);
+  if (checkTileFitsMono4(w / cols, h / rows, 22.0, effectiveState)) return { cols, rows };
+  const opt = computeOptimalMono4GridForState(effectiveState, w, h);
   return { cols: opt.cols, rows: opt.rows };
 }
 

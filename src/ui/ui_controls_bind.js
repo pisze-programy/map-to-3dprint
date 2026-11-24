@@ -95,6 +95,8 @@ function bindStudioPanelControls(ctx) {
         chip.textContent = `Mono 4 1×1 (${single.wCm.toFixed(1)}×${single.hCm.toFixed(1)})`;
         chip.title = `Pojedynczy kafel 1×1 (${single.wMm}×${single.hMm} mm) dopasowany do strefy bezpiecznej Mono 4 (margines ${single.marginMm} mm z każdej strony)`;
         isMatch = isMono4SingleTileMatch(curWMm, curHMm, single);
+      } else if (attr === 'a4-12x17') {
+        isMatch = Math.abs(curWMm - 120) <= 0.6 && Math.abs(curHMm - 170) <= 0.6 && Boolean(state.solidBaseNoTunnels);
       } else {
         isMatch = attr === activeKey;
       }
@@ -136,6 +138,11 @@ function bindStudioPanelControls(ctx) {
         const single = getMono4SingleTilePreset(state);
         w = single.wCm;
         h = single.hCm;
+      } else if (attr === 'a4-12x17') {
+        applyPrinterProfile('mono4_a4_passepartout_12x17_2x1');
+        const pSel = document.getElementById('printerSelect');
+        if (pSel) pSel.value = 'mono4_a4_passepartout_12x17_2x1';
+        return;
       } else {
         [w, h] = attr.split('x').map(v => parseFloat(v));
       }
@@ -285,8 +292,15 @@ function bindStudioPanelControls(ctx) {
       const opt = computeOptimalMono4GridForState(state, state.bedSizeMm, state.totalHeightMm);
       state.tileCols = opt.cols; state.tileRows = opt.rows;
     } else {
+      if (typeof prof.bedSafeMarginMm === 'number' && Number.isFinite(prof.bedSafeMarginMm)) {
+        state.bedSafeMarginMm = Math.min(state.bedSafeMarginMm ?? 4.0, prof.bedSafeMarginMm);
+        if (bedSafeMarginSelect) bedSafeMarginSelect.value = String(state.bedSafeMarginMm);
+      }
       state.bedSizeMm = prof.totalWidthMm; state.totalHeightMm = prof.totalHeightMm;
-      state.targetWidthCm = Math.round(prof.totalWidthMm / 10); state.targetHeightCm = Math.round(prof.totalHeightMm / 10);
+      state.targetWidthCm = Number((prof.totalWidthMm / 10).toFixed(1));
+      state.targetHeightCm = Number((prof.totalHeightMm / 10).toFixed(1));
+      if (targetWidthCmInput) targetWidthCmInput.value = state.targetWidthCm;
+      if (targetHeightCmInput) targetHeightCmInput.value = state.targetHeightCm;
       const pg = resolveMono4ProfileGrid(prof, state);
       state.tileCols = pg.cols; state.tileRows = pg.rows;
     }
@@ -295,8 +309,17 @@ function bindStudioPanelControls(ctx) {
     state.xyPixelMm = prof.xyPixelMm || 0.017;
     state.layerHeightMm = prof.layerHeightMm || 0.05;
     state.hollowBase = true;
+    state.solidBaseNoTunnels = Boolean(prof.solidBaseNoTunnels);
+    state.baseHeightMm = (typeof prof.baseHeightMm === 'number' && Number.isFinite(prof.baseHeightMm)) ? prof.baseHeightMm : null;
     const chkH = document.getElementById('chkHollowBase');
     if (chkH) chkH.checked = state.hollowBase;
+    const chkSB = document.getElementById('chkSolidBaseNoTunnels');
+    if (chkSB) chkSB.checked = state.solidBaseNoTunnels;
+    const baseInp = document.getElementById('baseHeightMmInput');
+    if (baseInp) {
+      const effBaseMm = (typeof resolveBaseBottomMm === 'function') ? resolveBaseBottomMm(state) : (state.baseHeightMm || 2.35);
+      baseInp.value = String(Number(effBaseMm.toFixed(2)));
+    }
     if (state.tileCols === 1 && state.tileRows === 1) {
       state.tileExplode = 0;
       if (tileExplodeSlider) tileExplodeSlider.value = 0;
@@ -512,6 +535,37 @@ function bindStudioPanelControls(ctx) {
   if (chkHollowBase) {
     chkHollowBase.addEventListener('change', e => {
       state.hollowBase = e.target.checked;
+      rebuildModel3D();
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+    });
+  }
+  const chkSolidBaseNoTunnels = document.getElementById('chkSolidBaseNoTunnels');
+  const baseHeightMmInput = document.getElementById('baseHeightMmInput');
+  if (chkSolidBaseNoTunnels) {
+    chkSolidBaseNoTunnels.addEventListener('change', e => {
+      state.solidBaseNoTunnels = Boolean(e.target.checked);
+      if (state.solidBaseNoTunnels && !(Number(state.baseHeightMm) > 0)) {
+        state.baseHeightMm = 4.0;
+      } else if (!state.solidBaseNoTunnels && state.baseHeightMm === 4.0) {
+        state.baseHeightMm = null;
+      }
+      if (baseHeightMmInput) {
+        const effBaseMm = (typeof resolveBaseBottomMm === 'function') ? resolveBaseBottomMm(state) : (state.baseHeightMm || 2.35);
+        baseHeightMmInput.value = String(Number(effBaseMm.toFixed(2)));
+      }
+      syncFrameSizeChips();
+      updateStatsUI();
+      rebuildModel3D();
+      if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
+    });
+  }
+  if (baseHeightMmInput) {
+    baseHeightMmInput.addEventListener('change', e => {
+      const parsed = parseFloat(e.target.value);
+      const clamped = Number.isFinite(parsed) ? Math.min(12.0, Math.max(1.8, parsed)) : 2.35;
+      state.baseHeightMm = clamped;
+      e.target.value = String(Number(clamped.toFixed(2)));
+      updateStatsUI();
       rebuildModel3D();
       if (typeof saveActiveConfig === 'function') saveActiveConfig(state);
     });

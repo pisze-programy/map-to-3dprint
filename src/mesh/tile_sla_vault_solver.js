@@ -150,17 +150,28 @@
 
   /**
    * Plugs enclosed inland through-holes (< 45 mm^2) to eliminate Z=0 suction cups.
+   * @param {object} core - manifold_core dependency bundle.
+   * @param {object} poly - polygon_2d dependency bundle.
+   * @param {object} mf - Manifold WASM module.
+   * @param {object} outTile - tile Manifold solid.
+   * @param {object} terrainWater - Layer-1 terrain/water object.
+   * @param {object} tb - tile bounds record.
+   * @param {number} scaleMm - millimeters per scene unit.
+   * @param {number} minDryZU - minimum dry terrain Z in scene units.
+   * @param {number} [baseBottomMm=2.35] - configured solid base thickness in millimeters.
+   * @returns {{outTile: object, pluggedRings: Array<Array<Array<number>>>}}
    */
-  function _plugInlandThroughHoles(core, poly, mf, outTile, terrainWater, tb, scaleMm, minDryZU) {
+  function _plugInlandThroughHoles(core, poly, mf, outTile, terrainWater, tb, scaleMm, minDryZU, baseBottomMm = 2.35) {
     const pluggedRings = [];
     if (!outTile || outTile.numTri() === 0) return { outTile, pluggedRings };
+    const safeBaseMm = (Number(baseBottomMm) > 0) ? Number(baseBottomMm) : 2.35;
     const zProbeU = 1.05 / scaleMm;
     const maxHoleAreaU2 = 45.0 / (scaleMm * scaleMm);
     const edgeTolU = 0.20 / scaleMm;
     const outOffU = 0.08 / scaleMm;
     const tileBB = outTile.boundingBox();
     const zPlugTopU = Math.min(
-      2.15 / scaleMm,
+      Math.max(2.15, safeBaseMm - 0.20) / scaleMm,
       Math.max(1.25 / scaleMm, minDryZU - 0.25 / scaleMm),
       tileBB.max[2] - 0.10 / scaleMm
     );
@@ -823,9 +834,22 @@
     return outTile;
   }
 
+  /**
+   * Carves optional SLA hollow vault, anti-peel relief grooves, and underside tile ID.
+   * When ctx.solidBaseNoTunnels is true, keeps a 100% solid tunnel-free base with smooth
+   * outer vertical walls and omits underside engraving so Z=0 stays flat and suction-free.
+   * @param {object} ctx - 3-layer build context.
+   * @param {object} terrainWater - Layer-1 terrain and water output.
+   * @param {object} baseTile - clipped tile base Manifold.
+   * @param {object} tb - tile bounds metadata.
+   * @param {Array<Array<Array<number>>>} waterMarginRings2D - buffered water rings to keep solid.
+   * @returns {object}
+   */
   function carveTileHollowVaultAndId(ctx, terrainWater, baseTile, tb, waterMarginRings2D) {
     const { core, poly, embossMod } = _getDeps();
     const { mf, scaleMm, hollowBase } = ctx;
+    const solidBaseNoTunnels = Boolean(ctx.solidBaseNoTunnels);
+    const baseBottomMm = (Number(ctx.baseBottomMm) > 0) ? Number(ctx.baseBottomMm) : 2.35;
     if (!baseTile || baseTile.numTri() === 0) {
       return {
         baseTile, drainCount: 0, hollowChambersKept: 0, hollowChambersFilledSolid: 0,
@@ -846,12 +870,14 @@
     let outTile = baseTile;
     let pluggedRings = [];
     if (ctx.waterCutout === true && outTile && outTile.numTri() > 0) {
-      const plugRes = _plugInlandThroughHoles(core, poly, mf, outTile, terrainWater, tb, scaleMm, minDryZU);
+      const plugRes = _plugInlandThroughHoles(core, poly, mf, outTile, terrainWater, tb, scaleMm, minDryZU, baseBottomMm);
       outTile = plugRes.outTile;
       pluggedRings = plugRes.pluggedRings;
     }
 
-    const pad = embossMod.findSafeIdPad(ctx, terrainWater, tb, scaleMm, markDepthU, 0.78 / scaleMm);
+    const pad = solidBaseNoTunnels
+      ? null
+      : embossMod.findSafeIdPad(ctx, terrainWater, tb, scaleMm, markDepthU, 0.78 / scaleMm);
     const cutSolids = [];
     let drainCount = 0, hollowChambersKept = 0, hollowChambersFilledSolid = 0, reliefGroovesCount = 0;
     const keptDeepChambers = [];
@@ -859,7 +885,7 @@
     const minWallMm = (ctx.slaLaws && ctx.slaLaws.minWallThicknessMm) ? ctx.slaLaws.minWallThicknessMm(tb.maxZMm || 20) : 1.0;
     const ribThickU = Math.max(1.25 / scaleMm, minWallMm / scaleMm);
 
-    if (hollowBase) {
+    if (hollowBase && !solidBaseNoTunnels) {
       let vault2D = _buildDeepZones2D(core, ctx, tb, wallU, minColU);
       if (pad && vault2D.length) vault2D = core.clipperDiffPolys(vault2D, [pad.rect], 1e-5);
       if (waterMarginRings2D.length && vault2D.length) vault2D = core.clipperDiffPolys(vault2D, waterMarginRings2D, 1e-5);
@@ -926,27 +952,71 @@
     };
   }
 
-  function _plugPostUnionBasePockets(core, poly, mf, unified, uBB, scaleMm) {
+  function _plugPostUnionBasePockets(core, poly, mf, unified, uBB, scaleMm, baseBottomMm = 2.35) {
+    const safeBaseMm = (Number(baseBottomMm) > 0) ? Number(baseBottomMm) : 2.35;
     const zProbeU = 1.05 / scaleMm;
-    const zPlugTopU = Math.min(2.35 / scaleMm, uBB.max[2] - 0.10 / scaleMm);
+    const zLowProbeU = 0.15 / scaleMm;
+    const zPlugTopU = Math.min(safeBaseMm / scaleMm, uBB.max[2] - 0.10 / scaleMm);
     if (zPlugTopU <= 0.10 / scaleMm || uBB.max[2] <= zProbeU) return unified;
 
     const maxHoleAreaU2 = 45.0 / (scaleMm * scaleMm);
+    const minCapSlitAreaU2 = 0.40 / (scaleMm * scaleMm);
     const edgeTolU = 0.20 / scaleMm;
-    const closeRadU = 0.22 / scaleMm;
+    const closeRadU = 0.26 / scaleMm;
     const outOffU = 0.26 / scaleMm;
 
     let s1 = null;
     let dil = null;
     let closed = null;
+    let sLow = null;
+    let dilLow = null;
+    let closedLow = null;
+    let cap105 = null;
+    let capLow = null;
+    let capThru = null;
     let polys = [];
+    const capSlitComps = [];
     try {
       s1 = unified.slice(zProbeU);
       if (!s1.isEmpty()) {
         dil = s1.offset(closeRadU, 'Round');
         if (!dil.isEmpty()) {
           closed = dil.offset(-closeRadU, 'Round');
-          if (!closed.isEmpty()) polys = closed.toPolygons();
+          if (!closed.isEmpty()) {
+            polys = closed.toPolygons();
+            // Capture vertical through-base capillary slits (<= 2*closeRadU at both Z=0.15 and Z=1.05)
+            // so narrow seawall/boardwalk cracks fuse solid (DFM-02 / VAL-02) without touching wide grooves.
+            sLow = unified.slice(zLowProbeU);
+            if (!sLow.isEmpty()) {
+              dilLow = sLow.offset(closeRadU, 'Round');
+              if (!dilLow.isEmpty()) {
+                closedLow = dilLow.offset(-closeRadU, 'Round');
+                if (!closedLow.isEmpty()) {
+                  cap105 = closed.subtract(s1);
+                  capLow = closedLow.subtract(sLow);
+                  if (!cap105.isEmpty() && !capLow.isEmpty()) {
+                    capThru = cap105.intersect(capLow);
+                    if (!capThru.isEmpty()) {
+                      const comps = capThru.decompose();
+                      for (let ci = 0; ci < comps.length; ci++) {
+                        const c = comps[ci];
+                        const area = c.area();
+                        if (area >= minCapSlitAreaU2 && area < maxHoleAreaU2) {
+                          const cb = c.bounds();
+                          if (cb.min[0] > uBB.min[0] + edgeTolU && cb.max[0] < uBB.max[0] - edgeTolU &&
+                              cb.min[1] > uBB.min[1] + edgeTolU && cb.max[1] < uBB.max[1] - edgeTolU) {
+                            capSlitComps.push(c);
+                            continue;
+                          }
+                        }
+                        core.safeDeleteManifold(c);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     } catch (_) {
@@ -955,9 +1025,29 @@
       core.safeDeleteManifold(s1);
       core.safeDeleteManifold(dil);
       core.safeDeleteManifold(closed);
+      core.safeDeleteManifold(sLow);
+      core.safeDeleteManifold(dilLow);
+      core.safeDeleteManifold(closedLow);
+      core.safeDeleteManifold(cap105);
+      core.safeDeleteManifold(capLow);
+      core.safeDeleteManifold(capThru);
     }
 
     const plugs = [];
+    for (let ci = 0; ci < capSlitComps.length; ci++) {
+      const comp = capSlitComps[ci];
+      let csP = null;
+      try {
+        csP = comp.offset(0.08 / scaleMm, 'Round');
+        const plug = csP.isEmpty() ? null : csP.extrude(zPlugTopU);
+        if (plug && plug.numTri() > 0) plugs.push(plug);
+        else core.safeDeleteManifold(plug);
+      } catch (_) {
+      } finally {
+        core.safeDeleteManifold(csP);
+        core.safeDeleteManifold(comp);
+      }
+    }
     for (let i = 0; i < polys.length; i++) {
       const r = polys[i];
       if (!r || r.length < 3) continue;
@@ -1205,12 +1295,15 @@
     return runs;
   }
 
-  function _ventUpperSealedCourtyards(core, poly, mf, unified, scaleMm) {
+  function _ventUpperSealedCourtyards(core, poly, mf, unified, scaleMm, baseBottomMm = 2.35) {
+    const safeBaseMm = (Number(baseBottomMm) > 0) ? Number(baseBottomMm) : 2.35;
     const minHoleAreaU2 = 75.0 / (scaleMm * scaleMm);
     const closeRadU = 0.22 / scaleMm;
-    const zListMm = [2.65, 2.90, 2.40, 3.40];
+    const zListMm = [safeBaseMm + 0.30, safeBaseMm + 0.55, safeBaseMm + 0.05, safeBaseMm + 1.05];
+    const zSlabCheckMm = Math.max(1.85, safeBaseMm - 0.50);
+    const zBotFloorMm = Math.max(2.30, safeBaseMm - 0.05);
 
-    // Pass 2 only cuts Z >= 2.30 mm, so Z = 1.15 and Z = 1.85 stay invariant.
+    // Pass 2 only cuts Z >= zBotFloorMm, so Z = 1.15 and zSlabCheckMm stay invariant.
     let polys115 = null;
     let polys185 = null;
     let cachedGridKey = '';
@@ -1272,8 +1365,8 @@
 
         if (polys115 === null) {
           polys115 = _sliceCrossSectionPolys(core, unified, 1.15 / scaleMm);
-          // Check Z = 1.85 mm so underside relief grooves (<= 1.50 mm) do not mask sealed courtyards.
-          polys185 = _sliceCrossSectionPolys(core, unified, 1.85 / scaleMm);
+          // Check inside slab above underside relief grooves (<= 1.50 mm) so grooves do not mask sealed courtyards.
+          polys185 = _sliceCrossSectionPolys(core, unified, zSlabCheckMm / scaleMm);
         }
         const gridKey = `${nx}:${ny}:${ox.toFixed(6)}:${oy.toFixed(6)}:${stepU.toFixed(6)}`;
         if (cachedGridKey !== gridKey) {
@@ -1388,7 +1481,7 @@
               }
             }
             if (!cutterCS.isEmpty()) {
-              const zBotU = Math.max(2.30 / scaleMm, (zMm - 0.35) / scaleMm);
+              const zBotU = Math.max(zBotFloorMm / scaleMm, (zMm - 0.35) / scaleMm);
               const zTopU = (zMm + 0.45) / scaleMm;
               if (zTopU > zBotU + 1e-5) {
                 rawCut = cutterCS.extrude(zTopU - zBotU);
@@ -1559,13 +1652,16 @@
     return outCS;
   }
 
-  function _groundFlatOverhangPiers(core, poly, mf, unified, uBB, scaleMm) {
+  function _groundFlatOverhangPiers(core, poly, mf, unified, uBB, scaleMm, baseBottomMm = 2.35) {
+    const safeBaseMm = (Number(baseBottomMm) > 0) ? Number(baseBottomMm) : 2.35;
     const mesh = unified.getMesh();
     const vp = mesh.vertProperties;
     const tv = mesh.triVerts;
     const np = mesh.numProp || 3;
     const nTri = Math.floor(tv.length / 3);
-    const zThreshU = 2.35 / scaleMm;
+    // Keep overhang scan threshold <= 2.35 mm (strictly above <= 1.50 mm relief grooves) so
+    // waterfront pier decks below a thickened 4.0 mm base still receive grounded piers (VAL-04).
+    const zThreshU = Math.min(2.35, safeBaseMm) / scaleMm;
     const cands = [];
     const vertToCands = new Map();
 
@@ -1642,23 +1738,26 @@
     const minStructHalfU = 0.22 / scaleMm;
     const minCompAreaU2 = 0.04 / (scaleMm * scaleMm);
     const padLocalU = rSupU + minStructHalfU + 1.2 / scaleMm;
-    const zBandMinU = 2.55 / scaleMm;
+    const zBandMinU = Math.min(2.55, safeBaseMm + 0.20) / scaleMm;
     const zBaseU = (uBB.min[2] < 0 && uBB.min[2] > -0.05 / scaleMm) ? uBB.min[2] : 0;
     const marginU = rPierU + 0.02 / scaleMm;
     const clampXY = (uBB.max[0] - uBB.min[0]) > rPierU * 3 && (uBB.max[1] - uBB.min[1]) > rPierU * 3;
     const belowCache = new Map();
     const newPiers = [];
 
-    // Anchor dry-land piers on the 1.75..2.10 mm roof plateau above <= 1.50 mm relief grooves.
+    // Anchor dry-land piers on the roof plateau strictly above any <= 1.50 mm relief grooves.
+    const roofLoMm = Math.max(1.75, safeBaseMm - 0.60);
+    const roofHiMm = Math.max(2.10, safeBaseMm - 0.25);
+    const roofCheckMm = Math.max(2.15, safeBaseMm - 0.20);
     let roofSafePolys = [];
-    if (uBB.max[2] > 2.20 / scaleMm) {
+    if (uBB.max[2] > (roofHiMm + 0.10) / scaleMm) {
       let s175 = null;
       let s210 = null;
       let roofInter = null;
       let roofEroded = null;
       try {
-        s175 = unified.slice(1.75 / scaleMm);
-        s210 = unified.slice(2.10 / scaleMm);
+        s175 = unified.slice(roofLoMm / scaleMm);
+        s210 = unified.slice(roofHiMm / scaleMm);
         if (!s175.isEmpty() && !s210.isEmpty()) {
           roofInter = s175.intersect(s210);
           if (!roofInter.isEmpty()) {
@@ -1814,8 +1913,8 @@
 
               const zLocal = _evalClusterBarycentricZ(poly, cpx, cpy, band.tris, band.zLo);
               const zCapU = zLocal + 0.12 / scaleMm;
-              const pierBotU = (roofSafePolys.length > 0 && _isPointInsideCSPolys(poly, cpx, cpy, roofSafePolys) && zCapU > 2.15 / scaleMm)
-                ? (1.75 / scaleMm)
+              const pierBotU = (roofSafePolys.length > 0 && _isPointInsideCSPolys(poly, cpx, cpy, roofSafePolys) && zCapU > roofCheckMm / scaleMm)
+                ? (roofLoMm / scaleMm)
                 : zBaseU;
               const hPier = zCapU - pierBotU;
               if (hPier > 0.10 / scaleMm) {
@@ -1931,27 +2030,30 @@
     return unified;
   }
 
-  function _applyPostUnionMslaPrintGuard(core, poly, mf, unified, scaleMm, isCutout) {
+  function _applyPostUnionMslaPrintGuard(core, poly, mf, unified, scaleMm, isCutout, baseBottomMm = 2.35) {
     if (!unified || unified.numTri() === 0) return unified;
     let out = unified;
     if (isCutout === true) {
-      out = _plugPostUnionBasePockets(core, poly, mf, out, out.boundingBox(), scaleMm);
+      out = _plugPostUnionBasePockets(core, poly, mf, out, out.boundingBox(), scaleMm, baseBottomMm);
     }
-    out = _ventUpperSealedCourtyards(core, poly, mf, out, scaleMm);
-    out = _groundFlatOverhangPiers(core, poly, mf, out, out.boundingBox(), scaleMm);
+    out = _ventUpperSealedCourtyards(core, poly, mf, out, scaleMm, baseBottomMm);
+    out = _groundFlatOverhangPiers(core, poly, mf, out, out.boundingBox(), scaleMm, baseBottomMm);
     out = _cleanupDetachedBorderSlivers(core, mf, out, scaleMm);
     return out;
   }
 
   function buildUnifiedTileTrianglesForStlCSG(state, layerFilter = 'all', tileIdFilter = -1) {
     const { core, poly, cfgMod } = _getDeps();
-    let filtered = [], scaleMm = 1, isCutout = false;
+    let filtered = [], scaleMm = 1, isCutout = false, baseBottomMm = 2.35;
     if (Array.isArray(state)) {
       filtered = state;
     } else {
       const spec = cfgMod.resolveSceneScaleAndSpec(state, null);
       const { halfW, halfH } = spec;
       scaleMm = spec.scaleMm || 1;
+      baseBottomMm = (cfgMod && typeof cfgMod.resolveBaseBottomMm === 'function')
+        ? cfgMod.resolveBaseBottomMm(state, cfgMod.PRINT_PHYSICS_CONFIG)
+        : 2.35;
       const tileCols = Math.max(1, (state && state.tileCols) || 1), tileRows = Math.max(1, (state && state.tileRows) || 1);
       isCutout = Boolean(state && state.waterCutout);
       const keys = layerFilter === 'all'
@@ -1991,7 +2093,7 @@
       if (uBB.min[2] <= 0.05 / scaleMm &&
           (uBB.max[0] - uBB.min[0]) * scaleMm >= 25.0 &&
           (uBB.max[1] - uBB.min[1]) * scaleMm >= 25.0) {
-        unified = _applyPostUnionMslaPrintGuard(core, poly, mf, unified, scaleMm, isCutout);
+        unified = _applyPostUnionMslaPrintGuard(core, poly, mf, unified, scaleMm, isCutout, baseBottomMm);
         if (!unified || unified.numTri() === 0) { core.safeDeleteManifold(unified); return []; }
       }
     }

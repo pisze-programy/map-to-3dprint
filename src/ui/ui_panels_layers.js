@@ -374,6 +374,8 @@ function createUILayersStatsController(state, onRebuildNeeded) {
         btn.title = `Pojedynczy kafel 1×1 (${singleWMm}×${singleHMm} mm) dopasowany do strefy bezpiecznej Mono 4 (margines ${saCur.marginMm} mm z każdej strony)`;
         isActive = (Math.abs(dimW - singleWMm) <= 0.6 && Math.abs(dimH - singleHMm) <= 0.6) ||
                    (Math.abs(dimW - singleHMm) <= 0.6 && Math.abs(dimH - singleWMm) <= 0.6);
+      } else if (attr === 'a4-12x17') {
+        isActive = Math.abs(dimW - 120) <= 0.6 && Math.abs(dimH - 170) <= 0.6 && Boolean(state.solidBaseNoTunnels);
       } else {
         isActive = attr === curFrameKey;
       }
@@ -411,10 +413,23 @@ function createUILayersStatsController(state, onRebuildNeeded) {
 
     const hollowBadge = document.getElementById('hollowSavingsBadge');
     if (hollowBadge) {
-      hollowBadge.textContent = state.hollowBase ? `-${pm.hollowSavingsPct || 0}% żywicy` : `Pełna bryła (0%)`;
-      hollowBadge.className = state.hollowBase
-        ? 'text-xs font-mono font-bold text-emerald-400 shrink-0'
-        : 'text-xs font-mono font-bold text-amber-400 shrink-0';
+      if (state.solidBaseNoTunnels) {
+        const effBaseMm = (typeof resolveBaseBottomMm === 'function') ? resolveBaseBottomMm(state) : (state.baseHeightMm || 4.0);
+        hollowBadge.textContent = `Solid ${effBaseMm.toFixed(1)} mm`;
+        hollowBadge.className = 'text-xs font-mono font-bold text-amber-400 shrink-0';
+      } else {
+        hollowBadge.textContent = state.hollowBase ? `-${pm.hollowSavingsPct || 0}% żywicy` : `Pełna bryła (0%)`;
+        hollowBadge.className = state.hollowBase
+          ? 'text-xs font-mono font-bold text-emerald-400 shrink-0'
+          : 'text-xs font-mono font-bold text-amber-400 shrink-0';
+      }
+    }
+    const chkSolidBase = document.getElementById('chkSolidBaseNoTunnels');
+    if (chkSolidBase) chkSolidBase.checked = Boolean(state.solidBaseNoTunnels);
+    const baseHeightInp = document.getElementById('baseHeightMmInput');
+    if (baseHeightInp && document.activeElement !== baseHeightInp) {
+      const effBaseMm = (typeof resolveBaseBottomMm === 'function') ? resolveBaseBottomMm(state) : (state.baseHeightMm || 2.35);
+      baseHeightInp.value = String(Number(effBaseMm.toFixed(2)));
     }
 
     const isSupportless = Boolean(state && state.supportlessMode);

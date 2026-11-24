@@ -751,6 +751,80 @@ async function runAudit() {
   assert.ok(Math.abs(postBldMaxZMm - preBldMaxZMm) <= 0.05, `Expected building full height preserved (${preBldMaxZMm.toFixed(2)} -> ${postBldMaxZMm.toFixed(2)} mm)`);
   console.log(`  PASS: 145x79mm MSLA guard open=0 nm=0 degen=0, capillary Z=[0.15..2.15] cav=0, courtyard Z=[2.65,2.90] maxCav=${Math.max(guardCavSlices030[4].maxSealedCavityMm2, guardCavSlices030[5].maxSealedCavityMm2).toFixed(1)}mm2 (<75), sloped ramp overhang=${overhangAudit.maxHalfSpanMm.toFixed(2)}mm (<=2.2), bldZ=${postBldMaxZMm.toFixed(2)}mm`);
 
+  // 7. Solid tunnel-free 4.0 mm rigid base on A4 Passe-Partout 120x170 mm (2x1 = 2x 120x85 mm)
+  console.log('[7/7] Solid Tunnel-Free 4.0 mm Rigid Base (A4 120x170 mm, 1x2 = 2x 120x85 mm)');
+  const a4SolidScene = {
+    spanMeters: 700,
+    dem: {
+      grid: [
+        [0.1, 0.1, 0.1, 0.1],
+        [0.1, 0.1, 0.1, 0.1],
+        [0.1, 0.1, 0.1, 0.1],
+        [0.1, 0.1, 0.1, 0.1],
+      ],
+      minElev: 0.1,
+      maxElev: 0.1,
+    },
+    waterPolys: [
+      { outer: [[-90, -90], [-42, -90], [-42, 90], [-90, 90]], holes: [] },
+    ],
+    waterLines: [],
+    greenPolys: [],
+    trees: [],
+    roads: [{ pts: [[-10, -70], [-10, 70]], width: 4.0, layer: 0 }],
+    bridgePolys: [],
+    buildings: [
+      { id: 701, outer: makeSq(15, 35, 8), holes: [], h: 22, roof: 'flat', roofH: 0 },
+      { id: 702, outer: makeSq(15, -35, 8), holes: [], h: 30, roof: 'flat', roofH: 0 },
+    ],
+  };
+  const a4SolidState = {
+    plaqueText: 'A4_SOLID_TEST',
+    bedSizeMm: 120,
+    totalHeightMm: 170,
+    tileCols: 1,
+    tileRows: 2,
+    kerfMm: 0.0,
+    bedSafeMarginMm: 1.0,
+    hollowBase: true,
+    solidBaseNoTunnels: true,
+    baseHeightMm: 4.0,
+    waterCutout: true,
+    showFrame: false,
+    exportFrame: false,
+    isResin: true,
+    zScale: 1.0,
+    terrainScale: 1.0,
+    cropRatio: 1.0,
+  };
+  const a4Built = buildComplete3DModel(a4SolidScene, a4SolidState);
+  assert.equal(a4Built.printMetrics.openEdgesCount, 0);
+  assert.equal(a4Built.printMetrics.nonManifoldEdgesCount, 0);
+  assert.equal(a4Built.printMetrics.hollowChambersKept, 0, 'solidBaseNoTunnels must not carve hollow chambers');
+  assert.equal(a4Built.printMetrics.drainCount, 0, 'solidBaseNoTunnels must not carve side drains');
+  assert.equal(a4Built.printMetrics.embossMetrics.engravedTiles, 0, 'solidBaseNoTunnels skips underside ID emboss');
+
+  for (const tid of [0, 1]) {
+    const tBytes = stlMod.buildBinarySTLBytes({ ...a4SolidState, layerMeshes: a4Built.meshes }, 'all', tid);
+    const tAudit = parseAndAuditRawStlBytes(tBytes);
+    assert.equal(tAudit.openEdges, 0, `A4 T${tid} open=${tAudit.openEdges}`);
+    assert.equal(tAudit.nonManifoldEdges, 0, `A4 T${tid} nm=${tAudit.nonManifoldEdges}`);
+    assert.equal(tAudit.sameDirDupEdges, 0, `A4 T${tid} dup=${tAudit.sameDirDupEdges}`);
+    assert.equal(tAudit.degenerateTris, 0, `A4 T${tid} degen=${tAudit.degenerateTris}`);
+    assert.equal(tAudit.components, 1, `A4 T${tid} expected single shell, got ${tAudit.components}`);
+    assert.ok(Math.abs(tAudit.spanY - 85.0) <= 0.02, `A4 T${tid} expected spanY=85.00 mm, got ${tAudit.spanY.toFixed(3)}`);
+    assert.ok(tAudit.spanX <= 120.02, `A4 T${tid} expected spanX<=120.02 mm, got ${tAudit.spanX.toFixed(3)}`);
+
+    // Verify 100% solid 4.0 mm base: zero underside tunnels and zero sealed cavities at all base slices
+    const baseSlices = auditRawStlSliceRasterCavities(tBytes, [0.15, 0.55, 0.95, 1.15, 2.00, 3.85], 0.30);
+    for (const sl of baseSlices) {
+      assert.equal(sl.sealedCavitiesGe2Mm2, 0, `A4 T${tid} Z=${sl.zMm}mm must have 0 sealed cavities, got ${sl.sealedCavitiesGe2Mm2}`);
+    }
+    const areaRatio = baseSlices[0].areaMm2 / Math.max(1, baseSlices[5].areaMm2);
+    assert.ok(Math.abs(areaRatio - 1.0) < 0.02, `A4 T${tid} expected constant solid base cross-section Z=0.15 vs Z=3.85 (ratio=${areaRatio.toFixed(4)})`);
+  }
+  console.log('  PASS: A4 120x170 (2x 120x85 mm) 4.0 mm solid tunnel-free STLs verified 0-open/0-nm/0-degen/0-cavities/0-tunnels');
+
   console.log(`\nETAP 6 AUDIT PASSED in ${Date.now() - tStart} ms.`);
 }
 
