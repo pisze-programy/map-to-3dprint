@@ -14,15 +14,15 @@ Never use stands or easels (podstawki) in product design or marketing renders.
 | Round `15 cm` (`2` Mono 4 semicircles) | Runner-up | Strong thumb-stop and water contrast; weaker home-use clarity without a stand. |
 | **Thin `13 x 18 cm` without passe-partout (Variant C)** | **Winner (`4:0`, `8.45/10`)** | Full-bleed architectural relief; fits desks and walls cleanly. |
 
-## 2. Single-Format Seam Finishing
+## 2. Upgraded Heavy A4 Gallery Passe-Partout Format (`21 x 29.7 x 3.0 cm`)
 
-Variant C spans two Mono 4 tiles inside one low-profile `13 x 18 cm` frame.
-Mask the seam between both tiles with this finishing sequence:
+For flagship wall and desk presence, upgrade the single format to a heavy A4 gallery shadow-box frame:
 
-1. Use a building-safe split line when the street grid allows it.
-2. Fill the joint with matching white liquid resin.
-3. Cure the filled seam under UV light.
-4. Apply a matte clear coat across the assembled relief.
+- **Outer frame**: `21 x 29.7 x 3.0 cm` matte jet-black box (`15 mm` rim, `7 mm` inner step).
+- **Passe-partout**: Classic white-only `2 mm` matboard with a 45-deg beveled `12 x 17 cm` (`120 x 170 mm`) window.
+- **Backing and open air**: Use matte black archival paper backing with zero glass, zero nameplate, and zero stands.
+- **Tile geometry**: Print two flush `120 x 85 mm` (`2x1`) tiles with a `4.0 mm` solid tunnel-free base (`solidBaseNoTunnels`).
+- **Seam finishing**: Align a building-safe split line, fill the seam with white resin, UV-cure, and apply matte clear coat.
 
 ## 3. Wall Set Expansion Formats
 

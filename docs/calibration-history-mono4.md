@@ -57,7 +57,16 @@ Do not change any setting without a single-parameter A/B print test.
 - **Verification**: All 3 tiles passed `calibration/validate_msla_stl.py` (`shells=1`, `0` blocking errors).
 - **Physical result**: All 3 elements printed with 100% success, sharp `8.26 cm` spire, crisp skyscrapers, and zero defects.
 
-## 6. Production Readiness Status
+## 6. A4 `12x17 cm` (`2x1`) Solid-Base No-Tunnel Mode
+
+- **Preset**: `A4 12x17 (2x1)` splits the city into two flush `120 x 85 mm` tiles for the Mono 4 bed.
+- **Solid base (`4.0 mm`)**: Enable `solidBaseNoTunnels` (`baseBottomMm = 4.0 mm`) to remove underside grooves and keep walls smooth and stiff.
+- **Verified tiles** (under `exports/nyc_wtc_a4_120x170_2x1/`):
+  - `Map3D_NYC_A4_Top_120x85mm.stl` (`120 x 85 mm`)
+  - `Map3D_NYC_A4_Bottom_120x85mm.stl` (`120 x 85 mm`)
+- **Verification**: Both tiles passed `calibration/validate_msla_stl.py` with `0` blocking errors and `0.0 mm` frame edge gaps.
+
+## 7. Production Readiness Status
 
 - The Mono 4 hardware, slicer profile, and app export pipeline are production-ready.
 - Start printing next target cities and scale formats from single (`1`) to triptych (`3`) and quartet (`4`).

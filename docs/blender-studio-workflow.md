@@ -17,7 +17,7 @@ Run `python3 studio_blender/render_studio.py --list-props --json` to list all 26
 
 - **Core environments (`01`..`11`)**: `01_architect_window_desk`, `02_creative_office_desk`, `03_morning_coffee_table`, `04_minimal_home_console`, `05_gallery_wall_sunlight`, `06_architect_slat_wall`, `07_evening_warm_desk`, `08_loft_concrete_studio`, `09_dark_cinematic`, `10_macro_editorial`, `11_packshot_white`.
 - **Persona environments (`12`..`17`)**: `12_persona_architect`, `13_persona_traveler`, `14_persona_lawyer`, `15_persona_corporate`, `16_persona_realestate`, `17_persona_executive_study`.
-- **Frame styles (`--frame`)**: `single_13x18` (default Variant C), `a4_passepartout` (`210x297x30 mm` 45-deg bevel), `single_thin`, `single_thick`, `cube_cover`, `triptych_3x1`, `quartet_2x2`.
+- **Frame styles (`--frame`)**: `single_13x18` (Variant C), `a4_passepartout` (`210x297x30 mm` white-only 45-deg bevel), `single_thin`, `single_thick`, `cube_cover`, `triptych_3x1`, `quartet_2x2`.
 - **Mount modes (`--mount`)**: `auto`, `desk_flat`, `wall_mount`.
 - **Still presets (`--preset`)**: `hero_desk`, `hero_wall`, `macro_skyline`, `macro_waterfront`, `profile_low`, `top_down`, `packshot_iso`, `all`.
 - **Aspect ratios (`--aspect`)**: `9:16`, `4:5`, `1:1`, `16:9`.
@@ -28,7 +28,7 @@ Customize any environment without code edits using these CLI flags:
 
 - **Props**: `--add-prop <id_or_path@x,y,yaw,scale>`, `--remove-prop <id>`, `--clear-props`.
 - **Scene**: `--mount <mode>`, `--surface <preset>`, `--window-gobo <preset>`, `--hdri <preset_or_path>`, `--light-temp <K>`, `--sun-azimuth <deg>`.
-- **Frame**: `--frame-mm <WxH>`, `--frame-width-mm 4.0`, `--frame-height-mm 7.5`, `--backing-finish matte_black|satin_black`, `--passepartout-color white|ivory|charcoal|greige`, `--show-nameplate` (OFF by default).
+- **Frame**: `--frame-mm <WxH>`, `--frame-width-mm 4.0`, `--frame-height-mm 7.5`, `--backing-finish matte_black|satin_black`, `--show-nameplate` (OFF by default).
 
 ## 4. CLI Workflows
 
@@ -69,11 +69,13 @@ Pass `--camera-mode kinder_continuous` for a single-take spline, `--packshot-env
 ### Compare `13x18` vs Heavy A4 Passe-Partout (`studio_blender/compare_frames.py`)
 ```bash
 python3 studio_blender/compare_frames.py \
-  --stl exports/nyc_wtc_145x79_1x1/Map3D_NYC_Triptych_01_Top_Tribeca_145x79mm.stl \
-  --stl exports/nyc_wtc_145x79_1x1/Map3D_NYC_WTC_145x79mm.stl \
-  --passepartout-color white --samples 64 --out ./renders/a4_compare
+  --old-stl exports/nyc_wtc_145x79_1x1/Map3D_NYC_Triptych_01_Top_Tribeca_145x79mm.stl \
+  --old-stl exports/nyc_wtc_145x79_1x1/Map3D_NYC_WTC_145x79mm.stl \
+  --a4-stl exports/nyc_wtc_a4_120x170_2x1/Map3D_NYC_A4_Top_120x85mm.stl \
+  --a4-stl exports/nyc_wtc_a4_120x170_2x1/Map3D_NYC_A4_Bottom_120x85mm.stl \
+  --samples 64 --out ./renders/a4_compare
 ```
-This helper renders a true 1:1 millimeter packshot comparing thin `13x18` and heavy A4 frames.
+This helper renders a true 1:1 packshot comparing thin `13x18` and white-mat A4 frames.
 
 ## 5. Registered MCP Server (`studio-blender`)
 
@@ -84,6 +86,6 @@ Command: `python3 /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/st
 | :--- | :--- | :--- |
 | `list_studio_presets` | Return all 17 environments, frames, mounts, and shots. | None |
 | `list_studio_props` | Return all 26 composable props and placement syntax. | None |
-| `render_city_stills` | Render Cycles PNG stills with prop and scene overrides. | `stl_paths`, `out_dir`, `env`, `frame`, `passepartout_color`, `mount`, `add_props`, `samples` |
+| `render_city_stills` | Render Cycles PNG stills with prop and scene overrides. | `stl_paths`, `out_dir`, `env`, `frame`, `mount`, `add_props`, `remove_props`, `samples` |
 | `render_flow_keyframes` | Render `9:16` `Start -> End` frames and prompts. | `stl_paths`, `out_dir`, `env`, `frame`, `mount`, `add_props`, `shots`, `samples` |
 | `render_commercial_video` | Render 5-angle Kinder (`kinder_multishot` default) or continuous MP4. | `stl_paths`, `out_dir`, `env`, `camera_mode`, `packshot_end`, `samples`, `shutter`, `duration_sec` |
