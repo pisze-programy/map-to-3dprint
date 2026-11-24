@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 from .materials_core import (
     add_map_range,
@@ -13,15 +13,6 @@ from .materials_core import (
     get_or_create_material,
     set_input,
 )
-
-# Museum cotton-rag passe-partout linear RGB swatches (sRGB -> linear):
-# white #F2F0EB, ivory #EAE4D7, charcoal #18191C, greige #CFC8BC
-PASSEPARTOUT_SWATCHES: Dict[str, Tuple[Tuple[float, float, float], Tuple[float, float, float], float]] = {
-    "white": ((0.888, 0.871, 0.831), (0.842, 0.824, 0.785), 0.015),
-    "ivory": ((0.823, 0.776, 0.680), (0.776, 0.728, 0.634), 0.015),
-    "charcoal": ((0.0091, 0.0097, 0.0116), (0.0074, 0.0079, 0.0096), 0.0),
-    "greige": ((0.624, 0.578, 0.503), (0.584, 0.538, 0.466), 0.010),
-}
 
 
 def make_plaster_cement_material(name: str = "PlasterCement") -> Any:
@@ -268,15 +259,10 @@ def make_a4_gallery_frame_material(name: str = "MatteBlackGalleryFrameA4") -> An
 
 
 def make_passepartout_material(
-    color_name: str = "white",
     is_bevel_core: bool = False,
     name: Optional[str] = None,
 ) -> Any:
-    """Cotton-rag museum matboard (top face in white/ivory/charcoal/greige, or bright white bevel core)."""
-    color_key = (color_name or "white").strip().lower()
-    if color_key not in PASSEPARTOUT_SWATCHES:
-        color_key = "white"
-
+    """Classic white cotton-rag museum matboard (#F2F0EB top face, #F5F3EE 45-deg bevel core)."""
     if is_bevel_core:
         mat_name = name or "PassePartoutBevelCore"
         # Bright museum-white cut cotton-rag paper core (#F5F3EE sRGB -> linear)
@@ -287,9 +273,12 @@ def make_passepartout_material(
         bump_str = 0.070
         fine_scale = 3400.0
     else:
-        mat_name = name or f"PassePartout_{color_key}"
-        col_hi, col_lo, sss_w = PASSEPARTOUT_SWATCHES[color_key]
+        mat_name = name or "PassePartoutWhite"
+        # Classic white museum cotton-rag matboard (#F2F0EB sRGB -> linear)
+        col_hi = (0.888, 0.871, 0.831)
+        col_lo = (0.842, 0.824, 0.785)
         r_min, r_max = 0.82, 0.90
+        sss_w = 0.015
         bump_str = 0.055
         fine_scale = 2400.0
 

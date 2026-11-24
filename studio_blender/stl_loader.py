@@ -32,7 +32,6 @@ VARIANT_C_OUTER_W_MM = 130.0
 VARIANT_C_OUTER_H_MM = 180.0
 A4_OPENING_W_MM = 120.0
 A4_OPENING_H_MM = 170.0
-A4_GROOVE_HIDE_MM = 0.55
 _FRAME_MM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*(?:mm)?")
 
 
@@ -266,7 +265,7 @@ def _align_a4_passepartout(
     stl_paths: Sequence[str],
     frame_mm_override: Optional[Tuple[float, float]],
 ) -> Tuple[float, float, List[Dict[str, Any]]]:
-    """Fit 1-2 tiles inside the A4 120x170mm (or 170x120mm landscape) passe-partout cutout."""
+    """Fit 1-2 tiles flush at 1:1 scale inside the A4 120x170mm white passe-partout cutout."""
     n_tiles = len(raw_objs)
     tile_metas: List[Dict[str, Any]] = []
     if n_tiles >= 2:
@@ -274,14 +273,14 @@ def _align_a4_passepartout(
         y_spans = [max(1.0, st[1][1] - st[0][1]) for st in raw_stats]
         min_x_all, max_x_all = min(st[0][0] for st in raw_stats), max(st[1][0] for st in raw_stats)
         span_x, total_y = max_x_all - min_x_all, sum(y_spans)
-        fit = min(1.0, (op_w - 0.7) / max(span_x, 1.0), (op_h - 0.7) / max(total_y, 1.0))
-        shift_x = (0.5 * op_w - 0.35) - max_x_all * fit
-        y_cursor = 0.5 * total_y * fit
+        # Keep exact 1.0x physical scale for native 120x85mm tiles; scale down only if oversized
+        fit = 1.0 if (span_x <= op_w + 0.25 and total_y <= op_h + 0.25) else min(1.0, op_w / max(span_x, 1.0), op_h / max(total_y, 1.0))
+        # Flush East (+X), North (+Y), and South (-Y) against 120x170mm cutout; West shows water
+        shift_x, y_cursor = 0.5 * op_w - max_x_all * fit, 0.5 * total_y * fit
         for idx, (obj, (mn, mx, sc), sp) in enumerate(zip(raw_objs, raw_stats, stl_paths)):
             th = y_spans[idx] * fit
             y_bot = y_cursor - th
-            # Seat -0.55 mm below Z=0 backing paper so MSLA underside grooves stay hidden
-            _apply_mesh_transform(obj, (shift_x, y_bot - mn[1] * fit, -mn[2] * fit - A4_GROOVE_HIDE_MM), sc * fit)
+            _apply_mesh_transform(obj, (shift_x, y_bot - mn[1] * fit, -mn[2] * fit), sc * fit)
             y_cursor -= th
             tile_metas.append({
                 "object": obj, "stl_path": str(Path(sp).resolve()),
@@ -293,8 +292,8 @@ def _align_a4_passepartout(
     mn, mx, sc = raw_stats[0]
     sx, sy, sz = mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]
     op_w, op_h = frame_mm_override if frame_mm_override else ((A4_OPENING_H_MM, A4_OPENING_W_MM) if sx > sy * 1.05 else (A4_OPENING_W_MM, A4_OPENING_H_MM))
-    fit = min(1.0, (op_w - 0.7) / max(sx, 1.0), (op_h - 0.7) / max(sy, 1.0))
-    _apply_mesh_transform(raw_objs[0], (-0.5 * (mn[0] + mx[0]) * fit, -0.5 * (mn[1] + mx[1]) * fit, -mn[2] * fit - A4_GROOVE_HIDE_MM), sc * fit)
+    fit = 1.0 if (sx <= op_w + 0.25 and sy <= op_h + 0.25) else min(1.0, op_w / max(sx, 1.0), op_h / max(sy, 1.0))
+    _apply_mesh_transform(raw_objs[0], (-0.5 * (mn[0] + mx[0]) * fit, -0.5 * (mn[1] + mx[1]) * fit, -mn[2] * fit), sc * fit)
     tile_metas.append({
         "object": raw_objs[0], "stl_path": str(Path(stl_paths[0]).resolve()),
         "mesh_size_m": [sx * fit * MM_TO_M, sy * fit * MM_TO_M, sz * fit * MM_TO_M],

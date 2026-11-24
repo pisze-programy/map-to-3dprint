@@ -156,7 +156,6 @@ def build_product_assembly(
     rim_width_mm: float = 4.0,
     frame_height_mm: float = 7.5,
     backing_finish: str = "matte_black",
-    passepartout_color: str = "white",
     show_nameplate: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Build matte-black frame(s), parent under ProductAssembly, and orient for desk/wall mount."""
@@ -189,7 +188,6 @@ def build_product_assembly(
             "rim_height_mm": frame_height_mm,
             "frame_height_mm": frame_height_mm,
             "backing_finish": backing_finish,
-            "passepartout_color": passepartout_color,
             "show_nameplate": show_nameplate and (idx == mid_idx),
             "add_nameplate_text": plate_text,
             "add_cover": add_cover,

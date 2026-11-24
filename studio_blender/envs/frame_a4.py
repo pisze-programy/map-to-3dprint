@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import bmesh
 
 from ..materials_city import (
-    PASSEPARTOUT_SWATCHES,
     make_a4_gallery_frame_material,
     make_matte_black_paper_material,
     make_passepartout_material,
@@ -131,12 +130,11 @@ def _add_angle_bevel(obj: Any, width: float, segments: int = 3) -> None:
 def build_a4_passepartout_frame(
     width_m: float,
     height_m: float,
-    passepartout_color: str = "white",
     center_xy: Tuple[float, float] = (0.0, 0.0),
     offset_x: Optional[float] = None,
     mount: str = "desk_flat",
 ) -> Dict[str, Any]:
-    """Build exact 210x297x30mm A4 gallery frame, 2mm 45-deg passe-partout, and matte black paper.
+    """Build exact 210x297x30mm A4 gallery frame, classic white 45-deg passe-partout, and black paper.
 
     Auto-orients to landscape (297x210mm, 170x120mm opening) when a landscape single tile is passed.
     No glass, no nameplate, no stands. Supports desk_flat (desk_z=-0.021m) and wall_mount
@@ -153,17 +151,13 @@ def build_a4_passepartout_frame(
     cx = float(offset_x) if offset_x is not None else float(center_xy[0])
     cy = float(center_xy[1])
 
-    color_key = (passepartout_color or "white").strip().lower()
-    if color_key not in PASSEPARTOUT_SWATCHES:
-        color_key = "white"
-
     col = get_or_create_collection("StudioFrame")
     tag = f"FrameA4_{int(round(cx * 1000))}_{int(round(cy * 1000))}"
     objects: List[Any] = []
 
     mat_frame = make_a4_gallery_frame_material()
-    mat_top = make_passepartout_material(color_name=color_key, is_bevel_core=False)
-    mat_core = make_passepartout_material(color_name=color_key, is_bevel_core=True)
+    mat_top = make_passepartout_material(is_bevel_core=False)
+    mat_core = make_passepartout_material(is_bevel_core=True)
     mat_paper = make_matte_black_paper_material()
 
     # 1. Heavy 30.0mm deep matte jet-black A4 gallery frame (Z = -21.0mm .. +9.0mm, 15.0mm rim)
@@ -221,7 +215,7 @@ def build_a4_passepartout_frame(
         "passepartout_opening_h_m": cut_h,
         "passepartout_top_opening_w_m": cut_w + 2.0 * A4_MAT_THICK_M,
         "passepartout_top_opening_h_m": cut_h + 2.0 * A4_MAT_THICK_M,
-        "passepartout_color": color_key,
+        "passepartout_color": "white",
         "passepartout_top_z": A4_MAT_TOP_Z_M,
         "frame_top_z": A4_TOP_Z_M,
         "frame_bottom_z": A4_BOTTOM_Z_M,

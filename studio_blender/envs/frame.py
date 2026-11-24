@@ -167,15 +167,13 @@ def build_frame_assembly(
     max_z_m: float = 0.095,
     mount: str = "desk_flat",
     frame_material_style: str = "matte_black",
-    passepartout_color: str = "white",
 ) -> Dict[str, Any]:
-    """Build matte-black gallery frame + archival backing (supports Variant C 13x18 & A4 passe-partout)."""
+    """Build matte-black gallery frame + archival backing (Variant C 13x18 & A4 white passe-partout)."""
     style_key = (style or "single_13x18").lower()
     if style_key == "a4_passepartout":
         return build_a4_passepartout_frame(
             width_m=width_m,
             height_m=height_m,
-            passepartout_color=passepartout_color,
             center_xy=center_xy,
             offset_x=offset_x,
             mount=mount,

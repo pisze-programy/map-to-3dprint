@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""True-scale side-by-side packshot: OLD 13x18 thin vs NEW A4 21x29.7x3cm passe-partout.
+"""True-scale side-by-side packshot: OLD 13x18 thin vs NEW A4 21x29.7x3cm white passe-partout.
 
-Renders both assemblies on the exact same pure #FFFFFF Cycles studio floor (11_packshot_white)
-at 1:1 millimeter scale from 35 deg 3/4 and 14 deg low profile views, then stacks via ffmpeg.
+Supports separate STL inputs for each product (--old-stl for LEFT 13x18 thin frame,
+--a4-stl for RIGHT A4 120x170mm solid-base tunnel-free frame; --stl falls back for both).
 """
 
 from __future__ import annotations
@@ -23,9 +23,10 @@ if str(_REPO_ROOT) not in sys.path:
 
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="True-scale side-by-side packshot: 13x18 thin vs A4 passe-partout")
-    p.add_argument("--stl", action="append", required=True, help="City STL path(s) (repeatable for 2-tile stack)")
-    p.add_argument("--passepartout-color", default="white", choices=("white", "ivory", "charcoal", "greige"))
+    p = argparse.ArgumentParser(description="True-scale side-by-side packshot: 13x18 thin vs A4 white passe-partout")
+    p.add_argument("--stl", action="append", default=None, help="Shared fallback STL path(s)")
+    p.add_argument("--old-stl", action="append", default=None, help="STL path(s) for LEFT OLD 13x18 thin frame")
+    p.add_argument("--a4-stl", action="append", default=None, help="STL path(s) for RIGHT NEW A4 120x170 frame")
     p.add_argument("--samples", type=int, default=64, help="Cycles samples (default 64)")
     p.add_argument("--width", type=int, default=1600, help="Output image width in pixels (default 1600)")
     p.add_argument("--gap-mm", type=float, default=46.0, help="Horizontal gap between frames in mm")
@@ -36,6 +37,14 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def _resolve_side_stls(args: argparse.Namespace) -> Tuple[List[str], List[str]]:
+    old_stls = list(args.old_stl or args.stl or [])
+    a4_stls = list(args.a4_stl or args.stl or [])
+    if not old_stls or not a4_stls:
+        raise ValueError("Provide --stl (for both) or both --old-stl and --a4-stl.")
+    return old_stls, a4_stls
+
+
 def _run_blender_worker(args: argparse.Namespace) -> int:
     """Execute dual-assembly true-scale Cycles render inside headless Blender."""
     import bpy  # type: ignore
@@ -44,6 +53,7 @@ def _run_blender_worker(args: argparse.Namespace) -> int:
     from studio_blender.blender_worker import _clear_scene
     from studio_blender.worker_render import build_product_assembly, configure_cycles_metal
 
+    old_stls, a4_stls = _resolve_side_stls(args)
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -59,7 +69,7 @@ def _run_blender_worker(args: argparse.Namespace) -> int:
     col_l = bpy.data.collections.new("CityLeft_13x18")
     scene.collection.children.link(col_l)
     load_l = stl_loader.load_city_stls(
-        args.stl, frame_style="single_13x18", rim_width_mm=4.0, material=plaster_mat, collection=col_l,
+        old_stls, frame_style="single_13x18", rim_width_mm=4.0, material=plaster_mat, collection=col_l,
     )
     frame_l, _ = build_product_assembly(
         scene, load_l, frame_style="single_13x18", title="", mount="desk_flat",
@@ -67,16 +77,15 @@ def _run_blender_worker(args: argparse.Namespace) -> int:
     )
     frame_l["root"].name = "LeftAssembly_13x18"
 
-    # RIGHT: NEW A4 210x297x30 mm heavy gallery passe-partout frame
+    # RIGHT: NEW A4 210x297x30 mm heavy gallery white passe-partout frame (120x170mm opening)
     col_r = bpy.data.collections.new("CityRight_A4")
     scene.collection.children.link(col_r)
     load_r = stl_loader.load_city_stls(
-        args.stl, frame_style="a4_passepartout", rim_width_mm=15.0, material=plaster_mat, collection=col_r,
+        a4_stls, frame_style="a4_passepartout", rim_width_mm=15.0, material=plaster_mat, collection=col_r,
     )
     frame_r, _ = build_product_assembly(
         scene, load_r, frame_style="a4_passepartout", title="", mount="desk_flat",
-        rim_width_mm=15.0, frame_height_mm=30.0, backing_finish="matte_black",
-        passepartout_color=args.passepartout_color, show_nameplate=False,
+        rim_width_mm=15.0, frame_height_mm=30.0, backing_finish="matte_black", show_nameplate=False,
     )
     frame_r["root"].name = "RightAssembly_A4"
 
@@ -92,16 +101,11 @@ def _run_blender_worker(args: argparse.Namespace) -> int:
     frame_r["root"].location = (0.5 * total_w - 0.5 * w_r, -0.5 * total_h + 0.5 * h_r, dz_r)
     bpy.context.view_layer.update()
 
-    max_z_all = max(
-        float(load_l["max_z_m"]) + dz_l,
-        float(load_r["max_z_m"]) + dz_r,
-        float(frame_r["frame_top_z"]) + dz_r,
-    )
+    max_z_all = max(float(load_l["max_z_m"]) + dz_l, float(load_r["max_z_m"]) + dz_r, float(frame_r["frame_top_z"]) + dz_r)
     model_bounds: Dict[str, Any] = {
         "frame_width_m": total_w, "frame_height_m": total_h,
         "outer_width_m": total_w, "outer_height_m": total_h,
-        "max_z_m": max_z_all, "max_z": max_z_all,
-        "desk_z_m": shared_desk_z, "desk_z": shared_desk_z,
+        "max_z_m": max_z_all, "max_z": max_z_all, "desk_z_m": shared_desk_z, "desk_z": shared_desk_z,
         "frame_top_z": max(float(frame_l["frame_top_z"]) + dz_l, float(frame_r["frame_top_z"]) + dz_r),
         "mount": "desk_flat",
     }
@@ -131,9 +135,11 @@ def _run_blender_worker(args: argparse.Namespace) -> int:
         rendered_paths[fname] = str(out_png)
 
     manifest = {
-        "status": "ok", "passepartout_color": args.passepartout_color, "cycles": cycles_info,
+        "status": "ok", "cycles": cycles_info,
         "left_13x18_mm": [round(w_l * 1000, 1), round(h_l * 1000, 1), 7.5],
         "right_a4_mm": [round(w_r * 1000, 1), round(h_r * 1000, 1), 30.0],
+        "old_stls": [str(Path(p).resolve()) for p in old_stls],
+        "a4_stls": [str(Path(p).resolve()) for p in a4_stls],
         "views": rendered_paths, "elapsed_sec": round(time.time() - t0, 2),
     }
     (out_dir / "compare_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -169,7 +175,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     from studio_blender.render_studio import find_blender_binary
 
     args = _parse_args(argv if argv is not None else sys.argv[1:])
-    for p in args.stl:
+    old_stls, a4_stls = _resolve_side_stls(args)
+    for p in old_stls + a4_stls:
         if not os.path.isfile(p):
             raise FileNotFoundError(f"STL file not found: {p}")
 
@@ -181,11 +188,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         blender, "--background", "--factory-startup", "--python-exit-code", "1",
         "--python", str(_THIS_FILE), "--",
     ]
-    for p in args.stl:
-        cmd.extend(["--stl", str(Path(p).resolve())])
+    for p in old_stls:
+        cmd.extend(["--old-stl", str(Path(p).resolve())])
+    for p in a4_stls:
+        cmd.extend(["--a4-stl", str(Path(p).resolve())])
     cmd.extend([
-        "--passepartout-color", args.passepartout_color, "--samples", str(int(args.samples)),
-        "--width", str(int(args.width)), "--gap-mm", str(float(args.gap_mm)), "--out", str(out_dir),
+        "--samples", str(int(args.samples)), "--width", str(int(args.width)),
+        "--gap-mm", str(float(args.gap_mm)), "--out", str(out_dir),
     ])
 
     proc = subprocess.run(cmd) if args.verbose else subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

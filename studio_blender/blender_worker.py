@@ -109,7 +109,6 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
     p.add_argument("--frame-width-mm", type=float, default=4.0, help="Frame rim width in mm (default 4.0)")
     p.add_argument("--frame-height-mm", type=float, default=7.5, help="Frame profile height in mm (default 7.5)")
     p.add_argument("--backing-finish", default="matte_black", choices=("matte_black", "satin_black"))
-    p.add_argument("--passepartout-color", default="white", choices=("white", "ivory", "charcoal", "greige"))
     p.add_argument("--show-nameplate", action="store_true", default=False)
     p.add_argument("--title", default=None)
     p.add_argument("--surface", default=None, help="Surface material override")
@@ -167,7 +166,6 @@ def main() -> int:
         rim_width_mm=args.frame_width_mm,
         frame_height_mm=args.frame_height_mm,
         backing_finish=args.backing_finish,
-        passepartout_color=args.passepartout_color,
         show_nameplate=bool(args.show_nameplate),
     )
 
@@ -240,7 +238,6 @@ def main() -> int:
         "frame_width_mm": args.frame_width_mm,
         "frame_height_mm": args.frame_height_mm,
         "backing_finish": args.backing_finish,
-        "passepartout_color": args.passepartout_color,
         "show_nameplate": bool(args.show_nameplate),
         "city_title": city_title,
         "stl_paths": [str(Path(p).resolve()) for p in args.stl],

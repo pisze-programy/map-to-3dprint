@@ -14,7 +14,6 @@ FRAME_ENUM = [
 ]
 MOUNT_ENUM = ["auto", "desk_flat", "wall_mount"]
 BACKING_ENUM = ["matte_black", "satin_black"]
-PASSEPARTOUT_ENUM = ["white", "ivory", "charcoal", "greige"]
 PRESET_ENUM = list(STILL_PRESETS.keys()) + ["all"]
 ASPECT_ENUM = ["9:16", "4:5", "1:1", "16:9"]
 
@@ -63,10 +62,6 @@ def _common_scene_properties() -> Dict[str, Any]:
         "backing_finish": {
             "type": "string", "enum": BACKING_ENUM, "default": "matte_black",
             "description": "Water-cutout backing finish (matte_black or satin_black; zero vanity mirror).",
-        },
-        "passepartout_color": {
-            "type": "string", "enum": PASSEPARTOUT_ENUM, "default": "white",
-            "description": "Museum matboard color for a4_passepartout (white, ivory, charcoal, greige).",
         },
         "show_nameplate": {
             "type": "boolean", "default": False,

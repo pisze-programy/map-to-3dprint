@@ -166,7 +166,6 @@ def run_studio_render(
     frame_width_mm: float = 4.0,
     frame_height_mm: float = 7.5,
     backing_finish: str = "matte_black",
-    passepartout_color: str = "white",
     show_nameplate: bool = False,
     title: Optional[str] = None,
     surface: Optional[str] = None,
@@ -208,7 +207,6 @@ def run_studio_render(
         "--frame-width-mm", str(float(frame_width_mm)),
         "--frame-height-mm", str(float(frame_height_mm)),
         "--backing-finish", backing_finish,
-        "--passepartout-color", passepartout_color,
         "--out", str(out_path), "--manifest", str(manifest_path),
     ])
 
@@ -315,7 +313,6 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     p.add_argument("--frame-width-mm", type=float, default=4.0, help="Matte-black frame rim width in mm (default 4.0)")
     p.add_argument("--frame-height-mm", type=float, default=7.5, help="Low-profile frame height in mm (default 7.5)")
     p.add_argument("--backing-finish", default="matte_black", choices=("matte_black", "satin_black"))
-    p.add_argument("--passepartout-color", default="white", choices=("white", "ivory", "charcoal", "greige"))
     p.add_argument("--show-nameplate", action="store_true", default=False, help="Opt-in front plaque (OFF by default)")
     p.add_argument("--title", default=None, help="City title for metadata / opt-in nameplate")
     p.add_argument("--surface", default=None, help="Override tabletop/wall surface texture preset")
@@ -358,8 +355,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             mode=args.mode, presets=args.preset, aspect=args.aspect, resolution=args.resolution,
             samples=args.samples, fps=args.fps, frame_mm=args.frame_mm,
             frame_width_mm=args.frame_width_mm, frame_height_mm=args.frame_height_mm,
-            backing_finish=args.backing_finish, passepartout_color=args.passepartout_color,
-            show_nameplate=args.show_nameplate,
+            backing_finish=args.backing_finish, show_nameplate=args.show_nameplate,
             title=args.title, surface=args.surface, window_gobo=args.window_gobo, hdri=args.hdri,
             light_temp=args.light_temp, sun_azimuth=args.sun_azimuth, add_props=args.add_prop,
             remove_props=args.remove_prop, clear_props=args.clear_props, filename=args.filename,
