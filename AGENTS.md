@@ -24,8 +24,8 @@ Read this map first. Open only the focused guide that matches your task.
 | [blender-studio-workflow.md](docs/blender-studio-workflow.md) | Photorealistic Cycles stills, Google Flow keyframes, videos, or studio MCP. |
 | [studio-art-direction-and-scenes.md](docs/studio-art-direction-and-scenes.md) | Studio art direction, 11 render environments, prop swaps, or first ad sequence. |
 | [product-and-ads-decisions.md](docs/product-and-ads-decisions.md) | Frame formats, pricing, set layouts, seam finish, or 15 s social ads. |
-| [analiza-lichtbild-vs-map3d.md](docs/analiza-lichtbild-vs-map3d.md) | Architecture, data, or render comparison against the Lichtbild benchmark. |
-| [diagnoza-budynki-lichtbild.md](docs/diagnoza-budynki-lichtbild.md) | Tall spire geometry or OSM building-part extrusion debugging. |
+| [lichtbild-vs-map3d-analysis.md](docs/lichtbild-vs-map3d-analysis.md) | Architecture, data, or render comparison against the Lichtbild benchmark. |
+| [lichtbild-buildings-diagnosis.md](docs/lichtbild-buildings-diagnosis.md) | Tall spire geometry or OSM building-part extrusion debugging. |
 
 ## Core Commands
 
