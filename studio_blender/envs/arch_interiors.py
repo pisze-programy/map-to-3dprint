@@ -280,17 +280,16 @@ def build_acoustic_slat_wall_stage(
     backing_mat: Any,
     collection: Any,
 ) -> List[Any]:
-    """Eye-level A4 on clean smooth concrete wall + adjacent recessed oak slat side panel."""
+    """Eye-level A4 on 2K architectural concrete wall + side oak slats + wooden designer chair."""
     _ = (outer_h_m, backing_mat)
     objs: List[Any] = []
     wall_thick = 0.08
     slat_d = 0.018
 
-    # Clean smooth architectural concrete mounting wall at exact wall_y (ZERO baseboard curb!)
-    concrete_mat = materials.make_surface_material("pale_terrazzo", name="Arch_SmoothConcreteGalleryWall")
+    # Real Poly Haven 2K brushed_concrete_03 architectural concrete mounting wall (ZERO baseboard!)
+    concrete_mat = materials.make_surface_material("architectural_concrete", name="Arch_ConcreteGalleryWall")
     split_x = max(0.215, outer_w_m * 0.5 + 0.110)
 
-    # Smooth architectural concrete spans cleanly across the left & full hero frame zone
     conc_w = 2.60
     conc_cx = split_x - conc_w * 0.5
     conc_wall = create_mesh_object(
@@ -330,4 +329,40 @@ def build_acoustic_slat_wall_stage(
     slats = create_mesh_object("Arch_AdjacentAcousticOakSlats", bm_slats, collection, slat_mat)
     add_bevel(slats, width=0.0012, segments=2)
     objs.append(slats)
+
+    # Interior oak floor at realistic gallery floor height (98 cm below eye-level artwork center)
+    floor_z = -0.98
+    floor_mat = materials.make_surface_material("pale_ash_oak", name="Arch_SlatWallFloor")
+    objs.append(
+        create_mesh_object(
+            "Arch_SlatWallFloor",
+            make_box_bm(4.60, 2.80, 0.04, (0.0, wall_y - 1.35, floor_z - 0.02)),
+            collection,
+            floor_mat,
+        )
+    )
+
+    # Real CC0 wooden designer chair finished in natural oiled oak standing on the left in soft bokeh
+    chair_mat = materials.make_surface_material("brushed_oak", name="Arch_DesignerWoodenChairOak")
+    chair_loc = (-0.38, wall_y - 0.36, floor_z)
+    chair_objs = build_room_furniture(
+        asset_id="painted_wooden_chair_01",
+        collection=collection,
+        location=chair_loc,
+        yaw_deg=24.0,
+        target_height_m=0.80,
+        name_prefix="Room_WoodenDesignerChair",
+        override_material=chair_mat,
+    )
+    if not chair_objs:
+        chair_objs = build_room_furniture(
+            asset_id="mid_century_lounge_chair",
+            collection=collection,
+            location=chair_loc,
+            yaw_deg=24.0,
+            target_height_m=0.80,
+            name_prefix="Room_WoodenDesignerChairFallback",
+            override_material=chair_mat,
+        )
+    objs.extend(chair_objs)
     return objs

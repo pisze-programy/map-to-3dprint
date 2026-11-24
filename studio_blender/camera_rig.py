@@ -24,7 +24,7 @@ from studio_blender.studio_presets import PERSONA_HERO_PROFILES, resolve_env_nam
 STILL_PRESETS: Tuple[str, ...] = (
     "hero_desk", "hero_wall", "macro_skyline", "macro_waterfront",
     "profile_low", "top_down", "packshot_iso",
-    "detail_spire", "detail_canyon", "detail_oblique_grid", "detail_edge_horizon",
+    "detail_spire", "detail_canyon", "detail_oblique_grid", "detail_waterfront",
 )
 
 DEFAULT_STILL_BY_ENV: Dict[str, str] = {
@@ -318,6 +318,7 @@ def compute_still_pose(
     mount: str = "desk_flat",
 ) -> Dict[str, Any]:
     """Compute physical camera pose dict for any still preset, mount mode, and city STL."""
+    preset_name = "detail_waterfront" if preset_name == "detail_edge_horizon" else preset_name
     if preset_name not in STILL_PRESETS:
         raise ValueError(f"Unknown still preset '{preset_name}'. Choose from {STILL_PRESETS}.")
     if preset_name.startswith("detail_"):

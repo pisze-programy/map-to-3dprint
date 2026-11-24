@@ -211,10 +211,10 @@ STILL_PRESETS: Dict[str, str] = {
     "profile_low": "Dramatic low-angle 85mm telephoto skyline silhouette emphasizing spire height & thin bezel.",
     "top_down": "Clean 85mm gallery overhead plan view showing crisp street grid geometry inside the black frame.",
     "packshot_iso": "E-commerce 3/4 product hero (68mm f/7.1 tack-sharp front-to-back) with clean balanced margins.",
-    "detail_spire": "90mm f/2.0 architectural detail shot of hero spire rising into luminous #FFFFFF sunlit horizon.",
-    "detail_canyon": "95mm f/1.9 diagonal street-canyon macro slashed by razor-sharp hard sunlight shadows.",
-    "detail_oblique_grid": "105mm f/2.4 full-bleed 44-deg oblique architectural grid packed edge-to-edge with crisp shadows.",
-    "detail_edge_horizon": "85mm f/2.0 frameless diagonal matte-black slab edge slicing cleanly over pure #FFFFFF.",
+    "detail_spire": "135mm f/8.0 low eye-level telephoto of hero spire rising above full-bleed city blocks into #FFFFFF sky.",
+    "detail_canyon": "120mm f/10.0 low avenue-canyon telephoto with dense foreground blocks and crisp raking sunlight shadows.",
+    "detail_oblique_grid": "130mm f/14.0 full-bleed 44-deg oblique architectural grid packed edge-to-edge with zero outer borders.",
+    "detail_waterfront": "125mm f/11.0 tight 30-deg interior macro highlighting waterfront bridges or dense downtown canyon tiers.",
 }
 
 VIDEO_SHOTS: List[Dict[str, Any]] = [

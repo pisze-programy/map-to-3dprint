@@ -182,8 +182,9 @@ def build_product_assembly(
         from studio_blender.envs.common import create_mesh_object, get_or_create_collection, make_box_bm
 
         col = get_or_create_collection("StudioFrame")
-        slab_margin, slab_thick, slab_top = 0.0004, 0.0030, -0.00015
-        slab_w, slab_h = tile_w + 2.0 * slab_margin, tile_h + 2.0 * slab_margin
+        slab_margin, slab_thick, slab_top = -0.0008, 0.0030, -0.00015
+        slab_w = max(0.01, tile_w + 2.0 * slab_margin)
+        slab_h = max(0.01, tile_h + 2.0 * slab_margin)
         mat_back = (
             _mats.make_backing_material(backing_finish)
             if hasattr(_mats, "make_backing_material")
@@ -202,7 +203,7 @@ def build_product_assembly(
         desk_z = slab_top - slab_thick
         frame_bottom_z, frame_top_z = desk_z, 0.0
         wall_y = -desk_z + 0.0015
-        tile_outer_w, tile_outer_h = slab_w, slab_h
+        tile_outer_w, tile_outer_h = tile_w, tile_h
     else:
         for idx, (cx, cy) in enumerate(centers_xy):
             plate_text = title if (show_nameplate and idx == mid_idx) else None

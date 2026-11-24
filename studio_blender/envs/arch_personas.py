@@ -132,23 +132,57 @@ def build_persona_corporate_room(desk_z: float, surface_key: str, wall_key: str,
 
 
 def build_persona_realestate_room(desk_z: float, surface_key: str, wall_key: str, col: Any) -> List[Any]:
-    """16_persona_realestate: Honed natural stone table against warm plaster wall + right frameless window."""
+    """16_persona_realestate: Honed natural stone table + full-width architectural concrete wall."""
     desk_mat = (
         make_calacatta_marble_material("Desk_CalacattaShowroomMarble")
         if surface_key == "calacatta_marble"
         else materials.make_surface_material(surface_key, name=f"Desk_{surface_key}")
     )
     wall_mat = materials.make_surface_material(wall_key, name=f"Wall_{wall_key}")
+    reveal_mat = materials.make_surface_material("charcoal_plaster", name="ShowroomConcreteReveal")
     objs: List[Any] = [build_desk_slab("Env_ShowroomMarbleTable", desk_z, 2.30, 1.35, 0.18, desk_mat, col, thickness=0.040)]
+
     back_y = 1.08
-    # Continuous warm architectural plaster back wall directly behind the showroom table (ZERO window cut!)
-    back_wall = create_mesh_object("Arch_ShowroomPlasterWall", make_box_bm(3.10, 0.18, 2.80, (-1.18, back_y + 0.09, desk_z + 0.95)), col, wall_mat)
-    add_bevel(back_wall, width=0.004, segments=2)
-    objs.append(back_wall)
-    # Recessed ceiling header above side floor-to-ceiling frameless architectural glass window (right X > +0.37)
-    objs.append(create_mesh_object("Arch_ShowroomSideHeader", make_box_bm(2.40, 0.18, 0.42, (1.57, back_y + 0.09, desk_z + 1.88)), col, wall_mat))
-    # Pure luminous frameless daylight opening on the right side (ZERO black grid mullions!)
-    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="ShowroomSideDaylight"))
+    # Continuous full-width architectural concrete back wall (5.60 m centered at X=0, ZERO mid-frame cutoff!)
+    objs.append(
+        create_mesh_object(
+            "Arch_ShowroomConcreteBacking",
+            make_box_bm(5.60, 0.14, 2.80, (0.0, back_y + 0.08, desk_z + 0.95)),
+            col,
+            reveal_mat,
+        )
+    )
+    # Bevel-grooved cast architectural concrete formwork panels (4 mm recessed shadow joints)
+    bm_panels = bmesh.new()
+    panel_w = 0.92
+    gap = 0.006
+    for row_z, row_h in ((desk_z + 0.16, 0.72), (desk_z + 0.88 + gap, 0.72), (desk_z + 1.60 + 2.0 * gap, 0.72)):
+        for ix in range(-3, 4):
+            px = ix * (panel_w + gap)
+            bmesh.ops.create_cube(
+                bm_panels,
+                size=1.0,
+                matrix=box_mat(panel_w, 0.018, row_h, (px, back_y + 0.002, row_z)),
+            )
+    panels = create_mesh_object("Arch_ShowroomConcretePanels", bm_panels, col, wall_mat)
+    add_bevel(panels, width=0.0022, segments=2)
+    objs.append(panels)
+
+    # Grazing side-daylight wall wash revealing troweled 2K concrete grain & formwork panel joints
+    objs.append(
+        create_area_light(
+            name="Light_ShowroomConcreteGraze",
+            collection=col,
+            location=(1.65, 0.74, desk_z + 0.88),
+            target=(-0.18, back_y, desk_z + 0.34),
+            energy=15.0,
+            color=(1.0, 0.96, 0.90),
+            size_x=0.45,
+            size_y=0.90,
+            spread_deg=52.0,
+            visible_camera=False,
+        )
+    )
     return objs
 
 

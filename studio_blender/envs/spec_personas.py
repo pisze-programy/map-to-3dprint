@@ -126,8 +126,10 @@ def build_persona_env_specs(env_spec_cls: Any) -> Dict[str, Any]:
             rim_color=(0.76, 0.88, 1.0),
             default_still_preset="hero_desk",
             default_props=(
+                PropPlacement("leather_notebook", x_mm=-98.0, y_mm=-24.0, yaw_deg=7.0, anchor="left"),
                 PropPlacement("matte_black_mug", x_mm=-52.0, y_mm=112.0, yaw_deg=-42.0, anchor="back_left"),
                 PropPlacement("concrete_planter_plant", x_mm=126.0, y_mm=134.0, yaw_deg=-22.0, scale=0.90, anchor="back_right"),
+                PropPlacement("architect_pen", x_mm=48.0, y_mm=-36.0, yaw_deg=76.0, anchor="right"),
             ),
             description=_PRESETS_META["15_persona_corporate"]["description"],
         ),
@@ -137,7 +139,7 @@ def build_persona_env_specs(env_spec_cls: Any) -> Dict[str, Any]:
             mount="desk_flat",
             architecture_style="persona_realestate_showroom",
             surface="calacatta_marble",
-            wall_material="warm_ivory_plaster",
+            wall_material="architectural_concrete",
             window_gobo="none",
             hdri_id="photo_studio_loft_hall",
             hdri_strength=0.13,
@@ -155,6 +157,8 @@ def build_persona_env_specs(env_spec_cls: Any) -> Dict[str, Any]:
             default_still_preset="hero_desk",
             default_props=(
                 PropPlacement("fluted_crystal_vase_greenery", x_mm=-56.0, y_mm=118.0, yaw_deg=18.0, anchor="back_left"),
+                PropPlacement("espresso_cup", x_mm=106.0, y_mm=98.0, yaw_deg=-38.0, anchor="right"),
+                PropPlacement("gold_fountain_pen", x_mm=62.0, y_mm=-96.0, yaw_deg=56.0, anchor="right"),
             ),
             description=_PRESETS_META["16_persona_realestate"]["description"],
         ),

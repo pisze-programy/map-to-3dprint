@@ -90,6 +90,18 @@ PERSONA_SURFACE_CATALOG: Dict[str, Dict[str, Any]] = {
         "specular_level": 0.20,
         "fallback_rgb": (0.24, 0.23, 0.22),
     },
+    "architectural_concrete": {
+        "asset_id": "brushed_concrete_03",
+        "tile_scale_m": 0.62,
+        "tint_rgb": (0.68, 0.67, 0.65),
+        "tint_factor": 0.38,
+        "blend_mode": "MIX",
+        "desaturate": True,
+        "roughness_range": (0.56, 0.86),
+        "normal_strength": 0.78,
+        "specular_level": 0.22,
+        "fallback_rgb": (0.54, 0.53, 0.51),
+    },
     "stitched_espresso_leather": {
         "asset_id": "fabric_leather_02",
         "tile_scale_m": 0.20,
