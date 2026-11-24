@@ -193,7 +193,7 @@ FRAME_STYLES: Dict[str, str] = {
     "a4_passepartout": (
         "Heavy A4 210x297x30mm matte-black gallery frame (15.0mm rim, 7.0mm inner recess, "
         "classic white 2.0mm 45-deg beveled cotton-rag passe-partout with 120x170mm opening "
-        "for flush 2x 120x85mm tiles, matte-black archival paper backing, no glass)."
+        "for flush 3x 120x56.7mm or 2x 120x85mm tiles, matte-black archival paper backing, no glass)."
     ),
     "none": "Frameless raw architectural city relief on a thin flush matte-black backing slab (zero frame rails).",
     "single_thin": "Ultra-thin matte-black frame (4.0mm bezel) hugging the exact tile footprint.",

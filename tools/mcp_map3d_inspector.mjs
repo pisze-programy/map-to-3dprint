@@ -399,17 +399,22 @@ function getEffectiveScaleToBed(meta) {
  */
 function resolveFramePresetArgs(args = {}) {
   const fp = String(args.framePreset || '').trim().toLowerCase();
-  if (fp !== 'a4_12x17' && fp !== 'a4-12x17' && fp !== 'mono4_a4_passepartout_12x17_2x1') {
+  if (
+    fp !== 'a4_12x17' &&
+    fp !== 'a4-12x17' &&
+    fp !== 'mono4_a4_passepartout_12x17_1x3' &&
+    fp !== 'mono4_a4_passepartout_12x17_2x1'
+  ) {
     return args;
   }
   const merged = {
     targetWidthCm: 12.0,
     targetHeightCm: 17.0,
     tileCols: 1,
-    tileRows: 2,
+    tileRows: 3,
     solidBaseNoTunnels: true,
     baseHeightMm: 4.0,
-    bedSafeMarginMm: 1.0,
+    bedSafeMarginMm: 4.0,
     kerfMm: 0.0,
     hollowBase: true,
     showFrame: false,
@@ -504,7 +509,7 @@ function measureBinaryStlBytes(bytes) {
 
 /**
  * Headlessly builds a 3D map model and exports watertight per-tile binary STL files.
- * Supports solidBaseNoTunnels, configurable baseHeightMm, and the a4_12x17 (2x1) preset.
+ * Supports solidBaseNoTunnels, configurable baseHeightMm, and the a4_12x17 (1x3) preset.
  * @param {object} rawArgs
  * @param {{silent?: boolean}} [opts]
  * @returns {Promise<object>}
@@ -540,7 +545,9 @@ async function handleExportMap3DStl(rawArgs = {}, { silent = true } = {}) {
       const bytes = sb.buildBinarySTLBytes(exportState, 'all', tid);
       const posLabel = (cols === 1 && rows === 2)
         ? (tr === 1 ? 'Top' : 'Bottom')
-        : `R${northRow}C${tc + 1}`;
+        : (cols === 1 && rows === 3)
+          ? (tr === 2 ? 'Top' : (tr === 1 ? 'Middle' : 'Bottom'))
+          : `R${northRow}C${tc + 1}`;
       const fileName = `${prefix}_${posLabel}_${tileW}x${tileH}mm.stl`;
       const outPath = path.join(outDir, fileName);
       fs.writeFileSync(outPath, bytes);
@@ -1820,11 +1827,11 @@ Common Scene Options:
   --rot <deg>             Map rotation in degrees (default: 0)
   --width-cm <cm>         Print bed width in cm (default: 50)
   --height-cm <cm>        Print bed height in cm (default: width-cm)
-  --frame-preset <id>     Preset geometry contract (a4_12x17: 12x17 cm, 1x2, 4.0 mm solid base)
+  --frame-preset <id>     Preset geometry contract (a4_12x17: 12x17 cm, 1x3: 3x 120x56.7 mm, 4.0 mm solid base)
   --tile-cols <n>         Tile columns (default: 1)
   --tile-rows <n>         Tile rows (default: 1)
   --kerf-mm <mm>          Inter-tile kerf in mm (default: 0.08; 0.0 for a4_12x17)
-  --bed-margin-mm <mm>    Mono 4 bed safe margin per side in mm (default: 4.0; 1.0 for a4_12x17)
+  --bed-margin-mm <mm>    Mono 4 bed safe margin per side in mm (default: 4.0)
   --solid-base            Rigid solid tunnel-free base (skips grooves and underside ID)
   --base-height-mm <mm>   Physical solid base thickness in mm (default: 2.35; 4.0 for solid-base)
   --crop-ratio <r>        Crop ratio override (default: 0.88)
@@ -1869,7 +1876,7 @@ Audit Scene Options:
 Export STL Options:
   --out-dir <dir>         Output directory for per-tile binary .stl files
   --prefix <name>         Output filename prefix (default: Map3D)
-  --frame-preset a4_12x17 Shortcut for 12x17 cm, 1x2, 4.0 mm solid tunnel-free base
+  --frame-preset a4_12x17 Shortcut for 12x17 cm, 1x3 (3x 120x56.7 mm), 4.0 mm solid tunnel-free base
 `.trimStart();
   process.stdout.write(help);
 }

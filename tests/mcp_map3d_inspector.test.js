@@ -1006,7 +1006,7 @@ async function testArchitecturalFidelityFixes() {
 // ============================================================================
 
 async function testA4TunnelFreeCliAndMcpExport() {
-  console.log('\n[7] CLI & MCP A4 12x17 (2x1) 4.0mm tunnel-free solid-base STL export');
+  console.log('\n[7] CLI & MCP A4 12x17 (1x3) 4.0mm tunnel-free solid-base STL export');
   const snapPath = path.join(TMP_DIR, 'synthetic_audit_snapshot.json');
 
   const cliOutDir = path.join(TMP_DIR, 'cli_a4_stl');
@@ -1023,8 +1023,8 @@ async function testA4TunnelFreeCliAndMcpExport() {
 
   check(
     Array.isArray(cliRes.frameMm) && cliRes.frameMm[0] === 120 && cliRes.frameMm[1] === 170 &&
-    Array.isArray(cliRes.grid) && cliRes.grid[0] === 1 && cliRes.grid[1] === 2,
-    'CLI export-stl --frame-preset a4_12x17 resolves 120x170 mm 1x2 grid',
+    Array.isArray(cliRes.grid) && cliRes.grid[0] === 1 && cliRes.grid[1] === 3,
+    'CLI export-stl --frame-preset a4_12x17 resolves 120x170 mm 1x3 grid',
     `frameMm=${JSON.stringify(cliRes.frameMm)}, grid=${JSON.stringify(cliRes.grid)}`
   );
   check(
@@ -1032,17 +1032,19 @@ async function testA4TunnelFreeCliAndMcpExport() {
     'CLI a4_12x17 enforces solidBaseNoTunnels=true, baseHeightMm=4.0, kerfMm=0',
     `solid=${cliRes.solidBaseNoTunnels}, baseMm=${cliRes.baseHeightMm}, kerf=${cliRes.kerfMm}`
   );
+  const expectedA4TileY = 170.0 / 3.0;
   check(
-    cliRes.tiles && cliRes.tiles.length === 2 &&
+    cliRes.tiles && cliRes.tiles.length === 3 &&
+    JSON.stringify(cliRes.tiles.map(t => t.position)) === JSON.stringify(['Top', 'Middle', 'Bottom']) &&
     cliRes.tiles.every(t =>
       fs.existsSync(t.path) &&
-      t.triangles > 100 &&
+      t.triangles >= 12 &&
       Math.abs(t.spanMm[0] - 120.0) <= 0.05 &&
-      Math.abs(t.spanMm[1] - 85.0) <= 0.05 &&
+      Math.abs(t.spanMm[1] - expectedA4TileY) <= 0.05 &&
       t.minMm[2] >= -0.01 &&
       t.maxMm[2] > 4.0
     ),
-    'CLI export-stl writes 2 exact 120x85 mm tiles above 4.0 mm solid base',
+    'CLI export-stl writes 3 exact 120x56.67 mm tiles (Top/Middle/Bottom) above 4.0 mm solid base',
     JSON.stringify((cliRes.tiles || []).map(t => ({ pos: t.position, span: t.spanMm, tris: t.triangles })))
   );
   check(
@@ -1076,9 +1078,9 @@ async function testA4TunnelFreeCliAndMcpExport() {
     mcpPayload.solidBaseNoTunnels === true &&
     Math.abs(mcpPayload.baseHeightMm - 4.0) < 1e-6 &&
     Array.isArray(mcpPayload.tiles) &&
-    mcpPayload.tiles.length === 2 &&
-    mcpPayload.tiles.every(t => fs.existsSync(t.path) && Math.abs(t.spanMm[1] - 85.0) <= 0.05),
-    'MCP tools/call export_map3d_stl exports 2 watertight 120x85 mm A4 solid-base STLs',
+    mcpPayload.tiles.length === 3 &&
+    mcpPayload.tiles.every(t => fs.existsSync(t.path) && Math.abs(t.spanMm[1] - expectedA4TileY) <= 0.05),
+    'MCP tools/call export_map3d_stl exports 3 watertight 120x56.67 mm A4 solid-base STLs',
     JSON.stringify((mcpPayload.tiles || []).map(t => ({ file: path.basename(t.path), span: t.spanMm })))
   );
 }

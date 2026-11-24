@@ -139,9 +139,9 @@ function bindStudioPanelControls(ctx) {
         w = single.wCm;
         h = single.hCm;
       } else if (attr === 'a4-12x17') {
-        applyPrinterProfile('mono4_a4_passepartout_12x17_2x1');
+        applyPrinterProfile('mono4_a4_passepartout_12x17_1x3');
         const pSel = document.getElementById('printerSelect');
-        if (pSel) pSel.value = 'mono4_a4_passepartout_12x17_2x1';
+        if (pSel) pSel.value = 'mono4_a4_passepartout_12x17_1x3';
         return;
       } else {
         [w, h] = attr.split('x').map(v => parseFloat(v));

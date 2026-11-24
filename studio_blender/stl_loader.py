@@ -33,6 +33,7 @@ VARIANT_C_OUTER_H_MM = 180.0
 A4_OPENING_W_MM = 120.0
 A4_OPENING_H_MM = 170.0
 _FRAME_MM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*(?:mm)?")
+_GRID_RC_RE = re.compile(r"_R([12])C([12])", re.IGNORECASE)
 
 
 def parse_frame_mm(spec: Optional[str]) -> Optional[Tuple[float, float]]:
@@ -80,23 +81,16 @@ def _import_binary_stl_fallback(abs_path: str) -> Any:
         count_bytes = f.read(4)
         if len(count_bytes) < 4:
             raise ValueError(f"Corrupt or empty STL file: {abs_path}")
-        tri_count = struct.unpack("<I", count_bytes)[0]
-        raw = f.read()
-
-    expected_size = tri_count * 50
-    if len(raw) < expected_size:
-        raise ValueError(
-            f"STL '{abs_path}' is not a valid binary STL (expected {expected_size} bytes, got {len(raw)})."
-        )
-
+        tri_count, raw = struct.unpack("<I", count_bytes)[0], f.read()
+    if len(raw) < tri_count * 50:
+        raise ValueError(f"Invalid binary STL '{abs_path}': expected {tri_count * 50} bytes, got {len(raw)}.")
     verts: List[Tuple[float, float, float]] = []
     faces: List[Tuple[int, int, int]] = []
     for i in range(tri_count):
         v = struct.unpack_from("<9f", raw, i * 50 + 12)
-        base = i * 3
+        b = i * 3
         verts.extend(((v[0], v[1], v[2]), (v[3], v[4], v[5]), (v[6], v[7], v[8])))
-        faces.append((base, base + 1, base + 2))
-
+        faces.append((b, b + 1, b + 2))
     mesh_name = Path(abs_path).stem[:56]
     mesh = bpy.data.meshes.new(mesh_name)
     mesh.from_pydata(verts, [], faces)
@@ -110,14 +104,10 @@ def _import_stl_raw(stl_path: str) -> Any:
     """Import an STL file using Blender 4.2+/5.x wm.stl_import with safe fallbacks."""
     if bpy is None:
         raise RuntimeError("stl_loader must be run inside Blender (bpy unavailable).")
-
     abs_path = str(Path(stl_path).resolve())
     if not os.path.isfile(abs_path):
         raise FileNotFoundError(f"STL file not found: {abs_path}")
-
-    existing = set(bpy.data.objects)
-    imported_ok = False
-
+    existing, imported_ok = set(bpy.data.objects), False
     if hasattr(bpy.ops, "wm") and hasattr(bpy.ops.wm, "stl_import"):
         try:
             op = bpy.ops.wm.stl_import
@@ -127,25 +117,18 @@ def _import_stl_raw(stl_path: str) -> Any:
                 kwargs["global_scale"] = 1.0
             if "use_scene_unit" in props:
                 kwargs["use_scene_unit"] = False
-            if "FINISHED" in op(**kwargs):
-                imported_ok = True
+            imported_ok = "FINISHED" in op(**kwargs)
         except Exception:
             imported_ok = False
-
     if not imported_ok:
         try:
             op_leg = bpy.ops.import_mesh.stl
             op_leg.get_rna_type()
-            if "FINISHED" in op_leg(filepath=abs_path, global_scale=1.0):
-                imported_ok = True
+            imported_ok = "FINISHED" in op_leg(filepath=abs_path, global_scale=1.0)
         except Exception:
             imported_ok = False
-
     new_objs = [o for o in bpy.data.objects if o not in existing and o.type == "MESH"]
-    if imported_ok and new_objs:
-        return new_objs[0]
-
-    return _import_binary_stl_fallback(abs_path)
+    return new_objs[0] if (imported_ok and new_objs) else _import_binary_stl_fallback(abs_path)
 
 
 def _measure_raw_mm(obj: Any) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], float]:
@@ -153,21 +136,16 @@ def _measure_raw_mm(obj: Any) -> Tuple[Tuple[float, float, float], Tuple[float, 
     if obj.matrix_world != Matrix.Identity(4):
         obj.data.transform(obj.matrix_world)
         obj.matrix_world = Matrix.Identity(4)
-
     pts = get_mesh_coords_array(obj)
-    if np is not None:
-        rmin = pts.min(axis=0)
-        rmax = pts.max(axis=0)
-    else:  # pragma: no cover
-        rmin = (min(p[0] for p in pts), min(p[1] for p in pts), min(p[2] for p in pts))
-        rmax = (max(p[0] for p in pts), max(p[1] for p in pts), max(p[2] for p in pts))
-
-    span_xy = max(float(rmax[0] - rmin[0]), float(rmax[1] - rmin[1]))
-    scale_to_m = MM_TO_M if span_xy > 1.5 else 1.0
+    rmin = pts.min(axis=0) if np is not None else tuple(min(p[k] for p in pts) for k in range(3))
+    rmax = pts.max(axis=0) if np is not None else tuple(max(p[k] for p in pts) for k in range(3))
+    scale_to_m = MM_TO_M if max(float(rmax[0] - rmin[0]), float(rmax[1] - rmin[1])) > 1.5 else 1.0
     to_mm = 1.0 if scale_to_m == MM_TO_M else 1000.0
-    min_mm = (float(rmin[0]) * to_mm, float(rmin[1]) * to_mm, float(rmin[2]) * to_mm)
-    max_mm = (float(rmax[0]) * to_mm, float(rmax[1]) * to_mm, float(rmax[2]) * to_mm)
-    return min_mm, max_mm, scale_to_m
+    return (
+        (float(rmin[0]) * to_mm, float(rmin[1]) * to_mm, float(rmin[2]) * to_mm),
+        (float(rmax[0]) * to_mm, float(rmax[1]) * to_mm, float(rmax[2]) * to_mm),
+        scale_to_m,
+    )
 
 
 def _apply_mesh_transform(obj: Any, shift_mm: Tuple[float, float, float], scale_to_m: float) -> None:
@@ -182,6 +160,27 @@ def _apply_mesh_transform(obj: Any, shift_mm: Tuple[float, float, float], scale_
     mesh.update()
 
 
+def _tile_meta(
+    obj: Any,
+    stl_path: str,
+    mn: Tuple[float, float, float],
+    mx: Tuple[float, float, float],
+    offset_x_m: float,
+    offset_y_m: float,
+    fit: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Build normalized tile metadata dict for a transformed city STL object."""
+    f = 1.0 if fit is None else fit
+    meta: Dict[str, Any] = {
+        "object": obj, "stl_path": str(Path(stl_path).resolve()),
+        "mesh_size_m": [(mx[0] - mn[0]) * f * MM_TO_M, (mx[1] - mn[1]) * f * MM_TO_M, (mx[2] - mn[2]) * f * MM_TO_M],
+        "offset_x_m": offset_x_m, "offset_y_m": offset_y_m,
+    }
+    if fit is not None:
+        meta["fit_scale"] = round(fit, 5)
+    return meta
+
+
 def _align_single_13x18(
     raw_objs: List[Any],
     raw_stats: List[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]],
@@ -190,18 +189,16 @@ def _align_single_13x18(
     frame_mm_override: Optional[Tuple[float, float]],
     tight_frameless: bool = False,
 ) -> Tuple[float, float, List[Dict[str, Any]]]:
-    """Assemble 1 or 2 tiles inside a Variant C 130x180mm opening or tight frameless bbox."""
+    """Assemble 1-3 tiles inside a Variant C 130x180mm opening or tight frameless bbox."""
     inner_w_portrait = VARIANT_C_OUTER_W_MM - 2.0 * rim_width_mm
     inner_h_portrait = VARIANT_C_OUTER_H_MM - 2.0 * rim_width_mm
     n_tiles = len(raw_objs)
     tile_metas: List[Dict[str, Any]] = []
 
     if n_tiles >= 2:
-        # Seamless vertical 2-tile stack: tile 0 = North/Top (+Y), tile 1 = South/Bottom (0)
         y_spans = [max(1.0, st[1][1] - st[0][1]) for st in raw_stats]
         min_x_all, max_x_all = min(st[0][0] for st in raw_stats), max(st[1][0] for st in raw_stats)
         span_x, total_y = max_x_all - min_x_all, sum(y_spans)
-
         if frame_mm_override is not None:
             inner_w_mm, inner_h_mm = frame_mm_override
         elif tight_frameless:
@@ -209,27 +206,22 @@ def _align_single_13x18(
         else:
             inner_w_mm, inner_h_mm = max(inner_w_portrait, span_x), total_y
 
-        # Align East (+X) flush to +0.5*inner_w_mm (exact symmetric center when inner_w_mm == span_x)
-        shift_x_mm = 0.5 * inner_w_mm - max_x_all
+        in_nom_x = (not tight_frameless) and (min_x_all >= -2.0) and (max_x_all <= inner_w_mm + 2.0)
+        shift_x_mm = (-0.5 * inner_w_mm) if in_nom_x else (-0.5 * (min_x_all + max_x_all))
         y_cursor = 0.5 * total_y
         for idx, (obj, (mn, mx, sc), sp) in enumerate(zip(raw_objs, raw_stats, stl_paths)):
             tile_h = y_spans[idx]
-            y_bot_target = y_cursor - tile_h
-            _apply_mesh_transform(obj, (shift_x_mm, y_bot_target - mn[1], -mn[2]), sc)
+            y_bot = y_cursor - tile_h
+            _apply_mesh_transform(obj, (shift_x_mm, y_bot - mn[1], -mn[2]), sc)
             y_cursor -= tile_h
-            tile_metas.append({
-                "object": obj, "stl_path": str(Path(sp).resolve()),
-                "mesh_size_m": [(mx[0] - mn[0]) * MM_TO_M, tile_h * MM_TO_M, (mx[2] - mn[2]) * MM_TO_M],
-                "offset_x_m": 0.0, "offset_y_m": (y_bot_target + 0.5 * tile_h) * MM_TO_M,
-            })
+            tile_metas.append(_tile_meta(obj, sp, mn, mx, 0.0, (y_bot + 0.5 * tile_h) * MM_TO_M))
         return inner_w_mm * MM_TO_M, inner_h_mm * MM_TO_M, tile_metas
 
     mn, mx, sc = raw_stats[0]
-    size_x, size_y, size_z = mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]
+    size_x, size_y = mx[0] - mn[0], mx[1] - mn[1]
     nom_mm = _infer_frame_mm_from_filename(stl_paths[0])
     nom_w = nom_mm[0] if nom_mm else max(mx[0], size_x)
     nom_h = nom_mm[1] if nom_mm else max(mx[1], size_y)
-
     if frame_mm_override is not None:
         inner_w_mm, inner_h_mm = frame_mm_override
     elif tight_frameless:
@@ -238,21 +230,14 @@ def _align_single_13x18(
         inner_w_mm, inner_h_mm = max(inner_h_portrait, nom_w, size_x), max(inner_w_portrait, nom_h, size_y)
     else:
         inner_w_mm, inner_h_mm = max(inner_w_portrait, size_x), max(inner_h_portrait, size_y)
-
     if tight_frameless and frame_mm_override is None:
         shift_x_mm, shift_y_mm = -0.5 * (mn[0] + mx[0]), -0.5 * (mn[1] + mx[1])
     else:
-        in_nom_x = (mn[0] >= -2.0) and (mx[0] <= nom_w + 2.0)
-        in_nom_y = (mn[1] >= -2.0) and (mx[1] <= nom_h + 2.0)
-        shift_x_mm = -0.5 * nom_w if in_nom_x else -0.5 * (mn[0] + mx[0])
-        shift_y_mm = -0.5 * nom_h if in_nom_y else -0.5 * (mn[1] + mx[1])
+        in_x, in_y = (mn[0] >= -2.0 and mx[0] <= nom_w + 2.0), (mn[1] >= -2.0 and mx[1] <= nom_h + 2.0)
+        shift_x_mm = -0.5 * nom_w if in_x else -0.5 * (mn[0] + mx[0])
+        shift_y_mm = -0.5 * nom_h if in_y else -0.5 * (mn[1] + mx[1])
     _apply_mesh_transform(raw_objs[0], (shift_x_mm, shift_y_mm, -mn[2]), sc)
-
-    tile_metas.append({
-        "object": raw_objs[0], "stl_path": str(Path(stl_paths[0]).resolve()),
-        "mesh_size_m": [size_x * MM_TO_M, size_y * MM_TO_M, size_z * MM_TO_M],
-        "offset_x_m": 0.0, "offset_y_m": 0.0,
-    })
+    tile_metas.append(_tile_meta(raw_objs[0], stl_paths[0], mn, mx, 0.0, 0.0))
     return inner_w_mm * MM_TO_M, inner_h_mm * MM_TO_M, tile_metas
 
 
@@ -262,40 +247,57 @@ def _align_a4_passepartout(
     stl_paths: Sequence[str],
     frame_mm_override: Optional[Tuple[float, float]],
 ) -> Tuple[float, float, List[Dict[str, Any]]]:
-    """Fit 1-2 tiles flush at 1:1 scale inside the A4 120x170mm white passe-partout cutout."""
+    """Fit 1x3 (120x56.7mm), 1x2 (120x85mm), 2x2 (_R#C#), or single tile flush in 120x170mm cutout."""
     n_tiles = len(raw_objs)
     tile_metas: List[Dict[str, Any]] = []
+    rc_matches = [_GRID_RC_RE.search(Path(sp).stem) for sp in stl_paths]
+    if n_tiles == 4 and all(rc_matches):
+        op_w, op_h = frame_mm_override if frame_mm_override else (A4_OPENING_W_MM, A4_OPENING_H_MM)
+        cw, ch = 0.5 * op_w, 0.5 * op_h
+        max_dx, max_dy = max(st[1][0] - st[0][0] for st in raw_stats), max(st[1][1] - st[0][1] for st in raw_stats)
+        fit = 1.0 if (2.0 * max_dx <= op_w + 0.5 and 2.0 * max_dy <= op_h + 0.5) else min(1.0, op_w / max(2.0 * max_dx, 1.0), op_h / max(2.0 * max_dy, 1.0))
+        for obj, (mn, mx, sc), sp, m in zip(raw_objs, raw_stats, stl_paths, rc_matches):
+            row, col = int(m.group(1)), int(m.group(2))  # type: ignore[union-attr]
+            x_lo, y_lo = (-0.5 * op_w + (col - 1) * cw) * fit, (0.5 * op_h - row * ch) * fit
+            in_x, in_y = (mn[0] >= -2.0 and mx[0] <= cw + 2.0), (mn[1] >= -2.0 and mx[1] <= ch + 2.0)
+            sx = x_lo if in_x else (x_lo + 0.5 * cw * fit - 0.5 * (mn[0] + mx[0]) * fit)
+            sy = y_lo if in_y else (y_lo + 0.5 * ch * fit - 0.5 * (mn[1] + mx[1]) * fit)
+            _apply_mesh_transform(obj, (sx, sy, -mn[2] * fit), sc * fit)
+            tile_metas.append(_tile_meta(obj, sp, mn, mx, (x_lo + 0.5 * cw * fit) * MM_TO_M, (y_lo + 0.5 * ch * fit) * MM_TO_M, fit))
+        return op_w * MM_TO_M, op_h * MM_TO_M, tile_metas
+
     if n_tiles >= 2:
         op_w, op_h = frame_mm_override if frame_mm_override else (A4_OPENING_W_MM, A4_OPENING_H_MM)
         y_spans = [max(1.0, st[1][1] - st[0][1]) for st in raw_stats]
         min_x_all, max_x_all = min(st[0][0] for st in raw_stats), max(st[1][0] for st in raw_stats)
-        span_x, total_y = max_x_all - min_x_all, sum(y_spans)
-        # Keep exact 1.0x physical scale for native 120x85mm tiles; scale down only if oversized
-        fit = 1.0 if (span_x <= op_w + 0.25 and total_y <= op_h + 0.25) else min(1.0, op_w / max(span_x, 1.0), op_h / max(total_y, 1.0))
-        # Flush East (+X), North (+Y), and South (-Y) against 120x170mm cutout; West shows water
-        shift_x, y_cursor = 0.5 * op_w - max_x_all * fit, 0.5 * total_y * fit
+        span_x, total_y, nom_h = max_x_all - min_x_all, sum(y_spans), op_h / float(n_tiles)
+        in_nom_x = (min_x_all >= -2.0) and (max_x_all <= op_w + 2.0)
+        in_nom_y = all((st[0][1] >= -2.0) and (st[1][1] <= nom_h + 2.0) for st in raw_stats)
+        eff_w, eff_h = (op_w if in_nom_x else span_x), (op_h if in_nom_y else total_y)
+        fit = 1.0 if (eff_w <= op_w + 0.35 and eff_h <= op_h + 0.35) else min(1.0, op_w / max(eff_w, 1.0), op_h / max(eff_h, 1.0))
+        shift_x = (-0.5 * op_w * fit) if in_nom_x else (-0.5 * (min_x_all + max_x_all) * fit)
+        y_cursor = 0.5 * total_y * fit
         for idx, (obj, (mn, mx, sc), sp) in enumerate(zip(raw_objs, raw_stats, stl_paths)):
-            th = y_spans[idx] * fit
-            y_bot = y_cursor - th
-            _apply_mesh_transform(obj, (shift_x, y_bot - mn[1] * fit, -mn[2] * fit), sc * fit)
-            y_cursor -= th
-            tile_metas.append({
-                "object": obj, "stl_path": str(Path(sp).resolve()),
-                "mesh_size_m": [(mx[0] - mn[0]) * fit * MM_TO_M, th * MM_TO_M, (mx[2] - mn[2]) * fit * MM_TO_M],
-                "offset_x_m": 0.0, "offset_y_m": (y_bot + 0.5 * th) * MM_TO_M, "fit_scale": round(fit, 5),
-            })
+            if in_nom_y:
+                th, y_bot = nom_h * fit, (0.5 * op_h - (idx + 1) * nom_h) * fit
+                shift_y = y_bot
+            else:
+                th = y_spans[idx] * fit
+                y_bot, shift_y = y_cursor - th, (y_cursor - th) - mn[1] * fit
+                y_cursor -= th
+            _apply_mesh_transform(obj, (shift_x, shift_y, -mn[2] * fit), sc * fit)
+            tile_metas.append(_tile_meta(obj, sp, mn, mx, 0.0, (y_bot + 0.5 * th) * MM_TO_M, fit))
         return op_w * MM_TO_M, op_h * MM_TO_M, tile_metas
 
     mn, mx, sc = raw_stats[0]
-    sx, sy, sz = mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]
+    sx, sy = mx[0] - mn[0], mx[1] - mn[1]
     op_w, op_h = frame_mm_override if frame_mm_override else ((A4_OPENING_H_MM, A4_OPENING_W_MM) if sx > sy * 1.05 else (A4_OPENING_W_MM, A4_OPENING_H_MM))
+    in_nom_x, in_nom_y = (mn[0] >= -2.0 and mx[0] <= op_w + 2.0), (mn[1] >= -2.0 and mx[1] <= op_h + 2.0)
     fit = 1.0 if (sx <= op_w + 0.25 and sy <= op_h + 0.25) else min(1.0, op_w / max(sx, 1.0), op_h / max(sy, 1.0))
-    _apply_mesh_transform(raw_objs[0], (-0.5 * (mn[0] + mx[0]) * fit, -0.5 * (mn[1] + mx[1]) * fit, -mn[2] * fit), sc * fit)
-    tile_metas.append({
-        "object": raw_objs[0], "stl_path": str(Path(stl_paths[0]).resolve()),
-        "mesh_size_m": [sx * fit * MM_TO_M, sy * fit * MM_TO_M, sz * fit * MM_TO_M],
-        "offset_x_m": 0.0, "offset_y_m": 0.0, "fit_scale": round(fit, 5),
-    })
+    shx = (-0.5 * op_w * fit) if in_nom_x else (-0.5 * (mn[0] + mx[0]) * fit)
+    shy = (-0.5 * op_h * fit) if in_nom_y else (-0.5 * (mn[1] + mx[1]) * fit)
+    _apply_mesh_transform(raw_objs[0], (shx, shy, -mn[2] * fit), sc * fit)
+    tile_metas.append(_tile_meta(raw_objs[0], stl_paths[0], mn, mx, 0.0, 0.0, fit))
     return op_w * MM_TO_M, op_h * MM_TO_M, tile_metas
 
 
@@ -318,11 +320,9 @@ def _align_multi_or_tight(
             fm = (max(mx[0], sx), max(mx[1], sy)) if (mn[0] >= -1.0 and mn[1] >= -1.0) else (sx, sy)
         tile_dims_mm.append((max(fm[0], sx), max(fm[1], sy)))
 
-    tile_w_m = max(d[0] for d in tile_dims_mm) * MM_TO_M
-    tile_h_m = max(d[1] for d in tile_dims_mm) * MM_TO_M
+    tile_w_m, tile_h_m = max(d[0] for d in tile_dims_mm) * MM_TO_M, max(d[1] for d in tile_dims_mm) * MM_TO_M
     border_m = 2.0 * rim_width_mm * MM_TO_M
     pitch_x, pitch_y = tile_w_m + border_m + tile_gap_m, tile_h_m + border_m + tile_gap_m
-
     if frame_style == "quartet_2x2" and n_tiles >= 4:
         centers_xy = [(-0.5 * pitch_x, 0.5 * pitch_y), (0.5 * pitch_x, 0.5 * pitch_y), (-0.5 * pitch_x, -0.5 * pitch_y), (0.5 * pitch_x, -0.5 * pitch_y)][:n_tiles]
     elif n_tiles == 1:
@@ -333,16 +333,11 @@ def _align_multi_or_tight(
 
     tile_metas: List[Dict[str, Any]] = []
     for obj, (mn, mx, sc), sp, (fw_mm, fh_mm), (cx, cy) in zip(raw_objs, raw_stats, stl_paths, tile_dims_mm, centers_xy):
-        in_x = (mn[0] >= -2.0) and (mx[0] <= fw_mm + 2.0)
-        in_y = (mn[1] >= -2.0) and (mx[1] <= fh_mm + 2.0)
+        in_x, in_y = (mn[0] >= -2.0 and mx[0] <= fw_mm + 2.0), (mn[1] >= -2.0 and mx[1] <= fh_mm + 2.0)
         sx_mm = (-0.5 * fw_mm if in_x else -0.5 * (mn[0] + mx[0])) + cx / MM_TO_M
         sy_mm = (-0.5 * fh_mm if in_y else -0.5 * (mn[1] + mx[1])) + cy / MM_TO_M
         _apply_mesh_transform(obj, (sx_mm, sy_mm, -mn[2]), sc)
-        tile_metas.append({
-            "object": obj, "stl_path": str(Path(sp).resolve()),
-            "mesh_size_m": [(mx[0] - mn[0]) * MM_TO_M, (mx[1] - mn[1]) * MM_TO_M, (mx[2] - mn[2]) * MM_TO_M],
-            "offset_x_m": cx, "offset_y_m": cy,
-        })
+        tile_metas.append(_tile_meta(obj, sp, mn, mx, cx, cy))
     return tile_w_m, tile_h_m, centers_xy, tile_metas
 
 

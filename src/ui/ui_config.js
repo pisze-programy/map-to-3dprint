@@ -169,18 +169,18 @@ const PRINT_PROFILES = {
     xyPixelMm: 0.017,
     layerHeightMm: 0.05
   },
-  mono4_a4_passepartout_12x17_2x1: {
-    id: 'mono4_a4_passepartout_12x17_2x1',
-    name: 'A4 Passe-Partout 12x17 cm (2x1)',
+  mono4_a4_passepartout_12x17_1x3: {
+    id: 'mono4_a4_passepartout_12x17_1x3',
+    name: 'A4 Passe-Partout 12x17 cm (1x3)',
     printer: 'Anycubic Photon Mono 4 (153.45x87.05x165 mm)',
     bedX: 153.45, bedY: 87.05, bedZ: 165.0,
     totalWidthMm: 120, totalHeightMm: 170,
     targetWidthCm: 12.0, targetHeightCm: 17.0,
-    cols: 1, rows: 2,
+    cols: 1, rows: 3,
     isResin: true,
     xyPixelMm: 0.017,
     layerHeightMm: 0.05,
-    bedSafeMarginMm: 1.0,
+    bedSafeMarginMm: 4.0,
     solidBaseNoTunnels: true,
     baseHeightMm: 4.0
   },
@@ -198,10 +198,11 @@ const PRINT_PROFILES = {
   }
 };
 
-// Backwards-compatible aliases for legacy 84mm Mono 4 profile IDs
+// Backwards-compatible aliases for legacy Mono 4 profile IDs
 PRINT_PROFILES.mono4_84_1x1 = PRINT_PROFILES.mono4_75x84_1x1;
 PRINT_PROFILES.mono4_168_2x2 = PRINT_PROFILES.mono4_150x168_2x2;
 PRINT_PROFILES.mono4_252_2x3 = PRINT_PROFILES.mono4_225x252_3x3;
+PRINT_PROFILES.mono4_a4_passepartout_12x17_2x1 = PRINT_PROFILES.mono4_a4_passepartout_12x17_1x3;
 
 /**
  * Resolves any saved or URL printer profile ID strictly to a valid Photon Mono 4 preset.

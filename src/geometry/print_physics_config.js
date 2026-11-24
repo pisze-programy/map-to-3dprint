@@ -58,15 +58,15 @@ const PRINT_PHYSICS_CONFIG = Object.freeze({
 });
 
 const A4_PASSEPARTOUT_PRESET = Object.freeze({
-  id: 'mono4_a4_passepartout_12x17_2x1',
-  name: 'A4 Passe-Partout 12x17 cm (2x1)',
+  id: 'mono4_a4_passepartout_12x17_1x3',
+  name: 'A4 Passe-Partout 12x17 cm (1x3)',
   targetWidthCm: 12.0,
   targetHeightCm: 17.0,
   totalWidthMm: 120,
   totalHeightMm: 170,
   cols: 1,
-  rows: 2,
-  bedSafeMarginMm: 1.0,
+  rows: 3,
+  bedSafeMarginMm: 4.0,
   solidBaseNoTunnels: true,
   baseHeightMm: 4.0,
   baseBottomMm: 4.0

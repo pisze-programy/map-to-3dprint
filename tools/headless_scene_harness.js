@@ -1897,24 +1897,29 @@ function deepCloneScene(sc) {
 }
 
 /**
- * Applies optional preset defaults (e.g. 'a4_12x17' / 'mono4_a4_passepartout_12x17_2x1')
+ * Applies optional preset defaults (e.g. 'a4_12x17' / 'mono4_a4_passepartout_12x17_1x3')
  * without overriding explicitly supplied caller options.
  * @param {object} opts
  * @returns {object}
  */
 function resolvePresetOptions(opts = {}) {
   const fp = String(opts.framePreset || opts.presetFrame || '').trim().toLowerCase();
-  if (fp !== 'a4_12x17' && fp !== 'a4-12x17' && fp !== 'mono4_a4_passepartout_12x17_2x1') {
+  if (
+    fp !== 'a4_12x17' &&
+    fp !== 'a4-12x17' &&
+    fp !== 'mono4_a4_passepartout_12x17_1x3' &&
+    fp !== 'mono4_a4_passepartout_12x17_2x1'
+  ) {
     return opts;
   }
   const preset = {
     targetWidthCm: 12.0,
     targetHeightCm: 17.0,
     tileCols: 1,
-    tileRows: 2,
+    tileRows: 3,
     solidBaseNoTunnels: true,
     baseHeightMm: 4.0,
-    bedSafeMarginMm: 1.0,
+    bedSafeMarginMm: 4.0,
     kerfMm: 0.0,
     hollowBase: true,
     showFrame: false,
