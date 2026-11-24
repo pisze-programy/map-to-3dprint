@@ -127,28 +127,76 @@ def build_matte_black_mug(
     return [root] + objs
 
 
+def _make_hollow_concrete_pot_bm(pw: float, ph: float, wall_t: float = 0.006, cavity_depth: float = 0.026) -> Any:
+    """Build single manifold hollow architectural concrete cube planter (zero exterior seams)."""
+    bm = bmesh.new()
+    hw = pw * 0.5
+    hi = hw - wall_t
+    z_bot = ph - cavity_depth
+
+    # Outer bottom, outer top, inner top rim, and inner cavity floor rings (single welded mesh)
+    ob = [bm.verts.new(p) for p in ((-hw, -hw, 0.0), (hw, -hw, 0.0), (hw, hw, 0.0), (-hw, hw, 0.0))]
+    ot = [bm.verts.new(p) for p in ((-hw, -hw, ph), (hw, -hw, ph), (hw, hw, ph), (-hw, hw, ph))]
+    it = [bm.verts.new(p) for p in ((-hi, -hi, ph), (hi, -hi, ph), (hi, hi, ph), (-hi, hi, ph))]
+    ib = [bm.verts.new(p) for p in ((-hi, -hi, z_bot), (hi, -hi, z_bot), (hi, hi, z_bot), (-hi, hi, z_bot))]
+
+    bm.faces.new((ob[3], ob[2], ob[1], ob[0]))  # outer base
+    bm.faces.new((ib[0], ib[1], ib[2], ib[3]))  # inner cavity floor
+    for i in range(4):
+        ni = (i + 1) % 4
+        bm.faces.new((ob[i], ob[ni], ot[ni], ot[i]))  # seamless exterior side wall
+        bm.faces.new((ot[i], ot[ni], it[ni], it[i]))  # crisp 6 mm top concrete rim
+        bm.faces.new((it[i], it[ni], ib[ni], ib[i]))  # recessed interior cavity wall
+    return bm
+
+
+def _make_granular_soil_pebbles_bm(inner_w: float, soil_z: float) -> Any:
+    """Scatter 16 smooth dark river pebbles across the recessed potting soil cavity."""
+    from mathutils import Matrix
+
+    bm = bmesh.new()
+    # Deterministic organic scatter inside the hollow concrete planter cavity
+    pebble_xy = (
+        (-0.032, -0.028, 0.0075), (-0.012, -0.034, 0.0065), (0.016, -0.030, 0.0072), (0.034, -0.022, 0.0060),
+        (-0.034, 0.004, 0.0068), (-0.018, 0.026, 0.0074), (0.006, 0.034, 0.0062), (0.030, 0.024, 0.0078),
+        (0.035, 0.002, 0.0064), (-0.026, 0.032, 0.0058), (0.022, -0.012, 0.0066), (-0.024, -0.010, 0.0062),
+        (0.014, 0.018, 0.0060), (-0.010, 0.014, 0.0056), (0.026, 0.034, 0.0055), (-0.036, -0.018, 0.0058),
+    )
+    lim = inner_w * 0.44
+    for px, py, rad in pebble_xy:
+        cx = max(-lim, min(lim, px))
+        cy = max(-lim, min(lim, py))
+        m = Matrix.Translation(Vector((cx, cy, soil_z + rad * 0.35))) @ Matrix.Diagonal((1.15, 0.92, 0.56, 1.0))
+        bmesh.ops.create_icosphere(bm, subdivisions=2, radius=rad, matrix=m)
+    return bm
+
+
 def build_concrete_planter_plant(
     collection: Any,
     location: Vec3,
     yaw_deg: float = 0.0,
     scale: float = 1.0,
 ) -> List[Any]:
-    """Minimalist architectural honed-concrete cube planter with real CC0 lush green foliage."""
+    """Hollow honed-concrete cube planter (6 mm rim) with dark granular soil, pebbles, & CC0 Anthurium."""
     mat_pot = materials.make_surface_material("honed_concrete_pot", name="CorpConcreteCubePlanter")
-    mat_soil = materials.make_ceramic_vessel_material("PlanterDarkSoil", color=(0.055, 0.042, 0.032, 1.0))
+    mat_soil = materials.make_ceramic_vessel_material("PlanterDarkGranularSoil", color=(0.014, 0.011, 0.009, 1.0))
+    mat_peb = materials.make_ceramic_vessel_material("PlanterDarkRiverPebbles", color=(0.022, 0.020, 0.018, 1.0))
 
-    pw, ph = 0.118, 0.106
-    pot = create_mesh_object("Prop_ConcreteCubePot", make_box_bm(pw, pw, ph, (0.0, 0.0, ph * 0.5)), collection, mat_pot, False)
-    add_bevel(pot, width=0.0032, segments=3)
-    soil = create_mesh_object("Prop_ConcretePotSoil", make_box_bm(pw - 0.014, pw - 0.014, 0.012, (0.0, 0.0, ph - 0.008)), collection, mat_soil, False)
+    pw, ph, wall_t = 0.118, 0.106, 0.006
+    inner_w = pw - 2.0 * wall_t - 0.001
+    soil_z = ph - 0.016
 
-    fol_root, fol_meshes = _import_single_foliage_cluster("anthurium_botany_01", "_b", 0.185, collection, "Prop_CorpPlantFoliage")
-    objs: List[Any] = [pot, soil]
+    pot = create_mesh_object("Prop_ConcreteCubePot", _make_hollow_concrete_pot_bm(pw, ph, wall_t, 0.026), collection, mat_pot, False)
+    add_bevel(pot, width=0.0016, segments=2)
+    soil = create_mesh_object("Prop_ConcretePotSoil", make_box_bm(inner_w, inner_w, 0.014, (0.0, 0.0, soil_z - 0.007)), collection, mat_soil, False)
+    pebbles = create_mesh_object("Prop_ConcretePotPebbles", _make_granular_soil_pebbles_bm(inner_w, soil_z), collection, mat_peb, True)
+
+    fol_root, fol_meshes = _import_single_foliage_cluster("anthurium_botany_01", "_b", 0.195, collection, "Prop_CorpPlantFoliage")
+    objs: List[Any] = [pot, soil, pebbles]
     if fol_root is not None:
-        fol_root.location = Vector((0.0, 0.0, ph - 0.014))
+        fol_root.location = Vector((0.0, 0.0, soil_z - 0.008))
         objs.append(fol_root)
     else:
-        # Offline graceful fallback to cached potted_plant_02
         fb = assets_cc0.ensure_gltf_model("potted_plant_02", resolution="1k")
         if fb is not None:
             fr, _ = assets_cc0.import_external_prop(fb, collection, "Prop_CorpPlantFallback", 0.250, 1.0)
@@ -220,29 +268,42 @@ def build_fluted_crystal_vase_greenery(
     ]
     vase = create_mesh_object("Prop_FlutedCrystalVase", _make_fluted_vase_bm(outer + inner, 22, 0.0020, 4), collection, mat_glass, True)
 
-    # Crystal-clear water filling lower 62% of the fluted vase
+    # Crystal-clear refractive water filling 66% of vase height (77 mm) w/ crisp concave meniscus
+    wh = 0.077
     w_prof = [
-        (0.042, 0.015), (0.054, 0.032), (0.0566, 0.062),
-        (0.0548, 0.076), (0.046, 0.0745), (0.001, 0.0742),
+        (0.0420, 0.015), (0.0540, 0.032), (0.0565, 0.062),
+        (0.0546, wh + 0.0022), (0.0510, wh + 0.0004), (0.0360, wh), (0.0010, wh),
     ]
-    water = create_mesh_object("Prop_FlutedVaseWater", make_lathe_bm(w_prof, 48, True, True), collection, mat_water, True)
+    water = create_mesh_object("Prop_FlutedVaseWater", make_lathe_bm(w_prof, 56, True, True), collection, mat_water, True)
 
     objs: List[Any] = [vase, water]
-    # Organic submerged botanical stems visible through clear crystal glass refraction
+    # Clean cut botanical stems descending smoothly below the 77 mm water line (ZERO exposed roots)
     stem_paths = (
-        [Vector((-0.016, 0.006, 0.018)), Vector((-0.005, 0.002, 0.066)), Vector((0.012, -0.004, 0.125))],
-        [Vector((0.014, -0.008, 0.019)), Vector((0.004, -0.003, 0.068)), Vector((-0.010, 0.006, 0.128))],
-        [Vector((0.002, 0.015, 0.018)), Vector((0.000, 0.004, 0.070)), Vector((-0.004, -0.012, 0.124))],
-        [Vector((-0.008, -0.014, 0.020)), Vector((-0.002, -0.005, 0.068)), Vector((0.008, 0.010, 0.126))],
+        [Vector((-0.014, 0.005, 0.024)), Vector((-0.005, 0.002, 0.068)), Vector((0.010, -0.003, 0.122))],
+        [Vector((0.013, -0.006, 0.025)), Vector((0.004, -0.002, 0.070)), Vector((-0.009, 0.005, 0.124))],
+        [Vector((0.002, 0.013, 0.024)), Vector((0.000, 0.003, 0.072)), Vector((-0.003, -0.010, 0.120))],
     )
     for idx, pts in enumerate(stem_paths):
-        st = create_mesh_object(f"Prop_VaseStem_{idx}", make_tube_bm(pts, 0.0022, 10), collection, mat_stem, True)
+        st = create_mesh_object(f"Prop_VaseStem_{idx}", make_tube_bm(pts, 0.0024, 12), collection, mat_stem, True)
         objs.append(st)
 
-    # Real CC0 broad botanical leaves emerging gracefully from vase mouth
-    fol_root, fol_meshes = _import_single_foliage_cluster("calathea_orbifolia_01", "_b", 0.175, collection, "Prop_ShowroomVaseFoliage")
+    # Real CC0 Calathea leaves trimmed cleanly above lower root/shoot clutter & submerged into water
+    fol_root, fol_meshes = _import_single_foliage_cluster("calathea_orbifolia_01", "_b", 0.210, collection, "Prop_ShowroomVaseFoliage")
     if fol_root is not None:
-        fol_root.location = Vector((0.0, 0.0, 0.088))
+        # Trim lowest 24% of local mesh (root crown / stubby base shoots) so only clean cut stalks remain
+        for mobj in fol_meshes:
+            bm_f = bmesh.new()
+            bm_f.from_mesh(mobj.data)
+            zs = [v.co.z for v in bm_f.verts]
+            if zs:
+                z_cut = min(zs) + 0.24 * (max(zs) - min(zs))
+                del_verts = [v for v in bm_f.verts if v.co.z < z_cut]
+                if del_verts and len(del_verts) < len(bm_f.verts) - 12:
+                    bmesh.ops.delete(bm_f, geom=del_verts, context="VERTS")
+                    bm_f.to_mesh(mobj.data)
+                    mobj.data.update()
+            bm_f.free()
+        fol_root.location = Vector((0.0, 0.0, 0.042))
         objs.append(fol_root)
 
     root = parent_objects_to_empty("Prop_fluted_crystal_vase_greenery_Root", objs, collection, location, yaw_deg, scale)
@@ -286,86 +347,22 @@ def build_material_sample_board(
 
 
 PERSONA_PROP_CATALOG: Dict[str, Dict[str, Any]] = {
-    "drafting_vellum_rolls": {
-        "kind": "cad", "size_mm": "240 x 320 x 45",
-        "description": "Spiral-rolled architectural vellum paper tubes over clean CAD grid sheet",
-        "default_anchor": "left", "default_offset_mm": (-145.0, 28.0),
-    },
-    "concrete_pencil_cup": {
-        "kind": "cad", "size_mm": "78 x 78 x 156",
-        "description": "Turned honed-concrete pencil cup holding angled drafting pens and pencils",
-        "default_anchor": "back_right", "default_offset_mm": (72.0, 118.0),
-    },
-    "basswood_maquette": {
-        "kind": "cad", "size_mm": "160 x 125 x 116",
-        "description": "Minimalist Swiss architectural basswood pavilion block massing study",
-        "default_anchor": "back_right", "default_offset_mm": (182.0, 128.0),
-    },
-    "vintage_camera": {
-        "kind": "cad", "size_mm": "148 x 89 x 77",
-        "description": "Real Poly Haven CC0 vintage Leica rangefinder film camera",
-        "default_anchor": "back_left", "default_offset_mm": (-108.0, 82.0),
-    },
-    "vintage_compass": {
-        "kind": "cad", "size_mm": "55 x 68 x 56",
-        "description": "Real Poly Haven CC0 antique brass pocket compass",
-        "default_anchor": "right", "default_offset_mm": (78.0, 18.0),
-    },
-    "travel_monograph_stack": {
-        "kind": "cad", "size_mm": "188 x 236 x 66",
-        "description": "Three stacked blind-debossed linen and leather travel monographs (zero text)",
-        "default_anchor": "front_left", "default_offset_mm": (-148.0, 18.0),
-    },
-    "brass_tabletop_globe": {
-        "kind": "cad", "size_mm": "176 x 176 x 235",
-        "description": "Sculptural brushed-brass meridian ring tabletop globe with antique cartography",
-        "default_anchor": "back_right", "default_offset_mm": (132.0, 116.0),
-    },
-    "law_volumes_row": {
-        "kind": "cad", "size_mm": "195 x 172 x 244",
-        "description": "Standing row of classic dark leather-bound law volumes with subtle gold bands",
-        "default_anchor": "back_left", "default_offset_mm": (-148.0, 106.0),
-    },
-    "leather_desk_folio": {
-        "kind": "cad", "size_mm": "175 x 238 x 24",
-        "description": "Thick stitched espresso-leather legal desk folio with brass corner trim",
-        "default_anchor": "right", "default_offset_mm": (135.0, 22.0),
-    },
-    "gold_fountain_pen": {
-        "kind": "cad", "size_mm": "144 x 12 x 12",
-        "description": "Sleek jet-black lacquer and 18k brushed-gold executive fountain pen",
-        "default_anchor": "front_right", "default_offset_mm": (52.0, 10.0),
-    },
-    "matte_black_mug": {
-        "kind": "cad", "size_mm": "82 x 106 x 91",
-        "description": "Unbranded matte jet-black architectural stoneware coffee mug (zero logo)",
-        "default_anchor": "back_left", "default_offset_mm": (-76.0, 74.0),
-    },
-    "concrete_planter_plant": {
-        "kind": "cad", "size_mm": "145 x 145 x 275",
-        "description": "Honed concrete cube planter holding real CC0 lush green architectural foliage",
-        "default_anchor": "back_right", "default_offset_mm": (146.0, 128.0),
-    },
-    "fluted_crystal_vase_greenery": {
-        "kind": "cad", "size_mm": "145 x 145 x 265",
-        "description": "Vertically fluted clear crystal glass vase with water and real CC0 botanical stems",
-        "default_anchor": "back_left", "default_offset_mm": (-114.0, 96.0),
-    },
-    "material_sample_board": {
-        "kind": "cad", "size_mm": "175 x 228 x 17",
-        "description": "Architectural stone, timber, and brass material-sample presentation board",
-        "default_anchor": "front_left", "default_offset_mm": (-140.0, 12.0),
-    },
-    "brass_dome_lamp": {
-        "kind": "cad", "size_mm": "210 x 210 x 325",
-        "description": "Spun brushed-brass mid-century dome table lamp with warm 2600K light pool",
-        "default_anchor": "back_right", "default_offset_mm": (175.0, 118.0),
-    },
-    "brass_arch_print_frame": {
-        "kind": "cad", "size_mm": "145 x 72 x 178",
-        "description": "Brushed-brass tabletop frame displaying monochrome architectural canal print",
-        "default_anchor": "back_right", "default_offset_mm": (86.0, 134.0),
-    },
+    "drafting_vellum_rolls": {"kind": "cad", "size_mm": "240 x 320 x 45", "description": "Spiral-rolled architectural vellum paper tubes over clean CAD grid sheet", "default_anchor": "left", "default_offset_mm": (-168.0, 26.0)},
+    "concrete_pencil_cup": {"kind": "cad", "size_mm": "78 x 78 x 156", "description": "Turned honed-concrete pencil cup holding angled drafting pens and pencils", "default_anchor": "back_right", "default_offset_mm": (72.0, 118.0)},
+    "basswood_maquette": {"kind": "cad", "size_mm": "160 x 125 x 116", "description": "Minimalist Swiss architectural basswood pavilion block massing study", "default_anchor": "back_right", "default_offset_mm": (66.0, 152.0)},
+    "vintage_camera": {"kind": "cad", "size_mm": "148 x 89 x 77", "description": "Real Poly Haven CC0 vintage Leica rangefinder film camera", "default_anchor": "back_left", "default_offset_mm": (-108.0, 82.0)},
+    "vintage_compass": {"kind": "cad", "size_mm": "55 x 68 x 56", "description": "Real Poly Haven CC0 antique brass pocket compass", "default_anchor": "right", "default_offset_mm": (78.0, 18.0)},
+    "travel_monograph_stack": {"kind": "cad", "size_mm": "188 x 236 x 66", "description": "Three stacked blind-debossed linen and leather travel monographs", "default_anchor": "front_left", "default_offset_mm": (-148.0, 18.0)},
+    "brass_tabletop_globe": {"kind": "cad", "size_mm": "176 x 176 x 235", "description": "Sculptural brushed-brass meridian ring tabletop globe with antique cartography", "default_anchor": "back_right", "default_offset_mm": (132.0, 116.0)},
+    "law_volumes_row": {"kind": "cad", "size_mm": "195 x 172 x 244", "description": "Standing row of classic dark leather-bound law volumes with subtle gold bands", "default_anchor": "back_left", "default_offset_mm": (-148.0, 106.0)},
+    "leather_desk_folio": {"kind": "cad", "size_mm": "175 x 238 x 24", "description": "Thick stitched espresso-leather legal desk folio with brass corner trim", "default_anchor": "right", "default_offset_mm": (135.0, 22.0)},
+    "gold_fountain_pen": {"kind": "cad", "size_mm": "144 x 12 x 12", "description": "Sleek jet-black lacquer and 18k brushed-gold executive fountain pen", "default_anchor": "front_right", "default_offset_mm": (52.0, 10.0)},
+    "matte_black_mug": {"kind": "cad", "size_mm": "82 x 106 x 91", "description": "Unbranded matte jet-black architectural stoneware coffee mug", "default_anchor": "back_left", "default_offset_mm": (-52.0, 112.0)},
+    "concrete_planter_plant": {"kind": "cad", "size_mm": "145 x 145 x 275", "description": "Hollow honed concrete cube planter with soil, pebbles, and CC0 Anthurium", "default_anchor": "back_right", "default_offset_mm": (126.0, 134.0)},
+    "fluted_crystal_vase_greenery": {"kind": "cad", "size_mm": "145 x 145 x 265", "description": "Vertically fluted clear crystal glass vase with water and trimmed CC0 Calathea", "default_anchor": "back_left", "default_offset_mm": (-56.0, 118.0)},
+    "material_sample_board": {"kind": "cad", "size_mm": "175 x 228 x 17", "description": "Architectural stone, timber, and brass material-sample presentation board", "default_anchor": "front_left", "default_offset_mm": (-140.0, 12.0)},
+    "brass_dome_lamp": {"kind": "cad", "size_mm": "210 x 210 x 325", "description": "Spun brushed-brass mid-century dome table lamp with warm 2600K light pool", "default_anchor": "back_right", "default_offset_mm": (175.0, 118.0)},
+    "brass_arch_print_frame": {"kind": "cad", "size_mm": "145 x 72 x 178", "description": "Brushed-brass tabletop frame displaying monochrome architectural canal print", "default_anchor": "back_right", "default_offset_mm": (86.0, 134.0)},
 }
 
 PERSONA_PROP_BUILDERS: Dict[str, Callable[[Any, Vec3, float, float], List[Any]]] = {

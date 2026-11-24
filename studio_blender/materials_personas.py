@@ -59,14 +59,14 @@ PERSONA_SURFACE_CATALOG: Dict[str, Dict[str, Any]] = {
         "fallback_rgb": (0.08, 0.040, 0.022),
     },
     "smoked_executive_walnut": {
-        "asset_id": "smoked_walnut_veneer",
-        "tile_scale_m": 0.70,
-        "tint_rgb": (0.068, 0.052, 0.042),
-        "tint_factor": 0.94,
-        "roughness_range": (0.18, 0.46),
+        "asset_id": "black_walnut_veneer_01",
+        "tile_scale_m": 0.48,
+        "tint_rgb": (0.22, 0.135, 0.082),
+        "tint_factor": 0.92,
+        "roughness_range": (0.24, 0.46),
         "normal_strength": 0.58,
-        "specular_level": 0.36,
-        "fallback_rgb": (0.062, 0.050, 0.042),
+        "specular_level": 0.34,
+        "fallback_rgb": (0.085, 0.055, 0.036),
     },
     "basswood_ply": {
         "asset_id": "white_maple_veneer",
@@ -106,92 +106,65 @@ PERSONA_SURFACE_CATALOG: Dict[str, Dict[str, Any]] = {
 
 
 def make_calacatta_marble_material(name: str = "CalacattaShowroomMarble") -> Any:
-    """Rich mid-tone warm dove-grey / taupe veined Italian marble (strong white-city pop)."""
+    """Photorealistic Poly Haven 2K honed travertine-marble slab (seamless single-slab crop)."""
+    from .assets_cc0 import ensure_pbr_texture_set
+
+    maps = ensure_pbr_texture_set("marble_01", resolution="2k")
     mat, nt, bsdf, _ = get_or_create_material(name)
-    _, mp = add_tex_coord_mapping(nt, scale=(1.0, 1.0, 1.0), rotation=(0.0, 0.0, 0.52), loc=(-1280, 0))
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    tc.location = (-1180, 0)
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.location = (-940, 0)
+    # Map the 2.3x1.35 m showroom tabletop cleanly onto one monolithic grout-free slab of marble_01
+    mp.inputs["Location"].default_value = (0.26, 0.65, 0.0)
+    mp.inputs["Scale"].default_value = (0.135, 0.135, 0.135)
+    nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
 
-    n_warp = nt.nodes.new("ShaderNodeTexNoise")
-    n_warp.location = (-1020, 220)
-    n_warp.inputs["Scale"].default_value = 2.8
-    n_warp.inputs["Detail"].default_value = 10.0
-    n_warp.inputs["Roughness"].default_value = 0.64
-    nt.links.new(mp.outputs["Vector"], n_warp.inputs["Vector"])
+    if "diffuse" in maps:
+        tex_d = nt.nodes.new("ShaderNodeTexImage")
+        tex_d.location = (-660, 220)
+        tex_d.extension = "EXTEND"
+        tex_d.image = load_image_cached(maps["diffuse"], colorspace="sRGB")
+        nt.links.new(mp.outputs["Vector"], tex_d.inputs["Vector"])
 
-    # Primary rich charcoal-taupe tectonic marble veins
-    wave_main = nt.nodes.new("ShaderNodeTexWave")
-    wave_main.location = (-760, 260)
-    wave_main.wave_type = "BANDS"
-    wave_main.bands_direction = "DIAGONAL"
-    wave_main.wave_profile = "SIN"
-    wave_main.inputs["Scale"].default_value = 1.85
-    wave_main.inputs["Distortion"].default_value = 12.5
-    wave_main.inputs["Detail"].default_value = 9.0
-    wave_main.inputs["Detail Scale"].default_value = 2.4
-    wave_main.inputs["Detail Roughness"].default_value = 0.66
-    nt.links.new(mp.outputs["Vector"], wave_main.inputs["Vector"])
+        hsv = nt.nodes.new("ShaderNodeHueSaturation")
+        hsv.location = (-360, 220)
+        hsv.inputs["Saturation"].default_value = 0.42
+        hsv.inputs["Value"].default_value = 0.72
+        nt.links.new(tex_d.outputs["Color"], hsv.inputs["Color"])
+        nt.links.new(hsv.outputs["Color"], get_input(bsdf, "Base Color"))
+    else:
+        set_input(bsdf, "Base Color", (0.58, 0.55, 0.50, 1.0))
 
-    mr_vein = add_map_range(nt, 0.64, 0.95, 0.0, 1.0, clamp=True, loc=(-500, 260))
-    nt.links.new(wave_main.outputs["Fac"], mr_vein.inputs["Value"])
+    if "rough" in maps:
+        tex_r = nt.nodes.new("ShaderNodeTexImage")
+        tex_r.location = (-660, -20)
+        tex_r.extension = "EXTEND"
+        tex_r.image = load_image_cached(maps["rough"], colorspace="Non-Color")
+        nt.links.new(mp.outputs["Vector"], tex_r.inputs["Vector"])
 
-    # Secondary warm antique-gold / bronze mineral filaments
-    wave_gold = nt.nodes.new("ShaderNodeTexWave")
-    wave_gold.location = (-760, -20)
-    wave_gold.wave_type = "BANDS"
-    wave_gold.bands_direction = "X"
-    wave_gold.inputs["Scale"].default_value = 2.9
-    wave_gold.inputs["Distortion"].default_value = 15.5
-    wave_gold.inputs["Detail"].default_value = 8.0
-    nt.links.new(mp.outputs["Vector"], wave_gold.inputs["Vector"])
+        mr_r = add_map_range(nt, 0.0, 1.0, 0.22, 0.44, clamp=True, loc=(-340, -20))
+        nt.links.new(tex_r.outputs["Color"], mr_r.inputs["Value"])
+        nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
+    else:
+        set_input(bsdf, "Roughness", 0.30)
 
-    mr_gold = add_map_range(nt, 0.80, 0.97, 0.0, 0.65, clamp=True, loc=(-500, -20))
-    nt.links.new(wave_gold.outputs["Fac"], mr_gold.inputs["Value"])
+    if "normal" in maps:
+        tex_n = nt.nodes.new("ShaderNodeTexImage")
+        tex_n.location = (-660, -280)
+        tex_n.extension = "EXTEND"
+        tex_n.image = load_image_cached(maps["normal"], colorspace="Non-Color")
+        nt.links.new(mp.outputs["Vector"], tex_n.inputs["Vector"])
 
-    # Mid-dark warm dove-grey / Pietra-Calacatta stone base so white skyscrapers pop dramatically
-    _, fac_cloud, ca_c, cb_c, out_cloud = add_mix_color(nt, "MIX", loc=(-500, 480))
-    ca_c.default_value = (0.21, 0.20, 0.19, 1.0)
-    cb_c.default_value = (0.35, 0.33, 0.31, 1.0)
-    nt.links.new(n_warp.outputs["Fac"], fac_cloud)
+        nmap = nt.nodes.new("ShaderNodeNormalMap")
+        nmap.location = (-340, -280)
+        nmap.inputs["Strength"].default_value = 0.34
+        nt.links.new(tex_n.outputs["Color"], nmap.inputs["Color"])
+        nt.links.new(nmap.outputs["Normal"], get_input(bsdf, "Normal"))
 
-    _, fac_v1, ca_v1, cb_v1, out_v1 = add_mix_color(nt, "MIX", loc=(-260, 280))
-    cb_v1.default_value = (0.062, 0.058, 0.056, 1.0)  # deep smoky espresso-slate veins
-    nt.links.new(mr_vein.outputs["Result"], fac_v1)
-    nt.links.new(out_cloud, ca_v1)
-
-    _, fac_v2, ca_v2, cb_v2, out_v2 = add_mix_color(nt, "MIX", loc=(-40, 260))
-    cb_v2.default_value = (0.38, 0.29, 0.18, 1.0)  # warm antique Calacatta gold veins
-    nt.links.new(mr_gold.outputs["Result"], fac_v2)
-    nt.links.new(out_v1, ca_v2)
-    nt.links.new(out_v2, get_input(bsdf, "Base Color"))
-
-    # Tactile mineral specular variation (0.12 satin calcite .. 0.42 matte vein fissures)
-    n_micro = nt.nodes.new("ShaderNodeTexNoise")
-    n_micro.location = (-760, -260)
-    n_micro.inputs["Scale"].default_value = 65.0
-    n_micro.inputs["Detail"].default_value = 8.0
-    n_micro.inputs["Roughness"].default_value = 0.62
-    nt.links.new(mp.outputs["Vector"], n_micro.inputs["Vector"])
-
-    add_r = nt.nodes.new("ShaderNodeMath")
-    add_r.operation = "MULTIPLY_ADD"
-    add_r.location = (-460, -180)
-    add_r.inputs[1].default_value = 0.65
-    nt.links.new(mr_vein.outputs["Result"], add_r.inputs[0])
-    nt.links.new(n_micro.outputs["Fac"], add_r.inputs[2])
-
-    mr_r = add_map_range(nt, 0.25, 1.35, 0.12, 0.42, clamp=True, loc=(-240, -140))
-    nt.links.new(add_r.outputs["Value"], mr_r.inputs["Value"])
-    nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
-
-    bump = nt.nodes.new("ShaderNodeBump")
-    bump.location = (-80, -280)
-    bump.inputs["Strength"].default_value = 0.080
-    bump.inputs["Distance"].default_value = 0.00038
-    nt.links.new(add_r.outputs["Value"], bump.inputs["Height"])
-    nt.links.new(bump.outputs["Normal"], get_input(bsdf, "Normal"))
-
-    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.36)
-    set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.22)
-    set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.16)
+    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.34)
+    set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.14)
+    set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.18)
     return mat
 
 

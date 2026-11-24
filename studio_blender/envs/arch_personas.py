@@ -21,22 +21,28 @@ from .common import add_bevel, create_area_light, create_mesh_object, make_box_b
 
 
 def build_persona_architect_room(desk_z: float, surface_key: str, wall_key: str, col: Any) -> List[Any]:
-    """12_persona_architect: Sunlit architectural studio workbench, tall window, skyline bokeh."""
+    """12_persona_architect: Sunlit studio workbench + unique tall slender-mullion atelier loft window."""
     desk_mat = materials.make_surface_material(surface_key, name=f"Desk_{surface_key}")
     wall_mat = materials.make_surface_material(wall_key, name=f"Wall_{wall_key}")
+    sill_mat = materials.make_surface_material("architect_oiled_oak", name="ArchAtelierWindowSill")
     objs: List[Any] = [build_desk_slab(f"Env_ArchDesk_{surface_key}", desk_z, 2.30, 1.35, 0.18, desk_mat, col, thickness=0.036)]
-    win_y = 0.86
-    objs.append(create_mesh_object("Arch_StudioWallLeft", make_box_bm(1.65, 0.10, 2.50, (-1.85, win_y, desk_z + 0.90)), col, wall_mat))
-    objs.append(create_mesh_object("Arch_StudioWallSill", make_box_bm(3.60, 0.14, 0.45, (0.75, win_y, desk_z - 0.24)), col, wall_mat))
-    objs.append(create_mesh_object("Arch_StudioWallHeader", make_box_bm(3.60, 0.10, 0.45, (0.75, win_y, desk_z + 1.82)), col, wall_mat))
+    win_y = 0.88
+    objs.append(create_mesh_object("Arch_StudioWallLeft", make_box_bm(1.60, 0.12, 2.50, (-1.62, win_y, desk_z + 0.90)), col, wall_mat))
+    objs.append(create_mesh_object("Arch_StudioWallSill", make_box_bm(3.60, 0.16, 0.48, (0.85, win_y, desk_z - 0.21)), col, wall_mat))
+    sill_cap = create_mesh_object("Arch_StudioOakSillCap", make_box_bm(3.60, 0.18, 0.022, (0.85, win_y - 0.01, desk_z + 0.04)), col, sill_mat)
+    add_bevel(sill_cap, width=0.002, segments=2)
+    objs.append(sill_cap)
+    objs.append(create_mesh_object("Arch_StudioWallHeader", make_box_bm(3.60, 0.12, 0.45, (0.85, win_y, desk_z + 1.84)), col, wall_mat))
+    # Unique tall slender-mullion industrial atelier grid (tight 32 cm vertical steel muntins)
     objs.extend(
         build_window_mullions(
-            "ArchStudioWin", win_y + 0.02,
-            (-1.02, -0.42, 0.18, 0.78, 1.38, 1.98, 2.55),
-            (desk_z - 0.02, desk_z + 0.56, desk_z + 1.12, desk_z + 1.62), col,
+            "ArchAtelierWin", win_y + 0.02,
+            (-0.82, -0.50, -0.18, 0.14, 0.46, 0.78, 1.10, 1.42, 1.74, 2.06),
+            (desk_z + 0.05, desk_z + 0.62, desk_z + 1.18, desk_z + 1.62), col,
+            m_thick=0.013, m_depth=0.034,
         )
     )
-    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="ArchMetro"))
+    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="ArchAtelier"))
     return objs
 
 
@@ -99,26 +105,34 @@ def build_persona_lawyer_room(desk_z: float, surface_key: str, wall_key: str, co
 
 
 def build_persona_corporate_room(desk_z: float, surface_key: str, wall_key: str, col: Any) -> List[Any]:
-    """15_persona_corporate: Sleek smoked-walnut executive desk + clean sunlit curtain-wall window."""
+    """15_persona_corporate: Smoked-walnut executive desk + wide panoramic curtain wall w/ louvers."""
     desk_mat = materials.make_surface_material(surface_key, name=f"Desk_{surface_key}")
     wall_mat = materials.make_surface_material(wall_key, name=f"Column_{wall_key}")
+    louver_mat = materials.make_anodized_aluminum_material("CorpPanoramicLouverAlu")
     objs: List[Any] = [build_desk_slab(f"Env_CorpDesk_{surface_key}", desk_z, 2.35, 1.35, 0.18, desk_mat, col, thickness=0.036)]
-    win_y = 0.96
-    objs.append(create_mesh_object("Arch_CorpLeftPier", make_box_bm(1.10, 0.22, 2.80, (-2.25, win_y - 0.04, desk_z + 0.95)), col, wall_mat))
+    win_y = 0.98
+    objs.append(create_mesh_object("Arch_CorpLeftColumn", make_box_bm(0.95, 0.24, 2.80, (-1.92, win_y - 0.05, desk_z + 0.95)), col, wall_mat))
+    # Wide unobstructed horizontal panoramic transom (only distant wide structural columns)
     objs.extend(
         build_window_mullions(
-            "CorpCurtainWall", win_y,
-            (-1.70, -1.08, -0.46, 0.16, 0.78, 1.40, 2.02, 2.64),
-            (desk_z - 0.45, desk_z + 0.36, desk_z + 1.08, desk_z + 1.72), col,
-            m_thick=0.024, m_depth=0.050,
+            "CorpPanoramicWall", win_y,
+            (-1.42, 0.98, 2.42),
+            (desk_z + 0.08, desk_z + 1.18), col,
+            m_thick=0.032, m_depth=0.060,
         )
     )
-    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="CorpDaylight"))
+    # Architectural upper panoramic aluminum venetian louver slats in soft bokeh
+    bm_louv = bmesh.new()
+    for idx in range(7):
+        lz = desk_z + 0.34 + idx * 0.048
+        bmesh.ops.create_cube(bm_louv, size=1.0, matrix=box_mat(3.80, 0.022, 0.005, (0.45, win_y - 0.03, lz)))
+    objs.append(create_mesh_object("Arch_CorpPanoramicLouvers", bm_louv, col, louver_mat, False))
+    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="CorpPanoramic"))
     return objs
 
 
 def build_persona_realestate_room(desk_z: float, surface_key: str, wall_key: str, col: Any) -> List[Any]:
-    """16_persona_realestate: Honed Pietra-Calacatta marble showroom table + clean daylight windows."""
+    """16_persona_realestate: Honed natural stone table against warm plaster wall + right frameless window."""
     desk_mat = (
         make_calacatta_marble_material("Desk_CalacattaShowroomMarble")
         if surface_key == "calacatta_marble"
@@ -126,18 +140,15 @@ def build_persona_realestate_room(desk_z: float, surface_key: str, wall_key: str
     )
     wall_mat = materials.make_surface_material(wall_key, name=f"Wall_{wall_key}")
     objs: List[Any] = [build_desk_slab("Env_ShowroomMarbleTable", desk_z, 2.30, 1.35, 0.18, desk_mat, col, thickness=0.040)]
-    win_y = 1.05
-    objs.append(create_mesh_object("Arch_ShowroomWallLeft", make_box_bm(2.35, 0.12, 2.70, (-1.15, win_y, desk_z + 0.95)), col, wall_mat))
-    objs.append(create_mesh_object("Arch_ShowroomHeader", make_box_bm(2.80, 0.12, 0.45, (1.40, win_y, desk_z + 1.85)), col, wall_mat))
-    objs.extend(
-        build_window_mullions(
-            "ShowroomWin", win_y + 0.02,
-            (0.02, 0.64, 1.26, 1.88, 2.50),
-            (desk_z - 0.45, desk_z + 0.08, desk_z + 0.88, desk_z + 1.66), col,
-            m_thick=0.024, m_depth=0.050,
-        )
-    )
-    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="ShowroomDaylight"))
+    back_y = 1.08
+    # Continuous warm architectural plaster back wall directly behind the showroom table (ZERO window cut!)
+    back_wall = create_mesh_object("Arch_ShowroomPlasterWall", make_box_bm(3.10, 0.18, 2.80, (-1.18, back_y + 0.09, desk_z + 0.95)), col, wall_mat)
+    add_bevel(back_wall, width=0.004, segments=2)
+    objs.append(back_wall)
+    # Recessed ceiling header above side floor-to-ceiling frameless architectural glass window (right X > +0.37)
+    objs.append(create_mesh_object("Arch_ShowroomSideHeader", make_box_bm(2.40, 0.18, 0.42, (1.57, back_y + 0.09, desk_z + 1.88)), col, wall_mat))
+    # Pure luminous frameless daylight opening on the right side (ZERO black grid mullions!)
+    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="ShowroomSideDaylight"))
     return objs
 
 

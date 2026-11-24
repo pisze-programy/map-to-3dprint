@@ -98,7 +98,7 @@ def build_drafting_vellum_rolls(
 
     sheet = create_mesh_object(
         "Prop_VellumFlatSheet",
-        _make_uv_blueprint_sheet_bm(0.240, 0.300, 0.0008, (-0.005, -0.015, 0.0004)),
+        _make_uv_blueprint_sheet_bm(0.240, 0.300, 0.0003, (-0.005, -0.015, 0.00015)),
         collection,
         mat_grid,
         False,
@@ -111,7 +111,7 @@ def build_drafting_vellum_rolls(
         collection,
         mat_roll,
         True,
-        location=(0.015, 0.028, r1_outer + 0.0008),
+        location=(0.015, 0.028, r1_outer + 0.0003),
         rotation=(0.0, 0.0, math.radians(-10.0)),
     )
     # Secondary slightly smaller foreground roll tucked cleanly beside Roll A
@@ -122,7 +122,7 @@ def build_drafting_vellum_rolls(
         collection,
         mat_roll,
         True,
-        location=(0.056, 0.052, r2_outer + 0.0008),
+        location=(0.056, 0.052, r2_outer + 0.0003),
         rotation=(0.0, 0.0, math.radians(-15.0)),
     )
     objs = [sheet, roll_a, roll_b]

@@ -12,6 +12,7 @@ from .. import assets_cc0, materials
 from ..envs.common import (
     create_mesh_object,
     make_lathe_bm,
+    make_tube_bm,
     parent_objects_to_empty,
 )
 from ..materials_core import get_or_create_material
@@ -79,8 +80,25 @@ def _build_desk_lamp_fallback(
     base_bm = make_lathe_bm([(0.056, 0.0), (0.056, 0.010), (0.053, 0.013), (0.012, 0.015)], segments=48, cap_bottom=True, cap_top=True)
     base = create_mesh_object(f"{name}_Base", base_bm, collection, material=mat_blk, smooth=True)
 
-    stem_bm = make_lathe_bm([(0.0055, 0.013), (0.0050, 0.245)], segments=24, cap_bottom=True, cap_top=True)
-    stem = create_mesh_object(f"{name}_Stem", stem_bm, collection, material=mat_blk, smooth=True, rotation=(0.0, math.radians(-14.0), 0.0))
+    # Continuous articulated 2-segment matte-black tubular arm: base -> brass elbow -> head swivel joint
+    arm_pts = [
+        Vector((0.0, 0.0, 0.012)),
+        Vector((-0.022, 0.0, 0.142)),
+        Vector((-0.020, 0.0, 0.150)),
+        Vector((0.064, 0.0, 0.236)),
+    ]
+    stem = create_mesh_object(f"{name}_Arm", make_tube_bm(arm_pts, 0.0052, 20), collection, material=mat_blk, smooth=True)
+
+    elbow_bm = make_lathe_bm([(0.0080, -0.008), (0.0080, 0.008)], segments=24, cap_bottom=True, cap_top=True)
+    elbow = create_mesh_object(
+        f"{name}_ElbowJoint",
+        elbow_bm,
+        collection,
+        material=mat_brass,
+        smooth=True,
+        location=(-0.021, 0.0, 0.146),
+        rotation=(math.pi * 0.5, 0.0, 0.0),
+    )
 
     shade_bm = make_lathe_bm(
         [(0.010, 0.0), (0.046, -0.022), (0.060, -0.056), (0.058, -0.058), (0.043, -0.024), (0.008, -0.002)],
@@ -125,7 +143,7 @@ def _build_desk_lamp_fallback(
         rotation=(math.pi * 0.5, 0.0, 0.0),
     )
 
-    objs = [base, stem, shade, bulb, joint]
+    objs = [base, stem, elbow, shade, bulb, joint]
     root = parent_objects_to_empty(f"{name}_Root", objs, collection, location=location, rotation_z_deg=yaw_deg, scale=scale)
     return [root] + objs
 

@@ -182,8 +182,8 @@ def build_product_assembly(
         from studio_blender.envs.common import create_mesh_object, get_or_create_collection, make_box_bm
 
         col = get_or_create_collection("StudioFrame")
-        slab_thick = 0.0028
-        slab_top = -0.00005
+        slab_margin, slab_thick, slab_top = 0.0004, 0.0030, -0.00015
+        slab_w, slab_h = tile_w + 2.0 * slab_margin, tile_h + 2.0 * slab_margin
         mat_back = (
             _mats.make_backing_material(backing_finish)
             if hasattr(_mats, "make_backing_material")
@@ -191,17 +191,18 @@ def build_product_assembly(
         )
         slab = create_mesh_object(
             "FramelessBackingSlab",
-            make_box_bm(tile_w, tile_h, slab_thick, (0.0, 0.0, slab_top - 0.5 * slab_thick)),
+            make_box_bm(slab_w, slab_h, slab_thick, (0.0, 0.0, slab_top - 0.5 * slab_thick)),
             col,
             material=mat_back,
             smooth=False,
         )
+        bev = slab.modifiers.new(name="EdgeBevel", type="BEVEL")
+        bev.width, bev.segments, bev.limit_method = 0.00025, 2, "ANGLE"
         frame_objs.append(slab)
         desk_z = slab_top - slab_thick
-        frame_bottom_z = desk_z
-        frame_top_z = 0.0
+        frame_bottom_z, frame_top_z = desk_z, 0.0
         wall_y = -desk_z + 0.0015
-        tile_outer_w, tile_outer_h = tile_w, tile_h
+        tile_outer_w, tile_outer_h = slab_w, slab_h
     else:
         for idx, (cx, cy) in enumerate(centers_xy):
             plate_text = title if (show_nameplate and idx == mid_idx) else None

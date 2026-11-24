@@ -180,38 +180,24 @@ def build_loft_shelving_wall(
     return objs
 
 
-def _build_monolithic_concrete_bench(
-    prefix: str,
-    wall_y: float,
-    top_z: float,
-    collection: Any,
-) -> List[Any]:
-    """Build a clean cantilevered monolithic architectural concrete gallery bench/plinth."""
-    objs: List[Any] = []
-    bench_mat = materials.make_surface_material("pale_terrazzo", name=f"{prefix}_ConcreteMat")
-    shadow_mat = materials.make_surface_material("charcoal_plaster", name=f"{prefix}_ShadowPlinth")
+def _make_loft_brick_material(name: str = "Arch_LoftExposedBrick") -> Any:
+    """Subtle warm architectural loft exposed brick return (Poly Haven 2K brick_wall_003)."""
+    from ..assets_cc0 import build_cc0_pbr_material
 
-    bw, bd, slab_t = 2.80, 0.36, 0.072
-    slab = create_mesh_object(
-        f"{prefix}_ConcreteSlab",
-        make_box_bm(bw, bd, slab_t, (0.0, wall_y - bd * 0.5, top_z - slab_t * 0.5)),
-        collection,
-        bench_mat,
+    cc0 = build_cc0_pbr_material(
+        name=name,
+        asset_id="brick_wall_003",
+        tile_scale_m=0.82,
+        tint_rgb=(0.76, 0.68, 0.60),
+        tint_factor=0.38,
+        blend_mode="MIX",
+        roughness_range=(0.76, 0.94),
+        normal_strength=0.65,
+        specular_level=0.16,
     )
-    add_bevel(slab, width=0.0024, segments=3)
-    objs.append(slab)
-
-    # Deeply recessed matte-charcoal architectural shadow plinth below the cantilevered concrete bench
-    plinth_h = 0.58
-    plinth_d = bd - 0.11
-    plinth = create_mesh_object(
-        f"{prefix}_RecessedPlinth",
-        make_box_bm(bw - 0.08, plinth_d, plinth_h, (0.0, wall_y - plinth_d * 0.5, top_z - slab_t - plinth_h * 0.5)),
-        collection,
-        shadow_mat,
-    )
-    objs.append(plinth)
-    return objs
+    if cc0 is not None:
+        return cc0
+    return materials.make_surface_material("warm_greige_stone", name=name)
 
 
 def build_gallery_wall_mount_stage(
@@ -221,16 +207,69 @@ def build_gallery_wall_mount_stage(
     credenza_mat: Any,
     collection: Any,
 ) -> List[Any]:
-    """Build pure minimalist museum gallery plaster wall (zero fake moldings, zero clutter)."""
+    """Build clean sunlit plaster gallery wall with side black-steel loft window & brick return."""
     _ = (outer_h_m, credenza_mat)
+    objs: List[Any] = []
     wall_thick = 0.08
-    wall = create_mesh_object(
-        "Arch_GalleryWall",
-        make_box_bm(3.60, wall_thick, 2.80, (0.0, wall_y + wall_thick * 0.5, 0.05)),
-        collection,
-        wall_mat,
+
+    # Clean uninterrupted central gallery plaster wall around the A4 frame (X in [-0.30, +0.295])
+    objs.append(
+        create_mesh_object(
+            "Arch_GalleryWall",
+            make_box_bm(0.62, wall_thick, 2.80, (-0.005, wall_y + wall_thick * 0.5, 0.05)),
+            collection,
+            wall_mat,
+        )
     )
-    return [wall]
+
+    # Far-left warm exposed loft brick architectural pier softly grazing left bokeh edge
+    brick_mat = _make_loft_brick_material("Arch_GalleryLoftBrick")
+    left_pier = create_mesh_object(
+        "Arch_GalleryLoftBrickPier",
+        make_box_bm(1.10, 0.14, 2.80, (-0.84, wall_y + 0.01, 0.05)),
+        collection,
+        brick_mat,
+    )
+    add_bevel(left_pier, width=0.003, segments=2)
+    objs.append(left_pier)
+
+    # Right-side deep loft brick reveal + black steel-framed industrial loft window bay (X = +0.295 m)
+    win_x = 0.295
+    reveal = create_mesh_object(
+        "Arch_LoftRightBrickReveal",
+        make_box_bm(0.12, 0.22, 2.80, (win_x + 0.06, wall_y - 0.03, 0.05)),
+        collection,
+        brick_mat,
+    )
+    add_bevel(reveal, width=0.003, segments=2)
+    objs.append(reveal)
+
+    # Deep black steel-framed side loft window perpendicular to gallery wall (Y: wall_y-0.14 -> -0.78)
+    steel_mat = materials.make_matte_black_tech_material("Arch_LoftWindowSteel")
+    bm_m = bmesh.new()
+    for my in (wall_y - 0.14, wall_y - 0.42, wall_y - 0.72):
+        bmesh.ops.create_cube(bm_m, size=1.0, matrix=_box_mat(0.034, 0.022, 2.40, (win_x + 0.01, my, 0.05)))
+    for mz in (-0.36, -0.02, 0.32):
+        bmesh.ops.create_cube(bm_m, size=1.0, matrix=_box_mat(0.034, 0.62, 0.020, (win_x + 0.01, wall_y - 0.43, mz)))
+    mullions = create_mesh_object("Arch_LoftSideWindowSteel", bm_m, collection, steel_mat)
+    add_bevel(mullions, width=0.0012, segments=2)
+    objs.append(mullions)
+
+    # Soft daylight glow pane behind side loft window (invisible to shadows so key sun pours through!)
+    from ..materials_personas import make_sky_gradient_material
+
+    sky_mat = make_sky_gradient_material("Arch_LoftSideWindowDaylight", (0.98, 0.97, 0.94), (0.90, 0.92, 0.95), strength=1.85)
+    pane = create_mesh_object(
+        "Arch_LoftSideWindowPane",
+        make_box_bm(0.012, 0.64, 2.40, (win_x + 0.045, wall_y - 0.43, 0.05)),
+        collection,
+        sky_mat,
+    )
+    for attr in ("visible_diffuse", "visible_shadow"):
+        if hasattr(pane, attr):
+            setattr(pane, attr, False)
+    objs.append(pane)
+    return objs
 
 
 def build_acoustic_slat_wall_stage(
@@ -241,40 +280,54 @@ def build_acoustic_slat_wall_stage(
     backing_mat: Any,
     collection: Any,
 ) -> List[Any]:
-    """Build continuous brushed-oak acoustic slats over felt backing + monolithic concrete bench."""
-    _ = (outer_w_m, backing_mat)
+    """Eye-level A4 on clean smooth concrete wall + adjacent recessed oak slat side panel."""
+    _ = (outer_h_m, backing_mat)
     objs: List[Any] = []
-    slat_w = 0.024
-    slat_d = 0.018
-    slat_pitch = 0.036
-    slat_h = 2.60
-
-    # Matte charcoal acoustic felt directly behind the continuous vertical oak slats
-    felt_mat = materials.make_surface_material("charcoal_plaster", name="Arch_AcousticFeltBacking")
     wall_thick = 0.08
+    slat_d = 0.018
+
+    # Clean smooth architectural concrete mounting wall at exact wall_y (ZERO baseboard curb!)
+    concrete_mat = materials.make_surface_material("pale_terrazzo", name="Arch_SmoothConcreteGalleryWall")
+    split_x = max(0.215, outer_w_m * 0.5 + 0.110)
+
+    # Smooth architectural concrete spans cleanly across the left & full hero frame zone
+    conc_w = 2.60
+    conc_cx = split_x - conc_w * 0.5
+    conc_wall = create_mesh_object(
+        "Arch_SmoothConcreteWall",
+        make_box_bm(conc_w, wall_thick, 2.80, (conc_cx, wall_y + wall_thick * 0.5, 0.05)),
+        collection,
+        concrete_mat,
+    )
+    add_bevel(conc_wall, width=0.0020, segments=2)
+    objs.append(conc_wall)
+
+    # Recessed matte-charcoal acoustic felt backing ONLY in the adjacent right architectural zone
+    felt_mat = materials.make_surface_material("charcoal_plaster", name="Arch_AdjacentSlatFelt")
+    felt_w = 2.20
+    felt_cx = split_x + felt_w * 0.5
     objs.append(
         create_mesh_object(
-            "Arch_AcousticFeltWall",
-            make_box_bm(3.60, wall_thick, 2.80, (0.0, wall_y + slat_d + wall_thick * 0.5, 0.05)),
+            "Arch_AdjacentSlatFeltWall",
+            make_box_bm(felt_w, wall_thick, 2.80, (felt_cx, wall_y + slat_d + 0.008 + wall_thick * 0.5, 0.05)),
             collection,
             felt_mat,
         )
     )
 
-    # Continuous refined vertical brushed-oak slats (front face at exact wall_y so frame mounts flush!)
+    # Vertical brushed-oak acoustic slats recessed cleanly by 6 mm on the adjacent right side panel
+    slat_w = 0.024
+    slat_pitch = 0.036
+    slat_h = 2.80
     bm_slats = bmesh.new()
-    for i in range(-40, 41):
-        sx = i * slat_pitch
+    for i in range(44):
+        sx = split_x + 0.022 + i * slat_pitch
         bmesh.ops.create_cube(
             bm_slats,
             size=1.0,
-            matrix=_box_mat(slat_w, slat_d, slat_h, (sx, wall_y + slat_d * 0.5, 0.05)),
+            matrix=_box_mat(slat_w, slat_d, slat_h, (sx, wall_y + 0.006 + slat_d * 0.5, 0.05)),
         )
-    slats = create_mesh_object("Arch_AcousticOakSlats", bm_slats, collection, slat_mat)
+    slats = create_mesh_object("Arch_AdjacentAcousticOakSlats", bm_slats, collection, slat_mat)
     add_bevel(slats, width=0.0012, segments=2)
     objs.append(slats)
-
-    # Clean monolithic architectural poured-concrete gallery bench/plinth below frame
-    bench_z = min(-0.195, -(outer_h_m * 0.5) - 0.092)
-    objs.extend(_build_monolithic_concrete_bench("Arch_SlatConcreteBench", wall_y, bench_z, collection))
     return objs

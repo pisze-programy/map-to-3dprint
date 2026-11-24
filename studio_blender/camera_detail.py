@@ -1,8 +1,8 @@
 """Dedicated frameless chalk-plaster architectural detail gallery camera presets.
 
-Implements 4 universal telephoto macro presets calibrated for real 1:3-1:2 macro DoF
-(f/5.6-f/7.1 so hero towers and street facades stay tack-sharp while foreground rooftops
-and far horizon dissolve into smooth circular bokeh):
+Implements 4 universal telephoto macro presets calibrated for architectural detail clarity
+(f/8.0-f/14.0 so 60-75% of the city stays tack-sharp and readable, with gentle circular
+bokeh only at extreme foreground/horizon edges):
   - `detail_spire`: Hero spire soaring into bright #FFFFFF sunlit horizon, full-bleed base.
   - `detail_canyon`: Diagonal street/avenue canyon slashed by crisp raking shadows.
   - `detail_oblique_grid`: Full-bleed 46-deg oblique urban grid wall-to-wall with zero corners.
@@ -48,11 +48,11 @@ def compute_detail_still_pose(
     fw = float(analysis["frame_width_m"])
     fh = float(analysis["frame_height_m"])
     max_z = float(analysis["max_z"])
-    desk_z = float(model_bounds.get("desk_z", model_bounds.get("desk_z_m", -0.0028)))
+    desk_z = float(model_bounds.get("desk_z", model_bounds.get("desk_z_m", -0.00315)))
 
     if preset_name == "detail_spire":
         # Full-bleed lower skyline with hero spire soaring into luminous #FFFFFF horizon
-        lens, fstop, elev, shift_y = 110.0, 5.6, 17.0, -0.045
+        lens, fstop, elev, shift_y = 110.0, 8.0, 17.0, -0.045
         yaw = rec_yaw * 0.52
         tx = 0.80 * htx + 0.20 * sx
         ty = 0.80 * hty + 0.20 * sy
@@ -70,7 +70,7 @@ def compute_detail_still_pose(
 
     elif preset_name == "detail_canyon":
         # Crisp diagonal architectural avenue/canyon with raking hard sunlight shadows
-        lens, fstop, elev, shift_y = 95.0, 5.6, 34.0, 0.0
+        lens, fstop, elev, shift_y = 95.0, 11.0, 34.0, 0.0
         yaw = _portal_yaw_deg(analysis, rec_yaw * 1.05)
         portal = analysis.get("canyon_portal", {})
         pmid = portal.get("portal_mid", [sx, sy, 0.16 * max_z])
@@ -80,12 +80,12 @@ def compute_detail_still_pose(
         r_xy = min(0.22 * fw, max(0.018, 0.22 * fh))
         corners = camera_rig.bbox_corners(tx - r_xy, tx + r_xy, ty - r_xy, ty + r_xy, 0.0, 0.48 * max_z)
         raw_d = camera_rig.compute_fit_distance(yaw, elev, (tx, ty, tz), corners, lens, aspect, 0.96, 0.90)
-        dist = max(0.15, raw_d * 0.88)
+        dist = max(0.16, raw_d * 0.94)
         focus_pt = (tx, ty, max(0.20 * max_z, 0.006))
 
     elif preset_name == "detail_edge_horizon":
         # Bold diagonal matte-black frameless slab edge slicing cleanly over pure #FFFFFF
-        lens, fstop, elev, shift_y = 100.0, 5.6, 24.0, -0.02
+        lens, fstop, elev, shift_y = 100.0, 11.0, 24.0, -0.02
         yaw = -24.0 if rec_yaw <= 0.0 else 24.0
         tx = 0.24 * sx
         ty = -0.32 * fh
@@ -97,12 +97,12 @@ def compute_detail_still_pose(
             desk_z - 0.003, 0.56 * max_z,
         )
         raw_d = camera_rig.compute_fit_distance(yaw, elev, (tx, ty, tz), corners, lens, aspect, 0.94, 0.84, shift_y)
-        dist = max(0.15, raw_d * 0.84)
-        focus_pt = (tx, -0.38 * fh, max(0.22 * max_z, 0.006))
+        dist = max(0.16, raw_d * 0.92)
+        focus_pt = (tx, -0.35 * fh, max(0.18 * max_z, 0.005))
 
     else:  # detail_oblique_grid
         # Full-bleed 46-deg oblique architectural grid wall-to-wall with zero empty corners
-        lens, fstop, elev, shift_y = 115.0, 7.1, 46.0, 0.0
+        lens, fstop, elev, shift_y = 115.0, 14.0, 46.0, 0.0
         yaw = -34.0 if rec_yaw <= 0.0 else 34.0
         tx = 0.62 * sx + 0.38 * htx
         ty = 0.62 * sy + 0.38 * hty

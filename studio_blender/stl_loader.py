@@ -188,12 +188,9 @@ def _align_single_13x18(
     stl_paths: Sequence[str],
     rim_width_mm: float,
     frame_mm_override: Optional[Tuple[float, float]],
+    tight_frameless: bool = False,
 ) -> Tuple[float, float, List[Dict[str, Any]]]:
-    """Assemble 1 or 2 tiles inside a single Variant C 130x180mm (or 180x130mm) inner opening.
-
-    For 2 tiles [P0, P1]: preserves shared X alignment (`X_max` aligned so streets join 100%
-    seamlessly) and butts P0 directly north of P1 along Y (`0.0 mm` gap).
-    """
+    """Assemble 1 or 2 tiles inside a Variant C 130x180mm opening or tight frameless bbox."""
     inner_w_portrait = VARIANT_C_OUTER_W_MM - 2.0 * rim_width_mm
     inner_h_portrait = VARIANT_C_OUTER_H_MM - 2.0 * rim_width_mm
     n_tiles = len(raw_objs)
@@ -202,26 +199,23 @@ def _align_single_13x18(
     if n_tiles >= 2:
         # Seamless vertical 2-tile stack: tile 0 = North/Top (+Y), tile 1 = South/Bottom (0)
         y_spans = [max(1.0, st[1][1] - st[0][1]) for st in raw_stats]
-        min_x_all = min(st[0][0] for st in raw_stats)
-        max_x_all = max(st[1][0] for st in raw_stats)
-        span_x = max_x_all - min_x_all
-        total_y = sum(y_spans)
+        min_x_all, max_x_all = min(st[0][0] for st in raw_stats), max(st[1][0] for st in raw_stats)
+        span_x, total_y = max_x_all - min_x_all, sum(y_spans)
 
         if frame_mm_override is not None:
             inner_w_mm, inner_h_mm = frame_mm_override
+        elif tight_frameless:
+            inner_w_mm, inner_h_mm = span_x, total_y
         else:
-            # Snap inner opening flush to North/South/East edges so zero raw baseplate grooves show
-            inner_w_mm = max(inner_w_portrait, span_x)
-            inner_h_mm = total_y
+            inner_w_mm, inner_h_mm = max(inner_w_portrait, span_x), total_y
 
-        # Align East (+X) edge flush to +0.5*inner_w_mm; West (-X) preserves genuine water cutout
+        # Align East (+X) flush to +0.5*inner_w_mm (exact symmetric center when inner_w_mm == span_x)
         shift_x_mm = 0.5 * inner_w_mm - max_x_all
         y_cursor = 0.5 * total_y
         for idx, (obj, (mn, mx, sc), sp) in enumerate(zip(raw_objs, raw_stats, stl_paths)):
             tile_h = y_spans[idx]
             y_bot_target = y_cursor - tile_h
-            shift_y_mm = y_bot_target - mn[1]
-            _apply_mesh_transform(obj, (shift_x_mm, shift_y_mm, -mn[2]), sc)
+            _apply_mesh_transform(obj, (shift_x_mm, y_bot_target - mn[1], -mn[2]), sc)
             y_cursor -= tile_h
             tile_metas.append({
                 "object": obj, "stl_path": str(Path(sp).resolve()),
@@ -238,17 +232,20 @@ def _align_single_13x18(
 
     if frame_mm_override is not None:
         inner_w_mm, inner_h_mm = frame_mm_override
+    elif tight_frameless:
+        inner_w_mm, inner_h_mm = size_x, size_y
     elif nom_w > inner_w_portrait + 1.0 or size_x > inner_w_portrait + 1.0:
-        inner_w_mm = max(inner_h_portrait, nom_w, size_x)
-        inner_h_mm = max(inner_w_portrait, nom_h, size_y)
+        inner_w_mm, inner_h_mm = max(inner_h_portrait, nom_w, size_x), max(inner_w_portrait, nom_h, size_y)
     else:
-        inner_w_mm = max(inner_w_portrait, size_x)
-        inner_h_mm = max(inner_h_portrait, size_y)
+        inner_w_mm, inner_h_mm = max(inner_w_portrait, size_x), max(inner_h_portrait, size_y)
 
-    in_nom_x = (mn[0] >= -2.0) and (mx[0] <= nom_w + 2.0)
-    in_nom_y = (mn[1] >= -2.0) and (mx[1] <= nom_h + 2.0)
-    shift_x_mm = -0.5 * nom_w if in_nom_x else -0.5 * (mn[0] + mx[0])
-    shift_y_mm = -0.5 * nom_h if in_nom_y else -0.5 * (mn[1] + mx[1])
+    if tight_frameless and frame_mm_override is None:
+        shift_x_mm, shift_y_mm = -0.5 * (mn[0] + mx[0]), -0.5 * (mn[1] + mx[1])
+    else:
+        in_nom_x = (mn[0] >= -2.0) and (mx[0] <= nom_w + 2.0)
+        in_nom_y = (mn[1] >= -2.0) and (mx[1] <= nom_h + 2.0)
+        shift_x_mm = -0.5 * nom_w if in_nom_x else -0.5 * (mn[0] + mx[0])
+        shift_y_mm = -0.5 * nom_h if in_nom_y else -0.5 * (mn[1] + mx[1])
     _apply_mesh_transform(raw_objs[0], (shift_x_mm, shift_y_mm, -mn[2]), sc)
 
     tile_metas.append({
@@ -381,7 +378,10 @@ def load_city_stls(
         raw_stats.append(_measure_raw_mm(obj))
 
     if frame_style in ("single_13x18", "none"):
-        frame_w_m, frame_h_m, tile_metas = _align_single_13x18(raw_objs, raw_stats, stl_paths, rim_width_mm if frame_style != "none" else 0.0, frame_mm_override)
+        is_none = frame_style == "none"
+        frame_w_m, frame_h_m, tile_metas = _align_single_13x18(
+            raw_objs, raw_stats, stl_paths, 0.0 if is_none else rim_width_mm, frame_mm_override, tight_frameless=is_none
+        )
         frame_centers_xy, total_w_m, total_h_m = [(0.0, 0.0)], frame_w_m, frame_h_m
     elif frame_style == "a4_passepartout":
         frame_w_m, frame_h_m, tile_metas = _align_a4_passepartout(raw_objs, raw_stats, stl_paths, frame_mm_override)
