@@ -415,10 +415,11 @@ async function run() {
     }
 
     // Sloped S3DB skillion arched lattice panel (wall=no, roof:height=height-min_height) must
-    // follow the inclined skillion plane cleanly and keep its underside open (not a boxy cage).
+    // follow the inclined skillion plane cleanly, emit proud wrought-iron X-lattice relief and
+    // gallery cornices on elevated observation decks, and keep the underside arch opening clear.
     {
       const archLeg = [
-        [-14, -14], [14, -14], [14, -10], [8, -10], [5, -6], [-5, -6], [-8, -10], [-14, -10],
+        [-14, -14], [-8, -14], [-5, -9.5], [5, -9.5], [8, -14], [14, -14], [8, -6], [-8, -6],
       ];
       const scArch = {
         center: [0, 0], bounds: { widthM: 320, heightM: 320 }, halfW: 60, halfH: 60, metersToUnits: 60 / 160,
@@ -437,6 +438,11 @@ async function run() {
             tags: { 'building:part': 'roof', wall: 'no', 'roof:shape': 'skillion', 'roof:height': '54', 'roof:direction': '180' },
           },
           {
+            id: 5, osmId: 991005, groupId: 991001, outer: rectRing(0, -6.5, 7.8, 1.5), holes: [],
+            minH: 58, h: 61, roof: 'flat', part: true,
+            tags: { 'building:part': 'yes', height: '61', min_height: '58', 'roof:shape': 'flat' },
+          },
+          {
             id: 4, osmId: 991004, groupId: 991004, outer: rectRing(20, 20, 4, 2), holes: [], minH: 0, h: 5, roof: 'flat',
             btype: 'boat', isVessel: true, tags: { building: 'boat', height: '5' },
           },
@@ -447,13 +453,14 @@ async function run() {
         const cx = (t.v0[0] + t.v1[0] + t.v2[0]) / 3;
         const cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3;
         const cz = (t.v0[2] + t.v1[2] + t.v2[2]) / 3;
-        return Math.abs(cx) < 2.5 && cy > -12 && cy < -8 && cz > 2.0 && cz < 10.0;
+        return Math.abs(cx) < 2.5 && cy > -13.5 && cy < -10.0 && cz > 2.0 && cz < 9.5;
       }).length;
       const boatTris = builtArch.meshes.buildings.filter(t => (t.v0[0] + t.v1[0] + t.v2[0]) / 3 > 16).length;
+      const bldTris = builtArch.meshes.buildings.length;
       check(
-        builtArch.printMetrics.isWatertightManifold && archCenterTris === 0 && boatTris === 0,
-        'Sloped skillion lattice arch keeps underside opening clear and waterCutout skips floating boats',
-        `wt=${builtArch.printMetrics.isWatertightManifold}, archCenterTris=${archCenterTris}, boatTris=${boatTris}`
+        builtArch.printMetrics.isWatertightManifold && archCenterTris === 0 && boatTris === 0 && bldTris > 350,
+        'Sloped skillion lattice arch emits proud X-lattice relief + deck cornice, keeps arch open, and skips boats',
+        `wt=${builtArch.printMetrics.isWatertightManifold}, archCenterTris=${archCenterTris}, boatTris=${boatTris}, bldTris=${bldTris}`
       );
     }
   }

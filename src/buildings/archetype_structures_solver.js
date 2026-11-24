@@ -125,8 +125,225 @@
   }
 
   /**
+   * Slices a polygon in panel-local (s, w) coordinates at s = sVal and returns
+   * sorted non-degenerate [w0, w1] intervals.
+   * @param {number[][]} polySW
+   * @param {number} sVal
+   * @param {number} minWidthU
+   * @returns {number[][]}
+   */
+  function _slicePanelSWIntervals(polySW, sVal, minWidthU) {
+    const hits = [];
+    const n = polySW.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const a = polySW[j], b = polySW[i];
+      if ((a[0] <= sVal && b[0] > sVal) || (b[0] <= sVal && a[0] > sVal)) {
+        const t = (sVal - a[0]) / (b[0] - a[0]);
+        hits.push(a[1] + t * (b[1] - a[1]));
+      }
+    }
+    if (hits.length < 2) return [];
+    hits.sort((a, b) => a - b);
+    const out = [];
+    for (let k = 0; k + 1 < hits.length; k += 2) {
+      if (hits[k + 1] - hits[k] >= minWidthU) out.push([hits[k], hits[k + 1]]);
+    }
+    return out;
+  }
+
+  /**
+   * Generates MSLA-printable proud wrought-iron X-lattice truss relief ribs on the
+   * outer sloped face of an S3DB skillion lattice panel while keeping open arches clear.
+   * @returns {object[]} Array of Manifold beam solids
+   */
+  function _buildSkillionFaceLatticeRelief(
+    core, mf, outerBed, dx, dy, wx, wy,
+    sMin, sMax, wMin, wMax, zEavesU, slope, zBottom, zTop,
+    isOpenRoofShell, halfDz, scaleMm
+  ) {
+    const runU = sMax - sMin;
+    const spanW = wMax - wMin;
+    const riseU = Math.max(1e-4, zTop - zEavesU);
+    const panelHMm = (zTop - zBottom) * scaleMm;
+    if (panelHMm < 2.2 || spanW * scaleMm < 1.4 || runU < 1e-4) return [];
+
+    const polySW = [];
+    for (let i = 0; i < outerBed.length; i++) {
+      const p = outerBed[i];
+      polySW.push([p[0] * dx + p[1] * dy, p[0] * wx + p[1] * wy]);
+    }
+    if (polySW.length < 3) return [];
+
+    const hyp = Math.hypot(runU, riseU);
+    const nS = riseU / hyp;
+    const nZ = runU / hyp;
+    const ribR = Math.max(0.21 / scaleMm, Math.min(0.28 / scaleMm, spanW * 0.038));
+    const chordR = Math.min(0.32 / scaleMm, ribR * 1.18);
+    const outOff = ribR * 0.24;
+    const minIntervalW = Math.max(0.45 / scaleMm, ribR * 1.8);
+    const sAtZ = (z) => sMax - (z - zEavesU) / slope;
+    const zOuterAtS = (s) => zEavesU + slope * (sMax - Math.max(sMin, s)) + (isOpenRoofShell ? halfDz : 0.0);
+    const ptOuter = (s, w, off = outOff) => {
+      const sp = s + nS * off;
+      const zp = zOuterAtS(s) + nZ * off;
+      return [sp * dx + w * wx, sp * dy + w * wy, zp];
+    };
+
+    const beams = [];
+    const maxBeams = 92;
+    const addBeam = (p0, p1, r) => {
+      if (beams.length >= maxBeams) return;
+      const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+      if (len < 0.20 / scaleMm) return;
+      const bm = core.beamManifoldBetween(mf, p0, p1, r);
+      if (bm) beams.push(bm);
+    };
+
+    const zPadBot = Math.max(0.30 / scaleMm, ribR * 1.25);
+    const zPadTop = isOpenRoofShell
+      ? Math.max(0.45 / scaleMm, ribR * 1.65)
+      : Math.max(0.32 / scaleMm, ribR * 1.25);
+    const zLo = Math.max(zBottom + zPadBot, zEavesU + zPadBot * 0.65);
+    const zHi = zTop - zPadTop;
+    if (zHi <= zLo + 0.65 / scaleMm) return [];
+
+    // Locate arch-crown transition Z where a 2-leg open shell merges into a 1-piece spandrel frieze.
+    let zLastTwo = null;
+    let zFirstOne = null;
+    if (isOpenRoofShell) {
+      const nProbe = 36;
+      for (let k = 0; k <= nProbe; k++) {
+        const z = zLo + (k / nProbe) * (zHi - zLo);
+        const ivs = _slicePanelSWIntervals(polySW, sAtZ(z), minIntervalW);
+        if (ivs.length >= 2) {
+          zLastTwo = z;
+        } else if (zLastTwo !== null && ivs.length === 1 && zFirstOne === null) {
+          zFirstOne = z;
+          break;
+        }
+      }
+    }
+
+    const zones = [];
+    if (zLastTwo !== null && zLastTwo > zLo + 0.65 / scaleMm) {
+      zones.push({ za: zLo, zb: zLastTwo, expectedCount: 2 });
+      if (zFirstOne !== null && zHi > zFirstOne + 0.65 / scaleMm) {
+        zones.push({ za: zFirstOne, zb: zHi, expectedCount: 1 });
+      }
+    } else {
+      zones.push({ za: zLo, zb: zHi, expectedCount: 1 });
+    }
+
+    const buildXZone = (za, zb, expectedCount) => {
+      const zoneH = zb - za;
+      if (zoneH < 0.65 / scaleMm) return;
+      // Build proportional self-similar tier elevations so X-braces stay >= 45 deg as width tapers.
+      const zLevels = [za];
+      let zCur = za;
+      while (zCur < zb - 0.1 / scaleMm && zLevels.length < 11) {
+        const ivMid = _slicePanelSWIntervals(polySW, sAtZ(Math.min(zb, zCur + 0.35 / scaleMm)), minIntervalW);
+        const refW = ivMid.length > 0
+          ? Math.max(...ivMid.map(iv => iv[1] - iv[0]))
+          : spanW * 0.5;
+        const stepH = Math.max(1.45 / scaleMm, Math.min(3.30 / scaleMm, refW * 1.04));
+        if (zCur + stepH * 1.42 >= zb) {
+          zLevels.push(zb);
+          break;
+        }
+        zCur += stepH;
+        zLevels.push(zCur);
+      }
+      if (zLevels[zLevels.length - 1] < zb - 1e-4) zLevels.push(zb);
+
+      for (let ri = 0; ri < zLevels.length - 1; ri++) {
+        const z0 = zLevels[ri], z1 = zLevels[ri + 1];
+        const s0 = sAtZ(z0), s1 = sAtZ(z1);
+        const ivs0 = _slicePanelSWIntervals(polySW, s0, minIntervalW);
+        const ivs1 = _slicePanelSWIntervals(polySW, s1, minIntervalW);
+        if (ivs0.length === 0 || ivs1.length === 0 || ivs0.length !== ivs1.length) continue;
+        if (expectedCount > 1 && ivs0.length < 2) continue;
+
+        const pairCount = ivs0.length;
+        const bayH = z1 - z0;
+        const edgeInset = ribR * 0.45;
+        for (let pi = 0; pi < pairCount; pi++) {
+          const a0 = ivs0[pi][0] + edgeInset, a1 = ivs0[pi][1] - edgeInset;
+          const b0 = ivs1[pi][0] + edgeInset, b1 = ivs1[pi][1] - edgeInset;
+          const wBot = a1 - a0, wTop = b1 - b0;
+          if (wBot < ribR * 1.1 || wTop < ribR * 1.1) continue;
+
+          // Outer silhouette chord ribs + horizontal tier stringers.
+          const isLeftOuter = pi === 0;
+          const isRightOuter = pi === pairCount - 1;
+          addBeam(ptOuter(s0, a0), ptOuter(s1, b0), isLeftOuter ? chordR : ribR);
+          addBeam(ptOuter(s0, a1), ptOuter(s1, b1), isRightOuter ? chordR : ribR);
+          if (ri === 0) addBeam(ptOuter(s0, a0), ptOuter(s0, a1), ribR * 0.92);
+          addBeam(ptOuter(s1, b0), ptOuter(s1, b1), ribR * 0.95);
+
+          // Keep each arched leg a clean single X-truss column; subdivide only wide unified spandrel bands.
+          const maxCellW = Math.max(0.85 / scaleMm, bayH * 1.05);
+          const nCols = expectedCount >= 2
+            ? 1
+            : Math.max(1, Math.min(5, Math.ceil(Math.max(wBot, wTop) / maxCellW)));
+          for (let ci = 0; ci < nCols; ci++) {
+            const fL = ci / nCols, fR = (ci + 1) / nCols;
+            const xBL = a0 + wBot * fL, xBR = a0 + wBot * fR;
+            const xTL = b0 + wTop * fL, xTR = b0 + wTop * fR;
+            addBeam(ptOuter(s0, xBL), ptOuter(s1, xTR), ribR * 0.88);
+            addBeam(ptOuter(s0, xBR), ptOuter(s1, xTL), ribR * 0.88);
+            if (ci > 0 && ci < nCols) {
+              addBeam(ptOuter(s0, xBL), ptOuter(s1, xTL), ribR * 0.82);
+            }
+          }
+        }
+      }
+    };
+
+    for (const zBand of zones) buildXZone(zBand.za, zBand.zb, zBand.expectedCount);
+
+    // Trace contiguous interior arch-rim chains on open arched shells with a proud cast-iron arch band.
+    if (isOpenRoofShell && zLastTwo !== null) {
+      const wInnerLo = wMin + spanW * 0.14;
+      const wInnerHi = wMax - spanW * 0.14;
+      const sUphillGuard = sMin + runU * 0.08;
+      const sBaseGuard = sMax - 0.08 / scaleMm;
+      const n = polySW.length;
+      const isArchEdge = (a, b) => (
+        a[1] > wInnerLo && a[1] < wInnerHi && b[1] > wInnerLo && b[1] < wInnerHi &&
+        a[0] > sUphillGuard && b[0] > sUphillGuard && a[0] < sBaseGuard && b[0] < sBaseGuard &&
+        Math.hypot(b[0] - a[0], b[1] - a[1]) <= spanW * 0.45
+      );
+      const chains = [];
+      let cur = null;
+      for (let i = 0; i < n; i++) {
+        const a = polySW[i], b = polySW[(i + 1) % n];
+        if (isArchEdge(a, b)) {
+          if (!cur) { cur = [a, b]; chains.push(cur); }
+          else cur.push(b);
+        } else {
+          cur = null;
+        }
+      }
+      for (const ch of chains) {
+        if (ch.length < 2) continue;
+        const nSegs = ch.length - 1;
+        const stride = Math.max(1, Math.ceil(nSegs / 14));
+        for (let k = 0; k < nSegs; k += stride) {
+          const pA = ch[k];
+          const pB = ch[Math.min(nSegs, k + stride)];
+          if (Math.hypot(pB[0] - pA[0], pB[1] - pA[1]) > spanW * 0.48) continue;
+          addBeam(ptOuter(pA[0], pA[1], outOff * 1.05), ptOuter(pB[0], pB[1], outOff * 1.05), chordR);
+        }
+      }
+    }
+
+    return beams;
+  }
+
+  /**
    * Builds a watertight sloped architectural shell or solid tapered wedge from a
-   * full-resolution S3DB skillion polygon (preserving curved arch cutouts and miter edges).
+   * full-resolution S3DB skillion polygon (preserving curved arch cutouts, miter edges,
+   * and proud MSLA-printable wrought-iron X-lattice truss relief).
    * @returns {object|null} Manifold solid or null
    */
   function _buildSlopedSkillionLatticePanel(core, mf, ctx, b, outerBed, tags, rawH, rawMinH, zBottom, zTop) {
@@ -177,6 +394,7 @@
     } catch (_) {}
 
     let profileSZ = null;
+    let halfDz = 0.0;
     if (isOpenRoofShell) {
       // Sloped open-underside shell centered on the exact skillion plane, keeping arches open
       // while ensuring >= 0.85 mm structural landing seat thickness beneath upper floor decks.
@@ -185,7 +403,7 @@
         (zTop - zBottom) * 0.42,
         Math.max(0.88 / scaleMm, (tPerpU * Math.hypot(runU, riseU)) / runU)
       );
-      const halfDz = dzShell * 0.5;
+      halfDz = dzShell * 0.5;
       // Add an uphill landing haunch strictly along the top seat (s <= sMin + 0.22*runU) so
       // arched legs embed solidly under upper floor decks without triggering vertical stilts.
       const topSeatU = Math.min(0.85 / scaleMm, runU * 0.52);
@@ -255,6 +473,7 @@
     if (pts2D.length < 3) return null;
 
     let cs = null, ex = null, prism = null, cutter = null;
+    const reliefBeams = [];
     try {
       cs = mf.CrossSection.ofPolygons([pts2D], 'Positive');
       if (cs.isEmpty && cs.isEmpty()) return null;
@@ -270,10 +489,23 @@
       if (cutSolids.length === 0) return null;
       cutter = cutSolids.length === 1 ? cutSolids[0] : core.batchUnionManifolds(mf, cutSolids);
       const clipped = prism.intersect(cutter);
-      if (clipped && clipped.numTri() > 0) return clipped;
-      core.safeDeleteManifold(clipped);
-      return null;
+      if (!clipped || clipped.numTri() === 0) {
+        core.safeDeleteManifold(clipped);
+        return null;
+      }
+
+      const beams = _buildSkillionFaceLatticeRelief(
+        core, mf, outerBed, dx, dy, wx, wy,
+        sMin, sMax, wMin, wMax, zEavesU, slope, zBottom, zTop,
+        isOpenRoofShell, halfDz, scaleMm
+      );
+      if (beams.length === 0) return clipped;
+      for (const bm of beams) reliefBeams.push(bm);
+      const merged = core.batchUnionManifolds(mf, [clipped, ...reliefBeams]);
+      reliefBeams.length = 0;
+      return merged && merged.numTri() > 0 ? merged : null;
     } catch (_) {
+      for (const bm of reliefBeams) core.safeDeleteManifold(bm);
       return null;
     } finally {
       core.safeDeleteManifold(cs);

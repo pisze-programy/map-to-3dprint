@@ -72,11 +72,16 @@
 
     const clipLimX = halfW + padClip, clipLimY = halfH + padClip;
     const _prepMeta = new Array(buildingsList.length);
+    const latticeGroupIds = new Set();
     for (let idx = 0; idx < buildingsList.length; idx++) {
       if ((idx & 255) === 0 && idx > 0) yield;
       const b = buildingsList[idx];
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) { _prepMeta[idx] = null; continue; }
       const tags = Object.assign({}, rawTagById.get(b.osmId) || {}, b.tags || {});
+      const tc = String(tags['tower:construction'] || b.towerConstruction || '').toLowerCase().trim();
+      if ((tc === 'lattice' || tc === 'guyed_lattice') && b.groupId !== undefined && b.groupId !== null) {
+        latticeGroupIds.add(String(b.groupId));
+      }
       if (root.isLayer2ArchetypeRecord(b, tags)) { _prepMeta[idx] = null; continue; }
       const outerBed = b.outer.map(toBed);
       let bMinX = Infinity, bMaxX = -Infinity, bMinY = Infinity, bMaxY = -Infinity;
@@ -135,6 +140,7 @@
       if (!pm) continue;
       if (pm.b.groupId !== undefined && pm.b.groupId !== null) {
         const gk = String(pm.b.groupId);
+        if (latticeGroupIds.has(gk)) pm.inLatticeGroup = true;
         let gArr = metaByGroup.get(gk);
         if (!gArr) { gArr = []; metaByGroup.set(gk, gArr); }
         gArr.push(idx);

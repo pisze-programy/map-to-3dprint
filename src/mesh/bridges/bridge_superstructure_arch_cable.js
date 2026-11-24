@@ -10,6 +10,109 @@ if (typeof _addBridgeSupportSolidsJS === 'undefined' && typeof require !== 'unde
   Object.assign(globalThis, require('./bridge_supports_solver.js'));
 }
 
+/**
+ * Finds midpoint stations of dry islands flanked by water inside [wStart, wEnd]
+ * so multi-channel river arches anchor naturally on real islands.
+ * @param {object} spec
+ * @param {number} wStart
+ * @param {number} wEnd
+ * @param {number} minBayU
+ * @returns {number[]}
+ */
+function _collectDryIslandStopsJS(spec, wStart, wEnd, minBayU) {
+  const out = [];
+  const inW = spec.inWater || [];
+  const n = inW.length;
+  let i = 0;
+  while (i < n) {
+    if (inW[i]) { i++; continue; }
+    const d0 = i;
+    while (i + 1 < n && !inW[i + 1]) i++;
+    const d1 = i++;
+    const hasWaterLeft = d0 > 0 && inW[d0 - 1];
+    const hasWaterRight = d1 < n - 1 && inW[d1 + 1];
+    if (!hasWaterLeft || !hasWaterRight) continue;
+    const sMid = (spec.sArr[d0] + spec.sArr[d1]) * 0.5;
+    if (sMid > wStart + minBayU && sMid < wEnd - minBayU) out.push(sMid);
+  }
+  return out;
+}
+
+/**
+ * Subdivides water-cutout arch bays exceeding MSLA printable span limits into
+ * balanced architectural bays so curved spandrels stay self-supporting.
+ * @param {number[]} bayStops
+ * @param {number} maxBayU
+ * @returns {number[]}
+ */
+function _subdivideArchBaysForWaterCutoutJS(bayStops, maxBayU) {
+  const out = [bayStops[0]];
+  for (let i = 0; i < bayStops.length - 1; i++) {
+    const a = bayStops[i], b = bayStops[i + 1], span = b - a;
+    if (span > maxBayU * 1.04) {
+      const nSub = Math.max(2, Math.min(20, Math.ceil(span / maxBayU)));
+      for (let k = 1; k < nSub; k++) out.push(a + (k / nSub) * span);
+    }
+    out.push(b);
+  }
+  return out;
+}
+
+/**
+ * Builds a sleek bridge-aligned rectangular masonry pier at station sEnd.
+ * @returns {object|null} Manifold solid or null
+ */
+function _buildAlignedArchPierJS(spec, sEnd, pierHalfL, pierHalfW, terrainWater, ctx, metrics) {
+  const mf = ctx.mf;
+  const scaleMm = ctx.scaleMm || 1.89;
+  const minThickU = Math.min(0.05, 0.08 / scaleMm);
+  const { pt, tx, ty } = _samplePtAtSJS(spec, sEnd);
+  if (Number.isFinite(ctx.halfW) && Number.isFinite(ctx.halfH)) {
+    if (Math.abs(pt[0]) > ctx.halfW + 0.4 || Math.abs(pt[1]) > ctx.halfH + 0.4) return null;
+  }
+  const zCap = typeof _safeSubDeckCapZJS === 'function'
+    ? _safeSubDeckCapZJS(spec, sEnd, pierHalfL, scaleMm)
+    : (_lerpArrAtSJS(spec.sArr, spec.zBotArr, sEnd) + Math.min(spec.deckThick * 0.4, 0.12 / scaleMm));
+  const zFl = _anchorFloorZJS(pt[0], pt[1], terrainWater, ctx);
+  if (zCap <= zFl + minThickU) return null;
+  metrics.pierMinZ = Math.min(metrics.pierMinZ, zFl);
+  const pA = [pt[0] - tx * pierHalfL, pt[1] - ty * pierHalfL];
+  const pB = [pt[0] + tx * pierHalfL, pt[1] + ty * pierHalfL];
+  return _buildSlopedWedgeCorbelJS(pA, pB, pierHalfW, zFl, zFl, zCap, zCap, mf, minThickU);
+}
+
+/**
+ * Builds a curved parabolic spandrel arch vault beneath the bridge deck across [b0, b1],
+ * keeping all arch haunches self-supporting and eliminating flat crown overhangs.
+ */
+function _buildCurvedArchSpandrelVaultJS(spec, b0, b1, archRise, zFloorBay, vaultHalfW, mf, scaleMm, parts) {
+  const minThickU = Math.min(0.04, 0.06 / scaleMm);
+  const baySpan = Math.max(0.2 / scaleMm, b1 - b0);
+  const nSeg = 10;
+  const crownDrop = 0.14 / scaleMm;
+  const embedTop = Math.min(spec.deckThick * 0.42, 0.14 / scaleMm);
+  const zFloorMin = zFloorBay + 0.35 / scaleMm;
+  let prevPt = null, prevZBot = 0, prevZTop = 0;
+
+  for (let k = 0; k <= nSeg; k++) {
+    const u = k / nSeg;
+    const s = Math.max(0, Math.min(spec.spanU, b0 + u * baySpan));
+    const { pt } = _samplePtAtSJS(spec, s);
+    const zBotS = _lerpArrAtSJS(spec.sArr, spec.zBotArr, s);
+    const zTopS = _lerpArrAtSJS(spec.sArr, spec.zTopArr, s);
+    const zVaultTop = Math.min(zTopS - 0.05 / scaleMm, zBotS + embedTop);
+    const zCrown = zBotS - crownDrop;
+    const zArch = Math.max(zFloorMin, (zCrown - archRise) + 4 * u * (1 - u) * archRise);
+    if (prevPt) {
+      const seg = _buildSlopedWedgeCorbelJS(prevPt, pt, vaultHalfW, prevZBot, zArch, prevZTop, zVaultTop, mf, minThickU);
+      if (seg) parts.push(seg);
+    }
+    prevPt = pt;
+    prevZBot = zArch;
+    prevZTop = zVaultTop;
+  }
+}
+
 function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutRU, parts, supportStationsS, metrics) {
   const mf = ctx.mf, L = spec.spanU, halfW = spec.width * 0.5, scaleMm = ctx.scaleMm || 1.89;
   const mToBedXY = Math.max(1e-5, (ctx.mToU || 0.1) * (ctx.scaleToBed || 1.0));
@@ -35,37 +138,65 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
     if (sRaw <= wStart + minBayU || sRaw >= wEnd - minBayU) continue;
     if (!interiorStops.length || sRaw - interiorStops[interiorStops.length - 1] >= minBayU) interiorStops.push(sRaw);
   }
+  if (spec.crossesWater) {
+    for (const sIsl of _collectDryIslandStopsJS(spec, wStart, wEnd, minBayU)) {
+      if (!interiorStops.some(s => Math.abs(s - sIsl) < minBayU)) interiorStops.push(sIsl);
+    }
+    interiorStops.sort((a, b) => a - b);
+  }
   const archSpanMeters = totalArchSpan / mToBedXY;
   if (!interiorStops.length && !spec.explicitThroughArch && archSpanMeters > 265.0) {
     const nAutoBays = Math.max(2, Math.round(archSpanMeters / 110.0));
     for (let b = 1; b < nAutoBays; b++) interiorStops.push(wStart + (b / nAutoBays) * totalArchSpan);
   }
-  const bayStops = [wStart, ...interiorStops, wEnd];
+  let bayStops = [wStart, ...interiorStops, wEnd];
 
+  // Under waterCutout the river channel is carved to Z = 0.0, providing full under-deck arch clearance.
+  const zWaterRef = ctx.waterCutout ? 0.0 : ctx.zWaterTop;
   const waterClears = [];
   let minL = Infinity;
   for (let i = 0; i < nPts; i++) {
-    if (spec.inWater[i]) waterClears.push(spec.zBotArr[i] - ctx.zWaterTop);
+    if (spec.inWater[i]) waterClears.push(spec.zBotArr[i] - zWaterRef);
     else if (nPts <= 2 || (i > 0 && i < nPts - 1)) minL = Math.min(minL, spec.zBotArr[i] - terrainWater.getSurfaceZ(spec.pts[i][0], spec.pts[i][1]));
   }
   waterClears.sort((a, b) => a - b);
   const medW = waterClears.length ? waterClears[waterClears.length >> 1] : Infinity;
-  const avgBaySpan = totalArchSpan / Math.max(1, bayStops.length - 1);
+  const initAvgBay = totalArchSpan / Math.max(1, bayStops.length - 1);
   const waterThroughThresh = spec.isRail
     ? (2.4 / scaleMm)
-    : Math.max(1.25 / scaleMm, Math.min(2.5 / scaleMm, avgBaySpan * 0.085));
+    : Math.max(1.25 / scaleMm, Math.min(2.5 / scaleMm, initAvgBay * 0.085));
   const isThrough = !spec.isHumpback && Boolean(
     spec.explicitThroughArch ||
     (spec.crossesWater && medW < waterThroughThresh)
   );
   metrics.isThroughArch = isThrough;
-  const ribR = Math.max(strutRU * 1.15, spec.deckThick * 0.34), lat = Math.max(halfW * 0.86, ribR * 1.4) * (isThrough ? 1 : 0.85);
 
-  if (!isThrough) {
-    for (const sEnd of bayStops) {
+  const isWaterCutoutArch = Boolean(ctx.waterCutout && spec.crossesWater);
+  if (isWaterCutoutArch) {
+    bayStops = _subdivideArchBaysForWaterCutoutJS(bayStops, 4.4 / scaleMm);
+  }
+  const avgBaySpan = totalArchSpan / Math.max(1, bayStops.length - 1);
+  const ribR = Math.max(strutRU * 1.15, spec.deckThick * 0.34);
+  const lat = Math.max(halfW * 0.86, ribR * 1.4) * (isThrough ? 1 : 0.85);
+  const endBankTolU = 0.35 / scaleMm;
+
+  if (!isThrough || isWaterCutoutArch) {
+    const pierHalfL = Math.max(0.32 / scaleMm, Math.min(0.42 / scaleMm, avgBaySpan * 0.085));
+    const pierHalfW = Math.max(0.30 / scaleMm, Math.min(halfW * 0.96, halfW + 0.04 / scaleMm));
+    for (let si = 0; si < bayStops.length; si++) {
+      const sEnd = bayStops[si];
+      const isInteriorStop = si > 0 && si < bayStops.length - 1;
       const { pt, tx, ty } = _samplePtAtSJS(spec, sEnd);
       const hasExplicitNear = (spec.explicitSupports || []).some(es => Math.abs(es.sProj - sEnd) <= Math.max(0.5 / scaleMm, spec.width * 0.8));
-      if (!terrainWater.isPointInWater(pt[0], pt[1]) && !hasExplicitNear) {
+      const inWaterPt = terrainWater.isPointInWater(pt[0], pt[1]);
+      if (isWaterCutoutArch && isInteriorStop && !hasExplicitNear) {
+        const pier = _buildAlignedArchPierJS(spec, sEnd, pierHalfL, pierHalfW, terrainWater, ctx, metrics);
+        if (pier) {
+          parts.push(pier);
+          supportStationsS.push(sEnd);
+        }
+      } else if (!isThrough && !inWaterPt && !hasExplicitNear) {
+        if (isWaterCutoutArch && (sEnd <= endBankTolU || sEnd >= L - endBankTolU)) continue;
         const pR = Math.max(ribR * 1.25, halfW * 0.4);
         const zCap = typeof _safeSubDeckCapZJS === 'function'
           ? _safeSubDeckCapZJS(spec, sEnd, pR, scaleMm)
@@ -73,7 +204,7 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
         const zFl = _anchorFloorZJS(pt[0], pt[1], terrainWater, ctx);
         const pier = zCap > zFl + 0.03 / scaleMm ? beamManifoldBetween(mf, [pt[0], pt[1], zFl], [pt[0], pt[1], zCap], pR) : null;
         if (pier) parts.push(pier);
-      } else if (!terrainWater.isPointInWater(pt[0], pt[1]) && hasExplicitNear) {
+      } else if (!isThrough && !inWaterPt && hasExplicitNear) {
         // Ensure lateral arch rib springings also ground cleanly into steep cliffside slopes
         for (const sign of [-1, 1]) {
           const sp = _sidePtJS(pt, tx, ty, sign * lat, 0);
@@ -95,8 +226,39 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
     metrics.minStayGapMm = Math.min(metrics.minStayGapMm, minGapMm);
     const sMid = (b0 + b1) * 0.5, { pt: ptMid } = _samplePtAtSJS(spec, sMid);
     const zDeckMid = _lerpArrAtSJS(spec.sArr, isThrough ? spec.zTopArr : spec.zBotArr, sMid);
-    const zFloorLim = terrainWater.isPointInWater(ptMid[0], ptMid[1]) ? ctx.zWaterTop + 0.32 / scaleMm : terrainWater.getSurfaceZ(ptMid[0], ptMid[1]) + 0.25 / scaleMm;
+    const midInWater = terrainWater.isPointInWater(ptMid[0], ptMid[1]);
+    const zFloorLim = midInWater
+      ? (ctx.waterCutout ? 0.0 : ctx.zWaterTop + 0.32 / scaleMm)
+      : terrainWater.getSurfaceZ(ptMid[0], ptMid[1]) + 0.25 / scaleMm;
     if (!isThrough && spec.isHumpback && (zDeckMid - zFloorLim) < 0.35 / scaleMm) continue;
+
+    if (isWaterCutoutArch && !isThrough) {
+      const archRise = Math.max(0.65 / scaleMm, Math.min(baySpan * 0.46, Math.max(0.65 / scaleMm, zDeckMid - zFloorLim - 0.65 / scaleMm)));
+      const vaultHalfW = Math.max(0.28 / scaleMm, halfW * 0.88);
+      _buildCurvedArchSpandrelVaultJS(spec, b0, b1, archRise, zFloorLim, vaultHalfW, mf, scaleMm, parts);
+      const fasciaLat = Math.max(vaultHalfW, halfW * 0.94);
+      const fasciaR = Math.max(0.14 / scaleMm, Math.min(ribR * 0.85, spec.deckThick * 0.26));
+      for (const sign of [-1, 1]) {
+        let prev = null;
+        for (let k = 0; k <= 8; k++) {
+          const u = k / 8, s = b0 + u * baySpan, { pt, tx, ty } = _samplePtAtSJS(spec, s);
+          const zBotS = _lerpArrAtSJS(spec.sArr, spec.zBotArr, s);
+          const zCrown = zBotS - 0.14 / scaleMm;
+          const zArch = Math.max(zFloorLim + 0.35 / scaleMm, (zCrown - archRise) + 4 * u * (1 - u) * archRise);
+          const p = _sidePtJS(pt, tx, ty, sign * fasciaLat, zArch);
+          if (prev) { const b = _beamOverlapJS(mf, prev, p, fasciaR); if (b) parts.push(b); }
+          prev = p;
+        }
+      }
+      continue;
+    }
+
+    if (isWaterCutoutArch && isThrough) {
+      const zBotMid = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sMid);
+      const haunchRise = Math.max(0.55 / scaleMm, Math.min(baySpan * 0.42, Math.max(0.55 / scaleMm, zBotMid - zFloorLim - 0.65 / scaleMm)));
+      _buildCurvedArchSpandrelVaultJS(spec, b0, b1, haunchRise, zFloorLim, Math.max(0.28 / scaleMm, halfW * 0.86), mf, scaleMm, parts);
+    }
+
     const riseOrDrop = isThrough
       ? Math.max(1.8 / scaleMm, Math.min(baySpan * 0.28, spec.heightM ? spec.heightM * mToBedZ : baySpan * 0.22))
       : Math.max(0.45 / scaleMm, Math.min(baySpan * 0.32, Math.max(0.45 / scaleMm, zDeckMid - zFloorLim)));

@@ -178,6 +178,130 @@ function _safeSubDeckCapZJS(spec, sPos, radiusU, scaleMm = 1.89) {
   return Math.min(ztMin - marginTop, zbMin + embedUp);
 }
 
+/**
+ * Probes outward from a bridge endpoint along (ox, oy) to locate dry riverbank terrain
+ * while staying within the active print-bed bounds.
+ * @param {number[]} pt
+ * @param {number} ox
+ * @param {number} oy
+ * @param {number} widthU
+ * @param {object} terrainWater
+ * @param {object} ctx
+ * @param {number} maxProbeU
+ * @param {number} scaleMm
+ * @returns {{ dFirstDry: number|null, dFullDry: number|null, maxInBedU: number }}
+ */
+function _probeOutwardDryBankJS(pt, ox, oy, widthU, terrainWater, ctx, maxProbeU, scaleMm) {
+  let maxInBedU = maxProbeU;
+  if (Number.isFinite(ctx.halfW) && Number.isFinite(ctx.halfH)) {
+    const margin = 0.05;
+    const limX = Math.max(0.1, ctx.halfW - margin);
+    const limY = Math.max(0.1, ctx.halfH - margin);
+    if (Math.abs(ox) > 1e-6) {
+      const txLim = ox > 0 ? (limX - pt[0]) / ox : (-limX - pt[0]) / ox;
+      maxInBedU = Math.min(maxInBedU, Math.max(0, txLim));
+    }
+    if (Math.abs(oy) > 1e-6) {
+      const tyLim = oy > 0 ? (limY - pt[1]) / oy : (-limY - pt[1]) / oy;
+      maxInBedU = Math.min(maxInBedU, Math.max(0, tyLim));
+    }
+  }
+  const stepU = Math.max(0.08 / scaleMm, 0.20 / scaleMm);
+  const latOff = Math.max(0.12 / scaleMm, widthU * 0.42);
+  const nx = -oy, ny = ox;
+  let dFirstDry = null;
+  let dFullDry = null;
+  for (let d = 0; d <= maxInBedU + 1e-6; d += stepU) {
+    const dc = Math.min(d, maxInBedU);
+    const cx = pt[0] + ox * dc, cy = pt[1] + oy * dc;
+    const cDry = !terrainWater.isPointInWater(cx, cy);
+    if (cDry && dFirstDry === null) dFirstDry = dc;
+    if (cDry && dFullDry === null) {
+      const lDry = !terrainWater.isPointInWater(cx + nx * latOff, cy + ny * latOff);
+      const rDry = !terrainWater.isPointInWater(cx - nx * latOff, cy - ny * latOff);
+      if (lDry && rDry) {
+        dFullDry = dc;
+        break;
+      }
+    }
+  }
+  return { dFirstDry, dFullDry, maxInBedU };
+}
+
+/**
+ * Extends a water-terminating bridge endpoint flush into the nearby dry riverbank with
+ * both a deck continuation and solid masonry abutment block (zero embankment air gap).
+ * @returns {boolean} True when dry bank was located and anchored
+ */
+function _buildExtendedWaterEndAbutmentJS(spec, idx, isStart, pt, tx, ty, wHalf, sinkU, minThickU, terrainWater, ctx, parts) {
+  const mf = ctx.mf;
+  const scaleMm = ctx.scaleMm || spec.scaleMm || 1.89;
+  const outSign = isStart ? -1 : 1;
+  const ox = outSign * tx, oy = outSign * ty;
+  const probe = _probeOutwardDryBankJS(pt, ox, oy, spec.width, terrainWater, ctx, 5.0 / scaleMm, scaleMm);
+  if (probe.dFirstDry === null || probe.dFirstDry > 4.8 / scaleMm) return false;
+
+  const dFull = probe.dFullDry !== null ? probe.dFullDry : probe.dFirstDry;
+  const embedDryU = Math.min(1.15 / scaleMm, Math.max(0.85 / scaleMm, spec.width * 0.55));
+  let dReach = Math.min(probe.maxInBedU, dFull + embedDryU);
+  const backStepU = 0.15 / scaleMm;
+  while (dReach > probe.dFirstDry + backStepU) {
+    const ex = pt[0] + ox * dReach, ey = pt[1] + oy * dReach;
+    if (!terrainWater.isPointInWater(ex, ey)) break;
+    dReach -= backStepU;
+  }
+  if (dReach <= probe.dFirstDry + 0.12 / scaleMm) return false;
+
+  const inOverlap = Math.min(0.45 / scaleMm, Math.max(0.18 / scaleMm, spec.spanU * 0.10));
+  const pIn = [pt[0] - ox * inOverlap, pt[1] - oy * inOverlap];
+  const pOut = [pt[0] + ox * dReach, pt[1] + oy * dReach];
+  const deckA = isStart ? pOut : pIn;
+  const deckB = isStart ? pIn : pOut;
+  const zBotEnd = spec.zBotArr[idx];
+  const zTopEnd = spec.zTopArr[idx];
+  const deckHalfW = Math.max(wHalf, spec.width * 0.50);
+  const deckExt = _buildSlopedWedgeCorbelJS(deckA, deckB, deckHalfW, zBotEnd, zBotEnd, zTopEnd, zTopEnd, mf, minThickU);
+  if (deckExt) parts.push(deckExt);
+
+  const drySurfZ = terrainWater.getSurfaceZ(pOut[0], pOut[1]);
+  const dryFloorZ = Math.max(0.0, Math.min(drySurfZ, zBotEnd) - sinkU);
+  const waterFloorZ = ctx.waterCutout ? 0.0 : dryFloorZ;
+  const meetZEnd = Math.min(zTopEnd - 0.04 / scaleMm, zBotEnd + Math.min(spec.deckThick * 0.45, 0.14 / scaleMm));
+  const abutHalfW = Math.max(wHalf, spec.width * 0.48);
+
+  if (meetZEnd > waterFloorZ + minThickU) {
+    if (probe.dFirstDry <= 2.4 / scaleMm) {
+      // Seal quay margin solidly into dry bank so arch/beam springings anchor flush with 0 mm gap.
+      const abut = _buildSlopedWedgeCorbelJS(deckA, deckB, abutHalfW, waterFloorZ, waterFloorZ, meetZEnd, meetZEnd, mf, minThickU);
+      if (abut) parts.push(abut);
+    } else {
+      // Wide margin (> 2.4 mm): place sleek bank-edge pier at pt, dry embankment block, and angled haunch.
+      const pierHalfL = Math.max(0.32 / scaleMm, Math.min(0.42 / scaleMm, spec.width * 0.35));
+      const pPierA = [pt[0] - ox * pierHalfL, pt[1] - oy * pierHalfL];
+      const pPierB = [pt[0] + ox * pierHalfL, pt[1] + oy * pierHalfL];
+      const pier = _buildSlopedWedgeCorbelJS(
+        isStart ? pPierB : pPierA, isStart ? pPierA : pPierB, abutHalfW, waterFloorZ, waterFloorZ, meetZEnd, meetZEnd, mf, minThickU
+      );
+      if (pier) parts.push(pier);
+      const dBankStart = Math.max(0, probe.dFirstDry - 0.22 / scaleMm);
+      const pBankIn = [pt[0] + ox * dBankStart, pt[1] + oy * dBankStart];
+      const bankAbut = _buildSlopedWedgeCorbelJS(
+        isStart ? pOut : pBankIn, isStart ? pBankIn : pOut, abutHalfW, dryFloorZ, dryFloorZ, meetZEnd, meetZEnd, mf, minThickU
+      );
+      if (bankAbut) parts.push(bankAbut);
+      const zHaunchLow = Math.max(waterFloorZ + 0.40 / scaleMm, meetZEnd - Math.min(2.2 / scaleMm, (dBankStart - pierHalfL) * 0.95));
+      if (dBankStart > pierHalfL + 0.20 / scaleMm && meetZEnd > zHaunchLow + minThickU) {
+        const pMid = [(pPierB[0] + pBankIn[0]) * 0.5, (pPierB[1] + pBankIn[1]) * 0.5];
+        const h1 = _buildSlopedWedgeCorbelJS(pPierB, pMid, abutHalfW * 0.92, zHaunchLow, zBotEnd - 0.12 / scaleMm, meetZEnd, meetZEnd, mf, minThickU);
+        const h2 = _buildSlopedWedgeCorbelJS(pMid, pBankIn, abutHalfW * 0.92, zBotEnd - 0.12 / scaleMm, zHaunchLow, meetZEnd, meetZEnd, mf, minThickU);
+        if (h1) parts.push(h1);
+        if (h2) parts.push(h2);
+      }
+    }
+  }
+  return true;
+}
+
 function buildBankAbutments(spec, terrainWater, ctx) {
   const mf = ctx.mf, parts = [];
   const scaleMm = ctx.scaleMm || spec.scaleMm || 1.89;
@@ -216,6 +340,12 @@ function buildBankAbutments(spec, terrainWater, ctx) {
         if (col) parts.push(col);
       }
       continue;
+    }
+
+    if (spec.crossesWater && ptInWater) {
+      if (_buildExtendedWaterEndAbutmentJS(spec, idx, isStart, pt, tx, ty, wHalf, sinkU, minThickU, terrainWater, ctx, parts)) {
+        continue;
+      }
     }
 
     const inSign = isStart ? 1 : -1;
@@ -266,11 +396,11 @@ function buildBankAbutments(spec, terrainWater, ctx) {
       if (blk) parts.push(blk);
     }
 
-    // Smooth outward dry-land approach transition when a bridge ends elevated above an embankment/ground road
+    // Smooth outward dry-land approach transition (or flush bank embed) so abutments seat deeply on dry embankments.
     const dzAboveGround = spec.zTopArr[idx] - surfZ;
+    const outSign = isStart ? -1 : 1;
     if (!ptInWater && dzAboveGround > 0.10 / scaleMm && dzAboveGround < 3.2 / scaleMm) {
-      const outSign = isStart ? -1 : 1;
-      const maxRampOut = Math.min(2.6 / scaleMm, Math.max(0.45 / scaleMm, dzAboveGround * 3.2));
+      const maxRampOut = Math.min(2.6 / scaleMm, Math.max(spec.crossesWater ? 0.90 / scaleMm : 0.45 / scaleMm, dzAboveGround * 3.2));
       let rampOut = maxRampOut;
       for (const f of [0.25, 0.5, 0.75, 1.0]) {
         const rx = pt[0] + outSign * tx * (maxRampOut * f);
@@ -284,7 +414,7 @@ function buildBankAbutments(spec, terrainWater, ctx) {
         const endPt = [pt[0] + outSign * tx * rampOut, pt[1] + outSign * ty * rampOut];
         const endSurfZ = terrainWater.getSurfaceZ(endPt[0], endPt[1]);
         const endFloorZ = Math.max(0.0, Math.min(floorZ, endSurfZ - 0.25 / scaleMm));
-        const inOverlap = isPolyDeck ? Math.min(0.22 / scaleMm, spec.spanU * 0.08) : Math.min(0.08 / scaleMm, spec.spanU * 0.05);
+        const inOverlap = isPolyDeck ? Math.min(0.28 / scaleMm, spec.spanU * 0.08) : Math.min(0.12 / scaleMm, spec.spanU * 0.05);
         const overlapPt = [pt[0] - outSign * tx * inOverlap, pt[1] - outSign * ty * inOverlap];
         const rampA = isStart ? endPt : overlapPt;
         const rampB = isStart ? overlapPt : endPt;
@@ -294,6 +424,28 @@ function buildBankAbutments(spec, terrainWater, ctx) {
         const zBotB = isStart ? floorZ : endFloorZ;
         const rampWedge = _buildSlopedWedgeCorbelJS(rampA, rampB, spec.width * 0.48, zBotA, zBotB, zTopA, zTopB, mf, minThickU);
         if (rampWedge) parts.push(rampWedge);
+      }
+    } else if (!ptInWater && spec.crossesWater && dzAboveGround <= 0.10 / scaleMm) {
+      const targetOut = 0.85 / scaleMm;
+      let dryOut = targetOut;
+      for (const f of [0.25, 0.5, 0.75, 1.0]) {
+        const rx = pt[0] + outSign * tx * (targetOut * f);
+        const ry = pt[1] + outSign * ty * (targetOut * f);
+        if (Math.abs(rx) > ctx.halfW - 0.05 || Math.abs(ry) > ctx.halfH - 0.05 || terrainWater.isPointInWater(rx, ry)) {
+          dryOut = targetOut * Math.max(0, f - 0.25);
+          break;
+        }
+      }
+      if (dryOut >= 0.22 / scaleMm && meetZ > floorZ + minThickU) {
+        const endPt = [pt[0] + outSign * tx * dryOut, pt[1] + outSign * ty * dryOut];
+        const inOverlap = Math.min(0.28 / scaleMm, spec.spanU * 0.08);
+        const overlapPt = [pt[0] - outSign * tx * inOverlap, pt[1] - outSign * ty * inOverlap];
+        const anc = _buildSlopedWedgeCorbelJS(
+          isStart ? endPt : overlapPt, isStart ? overlapPt : endPt,
+          spec.width * 0.48, floorZ, floorZ, Math.max(meetZ, spec.zTopArr[idx] - 0.02 / scaleMm), Math.max(meetZ, spec.zTopArr[idx] - 0.02 / scaleMm),
+          mf, minThickU
+        );
+        if (anc) parts.push(anc);
       }
     }
   }
@@ -352,7 +504,7 @@ function buildSupportlessUndersideCorbels(spec, supportStationsS, terrainWater, 
 
 const _DECK_BUILDER_EXPORTS = {
   buildSlopedBridgeDeck, buildBankAbutments, buildSupportlessUndersideCorbels,
-  _lerpArrAtSJS, _samplePtAtSJS, _safeSubDeckCapZJS
+  _lerpArrAtSJS, _samplePtAtSJS, _safeSubDeckCapZJS, _buildSlopedWedgeCorbelJS
 };
 if (typeof globalThis !== 'undefined') Object.assign(globalThis, _DECK_BUILDER_EXPORTS);
 if (typeof window !== 'undefined') Object.assign(window, _DECK_BUILDER_EXPORTS);

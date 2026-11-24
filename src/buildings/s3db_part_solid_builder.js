@@ -111,6 +111,51 @@
     return adjOuters;
   }
 
+  /**
+   * Builds a self-supporting >= 52 deg stepped gallery cornice and crisp parapet rim
+   * around elevated horizontal observation decks belonging to lattice tower groups.
+   * @param {object} core
+   * @param {object} mf
+   * @param {{ outer: number[][], holes: number[][] }} sr
+   * @param {number} zBase
+   * @param {number} zTop
+   * @param {number} scaleMm
+   * @returns {object|null} Manifold solid or null
+   */
+  function buildLatticeDeckGalleryCornice(core, mf, sr, zBase, zTop, scaleMm) {
+    if (!sr || !sr.outer || sr.outer.length < 3) return null;
+    const obb = root._computeOBB(sr.outer, null, 'along', 0);
+    const minorU = Math.min(obb.spanU, obb.spanV);
+    if (minorU * scaleMm < 2.2) return null;
+
+    const outU = Math.min(0.42 / scaleMm, Math.max(0.26 / scaleMm, minorU * 0.055));
+    const dropU = outU * 1.15;
+    const zDeckTop = Math.max(zTop + 0.20 / scaleMm, zBase + 0.62 / scaleMm);
+    const steps = [
+      { off: outU * 0.34, z0: zBase - dropU, z1: zBase - dropU * 0.44 },
+      { off: outU * 0.68, z0: zBase - dropU * 0.48, z1: zBase + 0.04 / scaleMm },
+      { off: outU, z0: zBase - 0.02 / scaleMm, z1: zDeckTop },
+    ];
+    const tiers = [];
+    for (const st of steps) {
+      if (st.z1 <= st.z0 + 0.04 / scaleMm) continue;
+      let grown = null;
+      try {
+        grown = core.clipperOffsetPolys([sr.outer], st.off, 'Miter', 1e-5)
+          .map(r => core.ensureWinding(r, true, 5e-4))
+          .filter(r => r.length >= 3);
+      } catch (_) {
+        grown = null;
+      }
+      if (!grown || grown.length === 0) continue;
+      for (const r of grown) {
+        const m = core.extrudeRingSolid(mf, r, sr.holes || [], st.z0, st.z1);
+        if (m) tiers.push(m);
+      }
+    }
+    return tiers.length > 0 ? core.batchUnionManifolds(mf, tiers) : null;
+  }
+
   function buildSupportlessCorbel(core, mf, sr, zBase, zGroundSeat, ctx) {
     if (!ctx.supportlessMode || zBase <= zGroundSeat + (0.45 / ctx.scaleMm)) return null;
     const obb = root._computeOBB(sr.outer, null, 'along', 0);
@@ -261,7 +306,14 @@
           const roofM = _buildRoofManifold(core, mf, sr.outer, sr.holes, zEaves, zTop - zEaves, roofShape, roofDir, roofOrient, effRotDeg); if (roofM) partSolids.push(roofM);
         }
       }
-      if (minHU > 0) { const corbel = buildSupportlessCorbel(core, mf, sr, zBase, zGroundSeat, ctx); if (corbel) partSolids.push(corbel); }
+      if (minHU > 0) {
+        const corbel = buildSupportlessCorbel(core, mf, sr, zBase, zGroundSeat, ctx);
+        if (corbel) partSolids.push(corbel);
+        if (metaP && metaP.inLatticeGroup && roofShape === 'flat' && rawMinH_m >= 15.0 && (rawH_m - rawMinH_m) >= 1.5 && (rawH_m - rawMinH_m) <= 12.0) {
+          const cornice = buildLatticeDeckGalleryCornice(core, mf, sr, zBase, zTop, scaleMm);
+          if (cornice) partSolids.push(cornice);
+        }
+      }
     }
     if (partSolids.length === 0) return null;
     const bSolid = partSolids.length === 1 ? partSolids[0] : core.batchUnionManifolds(mf, partSolids);

@@ -951,6 +951,49 @@ async function runSuite() {
     );
   }
 
+  // [16/16] Water-Ending Arch Bridge Abutment Extension & Aligned Water-Cutout Arch Bays
+  console.log('\n[16/16] Water-Ending Arch Bridge Abutment Extension & Aligned Water-Cutout Arch Bays');
+  {
+    const scene = {
+      spanMeters: 1200,
+      metersToUnits: 120.0 / 1200,
+      halfW: 60.0,
+      halfH: 60.0,
+      dem: { grid: [[4, 4, 4], [4, 4, 4]], minElev: 4, maxElev: 4 },
+      waterPolys: [{ outer: [[-8.0, -50], [8.0, -50], [8.0, 50], [-8.0, 50]], holes: [] }],
+      waterLines: [], greenPolys: [], trees: [], bridgeSupports: [], buildings: [],
+      // Right endpoint terminates 1.2 mm inside the river polygon at x=+6.8 instead of dry bank x=+8.0
+      bridgePolys: [{
+        osmId: 9601,
+        name: 'Short-End Foot Arch',
+        outer: [[-8.3, -0.55], [6.8, -0.55], [6.8, 0.55], [-8.3, 0.55]],
+        holes: [],
+        layer: 1,
+        bridgeStructure: 'arch',
+        acrossRoadIds: [],
+        tags: { man_made: 'bridge', 'bridge:structure': 'arch', layer: '1' },
+      }],
+      roads: [],
+    };
+    const stA4 = makeState({
+      targetWidthCm: 12.0,
+      targetHeightCm: 12.0,
+      bedSizeMm: 120.0,
+      totalHeightMm: 120.0,
+      waterCutout: true,
+      solidBaseNoTunnels: true,
+      baseHeightMm: 4.0,
+    });
+    const res = buildComplete3DModel(scene, stA4);
+    assertCleanManifold(res.printMetrics, 'Water-ending arch bridge on 4.0mm solid waterCutout base');
+    const aud = (res.audit.bridgeAudits || []).find(a => a.name === 'Short-End Foot Arch');
+    check(
+      Boolean(aud && aud.bbox[2] >= 8.7 && aud.bbox[0] <= -8.9 && aud.isThroughArch === false && aud.pierMinZ === 0),
+      'Water-ending arch bridge extends flush >=0.7mm into dry bank (0 gap) and builds aligned under-deck waterCutout arches',
+      `bboxX=[${aud?.bbox?.[0]?.toFixed(2)}, ${aud?.bbox?.[2]?.toFixed(2)}], isThrough=${aud?.isThroughArch}, pierMinZ=${aud?.pierMinZ}`
+    );
+  }
+
   console.log(`\nETAP 4 BRIDGES GLOBAL SUMMARY: ${passed} passed, ${failed} failed.`);
   if (failed > 0) process.exit(1);
 }
