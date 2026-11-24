@@ -61,10 +61,15 @@ Do not change any setting without a single-parameter A/B print test.
 
 - **Preset**: `A4 12x17 (2x1)` splits the city into two flush `120 x 85 mm` tiles for the Mono 4 bed.
 - **Solid base (`4.0 mm`)**: Enable `solidBaseNoTunnels` (`baseBottomMm = 4.0 mm`) to remove underside grooves and keep walls smooth and stiff.
-- **Verified tiles** (under `exports/nyc_wtc_a4_120x170_2x1/`):
-  - `Map3D_NYC_A4_Top_120x85mm.stl` (`120 x 85 mm`)
-  - `Map3D_NYC_A4_Bottom_120x85mm.stl` (`120 x 85 mm`)
-- **Verification**: Both tiles passed `calibration/validate_msla_stl.py` with `0` blocking errors and `0.0 mm` frame edge gaps.
+- **Solid-base slicer tweaks**:
+  - Set `Normal Off Time` to `2.5-3.0 s`. Set `Normal Z Lift` to `3.5+4.0 mm` (or `3.5+4.5 mm`).
+  - Keep `Anti-alias = Off (1)` and print `100%` solid with zero slicer hollowing.
+  - Cure top and bottom faces evenly under UV light to prevent bow warp.
+- **Verified NYC A4 tiles** (`exports/nyc_wtc_a4_120x170_2x1/`): `Map3D_NYC_A4_Top_120x85mm.stl` and `Map3D_NYC_A4_Bottom_120x85mm.stl` (`0` blocking errors, `0.0 mm` frame edge gaps).
+- **Verified Paris Tour Eiffel A4 tiles** (`exports/paris_eiffel_a4_120x170_2x1/`):
+  - Files: `Map3D_PARIS_A4_Top_120x85mm.stl` and `Map3D_PARIS_A4_Bottom_120x85mm.stl`.
+  - Scene setup: `lat=48.8576`, `lon=2.2956`, `span=1.78 km`, `rot=-46 deg`, `zScale=1.7`.
+  - Verification: Passed `calibration/validate_msla_stl.py` (`PASS`, `0` blocking errors, `shells=1`).
 
 ## 7. Production Readiness Status
 

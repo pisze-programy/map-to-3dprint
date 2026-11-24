@@ -2,27 +2,31 @@
 
 This document records finalized product formats, pricing tiers, and social video ad rules.
 
-## 1. Single Format Decision (`249 PLN`)
+## 1. Locked Single Format (`249 PLN`, Heavy A4 Gallery)
 
-We tested three single-unit formats across four independent consumer and sales audits.
-Customers place the single frame flat on a desk or hang it on a wall.
+A `3:0` blind paid-ads audit (`Argon`, `Carbon`, `Neon`) retired thin `13 x 18 cm`.
+The audit locked **A4 `21 x 29.7 x 3.0 cm`** white passe-partout as the single format.
+Both formats print the same two Mono 4 tiles, while heavy A4 lifts perceived value at minimal extra cost.
+Customers place the frame flat on a desk or hang it flush on a wall.
 Never use stands or easels (podstawki) in product design or marketing renders.
 
-| Candidate Format | Audit Result | Key Findings |
+| Format | Audit Verdict | Key Findings |
 | :--- | :--- | :--- |
-| Thick `13 x 18 cm` with passe-partout | Rejected (`0:4`) | Triggers `19 PLN` IKEA frame anchor; shrinks visible city area. |
-| Round `15 cm` (`2` Mono 4 semicircles) | Runner-up | Strong thumb-stop and water contrast; weaker home-use clarity without a stand. |
-| **Thin `13 x 18 cm` without passe-partout (Variant C)** | **Winner (`4:0`, `8.45/10`)** | Full-bleed architectural relief; fits desks and walls cleanly. |
+| Thick `13 x 18 cm` with passe-partout | Rejected (`0:4`) | Triggers `19 PLN` IKEA frame anchor; shrinks city area. |
+| Round `15 cm` (`2` Mono 4 semicircles) | Retired | Strong thumb-stop; weak home-use clarity without a stand. |
+| Thin `13 x 18 cm` without passe-partout | Retired (`0:3` vs A4) | Clean desk piece; lower gift impact than gallery A4. |
+| **Heavy A4 `21 x 29.7 x 3.0 cm` white passe-partout** | **Locked (`3:0`, `249 PLN`)** | Gallery wall and desk authority on the same 2 tiles. |
 
-## 2. Upgraded Heavy A4 Gallery Passe-Partout Format (`21 x 29.7 x 3.0 cm`)
-
-For flagship wall and desk presence, upgrade the single format to a heavy A4 gallery shadow-box frame:
+## 2. Heavy A4 Gallery Spec and Commercial Guardrails
 
 - **Outer frame**: `21 x 29.7 x 3.0 cm` matte jet-black box (`15 mm` rim, `7 mm` inner step).
 - **Passe-partout**: Classic white-only `2 mm` matboard with a 45-deg beveled `12 x 17 cm` (`120 x 170 mm`) window.
 - **Backing and open air**: Use matte black archival paper backing with zero glass, zero nameplate, and zero stands.
 - **Tile geometry**: Print two flush `120 x 85 mm` (`2x1`) tiles with a `4.0 mm` solid tunnel-free base (`solidBaseNoTunnels`).
 - **Seam finishing**: Align a building-safe split line, fill the seam with white resin, UV-cure, and apply matte clear coat.
+- **Guardrail 1 (Lighting)**: Shoot all ads with raking side light so crisp shadows prove real 3D relief.
+- **Guardrail 2 (Angles)**: Lead ads and product cards with `30-45 deg` 3D angles, never `90 deg` flatlays.
+- **Guardrail 3 (Shipping and care)**: Ship in a recessed Paczkomat insert and publish a concise compressed-air dusting FAQ.
 
 ## 3. Wall Set Expansion Formats
 
@@ -40,7 +44,7 @@ Design every `9:16` Reels, Meta, and TikTok ad with this exact pacing:
    - Speed-ramp crash-zoom into the tallest skyline peak.
    - Low-angle crane rise-up with sweeping raking side light.
    - Overhead-to-canyon swoop between tall towers.
-   - Smooth crane pull-out back to the complete framed desk object.
+   - Smooth crane pull-out back to the complete framed object.
 3. **Scale reveal (`11-15 s`)**: Include a human hand scale reveal so viewers feel physical size and `10K` detail.
 
 ## 5. Production Visual Standard
