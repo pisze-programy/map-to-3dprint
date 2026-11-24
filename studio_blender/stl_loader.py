@@ -380,8 +380,8 @@ def load_city_stls(
         raw_objs.append(obj)
         raw_stats.append(_measure_raw_mm(obj))
 
-    if frame_style == "single_13x18":
-        frame_w_m, frame_h_m, tile_metas = _align_single_13x18(raw_objs, raw_stats, stl_paths, rim_width_mm, frame_mm_override)
+    if frame_style in ("single_13x18", "none"):
+        frame_w_m, frame_h_m, tile_metas = _align_single_13x18(raw_objs, raw_stats, stl_paths, rim_width_mm if frame_style != "none" else 0.0, frame_mm_override)
         frame_centers_xy, total_w_m, total_h_m = [(0.0, 0.0)], frame_w_m, frame_h_m
     elif frame_style == "a4_passepartout":
         frame_w_m, frame_h_m, tile_metas = _align_a4_passepartout(raw_objs, raw_stats, stl_paths, frame_mm_override)

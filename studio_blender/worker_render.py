@@ -177,40 +177,66 @@ def build_product_assembly(
     tile_outer_w = tile_w + 2.0 * rim_width_mm * 0.001
     tile_outer_h = tile_h + 2.0 * rim_width_mm * 0.001
 
-    for idx, (cx, cy) in enumerate(centers_xy):
-        plate_text = title if (show_nameplate and idx == mid_idx) else None
-        per_style = "single_thin" if (frame_style in ("triptych_3x1", "quartet_2x2") and n_frames > 1) else frame_style
-        raw_kwargs: Dict[str, Any] = {
-            "width_m": tile_w,
-            "height_m": tile_h,
-            "style": per_style,
-            "rim_width_mm": rim_width_mm,
-            "rim_height_mm": frame_height_mm,
-            "frame_height_mm": frame_height_mm,
-            "backing_finish": backing_finish,
-            "show_nameplate": show_nameplate and (idx == mid_idx),
-            "add_nameplate_text": plate_text,
-            "add_cover": add_cover,
-            "center_xy": (cx, cy),
-            "max_z_m": max_z,
-            "mount": mount,
-        }
-        res = environments.build_frame_assembly(**_filter_kwargs(environments.build_frame_assembly, raw_kwargs))
-        frame_objs.extend(res.get("objects", []))
+    if frame_style == "none":
+        from studio_blender import materials as _mats
+        from studio_blender.envs.common import create_mesh_object, get_or_create_collection, make_box_bm
 
-        res_desk_z = float(res.get("desk_z", -0.006))
-        desk_z = res_desk_z if desk_z is None else min(desk_z, res_desk_z)
-        res_bot_z = float(res.get("frame_bottom_z", res_desk_z))
-        frame_bottom_z = res_bot_z if frame_bottom_z is None else min(frame_bottom_z, res_bot_z)
-        res_top_z = float(res.get("frame_top_z", 0.0035))
-        frame_top_z = res_top_z if frame_top_z is None else max(frame_top_z, res_top_z)
-        if res.get("wall_y") is not None:
-            wy = float(res["wall_y"])
-            wall_y = wy if wall_y is None else max(wall_y, wy)
-        if res.get("cover_top_z"):
-            cover_top_z = max(cover_top_z, float(res["cover_top_z"]))
-        tile_outer_w = float(res.get("outer_width_m", tile_outer_w))
-        tile_outer_h = float(res.get("outer_height_m", tile_outer_h))
+        col = get_or_create_collection("StudioFrame")
+        slab_thick = 0.0028
+        slab_top = -0.00005
+        mat_back = (
+            _mats.make_backing_material(backing_finish)
+            if hasattr(_mats, "make_backing_material")
+            else _mats.make_obsidian_water_material()
+        )
+        slab = create_mesh_object(
+            "FramelessBackingSlab",
+            make_box_bm(tile_w, tile_h, slab_thick, (0.0, 0.0, slab_top - 0.5 * slab_thick)),
+            col,
+            material=mat_back,
+            smooth=False,
+        )
+        frame_objs.append(slab)
+        desk_z = slab_top - slab_thick
+        frame_bottom_z = desk_z
+        frame_top_z = 0.0
+        wall_y = -desk_z + 0.0015
+        tile_outer_w, tile_outer_h = tile_w, tile_h
+    else:
+        for idx, (cx, cy) in enumerate(centers_xy):
+            plate_text = title if (show_nameplate and idx == mid_idx) else None
+            per_style = "single_thin" if (frame_style in ("triptych_3x1", "quartet_2x2") and n_frames > 1) else frame_style
+            raw_kwargs: Dict[str, Any] = {
+                "width_m": tile_w,
+                "height_m": tile_h,
+                "style": per_style,
+                "rim_width_mm": rim_width_mm,
+                "rim_height_mm": frame_height_mm,
+                "frame_height_mm": frame_height_mm,
+                "backing_finish": backing_finish,
+                "show_nameplate": show_nameplate and (idx == mid_idx),
+                "add_nameplate_text": plate_text,
+                "add_cover": add_cover,
+                "center_xy": (cx, cy),
+                "max_z_m": max_z,
+                "mount": mount,
+            }
+            res = environments.build_frame_assembly(**_filter_kwargs(environments.build_frame_assembly, raw_kwargs))
+            frame_objs.extend(res.get("objects", []))
+
+            res_desk_z = float(res.get("desk_z", -0.006))
+            desk_z = res_desk_z if desk_z is None else min(desk_z, res_desk_z)
+            res_bot_z = float(res.get("frame_bottom_z", res_desk_z))
+            frame_bottom_z = res_bot_z if frame_bottom_z is None else min(frame_bottom_z, res_bot_z)
+            res_top_z = float(res.get("frame_top_z", 0.0035))
+            frame_top_z = res_top_z if frame_top_z is None else max(frame_top_z, res_top_z)
+            if res.get("wall_y") is not None:
+                wy = float(res["wall_y"])
+                wall_y = wy if wall_y is None else max(wall_y, wy)
+            if res.get("cover_top_z"):
+                cover_top_z = max(cover_top_z, float(res["cover_top_z"]))
+            tile_outer_w = float(res.get("outer_width_m", tile_outer_w))
+            tile_outer_h = float(res.get("outer_height_m", tile_outer_h))
 
     desk_z = -0.006 if desk_z is None else desk_z
     frame_bottom_z = desk_z if frame_bottom_z is None else frame_bottom_z

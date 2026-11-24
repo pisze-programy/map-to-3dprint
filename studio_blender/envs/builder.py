@@ -114,7 +114,20 @@ def build_environment(
     gobo_style = (window_gobo_override or spec.window_gobo).lower()
 
     # 1. Architectural room / desk / wall / stage geometry
-    if eff_mount == "wall_mount":
+    detail_stage_refs: Optional[Dict[str, Any]] = None
+    if spec.architecture_style == "detail_chalk_gallery":
+        from .arch_detail import build_detail_chalk_stage
+
+        detail_stage_refs = build_detail_chalk_stage(
+            desk_z=desk_z,
+            target_pt=target_pt,
+            collection=col,
+            sun_azimuth_deg=sun_azimuth_deg,
+            sun_elevation_deg=sun_elevation_deg,
+        )
+        objects.extend(detail_stage_refs.get("objects", []))
+        light_refs = detail_stage_refs
+    elif eff_mount == "wall_mount":
         wall_mat = materials.make_surface_material(wall_key, name=f"Wall_{wall_key}")
         surf_mat = materials.make_surface_material(surface_key, name=f"Credenza_{surface_key}")
         if spec.architecture_style == "slat_wall":
@@ -137,16 +150,17 @@ def build_environment(
         objects.extend(_build_desk_architecture(spec.architecture_style, desk_z, surface_key, wall_key, col))
 
     # 2. Calibrated Cycles 3-point + CC0 HDRI World lighting
-    light_refs = build_lighting_rig(
-        spec=spec,
-        mount=eff_mount,
-        target_pt=target_pt,
-        collection=col,
-        sun_azimuth_deg=sun_azimuth_deg,
-        sun_elevation_deg=sun_elevation_deg,
-        light_temp=light_temp,
-        hdri_override=hdri_override,
-    )
+    if detail_stage_refs is None:
+        light_refs = build_lighting_rig(
+            spec=spec,
+            mount=eff_mount,
+            target_pt=target_pt,
+            collection=col,
+            sun_azimuth_deg=sun_azimuth_deg,
+            sun_elevation_deg=sun_elevation_deg,
+            light_temp=light_temp,
+            hdri_override=hdri_override,
+        )
 
     # 3. Architectural window mullions / blinds / dappled foliage gobo shadow caster
     if gobo_style != "none":
@@ -187,8 +201,10 @@ def build_environment(
             )
             objects.extend(prop_objs)
 
-    # 5. Blender 5.3.0 DSLR / cinema photographic compositor finishing (strictly OFF for 09/10/11)
-    if spec.env_id == "07_evening_warm_desk":
+    # 5. Blender 5.3.0 DSLR / cinema photographic compositor finishing (strictly OFF for 09/10/11/18)
+    if spec.architecture_style == "detail_chalk_gallery":
+        pass
+    elif spec.env_id == "07_evening_warm_desk":
         setup_photographic_compositor(
             bpy.context.scene,
             spec.env_id,

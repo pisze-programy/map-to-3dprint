@@ -24,6 +24,7 @@ from studio_blender.studio_presets import PERSONA_HERO_PROFILES, resolve_env_nam
 STILL_PRESETS: Tuple[str, ...] = (
     "hero_desk", "hero_wall", "macro_skyline", "macro_waterfront",
     "profile_low", "top_down", "packshot_iso",
+    "detail_spire", "detail_canyon", "detail_oblique_grid", "detail_edge_horizon",
 )
 
 DEFAULT_STILL_BY_ENV: Dict[str, str] = {
@@ -32,7 +33,7 @@ DEFAULT_STILL_BY_ENV: Dict[str, str] = {
     "05_gallery_wall_sunlight": "hero_wall", "06_architect_slat_wall": "hero_wall",
     "07_evening_warm_desk": "hero_desk", "08_loft_concrete_studio": "hero_desk",
     "09_dark_cinematic": "hero_desk", "10_macro_editorial": "macro_skyline",
-    "11_packshot_white": "packshot_iso",
+    "11_packshot_white": "packshot_iso", "18_detail_chalk_gallery": "detail_spire",
 }
 
 _DESK_HERO_PROFILES: Dict[str, Tuple[float, float, float, Optional[float], float, float, float]] = {
@@ -206,19 +207,15 @@ def ensure_studio_camera(scene: Any, name: str = "StudioCamera") -> Tuple[Any, A
     else:
         cam_data = cam_obj.data
 
-    cam_data.sensor_width = 36.0
-    cam_data.sensor_fit = "AUTO"
-    cam_data.clip_start = 0.002
-    cam_data.clip_end = 50.0
-    cam_data.dof.use_dof = True
-    cam_data.dof.aperture_blades = 0
+    cam_data.sensor_width, cam_data.sensor_fit = 36.0, "AUTO"
+    cam_data.clip_start, cam_data.clip_end = 0.002, 50.0
+    cam_data.dof.use_dof, cam_data.dof.aperture_blades = True, 0
 
     focus_name = f"{name}_FocusTarget"
     focus_obj = bpy.data.objects.get(focus_name)
     if focus_obj is None:
         focus_obj = bpy.data.objects.new(focus_name, None)
-        focus_obj.empty_display_type = "PLAIN_AXES"
-        focus_obj.empty_display_size = 0.008
+        focus_obj.empty_display_type, focus_obj.empty_display_size = "PLAIN_AXES", 0.008
         scene.collection.objects.link(focus_obj)
 
     cam_data.dof.focus_object = focus_obj
@@ -323,6 +320,9 @@ def compute_still_pose(
     """Compute physical camera pose dict for any still preset, mount mode, and city STL."""
     if preset_name not in STILL_PRESETS:
         raise ValueError(f"Unknown still preset '{preset_name}'. Choose from {STILL_PRESETS}.")
+    if preset_name.startswith("detail_"):
+        from studio_blender.camera_detail import compute_detail_still_pose
+        return compute_detail_still_pose(preset_name, analysis, model_bounds, aspect=aspect)
     if mount == "wall_mount" or preset_name == "hero_wall":
         return _compute_wall_still_pose(preset_name, analysis, model_bounds, aspect, env_name=env_name)
 

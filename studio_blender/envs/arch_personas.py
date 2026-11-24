@@ -9,7 +9,6 @@ import bmesh
 from .. import materials
 from ..materials_personas import make_calacatta_marble_material
 from ..props.cc0_props import build_room_furniture
-from ..props.persona_props import build_basswood_maquette
 from ..props.spine_text import add_spine_label
 from .arch_personas_helpers import (
     box_mat,
@@ -100,7 +99,7 @@ def build_persona_lawyer_room(desk_z: float, surface_key: str, wall_key: str, co
 
 
 def build_persona_corporate_room(desk_z: float, surface_key: str, wall_key: str, col: Any) -> List[Any]:
-    """15_persona_corporate: Sleek smoked-walnut desk, floor-to-ceiling high-rise curtain wall, chair."""
+    """15_persona_corporate: Sleek smoked-walnut executive desk + clean sunlit curtain-wall window."""
     desk_mat = materials.make_surface_material(surface_key, name=f"Desk_{surface_key}")
     wall_mat = materials.make_surface_material(wall_key, name=f"Column_{wall_key}")
     objs: List[Any] = [build_desk_slab(f"Env_CorpDesk_{surface_key}", desk_z, 2.35, 1.35, 0.18, desk_mat, col, thickness=0.036)]
@@ -114,30 +113,18 @@ def build_persona_corporate_room(desk_z: float, surface_key: str, wall_key: str,
             m_thick=0.024, m_depth=0.050,
         )
     )
-    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="CorpHighrise"))
-    chair_objs = build_room_furniture(
-        asset_id="modern_arm_chair_01", collection=col, location=(-0.08, 0.72, desk_z - 0.62),
-        yaw_deg=14.0, target_height_m=0.98, name_prefix="Room_CorpExecChair",
-    )
-    mat_frame = materials.make_matte_black_tech_material("CorpChairCharcoalFrame")
-    for obj in chair_objs:
-        if obj.type == "MESH" and obj.data is not None:
-            for idx, m in enumerate(obj.data.materials):
-                if m is not None and "leg" in m.name.lower():
-                    obj.data.materials[idx] = mat_frame
-    objs.extend(chair_objs)
+    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="CorpDaylight"))
     return objs
 
 
 def build_persona_realestate_room(desk_z: float, surface_key: str, wall_key: str, col: Any) -> List[Any]:
-    """16_persona_realestate: Honed Calacatta marble showroom table, tall windows, distant maquette."""
+    """16_persona_realestate: Honed Pietra-Calacatta marble showroom table + clean daylight windows."""
     desk_mat = (
         make_calacatta_marble_material("Desk_CalacattaShowroomMarble")
         if surface_key == "calacatta_marble"
         else materials.make_surface_material(surface_key, name=f"Desk_{surface_key}")
     )
     wall_mat = materials.make_surface_material(wall_key, name=f"Wall_{wall_key}")
-    console_mat = materials.make_surface_material("charcoal_microcement", name="ShowroomDistantConsole")
     objs: List[Any] = [build_desk_slab("Env_ShowroomMarbleTable", desk_z, 2.30, 1.35, 0.18, desk_mat, col, thickness=0.040)]
     win_y = 1.05
     objs.append(create_mesh_object("Arch_ShowroomWallLeft", make_box_bm(2.35, 0.12, 2.70, (-1.15, win_y, desk_z + 0.95)), col, wall_mat))
@@ -150,12 +137,7 @@ def build_persona_realestate_room(desk_z: float, surface_key: str, wall_key: str
             m_thick=0.024, m_depth=0.050,
         )
     )
-    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="ShowroomMetro"))
-    cons_z = desk_z + 0.04
-    cons = create_mesh_object("Arch_ShowroomConsole", make_box_bm(0.62, 0.34, 0.65, (0.58, 0.92, cons_z - 0.325)), col, console_mat)
-    add_bevel(cons, width=0.003, segments=2)
-    objs.append(cons)
-    objs.extend(build_basswood_maquette(col, (0.56, 0.90, cons_z), yaw_deg=-24.0, scale=1.55))
+    objs.extend(build_metropolitan_skyline_backdrop(desk_z, col, golden_hour=False, prefix="ShowroomDaylight"))
     return objs
 
 

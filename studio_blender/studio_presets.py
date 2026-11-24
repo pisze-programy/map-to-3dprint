@@ -145,6 +145,14 @@ ENVIRONMENTS: Dict[str, Dict[str, str]] = {
             "spun brushed-brass dome desk lamp, stitched leather notebook & brass-framed architectural print."
         ),
     },
+    "18_detail_chalk_gallery": {
+        "mount": "desk_flat",
+        "default_preset": "detail_spire",
+        "description": (
+            "Frameless chalk-plaster architectural detail gallery: luminous pure #FFFFFF horizon, "
+            "razor-sharp low-angle sunlight shadows & tactile dry chalk-resin macro texture."
+        ),
+    },
 }
 
 PERSONA_ENV_ALIASES: Dict[str, str] = {
@@ -171,6 +179,7 @@ ENV_ALIASES: Dict[str, str] = {
     "dark_cinematic": "09_dark_cinematic",
     "macro_editorial": "10_macro_editorial",
     "packshot_white": "11_packshot_white",
+    "detail_chalk": "18_detail_chalk_gallery",
     **PERSONA_ENV_ALIASES,
 }
 
@@ -186,6 +195,7 @@ FRAME_STYLES: Dict[str, str] = {
         "classic white 2.0mm 45-deg beveled cotton-rag passe-partout with 120x170mm opening "
         "for flush 2x 120x85mm tiles, matte-black archival paper backing, no glass)."
     ),
+    "none": "Frameless raw architectural city relief on a thin flush matte-black backing slab (zero frame rails).",
     "single_thin": "Ultra-thin matte-black frame (4.0mm bezel) hugging the exact tile footprint.",
     "single_thick": "Gallery matte-black shadowbox frame (10.0mm bezel) with matte-black backing.",
     "cube_cover": "Matte-black plinth base with crystal-clear museum acrylic cover (IOR 1.49).",
@@ -201,6 +211,10 @@ STILL_PRESETS: Dict[str, str] = {
     "profile_low": "Dramatic low-angle 85mm telephoto skyline silhouette emphasizing spire height & thin bezel.",
     "top_down": "Clean 85mm gallery overhead plan view showing crisp street grid geometry inside the black frame.",
     "packshot_iso": "E-commerce 3/4 product hero (68mm f/7.1 tack-sharp front-to-back) with clean balanced margins.",
+    "detail_spire": "90mm f/2.0 architectural detail shot of hero spire rising into luminous #FFFFFF sunlit horizon.",
+    "detail_canyon": "95mm f/1.9 diagonal street-canyon macro slashed by razor-sharp hard sunlight shadows.",
+    "detail_oblique_grid": "105mm f/2.4 full-bleed 44-deg oblique architectural grid packed edge-to-edge with crisp shadows.",
+    "detail_edge_horizon": "85mm f/2.0 frameless diagonal matte-black slab edge slicing cleanly over pure #FFFFFF.",
 }
 
 VIDEO_SHOTS: List[Dict[str, Any]] = [

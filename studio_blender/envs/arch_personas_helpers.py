@@ -7,19 +7,64 @@ from typing import Any, List, Sequence, Tuple
 import bmesh
 from mathutils import Matrix, Vector
 
-from .. import materials
+from .. import assets_cc0, materials
+from ..materials_core import add_mix_color, get_or_create_material
 from ..materials_personas import (
     make_leather_spine_material,
     make_polished_gold_material,
     make_sky_gradient_material,
-    make_skyline_glass_material,
 )
-from .common import add_bevel, create_area_light, create_mesh_object
+from .common import add_bevel, create_mesh_object
 
 
 def box_mat(sx: float, sy: float, sz: float, center: Tuple[float, float, float]) -> Any:
     """Build translation-scale 4x4 matrix for bmesh cube creation."""
     return Matrix.Translation(Vector(center)) @ Matrix.Diagonal((sx, sy, sz, 1.0))
+
+
+def _make_frosted_hdri_window_material(
+    name: str,
+    hdri_id: str,
+    frost_rgb: Tuple[float, float, float],
+    frost_mix: float = 0.62,
+    strength: float = 1.45,
+) -> Any:
+    """Frosted/overcast architectural daylight glass blending real Poly Haven HDRI exterior glow."""
+    hdri_path = assets_cc0.ensure_hdri(hdri_id, resolution="1k")
+    if hdri_path is None:
+        return make_sky_gradient_material(name, frost_rgb, (frost_rgb[0] * 0.88, frost_rgb[1] * 0.90, frost_rgb[2] * 0.94), strength=strength)
+
+    mat, nt, _, out = get_or_create_material(name)
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    tc.location = (-860, 0)
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.location = (-660, 0)
+    mp.inputs["Rotation"].default_value = (0.0, 0.0, 0.45)
+    nt.links.new(tc.outputs["Camera"], mp.inputs["Vector"])
+
+    env_tex = nt.nodes.new("ShaderNodeTexEnvironment")
+    env_tex.location = (-440, 80)
+    env_tex.image = assets_cc0.load_image_cached(hdri_path, colorspace="Linear Rec.709")
+    nt.links.new(mp.outputs["Vector"], env_tex.inputs["Vector"])
+
+    # Softly desaturate and blend with bright frosted architectural daylight glass
+    hsv = nt.nodes.new("ShaderNodeHueSaturation")
+    hsv.location = (-200, 80)
+    hsv.inputs["Saturation"].default_value = 0.22
+    hsv.inputs["Value"].default_value = 0.65
+    nt.links.new(env_tex.outputs["Color"], hsv.inputs["Color"])
+
+    _, fac, col_a, col_b, col_out = add_mix_color(nt, "MIX", loc=(20, 80))
+    fac.default_value = float(frost_mix)
+    nt.links.new(hsv.outputs["Color"], col_a)
+    col_b.default_value = (frost_rgb[0], frost_rgb[1], frost_rgb[2], 1.0)
+
+    em = nt.nodes.new("ShaderNodeEmission")
+    em.location = (240, 80)
+    em.inputs["Strength"].default_value = float(strength)
+    nt.links.new(col_out, em.inputs["Color"])
+    nt.links.new(em.outputs["Emission"], out.inputs["Surface"])
+    return mat
 
 
 def build_metropolitan_skyline_backdrop(
@@ -28,64 +73,31 @@ def build_metropolitan_skyline_backdrop(
     golden_hour: bool = False,
     prefix: str = "MetroSkyline",
 ) -> List[Any]:
-    """Build 3D sunlit metropolitan skyscrapers + sky gradient far outside studio windows."""
-    objs: List[Any] = []
+    """Build natural frosted/overcast daylight window glass + real Poly Haven HDRI exterior glow."""
     if golden_hour:
-        sky_mat = make_sky_gradient_material(f"{prefix}_GoldenSky", (0.98, 0.64, 0.32), (0.20, 0.32, 0.52), strength=1.75)
-        g_warm = make_skyline_glass_material(f"{prefix}_TowerAmber", (0.36, 0.24, 0.16, 1.0), emit_strength=0.06)
-        g_cool = make_skyline_glass_material(f"{prefix}_TowerSlate", (0.14, 0.18, 0.28, 1.0), emit_strength=0.03)
-        g_pale = make_skyline_glass_material(f"{prefix}_TowerSun", (0.50, 0.35, 0.22, 1.0), emit_strength=0.08)
+        sky_mat = _make_frosted_hdri_window_material(
+            f"{prefix}_WarmFrostedGlass",
+            hdri_id="brown_photostudio_03",
+            frost_rgb=(0.96, 0.85, 0.70),
+            frost_mix=0.66,
+            strength=1.55,
+        )
     else:
-        sky_mat = make_sky_gradient_material(f"{prefix}_DaySky", (0.76, 0.80, 0.85), (0.30, 0.46, 0.68), strength=1.20)
-        g_warm = make_skyline_glass_material(f"{prefix}_TowerStone", (0.28, 0.29, 0.31, 1.0), emit_strength=0.04)
-        g_cool = make_skyline_glass_material(f"{prefix}_TowerGlass", (0.14, 0.23, 0.36, 1.0), emit_strength=0.05)
-        g_pale = make_skyline_glass_material(f"{prefix}_TowerBright", (0.36, 0.44, 0.54, 1.0), emit_strength=0.06)
+        sky_mat = _make_frosted_hdri_window_material(
+            f"{prefix}_OvercastFrostedGlass",
+            hdri_id="photo_studio_loft_hall",
+            frost_rgb=(0.91, 0.92, 0.92),
+            frost_mix=0.68,
+            strength=1.45,
+        )
 
-    palette = (g_cool, g_warm, g_pale)
     bm_sky = bmesh.new()
-    bmesh.ops.create_cube(bm_sky, size=1.0, matrix=box_mat(10.0, 0.02, 5.4, (0.2, 5.80, desk_z + 1.50)))
-    sky = create_mesh_object(f"{prefix}_SkyPane", bm_sky, collection, sky_mat, False)
+    bmesh.ops.create_cube(bm_sky, size=1.0, matrix=box_mat(10.0, 0.02, 5.4, (0.2, 3.60, desk_z + 1.35)))
+    sky = create_mesh_object(f"{prefix}_DaylightGlassPane", bm_sky, collection, sky_mat, False)
     for attr in ("visible_diffuse", "visible_shadow"):
         if hasattr(sky, attr):
             setattr(sky, attr, False)
-    objs.append(sky)
-
-    # 15 staggered 3D skyscraper silhouettes across X in [-2.6, +2.8], Y in [2.6, 5.0]
-    tower_specs = (
-        (-2.35, 3.85, 0.42, 0.38, 2.20, 0), (-1.82, 4.35, 0.36, 0.34, 2.65, 1),
-        (-1.32, 3.20, 0.44, 0.36, 2.05, 2), (-0.82, 4.60, 0.34, 0.32, 2.75, 0),
-        (-0.34, 3.65, 0.42, 0.38, 2.35, 1), (0.14, 4.80, 0.38, 0.34, 3.10, 0),
-        (0.58, 3.30, 0.46, 0.38, 2.45, 2), (1.06, 4.10, 0.38, 0.34, 2.95, 0),
-        (1.52, 2.95, 0.48, 0.40, 2.15, 1), (1.96, 4.45, 0.40, 0.36, 2.85, 2),
-        (2.48, 3.55, 0.46, 0.38, 2.40, 0), (-0.56, 2.75, 0.32, 0.28, 1.55, 2),
-        (0.32, 2.85, 0.34, 0.30, 1.72, 1), (1.26, 2.70, 0.32, 0.28, 1.62, 0),
-        (2.22, 2.90, 0.36, 0.30, 1.85, 1),
-    )
-    base_z = desk_z - 0.90
-    for idx, (tx, ty, tw, td, th, midx) in enumerate(tower_specs):
-        bm = bmesh.new()
-        bmesh.ops.create_cube(bm, size=1.0, matrix=box_mat(tw, td, th, (0.0, 0.0, th * 0.5)))
-        bmesh.ops.create_cube(bm, size=1.0, matrix=box_mat(tw * 0.68, td * 0.68, th * 0.14, (0.0, 0.0, th + th * 0.07)))
-        t_obj = create_mesh_object(f"{prefix}_Tower_{idx:02d}", bm, collection, palette[midx], False, location=(tx, ty, base_z))
-        if hasattr(t_obj, "visible_shadow"):
-            t_obj.visible_shadow = False
-        objs.append(t_obj)
-
-    sun_col = (1.0, 0.78, 0.52) if golden_hour else (1.0, 0.97, 0.92)
-    sky_sun = create_area_light(
-        name=f"Light_{prefix}_FacadeSun",
-        collection=collection,
-        location=(3.4, 2.2, desk_z + 2.8),
-        target=(0.2, 3.8, desk_z + 0.8),
-        energy=220.0 if golden_hour else 320.0,
-        color=sun_col,
-        size_x=2.2,
-        size_y=2.2,
-        spread_deg=85.0,
-        visible_camera=False,
-    )
-    objs.append(sky_sun)
-    return objs
+    return [sky]
 
 
 def build_window_mullions(

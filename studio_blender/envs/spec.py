@@ -8,6 +8,12 @@ from typing import Dict, Tuple
 from ..props.registry import PropPlacement
 from .spec_personas import PERSONA_ENV_ALIASES, build_persona_env_specs
 
+try:
+    from .spec_detail import DETAIL_ENV_ALIASES, build_detail_env_specs
+except ImportError:  # pragma: no cover
+    DETAIL_ENV_ALIASES = {}
+    build_detail_env_specs = None  # type: ignore
+
 Rgb = Tuple[float, float, float]
 
 
@@ -42,6 +48,8 @@ class EnvironmentSpec:
 
 FRAME_STYLES: Tuple[str, ...] = (
     "single_13x18",
+    "a4_passepartout",
+    "none",
     "single_thin",
     "single_thick",
     "cube_plinth",
@@ -353,6 +361,8 @@ ENV_SPECS: Dict[str, EnvironmentSpec] = {
 }
 
 ENV_SPECS.update(build_persona_env_specs(EnvironmentSpec))
+if build_detail_env_specs is not None:
+    ENV_SPECS.update(build_detail_env_specs(EnvironmentSpec))
 
 ENVIRONMENTS: Tuple[str, ...] = tuple(ENV_SPECS.keys())
 
@@ -363,6 +373,7 @@ ENV_ALIASES: Dict[str, str] = {
     "macro_editorial": "10_macro_editorial",
     "packshot_white": "11_packshot_white",
     **PERSONA_ENV_ALIASES,
+    **DETAIL_ENV_ALIASES,
 }
 
 

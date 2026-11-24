@@ -126,9 +126,8 @@ def build_persona_env_specs(env_spec_cls: Any) -> Dict[str, Any]:
             rim_color=(0.76, 0.88, 1.0),
             default_still_preset="hero_desk",
             default_props=(
-                PropPlacement("desk_mat_laptop", x_mm=-228.0, y_mm=4.0, yaw_deg=0.0, anchor="left"),
-                PropPlacement("matte_black_mug", x_mm=-36.0, y_mm=118.0, yaw_deg=-42.0, anchor="back_left"),
-                PropPlacement("concrete_planter_plant", x_mm=142.0, y_mm=138.0, yaw_deg=-22.0, scale=0.90, anchor="back_right"),
+                PropPlacement("matte_black_mug", x_mm=-52.0, y_mm=112.0, yaw_deg=-42.0, anchor="back_left"),
+                PropPlacement("concrete_planter_plant", x_mm=126.0, y_mm=134.0, yaw_deg=-22.0, scale=0.90, anchor="back_right"),
             ),
             description=_PRESETS_META["15_persona_corporate"]["description"],
         ),
@@ -155,8 +154,7 @@ def build_persona_env_specs(env_spec_cls: Any) -> Dict[str, Any]:
             rim_color=(0.90, 0.95, 1.0),
             default_still_preset="hero_desk",
             default_props=(
-                PropPlacement("fluted_crystal_vase_greenery", x_mm=-28.0, y_mm=118.0, yaw_deg=18.0, anchor="back_left"),
-                PropPlacement("material_sample_board", x_mm=-112.0, y_mm=-36.0, yaw_deg=16.0, anchor="left"),
+                PropPlacement("fluted_crystal_vase_greenery", x_mm=-56.0, y_mm=118.0, yaw_deg=18.0, anchor="back_left"),
             ),
             description=_PRESETS_META["16_persona_realestate"]["description"],
         ),

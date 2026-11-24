@@ -300,7 +300,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     p.add_argument("--env", default="01_architect_window_desk", choices=ALL_ENV_CHOICES, help="3D studio environment")
     p.add_argument(
         "--frame", default="single_13x18",
-        choices=("single_13x18", "a4_passepartout", "single_thin", "single_thick", "cube_cover", "cube_plinth", "triptych_3x1", "quartet_2x2"),
+        choices=("single_13x18", "a4_passepartout", "none", "single_thin", "single_thick", "cube_cover", "cube_plinth", "triptych_3x1", "quartet_2x2"),
     )
     p.add_argument("--mount", default="auto", choices=("auto", "desk_flat", "wall_mount"))
     p.add_argument("--mode", default="stills", choices=("stills", "keyframes", "video"))

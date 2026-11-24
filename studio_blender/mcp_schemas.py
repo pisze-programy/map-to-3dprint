@@ -9,8 +9,8 @@ from studio_blender.studio_presets import ALL_ENV_CHOICES, STILL_PRESETS
 
 ENV_ENUM = list(ALL_ENV_CHOICES)
 FRAME_ENUM = [
-    "single_13x18", "a4_passepartout", "single_thin", "single_thick", "cube_cover",
-    "cube_plinth", "triptych_3x1", "quartet_2x2",
+    "single_13x18", "a4_passepartout", "none", "single_thin", "single_thick",
+    "cube_cover", "cube_plinth", "triptych_3x1", "quartet_2x2",
 ]
 MOUNT_ENUM = ["auto", "desk_flat", "wall_mount"]
 BACKING_ENUM = ["matte_black", "satin_black"]

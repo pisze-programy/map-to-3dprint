@@ -96,7 +96,7 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
     p.add_argument(
         "--frame",
         default="single_13x18",
-        choices=("single_13x18", "a4_passepartout", "single_thin", "single_thick", "cube_cover", "cube_plinth", "triptych_3x1", "quartet_2x2"),
+        choices=("single_13x18", "a4_passepartout", "none", "single_thin", "single_thick", "cube_cover", "cube_plinth", "triptych_3x1", "quartet_2x2"),
     )
     p.add_argument("--mount", default="auto", choices=("auto", "desk_flat", "wall_mount"))
     p.add_argument("--mode", default="stills", choices=("stills", "keyframes", "video"))
@@ -148,7 +148,12 @@ def main() -> int:
         scene=scene, samples=samples, width=width, height=height, motion_blur=(args.mode == "video")
     )
 
-    plaster_mat = materials.make_plaster_cement_material()
+    if canonical_env == "18_detail_chalk_gallery":
+        from studio_blender import materials_detail
+
+        plaster_mat = materials_detail.make_chalk_plaster_material()
+    else:
+        plaster_mat = materials.make_plaster_cement_material()
     load_result = stl_loader.load_city_stls(
         stl_paths=args.stl,
         frame_style=args.frame,
