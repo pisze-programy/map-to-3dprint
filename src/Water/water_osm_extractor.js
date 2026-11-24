@@ -107,6 +107,12 @@
         }
       }
 
+      const waterTag = String(
+        tags.water ||
+        (['reservoir', 'basin'].includes(tags.landuse) ? tags.landuse : '') ||
+        (tags.amenity === 'fountain' ? 'fountain' : '') ||
+        (tags.leisure === 'swimming_pool' ? 'swimming_pool' : '')
+      ).trim().toLowerCase();
       for (const wid of raw.memberWayIds) ctx.usedWays.add(wid);
       for (const e of entries) {
         const holes = Array.isArray(e.holes) ? e.holes.slice() : [];
@@ -118,7 +124,7 @@
             }
           }
         }
-        const wpEntry = { outer: e.outer, holes, name: tags.name || 'Woda' };
+        const wpEntry = { outer: e.outer, holes, name: tags.name || 'Woda', waterTag };
         if (shingleHoleIndices.length > 0) wpEntry.shingleHoleIndices = shingleHoleIndices;
         ctx.waterPolys.push(wpEntry);
       }
@@ -206,7 +212,13 @@
       if (tagsMod.isNonSurfaceWaterTagsJS(tags)) return true;
       if (!ctx.usedWays.has(wid)) {
         const pts = ctx.nodesToPts(nids, 0.025);
-        if (pts.length >= 3) ctx.waterPolys.push({ outer: pts, holes: [], name: tags.name || 'Woda' });
+        const waterTag = String(
+          tags.water ||
+          (['reservoir', 'basin'].includes(tags.landuse) ? tags.landuse : '') ||
+          (tags.amenity === 'fountain' ? 'fountain' : '') ||
+          (tags.leisure === 'swimming_pool' ? 'swimming_pool' : '')
+        ).trim().toLowerCase();
+        if (pts.length >= 3) ctx.waterPolys.push({ outer: pts, holes: [], name: tags.name || 'Woda', waterTag });
       }
       return true;
     }

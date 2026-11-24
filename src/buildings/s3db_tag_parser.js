@@ -15,9 +15,9 @@
     gabled: 'gabled', gable: 'gabled', basilical: 'gabled',
     hipped: 'hipped', hip: 'hipped',
     pyramidal: 'pyramidal', pyramid: 'pyramidal',
-    dome: 'dome',
+    dome: 'dome', spherical: 'dome', half_dome: 'dome', 'half-dome': 'dome',
     onion: 'onion',
-    round: 'round', round_gabled: 'round', barrel: 'round', arched: 'round', cylindrical: 'round',
+    round: 'round', round_gabled: 'round', barrel: 'round', arched: 'round', cylindrical: 'round', circular: 'round',
     skillion: 'skillion', shed: 'skillion', lean_to: 'skillion', 'lean-to': 'skillion', monopitch: 'skillion',
     mansard: 'mansard',
     gambrel: 'gambrel',
@@ -192,6 +192,14 @@
   function estimateDefaultHeightM({ isFerrisWheel, isPart, isChurch, isTower, btype, rawMinSpanM, rawMaxSpanM, minSpanM, maxSpanM, areaM2, parentHeightHint, tags, roofH = 0, cfg = {} }) {
     if (isFerrisWheel) return Math.max(8.0, Math.min(280.0, maxSpanM * 0.98));
     if (isPart) {
+      const partLayer = parseFloatTagJS(tags && tags.layer, 0) || 0;
+      if (btype === 'roof' && parentHeightHint !== null && parentHeightHint !== undefined && parentHeightHint > 0 && partLayer >= 2) {
+        // Multi-tier vaulted roof shells stacked on top of a podium (building:part=roof, layer >= 2)
+        // rise above parentHeightHint rather than getting buried beneath it.
+        const tierBoost = Math.min(24.0, (partLayer - 2) * 6.5 + 5.5);
+        const shellRise = roofH > 0 ? roofH : Math.min(Math.max(4.5, minSpanM * 0.72), 20.0);
+        return Math.min(parentHeightHint * 3.8, parentHeightHint + tierBoost + shellRise);
+      }
       const aspect = rawMaxSpanM / Math.max(0.5, rawMinSpanM);
       let baseEst = (rawMaxSpanM >= 35.0 || areaM2 >= 500.0 || aspect >= 2.2)
         ? Math.min(12.5, Math.max(7.5, minSpanM * 0.65))

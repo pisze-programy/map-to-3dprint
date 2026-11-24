@@ -255,6 +255,7 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
       isAreaPoly: true, outer, holes, pts: resampledPolyPts, scaleMm,
       width: widthU, deckThick: Math.max(minDeckU, Math.min(widthU * 0.35, minDeckU * (structNorm === 'beam' ? 1.15 : 1.22))),
       deckLayer: inferredPolyLayer, name: bp.name || 'Most', structNorm, explicitThroughArch: expThrough, isHumpback,
+      bridgeSupport: bp.bridgeSupport || String((bp.tags && bp.tags['bridge:support']) || '').trim().toLowerCase(),
       isRail: allAcross.length > 0 && allAcross.every(rd => rd.tags && rd.tags.railway),
       isPath: false, isBoardwalk: false, level: bp.level || '',
       clippedStart: false, clippedEnd: false, joinPolyStart: false, joinPolyEnd: false,

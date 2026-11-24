@@ -9,11 +9,15 @@
     const embossMod = (typeof require !== 'undefined')
       ? require('./tile_id_emboss.js')
       : root;
+    const ventMod = (typeof buildGabledTunnelManifold === 'function' && typeof ventLargeBasePocketsUnderside === 'function')
+      ? { buildGabledTunnelManifold, findShortestSolidVentRuns, ventLargeBasePocketsUnderside }
+      : (typeof require !== 'undefined' ? require('./tile_msla_vent_builder.js') : root);
     return {
       core: (typeof trianglesToShellManifolds === 'function' && typeof clipperDiffPolys === 'function') ? root : require('../geometry/manifold_core.js'),
       poly: (typeof pointInPoly2D === 'function' && typeof signedArea2D === 'function') ? root : require('../geometry/polygon_2d.js'),
       cfgMod: (typeof resolveSceneScaleAndSpec === 'function' && typeof resolveTriangleTileId === 'function') ? root : require('../geometry/print_physics_config.js'),
       embossMod,
+      ventMod,
     };
   }
   const _inPolyList = (poly, x, y, rings) => rings.some(r => poly.pointInPoly2D(x, y, r));
@@ -959,6 +963,7 @@
     const zPlugTopU = Math.min(safeBaseMm / scaleMm, uBB.max[2] - 0.10 / scaleMm);
     if (zPlugTopU <= 0.10 / scaleMm || uBB.max[2] <= zProbeU) return unified;
 
+    const minVentHoleAreaU2 = 18.0 / (scaleMm * scaleMm);
     const maxHoleAreaU2 = 45.0 / (scaleMm * scaleMm);
     const minCapSlitAreaU2 = 0.40 / (scaleMm * scaleMm);
     const edgeTolU = 0.20 / scaleMm;
@@ -975,10 +980,20 @@
     let capLow = null;
     let capThru = null;
     let polys = [];
+    const rawLargeHoles = [];
     const capSlitComps = [];
     try {
       s1 = unified.slice(zProbeU);
       if (!s1.isEmpty()) {
+        const rawPolys = s1.toPolygons();
+        for (let i = 0; i < rawPolys.length; i++) {
+          const rr = rawPolys[i];
+          if (!rr || rr.length < 3) continue;
+          const rsa = poly.signedArea2D(rr);
+          if (rsa < -1e-7 && Math.abs(rsa) >= minVentHoleAreaU2) {
+            rawLargeHoles.push({ ring: rr, bb: _ringBBox2D(rr) });
+          }
+        }
         dil = s1.offset(closeRadU, 'Round');
         if (!dil.isEmpty()) {
           closed = dil.offset(-closeRadU, 'Round');
@@ -1048,30 +1063,51 @@
         core.safeDeleteManifold(comp);
       }
     }
-    for (let i = 0; i < polys.length; i++) {
-      const r = polys[i];
-      if (!r || r.length < 3) continue;
-      const sa = poly.signedArea2D(r);
-      if (sa >= -1e-7 || Math.abs(sa) >= maxHoleAreaU2) continue;
-      const [hx0, hy0, hx1, hy1] = _ringBBox2D(r);
-      if (hx0 <= uBB.min[0] + edgeTolU || hx1 >= uBB.max[0] - edgeTolU ||
-          hy0 <= uBB.min[1] + edgeTolU || hy1 >= uBB.max[1] - edgeTolU) {
-        continue;
+    let tileRectCS = null;
+    try {
+      tileRectCS = mf.CrossSection.ofPolygons([[[uBB.min[0], uBB.min[1]], [uBB.max[0], uBB.min[1]], [uBB.max[0], uBB.max[1]], [uBB.min[0], uBB.max[1]]]], 'Positive');
+    } catch (_) {
+      tileRectCS = null;
+    }
+    try {
+      for (let i = 0; i < polys.length; i++) {
+        const r = polys[i];
+        if (!r || r.length < 3) continue;
+        const sa = poly.signedArea2D(r);
+        const absArea = Math.abs(sa);
+        if (sa >= -1e-7 || absArea >= maxHoleAreaU2) continue;
+        // Genuine enclosed basins >= 18 mm2 (already closed in raw s1 before capillary closing)
+        // stay open on top and receive a hidden underside vent slot instead of being plugged solid.
+        if (absArea >= minVentHoleAreaU2 && rawLargeHoles.length > 0) {
+          const rbb = _ringBBox2D(r);
+          const probe = _findInteriorPointInCS(poly, [r], { min: [rbb[0], rbb[1]], max: [rbb[2], rbb[3]] });
+          const isGenuineBasin = probe && rawLargeHoles.some(rh =>
+            probe[0] >= rh.bb[0] && probe[0] <= rh.bb[2] &&
+            probe[1] >= rh.bb[1] && probe[1] <= rh.bb[3] &&
+            poly.pointInPoly2D(probe[0], probe[1], rh.ring)
+          );
+          if (isGenuineBasin) continue;
+        }
+        const ccw = r.slice().reverse();
+        let csH = null;
+        let csP = null;
+        let csClip = null;
+        try {
+          csH = mf.CrossSection.ofPolygons([ccw], 'Positive');
+          csP = csH.offset(outOffU, 'Round');
+          csClip = (tileRectCS && !csP.isEmpty()) ? csP.intersect(tileRectCS) : csP;
+          const plug = (!csClip || csClip.isEmpty()) ? null : csClip.extrude(zPlugTopU);
+          if (plug && plug.numTri() > 0) plugs.push(plug);
+          else core.safeDeleteManifold(plug);
+        } catch (_) {
+        } finally {
+          if (csClip && csClip !== csP) core.safeDeleteManifold(csClip);
+          core.safeDeleteManifold(csH);
+          core.safeDeleteManifold(csP);
+        }
       }
-      const ccw = r.slice().reverse();
-      let csH = null;
-      let csP = null;
-      try {
-        csH = mf.CrossSection.ofPolygons([ccw], 'Positive');
-        csP = csH.offset(outOffU, 'Round');
-        const plug = csP.isEmpty() ? null : csP.extrude(zPlugTopU);
-        if (plug && plug.numTri() > 0) plugs.push(plug);
-        else core.safeDeleteManifold(plug);
-      } catch (_) {
-      } finally {
-        core.safeDeleteManifold(csH);
-        core.safeDeleteManifold(csP);
-      }
+    } finally {
+      core.safeDeleteManifold(tileRectCS);
     }
 
     if (plugs.length === 0) return unified;
@@ -1295,40 +1331,61 @@
     return runs;
   }
 
-  function _ventUpperSealedCourtyards(core, poly, mf, unified, scaleMm, baseBottomMm = 2.35) {
+  function _ventUpperSealedCourtyards(core, poly, mf, unified, scaleMm, baseBottomMm = 2.35, ventMod = null) {
     const safeBaseMm = (Number(baseBottomMm) > 0) ? Number(baseBottomMm) : 2.35;
     const minHoleAreaU2 = 75.0 / (scaleMm * scaleMm);
+    const minArchwayAreaU2 = 80.0 / (scaleMm * scaleMm);
     const closeRadU = 0.22 / scaleMm;
-    // Scan from base top up through DEM terrain plateaus (up to +3.55 mm above base)
-    // so closed park/terrain basins cannot form upper-story VAL-02 suction cups.
+    const initBB = unified.boundingBox();
+    const maxZMm = initBB.max[2] * scaleMm;
+    // Strictly ascending scan from base top up to +12.0 mm: dense 0.15-0.25 mm spacing
+    // across the road-berm / shallow DEM zone (+0.05..+1.15 mm) then 0.50 mm steps aligned
+    // with validator upper-story planes (+1.15, +1.65, +2.15...).
     const zListMm = [
+      safeBaseMm + 0.05,
+      safeBaseMm + 0.15,
       safeBaseMm + 0.30,
       safeBaseMm + 0.55,
-      safeBaseMm + 0.05,
-      safeBaseMm + 1.05,
-      safeBaseMm + 1.55,
-      safeBaseMm + 2.05,
-      safeBaseMm + 2.55,
-      safeBaseMm + 3.05,
-      safeBaseMm + 3.55,
+      safeBaseMm + 0.65,
+      safeBaseMm + 0.90,
     ];
+    const zUpperLimitMm = Math.min(maxZMm - 0.40, safeBaseMm + 12.0);
+    for (let zm = safeBaseMm + 1.15; zm <= zUpperLimitMm + 1e-6; zm += 0.50) {
+      zListMm.push(zm);
+    }
     const zSlabCheckMm = Math.max(1.85, safeBaseMm - 0.50);
     const zBotFloorMm = Math.max(2.30, safeBaseMm - 0.05);
 
-    // Pass 2 only cuts Z >= zBotFloorMm, so Z = 1.15 and zSlabCheckMm stay invariant.
-    let polys115 = null;
-    let polys185 = null;
-    let cachedGridKey = '';
-    let cachedSolid115 = null;
-    let cachedSolid185 = null;
+    const spanXMm = (initBB.max[0] - initBB.min[0]) * scaleMm;
+    const spanYMm = (initBB.max[1] - initBB.min[1]) * scaleMm;
+    const stepMm = Math.max(0.55, Math.max(spanXMm, spanYMm) / 260);
+    const stepU = stepMm / scaleMm;
+    const nx = Math.ceil((initBB.max[0] - initBB.min[0]) / stepU) + 2;
+    const ny = Math.ceil((initBB.max[1] - initBB.min[1]) / stepU) + 2;
+    const ox = initBB.min[0] - stepU;
+    const oy = initBB.min[1] - stepU;
+    const total = nx * ny;
+
+    let ventSeed = null;
+    const ensureVentSeed = () => {
+      if (ventSeed !== null) return;
+      const polys115 = _sliceCrossSectionPolys(core, unified, 1.15 / scaleMm);
+      const polys185 = _sliceCrossSectionPolys(core, unified, zSlabCheckMm / scaleMm);
+      const solid115 = _rasterizePolysToGrid(polys115, nx, ny, ox, oy, stepU);
+      const solid185 = _rasterizePolysToGrid(polys185, nx, ny, ox, oy, stepU);
+      ventSeed = new Uint8Array(total);
+      for (let i = 0; i < total; i++) {
+        if (!solid115[i] && !solid185[i]) ventSeed[i] = 1;
+      }
+    };
 
     for (let zi = 0; zi < zListMm.length; zi++) {
       const zMm = zListMm[zi];
       const curBB = unified.boundingBox();
       if (zMm >= curBB.max[2] * scaleMm - 0.15) continue;
 
-      for (let iter = 0; iter < 2; iter++) {
-        const uBB = unified.boundingBox();
+      let lastExtAir = null;
+      for (let iter = 0; iter < 3; iter++) {
         let sCur = null;
         let dilCur = null;
         let closedCur = null;
@@ -1363,28 +1420,51 @@
             ccwOuters.push({ ring: r, area: sa, bb: _ringBBox2D(r) });
           }
         }
+
+        const solidCur = _rasterizePolysToGrid(polys, nx, ny, ox, oy, stepU);
+        const extAir = new Uint8Array(total);
+        const q = new Int32Array(total);
+        let qh = 0, qt = 0;
+        if (!solidCur[0]) { extAir[0] = 1; q[qt++] = 0; }
+        if (ventSeed !== null) {
+          for (let i = 0; i < total; i++) {
+            if (ventSeed[i] && !solidCur[i] && !extAir[i]) {
+              extAir[i] = 1;
+              q[qt++] = i;
+            }
+          }
+        }
+        while (qh < qt) {
+          const cur = q[qh++];
+          const cx = cur % nx, cy = (cur - cx) / nx;
+          if (cx > 0 && !solidCur[cur - 1] && !extAir[cur - 1]) { extAir[cur - 1] = 1; q[qt++] = cur - 1; }
+          if (cx + 1 < nx && !solidCur[cur + 1] && !extAir[cur + 1]) { extAir[cur + 1] = 1; q[qt++] = cur + 1; }
+          if (cy > 0 && !solidCur[cur - nx] && !extAir[cur - nx]) { extAir[cur - nx] = 1; q[qt++] = cur - nx; }
+          if (cy + 1 < ny && !solidCur[cur + nx] && !extAir[cur + nx]) { extAir[cur + nx] = 1; q[qt++] = cur + nx; }
+        }
+        lastExtAir = extAir;
         if (cwHoles.length === 0) break;
 
-        const spanXMm = (uBB.max[0] - uBB.min[0]) * scaleMm;
-        const spanYMm = (uBB.max[1] - uBB.min[1]) * scaleMm;
-        const stepMm = Math.max(0.55, Math.max(spanXMm, spanYMm) / 260);
-        const stepU = stepMm / scaleMm;
-        const nx = Math.ceil((uBB.max[0] - uBB.min[0]) / stepU) + 2;
-        const ny = Math.ceil((uBB.max[1] - uBB.min[1]) / stepU) + 2;
-        const ox = uBB.min[0] - stepU;
-        const oy = uBB.min[1] - stepU;
-        const total = nx * ny;
-
-        if (polys115 === null) {
-          polys115 = _sliceCrossSectionPolys(core, unified, 1.15 / scaleMm);
-          // Check inside slab above underside relief grooves (<= 1.50 mm) so grooves do not mask sealed courtyards.
-          polys185 = _sliceCrossSectionPolys(core, unified, zSlabCheckMm / scaleMm);
-        }
-        const gridKey = `${nx}:${ny}:${ox.toFixed(6)}:${oy.toFixed(6)}:${stepU.toFixed(6)}`;
-        if (cachedGridKey !== gridKey) {
-          cachedGridKey = gridKey;
-          cachedSolid115 = _rasterizePolysToGrid(polys115, nx, ny, ox, oy, stepU);
-          cachedSolid185 = _rasterizePolysToGrid(polys185, nx, ny, ox, oy, stepU);
+        if (ventSeed === null) {
+          ensureVentSeed();
+          let addedSeed = false;
+          for (let i = 0; i < total; i++) {
+            if (ventSeed[i] && !solidCur[i] && !extAir[i]) {
+              extAir[i] = 1;
+              q[qt++] = i;
+              addedSeed = true;
+            }
+          }
+          if (addedSeed) {
+            while (qh < qt) {
+              const cur = q[qh++];
+              const cx = cur % nx, cy = (cur - cx) / nx;
+              if (cx > 0 && !solidCur[cur - 1] && !extAir[cur - 1]) { extAir[cur - 1] = 1; q[qt++] = cur - 1; }
+              if (cx + 1 < nx && !solidCur[cur + 1] && !extAir[cur + 1]) { extAir[cur + 1] = 1; q[qt++] = cur + 1; }
+              if (cy > 0 && !solidCur[cur - nx] && !extAir[cur - nx]) { extAir[cur - nx] = 1; q[qt++] = cur - nx; }
+              if (cy + 1 < ny && !solidCur[cur + nx] && !extAir[cur + nx]) { extAir[cur + nx] = 1; q[qt++] = cur + nx; }
+            }
+          }
         }
 
         let sHigh = null;
@@ -1392,10 +1472,6 @@
         try {
           sHigh = unified.slice((zMm + 0.65) / scaleMm);
           const highPolys = sHigh.isEmpty() ? [] : sHigh.toPolygons();
-
-          const solidCur = _rasterizePolysToGrid(polys, nx, ny, ox, oy, stepU);
-          const solid115 = cachedSolid115;
-          const solid185 = cachedSolid185;
           const blockedRaw = _rasterizePolysToGrid(highPolys, nx, ny, ox, oy, stepU);
           const blocked = new Uint8Array(total);
           for (let r = 0; r < ny; r++) {
@@ -1412,20 +1488,8 @@
             }
           }
 
-          const extAir = new Uint8Array(total);
-          const q = new Int32Array(total);
-          let qh = 0, qt = 0;
-          if (!solidCur[0]) { extAir[0] = 1; q[qt++] = 0; }
-          while (qh < qt) {
-            const cur = q[qh++];
-            const cx = cur % nx, cy = (cur - cx) / nx;
-            if (cx > 0 && !solidCur[cur - 1] && !extAir[cur - 1]) { extAir[cur - 1] = 1; q[qt++] = cur - 1; }
-            if (cx + 1 < nx && !solidCur[cur + 1] && !extAir[cur + 1]) { extAir[cur + 1] = 1; q[qt++] = cur + 1; }
-            if (cy > 0 && !solidCur[cur - nx] && !extAir[cur - nx]) { extAir[cur - nx] = 1; q[qt++] = cur - nx; }
-            if (cy + 1 < ny && !solidCur[cur + nx] && !extAir[cur + nx]) { extAir[cur + nx] = 1; q[qt++] = cur + nx; }
-          }
-
-          const allRuns = [];
+          const allBermRuns = [];
+          const allArchRuns = [];
           for (let hi = 0; hi < cwHoles.length; hi++) {
             const hObj = cwHoles[hi];
             const innerOuters = ccwOuters.filter(o =>
@@ -1460,63 +1524,89 @@
             }
             if (cavityCells.length === 0) continue;
 
-            let ventedBelow = false;
-            for (let i = 0; i < cavityCells.length; i++) {
-              const idx = cavityCells[i];
-              if (!solid115[idx] && !solid185[idx]) {
-                ventedBelow = true;
-                break;
-              }
+            const bermRuns = _findShortestBermRuns(cavityCells, blocked, solidCur, extAir, nx, ny, ox, oy, stepU, scaleMm);
+            if (bermRuns.length > 0) {
+              for (let i = 0; i < bermRuns.length; i++) allBermRuns.push(bermRuns[i]);
+            } else if (hObj.area >= minArchwayAreaU2 && ventMod && typeof ventMod.findShortestSolidVentRuns === 'function') {
+              // Courtyard enclosed 360 deg by taller buildings: carve one street-level gabled
+              // pedestrian archway (1.70 mm wide, >= 45 deg self-supporting crown) through shortest wall.
+              const archRuns = ventMod.findShortestSolidVentRuns(
+                cavityCells, extAir, solidCur, nx, ny, ox, oy, stepU, scaleMm, 0.85
+              );
+              for (let i = 0; i < archRuns.length; i++) allArchRuns.push(archRuns[i]);
             }
-            if (ventedBelow) continue;
-
-            const runs = _findShortestBermRuns(cavityCells, blocked, solidCur, extAir, nx, ny, ox, oy, stepU, scaleMm);
-            for (let i = 0; i < runs.length; i++) allRuns.push(runs[i]);
           }
 
-          if (allRuns.length === 0) break;
-          const cutPolys = core.clipperBufferOpenPaths(allRuns, 'Round', 1e-6);
-          if (cutPolys.length === 0) break;
+          if (allBermRuns.length === 0 && allArchRuns.length === 0) break;
 
-          let cutterCS = null;
-          let exclCS = null;
-          let rawCut = null;
-          let shiftedCut = null;
-          try {
-            cutterCS = mf.CrossSection.ofPolygons(cutPolys, 'Positive');
-            if (!sHigh.isEmpty()) {
-              exclCS = sHigh.offset(0.10 / scaleMm, 'Round');
-              if (!exclCS.isEmpty()) {
-                const nextCS = cutterCS.subtract(exclCS);
-                core.safeDeleteManifold(cutterCS);
-                cutterCS = nextCS;
-              }
-            }
-            if (!cutterCS.isEmpty()) {
-              const zBotU = Math.max(zBotFloorMm / scaleMm, (zMm - 0.35) / scaleMm);
-              const zTopU = (zMm + 0.45) / scaleMm;
-              if (zTopU > zBotU + 1e-5) {
-                rawCut = cutterCS.extrude(zTopU - zBotU);
-                shiftedCut = rawCut.translate([0, 0, zBotU]);
-                core.safeDeleteManifold(rawCut);
-                rawCut = null;
-                if (shiftedCut && shiftedCut.numTri() > 0) {
-                  const carved = unified.subtract(shiftedCut);
-                  if (carved && carved.numTri() > 0) {
-                    core.safeDeleteManifold(unified);
-                    unified = carved;
-                    didCut = true;
-                  } else {
-                    core.safeDeleteManifold(carved);
+          if (allBermRuns.length > 0) {
+            const cutPolys = core.clipperBufferOpenPaths(allBermRuns, 'Round', 1e-6);
+            if (cutPolys.length > 0) {
+              let cutterCS = null;
+              let exclCS = null;
+              let rawCut = null;
+              let shiftedCut = null;
+              try {
+                cutterCS = mf.CrossSection.ofPolygons(cutPolys, 'Positive');
+                if (!sHigh.isEmpty()) {
+                  exclCS = sHigh.offset(0.10 / scaleMm, 'Round');
+                  if (!exclCS.isEmpty()) {
+                    const nextCS = cutterCS.subtract(exclCS);
+                    core.safeDeleteManifold(cutterCS);
+                    cutterCS = nextCS;
                   }
                 }
+                if (!cutterCS.isEmpty()) {
+                  const zBotU = Math.max(zBotFloorMm / scaleMm, (zMm - 0.35) / scaleMm);
+                  const zTopU = (zMm + 0.65) / scaleMm;
+                  if (zTopU > zBotU + 1e-5) {
+                    rawCut = cutterCS.extrude(zTopU - zBotU);
+                    shiftedCut = rawCut.translate([0, 0, zBotU]);
+                    core.safeDeleteManifold(rawCut);
+                    rawCut = null;
+                    if (shiftedCut && shiftedCut.numTri() > 0) {
+                      const carved = unified.subtract(shiftedCut);
+                      if (carved && carved.numTri() > 0) {
+                        core.safeDeleteManifold(unified);
+                        unified = carved;
+                        didCut = true;
+                      } else {
+                        core.safeDeleteManifold(carved);
+                      }
+                    }
+                  }
+                }
+              } finally {
+                core.safeDeleteManifold(cutterCS);
+                core.safeDeleteManifold(exclCS);
+                core.safeDeleteManifold(rawCut);
+                core.safeDeleteManifold(shiftedCut);
               }
             }
-          } finally {
-            core.safeDeleteManifold(cutterCS);
-            core.safeDeleteManifold(exclCS);
-            core.safeDeleteManifold(rawCut);
-            core.safeDeleteManifold(shiftedCut);
+          }
+
+          if (allArchRuns.length > 0 && ventMod && typeof ventMod.buildGabledTunnelManifold === 'function') {
+            const zBotU = Math.max(zBotFloorMm / scaleMm, (zMm - 0.35) / scaleMm);
+            const zSpringU = (zMm + 0.70) / scaleMm;
+            const gableRiseU = 0.95 / scaleMm;
+            const archCut = ventMod.buildGabledTunnelManifold(core, mf, allArchRuns, zBotU, zSpringU, gableRiseU, scaleMm);
+            if (archCut) {
+              let carved = null;
+              try {
+                carved = unified.subtract(archCut);
+              } catch (_) {
+                carved = null;
+              } finally {
+                core.safeDeleteManifold(archCut);
+              }
+              if (carved && carved.numTri() > 0) {
+                core.safeDeleteManifold(unified);
+                unified = carved;
+                didCut = true;
+              } else {
+                core.safeDeleteManifold(carved);
+              }
+            }
           }
         } catch (_) {
           break;
@@ -1524,6 +1614,9 @@
           core.safeDeleteManifold(sHigh);
         }
         if (!didCut) break;
+      }
+      if (lastExtAir !== null && ventSeed !== null) {
+        ventSeed = lastExtAir;
       }
     }
     return unified;
@@ -1744,9 +1837,9 @@
     }
     if (clusters.length === 0) return unified;
 
-    const rSupU = 1.65 / scaleMm;
+    const rSupU = 1.45 / scaleMm;
     const rPierU = 0.52 / scaleMm;
-    const minSepU = 1.55 / scaleMm;
+    const minSepU = 1.50 / scaleMm;
     const minStructHalfU = 0.22 / scaleMm;
     const minCompAreaU2 = 0.04 / (scaleMm * scaleMm);
     const padLocalU = rSupU + minStructHalfU + 1.2 / scaleMm;
@@ -1835,21 +1928,27 @@
           if (!bandCS) continue;
 
           const zSupU = Math.max(0.10 / scaleMm, band.zLo - 0.15 / scaleMm);
+          const zSupNearU = Math.max(0.10 / scaleMm, band.zLo - 0.04 / scaleMm);
           const belowCS = getBelowCS(zSupU);
+          const belowNearCS = getBelowCS(zSupNearU);
           let clipBox = null;
+          let localBelowLo = null;
           let localBelow = null;
           let structuralBelow = null;
           let supportedZone = null;
           let unsup = null;
           try {
-            if (belowCS) {
+            if (belowCS && belowNearCS) {
               const bBounds = bandCS.bounds();
               clipBox = _makeRectCS(
                 mf,
                 bBounds.min[0] - padLocalU, bBounds.min[1] - padLocalU,
                 bBounds.max[0] + padLocalU, bBounds.max[1] + padLocalU
               );
-              localBelow = belowCS.intersect(clipBox);
+              localBelowLo = belowCS.intersect(clipBox);
+              // Require continuous support up to zLo - 0.04 mm so a lower deck ending
+              // with a thin air gap below an upper deck never masks an overhang (VAL-04).
+              localBelow = (!localBelowLo.isEmpty()) ? localBelowLo.intersect(belowNearCS) : localBelowLo;
               // Drop < 0.44 mm hairline slivers before dilating support zones.
               if (!localBelow.isEmpty()) {
                 structuralBelow = localBelow.offset(-minStructHalfU, 'Round');
@@ -1868,7 +1967,8 @@
           } finally {
             if (unsup !== bandCS) core.safeDeleteManifold(bandCS);
             core.safeDeleteManifold(clipBox);
-            core.safeDeleteManifold(localBelow);
+            if (localBelow && localBelow !== localBelowLo) core.safeDeleteManifold(localBelow);
+            core.safeDeleteManifold(localBelowLo);
             core.safeDeleteManifold(structuralBelow);
             core.safeDeleteManifold(supportedZone);
           }
@@ -2016,6 +2116,7 @@
 
     const minZMax = 0.05 / scaleMm;
     const minVol = 2.5 / (scaleMm ** 3);
+    const tinyLooseVolU3 = 12.0 / (scaleMm ** 3);
     const minSpan = 3.5 / scaleMm;
     const narrowPadMinU = 2.2 / scaleMm;
     const narrowPadMaxAreaU2 = 24.0 / (scaleMm * scaleMm);
@@ -2026,8 +2127,9 @@
       const dy = bb.max[1] - bb.min[1];
       const isFloating = bb.min[2] > minZMax;
       const isTinyBorderSliver = vol < minVol && Math.max(dx, dy) < minSpan;
+      const isTinyLooseShell = vol < tinyLooseVolU3 && vol < maxVol * 0.005;
       const isLooseNarrowIsland = vol < maxVol * 0.01 && Math.min(dx, dy) < narrowPadMinU && (dx * dy) < narrowPadMaxAreaU2;
-      const keep = !isFloating && !isTinyBorderSliver && !isLooseNarrowIsland;
+      const keep = !isFloating && !isTinyBorderSliver && !isTinyLooseShell && !isLooseNarrowIsland;
       if (keep) kept.push(c);
       else core.safeDeleteManifold(c);
     }
@@ -2047,21 +2149,26 @@
     return unified;
   }
 
-  function _applyPostUnionMslaPrintGuard(core, poly, mf, unified, scaleMm, isCutout, baseBottomMm = 2.35) {
+  function _applyPostUnionMslaPrintGuard(core, poly, mf, unified, scaleMm, isCutout, baseBottomMm = 2.35, ventMod = null, interiorSeams = null) {
     if (!unified || unified.numTri() === 0) return unified;
     let out = unified;
     if (isCutout === true) {
       out = _plugPostUnionBasePockets(core, poly, mf, out, out.boundingBox(), scaleMm, baseBottomMm);
+      if (ventMod && typeof ventMod.ventLargeBasePocketsUnderside === 'function') {
+        out = ventMod.ventLargeBasePocketsUnderside(
+          core, poly, mf, out, out.boundingBox(), scaleMm, baseBottomMm, interiorSeams, _rasterizePolysToGrid
+        );
+      }
     }
-    out = _ventUpperSealedCourtyards(core, poly, mf, out, scaleMm, baseBottomMm);
+    out = _ventUpperSealedCourtyards(core, poly, mf, out, scaleMm, baseBottomMm, ventMod);
     out = _groundFlatOverhangPiers(core, poly, mf, out, out.boundingBox(), scaleMm, baseBottomMm);
     out = _cleanupDetachedBorderSlivers(core, mf, out, scaleMm);
     return out;
   }
 
   function buildUnifiedTileTrianglesForStlCSG(state, layerFilter = 'all', tileIdFilter = -1) {
-    const { core, poly, cfgMod } = _getDeps();
-    let filtered = [], scaleMm = 1, isCutout = false, baseBottomMm = 2.35;
+    const { core, poly, cfgMod, ventMod } = _getDeps();
+    let filtered = [], scaleMm = 1, isCutout = false, baseBottomMm = 2.35, interiorSeams = null;
     if (Array.isArray(state)) {
       filtered = state;
     } else {
@@ -2072,6 +2179,16 @@
         ? cfgMod.resolveBaseBottomMm(state, cfgMod.PRINT_PHYSICS_CONFIG)
         : 2.35;
       const tileCols = Math.max(1, (state && state.tileCols) || 1), tileRows = Math.max(1, (state && state.tileRows) || 1);
+      if (tileIdFilter >= 0 && (tileCols > 1 || tileRows > 1)) {
+        const tc = tileIdFilter % tileCols;
+        const tr = Math.floor(tileIdFilter / tileCols);
+        interiorSeams = {
+          south: tr > 0,
+          north: tr < tileRows - 1,
+          west: tc > 0,
+          east: tc < tileCols - 1,
+        };
+      }
       isCutout = Boolean(state && state.waterCutout);
       const keys = layerFilter === 'all'
         ? (isCutout ? ['base', 'greenery', 'roads', 'buildings', 'highlighted'] : ['water', 'base', 'greenery', 'roads', 'buildings', 'highlighted'])
@@ -2107,10 +2224,12 @@
     if (!unified || unified.numTri() === 0) { core.safeDeleteManifold(unified); return []; }
     if (layerFilter === 'all' && !Array.isArray(state)) {
       const uBB = unified.boundingBox();
+      const spanXMm = (uBB.max[0] - uBB.min[0]) * scaleMm;
+      const spanYMm = (uBB.max[1] - uBB.min[1]) * scaleMm;
       if (uBB.min[2] <= 0.05 / scaleMm &&
-          (uBB.max[0] - uBB.min[0]) * scaleMm >= 25.0 &&
-          (uBB.max[1] - uBB.min[1]) * scaleMm >= 25.0) {
-        unified = _applyPostUnionMslaPrintGuard(core, poly, mf, unified, scaleMm, isCutout, baseBottomMm);
+          Math.max(spanXMm, spanYMm) >= 25.0 &&
+          Math.min(spanXMm, spanYMm) >= 6.0) {
+        unified = _applyPostUnionMslaPrintGuard(core, poly, mf, unified, scaleMm, isCutout, baseBottomMm, ventMod, interiorSeams);
         if (!unified || unified.numTri() === 0) { core.safeDeleteManifold(unified); return []; }
       }
     }

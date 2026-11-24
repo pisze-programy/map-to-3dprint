@@ -1086,15 +1086,19 @@
         if (area > mainAreaMm2) { mainAreaMm2 = area; mainRoot = v; }
       }
       const edgeTolU = 0.25 / scMm;
-      if (mainRoot >= 0 && mainAreaMm2 >= 1500.0) {
+      if (mainRoot >= 0 && mainAreaMm2 >= 600.0) {
         for (let v = 0; v < nv; v++) {
           if (!usedVerts[v] || find(v) !== v || v === mainRoot) continue;
           const sxMm = (compMaxX[v] - compMinX[v]) * scMm;
           const syMm = (compMaxY[v] - compMinY[v]) * scMm;
+          const areaMm2 = sxMm * syMm;
+          const volMm3 = Math.abs(compVolMm3[v]);
           const touchesBorder =
             compMinX[v] <= globalMinX + edgeTolU || compMaxX[v] >= globalMaxX - edgeTolU ||
             compMinY[v] <= globalMinY + edgeTolU || compMaxY[v] >= globalMaxY - edgeTolU;
-          if (touchesBorder && sxMm * syMm < 16.0 && Math.min(sxMm, syMm) < 3.0 && Math.abs(compVolMm3[v]) < 65.0) {
+          const isMicroShard = areaMm2 < 1.5 && volMm3 < 6.0;
+          const isBorderSliver = touchesBorder && areaMm2 < 16.0 && Math.min(sxMm, syMm) < 3.0 && volMm3 < 65.0;
+          if (isMicroShard || isBorderSliver) {
             dropComp[v] = 1;
           }
         }

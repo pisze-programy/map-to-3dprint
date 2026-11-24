@@ -77,6 +77,7 @@ function _buildBridgeRecJS(outer, holes, tags, osmId) {
     layer: _parseBridgeSignedLayerJS(tags.layer, 1),
     hasExplicitLayer: Boolean(tags && tags.layer !== undefined && tags.layer !== ''),
     bridgeStructure: _extractBridgeStructTagJS(tags) || (tags.bridge || ''),
+    bridgeSupport: String((tags && tags['bridge:support']) || '').trim().toLowerCase(),
     covered: tags.covered || '', level: tags.level !== undefined ? tags.level : '',
     heightM: _parseLenM(tags, 'height'), minHeightM: _parseLenM(tags, 'min_height'),
     clearanceM: _parseBridgeClearanceMJS(tags),

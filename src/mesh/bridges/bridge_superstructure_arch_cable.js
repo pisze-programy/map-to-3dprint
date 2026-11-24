@@ -145,7 +145,24 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
     interiorStops.sort((a, b) => a - b);
   }
   const archSpanMeters = totalArchSpan / mToBedXY;
-  if (!interiorStops.length && !spec.explicitThroughArch && archSpanMeters > 265.0) {
+  const isAbutmentOnly = String(spec.bridgeSupport || '').trim().toLowerCase() === 'abutment';
+  // Measure deck clearance above nominal water/land datum so deep gorges stay deck-arches
+  // while flat-harbour long-span abutment arches under waterCutout rise as through-arches.
+  const zNominalWaterRef = Math.max(ctx.zWaterTop || 0, (ctx.zLandDatum || 0) - 0.6 / scaleMm);
+  const nominalClears = [];
+  for (let i = 0; i < nPts; i++) {
+    if (spec.inWater[i]) nominalClears.push(spec.zBotArr[i] - zNominalWaterRef);
+  }
+  nominalClears.sort((a, b) => a - b);
+  const medWNominal = nominalClears.length ? nominalClears[nominalClears.length >> 1] : Infinity;
+  const isLongSpanThroughArch = Boolean(
+    spec.crossesWater &&
+    !spec.isHumpback &&
+    !interiorStops.length &&
+    medWNominal < 3.5 / scaleMm &&
+    ((isAbutmentOnly && archSpanMeters >= 130.0) || archSpanMeters >= 240.0)
+  );
+  if (!interiorStops.length && !spec.explicitThroughArch && !isLongSpanThroughArch && archSpanMeters > 265.0) {
     const nAutoBays = Math.max(2, Math.round(archSpanMeters / 110.0));
     for (let b = 1; b < nAutoBays; b++) interiorStops.push(wStart + (b / nAutoBays) * totalArchSpan);
   }
@@ -167,11 +184,15 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
     : Math.max(1.25 / scaleMm, Math.min(2.5 / scaleMm, initAvgBay * 0.085));
   const isThrough = !spec.isHumpback && Boolean(
     spec.explicitThroughArch ||
+    isLongSpanThroughArch ||
     (spec.crossesWater && medW < waterThroughThresh)
   );
   metrics.isThroughArch = isThrough;
 
   const isWaterCutoutArch = Boolean(ctx.waterCutout && spec.crossesWater);
+  // Keep above-deck through-arch spans undivided so long-span steel harbour arches rise as one
+  // continuous soaring arch while MSLA-safe sub-deck support piers stay cleanly spaced underneath.
+  const superBayStops = bayStops.slice();
   if (isWaterCutoutArch) {
     bayStops = _subdivideArchBaysForWaterCutoutJS(bayStops, 4.4 / scaleMm);
   }
@@ -182,7 +203,9 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
 
   if (!isThrough || isWaterCutoutArch) {
     const pierHalfL = Math.max(0.32 / scaleMm, Math.min(0.42 / scaleMm, avgBaySpan * 0.085));
-    const pierHalfW = Math.max(0.30 / scaleMm, Math.min(halfW * 0.96, halfW + 0.04 / scaleMm));
+    const pierHalfW = isThrough
+      ? Math.max(0.28 / scaleMm, Math.min(halfW * 0.62, 0.55 / scaleMm))
+      : Math.max(0.30 / scaleMm, Math.min(halfW * 0.96, halfW + 0.04 / scaleMm));
     for (let si = 0; si < bayStops.length; si++) {
       const sEnd = bayStops[si];
       const isInteriorStop = si > 0 && si < bayStops.length - 1;
@@ -220,9 +243,12 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
     }
   }
 
-  for (let bi = 0; bi < bayStops.length - 1; bi++) {
-    const b0 = bayStops[bi], b1 = bayStops[bi + 1], baySpan = Math.max(0.4 / scaleMm, b1 - b0);
-    const { count: nHang, minGapMm } = _computeAntiCapillarySamplesJS(baySpan * 0.86, strutDiamMm, 9, ctx);
+  const activeBays = isThrough ? superBayStops : bayStops;
+  for (let bi = 0; bi < activeBays.length - 1; bi++) {
+    const b0 = activeBays[bi], b1 = activeBays[bi + 1], baySpan = Math.max(0.4 / scaleMm, b1 - b0);
+    const baySpanMm = baySpan * scaleMm;
+    const desiredHang = isThrough ? Math.max(9, Math.min(30, Math.ceil(baySpanMm / 1.9))) : 9;
+    const { count: nHang, minGapMm } = _computeAntiCapillarySamplesJS(baySpan * 0.90, strutDiamMm, desiredHang, ctx);
     metrics.minStayGapMm = Math.min(metrics.minStayGapMm, minGapMm);
     const sMid = (b0 + b1) * 0.5, { pt: ptMid } = _samplePtAtSJS(spec, sMid);
     const zDeckMid = _lerpArrAtSJS(spec.sArr, isThrough ? spec.zTopArr : spec.zBotArr, sMid);
@@ -253,14 +279,8 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
       continue;
     }
 
-    if (isWaterCutoutArch && isThrough) {
-      const zBotMid = _lerpArrAtSJS(spec.sArr, spec.zBotArr, sMid);
-      const haunchRise = Math.max(0.55 / scaleMm, Math.min(baySpan * 0.42, Math.max(0.55 / scaleMm, zBotMid - zFloorLim - 0.65 / scaleMm)));
-      _buildCurvedArchSpandrelVaultJS(spec, b0, b1, haunchRise, zFloorLim, Math.max(0.28 / scaleMm, halfW * 0.86), mf, scaleMm, parts);
-    }
-
     const riseOrDrop = isThrough
-      ? Math.max(1.8 / scaleMm, Math.min(baySpan * 0.28, spec.heightM ? spec.heightM * mToBedZ : baySpan * 0.22))
+      ? Math.max(2.0 / scaleMm, Math.min(baySpan * 0.28, spec.heightM ? spec.heightM * mToBedZ : baySpan * 0.23))
       : Math.max(0.45 / scaleMm, Math.min(baySpan * 0.32, Math.max(0.45 / scaleMm, zDeckMid - zFloorLim)));
     if (isThrough) metrics.zPylonTop = Math.max(metrics.zPylonTop, _lerpArrAtSJS(spec.sArr, spec.zTopArr, sMid) + riseOrDrop);
     if (!isThrough) {
@@ -271,10 +291,17 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
         if (tie) parts.push(tie);
       }
     }
+
+    const isMajorSteelThroughTruss = Boolean(isThrough && baySpanMm >= 14.0);
+    const nArchSeg = isMajorSteelThroughTruss ? Math.max(12, Math.min(28, Math.ceil(baySpanMm / 2.0))) : 8;
+    const crownTrussDepth = isMajorSteelThroughTruss ? Math.max(1.1 / scaleMm, Math.min(2.4 / scaleMm, riseOrDrop * 0.22)) : 0;
+    const trussDepthAtU = (u) => crownTrussDepth * (1.0 + 0.50 * (1.0 - 4.0 * u * (1.0 - u)));
+
     for (const sign of [-1, 1]) {
-      let prev = null;
-      for (let k = 0; k <= 8; k++) {
-        const u = k / 8, s = b0 + u * baySpan, { pt, tx, ty } = _samplePtAtSJS(spec, s);
+      let prevLo = null;
+      let prevHi = null;
+      for (let k = 0; k <= nArchSeg; k++) {
+        const u = k / nArchSeg, s = b0 + u * baySpan, { pt, tx, ty } = _samplePtAtSJS(spec, s);
         const zTopS = _lerpArrAtSJS(spec.sArr, spec.zTopArr, s);
         const zBotS = _lerpArrAtSJS(spec.sArr, spec.zBotArr, s);
         const crownEmbed = Math.min(0.08 / scaleMm, Math.max(0, (zTopS - zBotS) - ribR - 0.06 / scaleMm));
@@ -282,9 +309,20 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
         const zArch = isThrough
           ? (zBase + 4 * u * (1 - u) * riseOrDrop)
           : Math.min(zTopS - ribR - 0.05 / scaleMm, zBase + 4 * u * (1 - u) * (riseOrDrop + crownEmbed));
-        const p = _sidePtJS(pt, tx, ty, sign * lat, zArch);
-        if (prev) { const b = _beamOverlapJS(mf, prev, p, ribR); if (b) parts.push(b); }
-        prev = p;
+        const pLo = _sidePtJS(pt, tx, ty, sign * lat, zArch);
+        if (prevLo) { const b = _beamOverlapJS(mf, prevLo, pLo, ribR); if (b) parts.push(b); }
+        prevLo = pLo;
+
+        if (isMajorSteelThroughTruss) {
+          const zUpper = zArch + trussDepthAtU(u);
+          const pHi = _sidePtJS(pt, tx, ty, sign * lat, zUpper);
+          if (prevHi) { const bHi = _beamOverlapJS(mf, prevHi, pHi, ribR * 0.95); if (bHi) parts.push(bHi); }
+          if (k === 0 || k === nArchSeg) {
+            const endPost = _beamOverlapJS(mf, _sidePtJS(pt, tx, ty, sign * lat, zTopS - 0.05 / scaleMm), pHi, ribR * 1.05);
+            if (endPost) parts.push(endPost);
+          }
+          prevHi = pHi;
+        }
       }
       for (let h = 1; h < nHang - 1; h++) {
         const u = h / (nHang - 1), s = b0 + u * baySpan, { pt, tx, ty } = _samplePtAtSJS(spec, s);
@@ -292,9 +330,32 @@ function _buildArchSuperstructureJS(spec, terrainWater, ctx, strutDiamMm, strutR
         const zBotS = _lerpArrAtSJS(spec.sArr, spec.zBotArr, s);
         const zD = isThrough ? (zTopS - 0.04 / scaleMm) : Math.min(zTopS - 0.05 / scaleMm, zBotS + Math.min(spec.deckThick * 0.4, 0.12 / scaleMm));
         const zA = (isThrough ? zD : zBotS - riseOrDrop) + 4 * u * (1 - u) * riseOrDrop;
-        if (Math.abs(zD - zA) < 0.08 / scaleMm) continue;
-        const bar = _beamOverlapJS(mf, _sidePtJS(pt, tx, ty, sign * lat, Math.min(zD, zA)), _sidePtJS(pt, tx, ty, sign * lat, Math.max(zD, zA)), strutRU);
+        const zTopHanger = isMajorSteelThroughTruss ? (zA + trussDepthAtU(u)) : zA;
+        if (Math.abs(zD - zTopHanger) < 0.08 / scaleMm) continue;
+        const bar = _beamOverlapJS(mf, _sidePtJS(pt, tx, ty, sign * lat, Math.min(zD, zTopHanger)), _sidePtJS(pt, tx, ty, sign * lat, Math.max(zD, zTopHanger)), strutRU);
         if (bar) parts.push(bar);
+      }
+    }
+
+    // Add self-supporting >= 45 deg chevron lateral bracing between left/right ribs on major steel through-arches
+    if (isMajorSteelThroughTruss && lat > 0.35 / scaleMm) {
+      const nBraces = Math.max(3, Math.min(9, Math.floor(nHang / 3)));
+      const braceR = Math.max(strutRU * 0.92, ribR * 0.72);
+      const chevronRise = Math.min(crownTrussDepth * 1.15, lat * 1.02);
+      for (let k = 1; k < nBraces; k++) {
+        const u = k / nBraces;
+        const s = b0 + u * baySpan;
+        const { pt, tx, ty } = _samplePtAtSJS(spec, s);
+        const zTopS = _lerpArrAtSJS(spec.sArr, spec.zTopArr, s);
+        const zArch = (zTopS - 0.04 / scaleMm) + 4 * u * (1 - u) * riseOrDrop;
+        if (zArch - zTopS < 2.2 / scaleMm) continue;
+        const pL = _sidePtJS(pt, tx, ty, -lat, zArch);
+        const pR = _sidePtJS(pt, tx, ty, lat, zArch);
+        const pApex = [pt[0], pt[1], zArch + chevronRise];
+        const bL = _beamOverlapJS(mf, pL, pApex, braceR);
+        const bR = _beamOverlapJS(mf, pR, pApex, braceR);
+        if (bL) parts.push(bL);
+        if (bR) parts.push(bR);
       }
     }
   }

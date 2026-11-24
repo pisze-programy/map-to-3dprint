@@ -45,6 +45,9 @@
   if (typeof buildTileIdLabelPolys === 'undefined') {
     Object.assign(g, _req('./tile_id_emboss.js'));
   }
+  if (typeof buildGabledTunnelManifold === 'undefined') {
+    Object.assign(g, _req('./tile_msla_vent_builder.js'));
+  }
   if (typeof carveTileHollowVaultAndId === 'undefined') {
     Object.assign(g, _req('./tile_sla_vault_solver.js'));
   }

@@ -94,10 +94,14 @@
       const roofDir = root.parseRoofDirectionJS(tags), eleM = root.parseOsmLengthMetersJS(tags.ele, null);
       const roofHTag = root.parseOsmLengthMetersJS(tags['roof:height'], null), roofLvlTag = root.parseFloatTagJS(tags['roof:levels'], null);
       const hasExplicitRoofH = roofHTag !== null || roofLvlTag !== null;
+      const isElevatedVaultRoofPart = Boolean(
+        isPart && btype === 'roof' && (root.parseFloatTagJS(tags && tags.layer, 0) || 0) >= 2
+      );
       let roofH = 0.0;
       if (roof !== 'flat') {
         if (roofHTag !== null) roofH = Math.max(0.0, roofHTag);
         else if (roofLvlTag !== null) roofH = Math.max(0.0, roofLvlTag * roofLvlH);
+        else if (isElevatedVaultRoofPart) roofH = Math.min(Math.max(4.5, minSpanM * 0.72), 22.0);
         else if (roof === 'cone' || roof === 'pyramidal' || roof === 'dome' || roof === 'onion') roofH = Math.min(Math.max(3.5, minSpanM * 0.85), 11.0);
         else roofH = Math.min(effPitchSpanM * 0.42, 10.0);
       }

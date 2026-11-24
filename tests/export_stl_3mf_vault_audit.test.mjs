@@ -830,6 +830,99 @@ async function runAudit() {
   assert.ok(Math.abs(sumSpanYMm - 170.0) <= 0.05, `A4 1x3 sum spanY expected 170.00 mm, got ${sumSpanYMm.toFixed(3)}`);
   console.log('  PASS: A4 120x170 (3x 120x56.67 mm) 4.0 mm solid tunnel-free STLs verified 0-open/0-nm/0-degen/0-cavities/0-tunnels');
 
+  // 8. Systemic MSLA fixes: ornamental park pools, hidden underside basin vents, tall courtyard archways & narrow coastal strip guard
+  console.log('[8/8] Systemic MSLA Fixes: Ornamental Pool + Hero Basin Vent + Tall Courtyard Archway + Narrow Coastal Strip');
+  const sysState = {
+    plaqueText: 'SYS_MSLA',
+    bedSizeMm: 120,
+    totalHeightMm: 170,
+    tileCols: 1,
+    tileRows: 3,
+    kerfMm: 0.0,
+    bedSafeMarginMm: 4.0,
+    hollowBase: true,
+    solidBaseNoTunnels: true,
+    baseHeightMm: 4.0,
+    waterCutout: true,
+    showFrame: false,
+    exportFrame: false,
+    isResin: true,
+    zScale: 1.0,
+    terrainScale: 1.0,
+    cropRatio: 1.0,
+  };
+  const sysSpec = resolveSceneScaleAndSpec(sysState, null);
+  const uPerMm = 1.0 / sysSpec.scaleMm;
+  // Middle tile Y spans [-28.33 mm, +28.33 mm]; Top tile Y spans [+28.33 mm, +85.00 mm]
+  const sysScene = {
+    spanMeters: 1200,
+    dem: {
+      grid: [
+        [0.1, 0.1, 0.1, 0.1],
+        [0.1, 0.1, 0.1, 0.1],
+        [0.1, 0.1, 0.1, 0.1],
+        [0.1, 0.1, 0.1, 0.1],
+      ],
+      minElev: 0.1,
+      maxElev: 0.1,
+    },
+    waterPolys: [
+      // Small ornamental park pond (~1200 m2 < 4500 m2) in Middle tile -> shallow recess >= 2.2 mm
+      { outer: makeSq(-35 * uPerMm, 0, 1.7 * uPerMm), holes: [], waterTag: 'pond' },
+      // Large enclosed hero lake (~64 mm2, ~6400 m2 >= 4500 m2) in Middle tile -> Z=0 top cutout + hidden underside vent
+      { outer: makeSq(-8 * uPerMm, 0, 4.0 * uPerMm), holes: [], waterTag: 'lake' },
+      // Tiny near-border pinhole (~4 mm2) 0.25 mm inside Middle tile North seam -> plugged solid without growing bbox
+      { outer: makeSq(35 * uPerMm, 26.8 * uPerMm, 1.0 * uPerMm), holes: [], waterTag: 'canal' },
+      // Open bay water clipping Top tile to an ~18 mm tall narrow coastal strip (Y=+67..+85 mm)
+      { outer: [[-70 * uPerMm, 28 * uPerMm], [70 * uPerMm, 28 * uPerMm], [70 * uPerMm, 67 * uPerMm], [-70 * uPerMm, 67 * uPerMm]], holes: [], waterTag: 'bay' },
+    ],
+    waterLines: [],
+    greenPolys: [],
+    trees: [],
+    roads: [
+      // Elevated truss pier overhanging into bay water on the narrow Top coastal strip
+      { pts: [[0, 69 * uPerMm], [0, 56 * uPerMm]], width: 4.5 * uPerMm, isBridge: true, isPath: true, layer: 2, bridgeStructure: 'truss', clearanceM: 7.0 },
+    ],
+    bridgePolys: [],
+    buildings: [
+      // Tall 120 m (~12 mm) enclosed courtyard (12x12 mm interior = 144 mm2) on Middle tile
+      { id: 801, outer: [[22 * uPerMm, -12 * uPerMm], [38 * uPerMm, -12 * uPerMm], [38 * uPerMm, -10 * uPerMm], [22 * uPerMm, -10 * uPerMm]], holes: [], h: 110, roof: 'flat', roofH: 0 },
+      { id: 802, outer: [[22 * uPerMm, 2 * uPerMm], [38 * uPerMm, 2 * uPerMm], [38 * uPerMm, 4 * uPerMm], [22 * uPerMm, 4 * uPerMm]], holes: [], h: 110, roof: 'flat', roofH: 0 },
+      { id: 803, outer: [[22 * uPerMm, -12 * uPerMm], [24 * uPerMm, -12 * uPerMm], [24 * uPerMm, 4 * uPerMm], [22 * uPerMm, 4 * uPerMm]], holes: [], h: 110, roof: 'flat', roofH: 0 },
+      { id: 804, outer: [[36 * uPerMm, -12 * uPerMm], [38 * uPerMm, -12 * uPerMm], [38 * uPerMm, 4 * uPerMm], [36 * uPerMm, 4 * uPerMm]], holes: [], h: 110, roof: 'flat', roofH: 0 },
+    ],
+  };
+  const sysBuilt = buildComplete3DModel(sysScene, sysState);
+
+  // Check Middle tile (tileId=1): 0 base cavities at Z=0.15..1.15, hero lake still open at Z=3.6, tall courtyard vented at Z=4.5, rooftops intact
+  const midBytes = stlMod.buildBinarySTLBytes({ ...sysState, layerMeshes: sysBuilt.meshes }, 'all', 1);
+  const midAudit = parseAndAuditRawStlBytes(midBytes);
+  assert.equal(midAudit.openEdges, 0, `sys Middle open=${midAudit.openEdges}`);
+  assert.equal(midAudit.nonManifoldEdges, 0, `sys Middle nm=${midAudit.nonManifoldEdges}`);
+  assert.equal(midAudit.degenerateTris, 0, `sys Middle degen=${midAudit.degenerateTris}`);
+  assert.ok(midAudit.spanX <= 120.03 && midAudit.spanY <= expectedTileHMm + 0.03, `sys Middle bbox grew: ${midAudit.spanX.toFixed(2)}x${midAudit.spanY.toFixed(2)}`);
+  const midBaseSlices = auditRawStlSliceRasterCavities(midBytes, [0.15, 0.55, 0.95, 1.15, 3.60, 4.50], 0.30);
+  for (const sl of midBaseSlices.slice(0, 4)) {
+    assert.equal(sl.sealedCavitiesGe2Mm2, 0, `sys Middle Z=${sl.zMm}mm must have 0 sealed cavities, got ${sl.sealedCavitiesGe2Mm2} (max=${sl.maxSealedCavityMm2.toFixed(2)})`);
+  }
+  // At Z=3.60 mm (above hidden underside gable apex ~2.43 mm), the 64 mm2 hero lake MUST remain an open cutout (>= 40 mm2)
+  assert.ok(midBaseSlices[4].maxSealedCavityMm2 >= 40.0, `Expected hero lake open on top at Z=3.60 mm (>=40 mm2), got ${midBaseSlices[4].maxSealedCavityMm2.toFixed(2)}`);
+  // At Z=4.50 mm, the 144 mm2 tall-walled courtyard MUST be vented (< 75 mm2 trapped)
+  assert.ok(midBaseSlices[5].maxSealedCavityMm2 < 75.0, `Expected tall-walled courtyard vented at Z=4.50 mm (<75 mm2), got ${midBaseSlices[5].maxSealedCavityMm2.toFixed(2)}`);
+  // Rooftop height of the 110 m courtyard buildings (~15 mm) MUST remain intact and VAL-04 overhang <= 2.2 mm
+  assert.ok(midAudit.maxZ >= 12.0, `Expected courtyard rooftops preserved (maxZ >= 12 mm), got ${midAudit.maxZ.toFixed(2)}`);
+  const midOverhang = auditRawStlOverhangsVal04(midBytes);
+  assert.ok(midOverhang.maxHalfSpanMm <= 2.2, `Expected sys Middle VAL-04 half-span <= 2.2 mm, got ${midOverhang.maxHalfSpanMm.toFixed(2)}`);
+
+  // Check narrow Top coastal strip (tileId=2, ~18 mm tall in Y < 25 mm): guard MUST run and ground elevated overhang pier
+  const topBytes = stlMod.buildBinarySTLBytes({ ...sysState, layerMeshes: sysBuilt.meshes }, 'all', 2);
+  const topAudit = parseAndAuditRawStlBytes(topBytes);
+  assert.equal(topAudit.openEdges, 0, `sys Top narrow strip open=${topAudit.openEdges}`);
+  assert.equal(topAudit.nonManifoldEdges, 0, `sys Top narrow strip nm=${topAudit.nonManifoldEdges}`);
+  const topOverhang = auditRawStlOverhangsVal04(topBytes);
+  assert.ok(topOverhang.maxHalfSpanMm <= 2.2, `Expected narrow coastal strip VAL-04 <= 2.2 mm, got ${topOverhang.maxHalfSpanMm.toFixed(2)}`);
+  console.log(`  PASS: Systemic MSLA fixes verified (Mid Z=0.15..1.15 cav=0, lakeTop=${midBaseSlices[4].maxSealedCavityMm2.toFixed(1)}mm2, courtyardZ4.5=${midBaseSlices[5].maxSealedCavityMm2.toFixed(1)}mm2, maxZ=${midAudit.maxZ.toFixed(1)}mm, TopNarrowVAL04=${topOverhang.maxHalfSpanMm.toFixed(2)}mm)`);
+
   console.log(`\nETAP 6 AUDIT PASSED in ${Date.now() - tStart} ms.`);
 }
 

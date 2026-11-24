@@ -31,6 +31,7 @@ def build():
         "src/mesh/mesh_primitives.js",
         "src/mesh/frame_csg_solver.js",
         "src/mesh/tile_id_emboss.js",
+        "src/mesh/tile_msla_vent_builder.js",
         "src/mesh/tile_sla_vault_solver.js",
         "src/mesh/global_invariants_auditor.js",
         "src/Water/water_elevation_sampler.js",

@@ -53,14 +53,33 @@
       ? core.clipperUnionPolys(islandEntries.map(e => e.ring), 1e-5)
       : [];
 
-    // 2. Separate primary sea/river/marina polygons from genuine inland ponds strictly inside an island
+    // 2. Separate primary sea/river/marina polygons, genuine inland ponds, and small interior
+    // ornamental park pools (< 4500 m2 under waterCutout -> shallow recess above Z >= 2.2 mm)
+    const ORNAMENTAL_POOL_TAGS = new Set(['pond', 'basin', 'fountain', 'reflecting_pool', 'swimming_pool']);
+    const rawMToU = Math.max(1e-6, Number(ctx.rawMToU || ctx.mToU || 0.141));
+    const borderTolU = 0.25 / (ctx.scaleMm || 1);
     const primaryWaterOuterList = [];
     const nestedLakeOuters = [];
+    const shallowOrnamentalOuterList = [];
     for (const wp of (scene && scene.waterPolys) || []) {
       if (!wp || !wp.outer || wp.outer.length < 3) continue;
       const outerBed = wp.outer.map(toBed);
       const clipped = core.clipperIntersectPolys([outerBed], plateClipPoly, 1e-5);
       if (clipped.length === 0) continue;
+      const wpTag = String(wp.waterTag || '').trim().toLowerCase();
+      if (waterCutout && ORNAMENTAL_POOL_TAGS.has(wpTag)) {
+        const areaM2 = Math.abs(core.signedArea2D(wp.outer)) / (rawMToU * rawMToU);
+        const touchesPlateBorder = clipped.some(ring => ring.some(p =>
+          Math.abs(p[0]) >= (ctx.halfW || 60) - borderTolU ||
+          Math.abs(p[1]) >= (ctx.halfH || 60) - borderTolU
+        ));
+        if (areaM2 < 4500 && !touchesPlateBorder) {
+          const subHoles = (wp.holes || []).filter(h => h && h.length >= 3).map(h => h.map(toBed)).filter(keepIslet);
+          const poolPolys = subHoles.length > 0 ? core.clipperDiffPolys(clipped, subHoles, 1e-5) : clipped;
+          for (const pr of poolPolys) shallowOrnamentalOuterList.push(pr);
+          continue;
+        }
+      }
       const wpArea = Math.abs(core.signedArea2D(outerBed));
       const probe = sampler._probeRingInteriorPt(outerBed);
       const isNestedPond = islandEntries.some(isl => wpArea < isl.area * 0.88 && sampler._ptInRingLocal(probe[0], probe[1], isl.ring));
@@ -170,15 +189,49 @@
     if (unionedWaterRings.length > 0 && protectedPolys.length > 0) {
       unionedWaterRings = core.clipperDiffPolys(unionedWaterRings, protectedPolys, 1e-5);
     }
-    const waterMaskPolys2D = core.ringsToOutersWithHoles(unionedWaterRings, 1e-5);
-    if (waterCutout) for (const wm of waterMaskPolys2D) if (wm.holes && wm.holes.length) wm.holes = wm.holes.filter(keepIslet);
+    const cutoutWaterPolys2D = core.ringsToOutersWithHoles(unionedWaterRings, 1e-5);
+    if (waterCutout) for (const wm of cutoutWaterPolys2D) if (wm.holes && wm.holes.length) wm.holes = wm.holes.filter(keepIslet);
+
+    let shallowOrnamentalRings = shallowOrnamentalOuterList.length > 0
+      ? core.clipperUnionPolys(shallowOrnamentalOuterList, 1e-5)
+      : [];
+    if (shallowOrnamentalRings.length > 0 && effectiveIslandPolys.length > 0) {
+      shallowOrnamentalRings = core.clipperDiffPolys(shallowOrnamentalRings, effectiveIslandPolys, 1e-5);
+    }
+    if (shallowOrnamentalRings.length > 0 && protectedPolys.length > 0) {
+      shallowOrnamentalRings = core.clipperDiffPolys(shallowOrnamentalRings, protectedPolys, 1e-5);
+    }
+    if (shallowOrnamentalRings.length > 0 && unionedWaterRings.length > 0) {
+      shallowOrnamentalRings = core.clipperDiffPolys(shallowOrnamentalRings, unionedWaterRings, 1e-5);
+    }
+    const shallowOrnamentalPolys2D = core.ringsToOutersWithHoles(shallowOrnamentalRings, 1e-5);
+    const minShallowFloorU = 2.2 / (ctx.scaleMm || 1);
+    const shallowRecessU = 0.40 / (ctx.scaleMm || 1);
+    const shallowOrnamentalEntries = shallowOrnamentalPolys2D.length > 0
+      ? sampler._classifyFlatWaterPolys(ctx, shallowOrnamentalPolys2D).map(fe => ({
+          ...fe,
+          floorZ: Math.max(minShallowFloorU, fe.minTerrainZ - shallowRecessU),
+        }))
+      : [];
+    if (shallowOrnamentalRings.length > 0) {
+      unionedWaterRings = unionedWaterRings.length > 0
+        ? core.clipperUnionPolys(unionedWaterRings, 1e-5, shallowOrnamentalRings)
+        : shallowOrnamentalRings;
+    }
+    const waterMaskPolys2D = shallowOrnamentalPolys2D.length > 0
+      ? cutoutWaterPolys2D.concat(shallowOrnamentalPolys2D)
+      : cutoutWaterPolys2D;
 
     let waterManifold = null;
-    if ((flatWaterPolys2D.length > 0 || slopedReaches.length > 0) && terrainManifold) {
+    if ((flatWaterPolys2D.length > 0 || slopedReaches.length > 0 || shallowOrnamentalEntries.length > 0) && terrainManifold) {
       const tMaxZ = terrainManifold.boundingBox().max[2] + 5.0, carveSolids = [], waterEmitSolids = [];
       if (waterCutout) {
-        for (const wp of waterMaskPolys2D) {
+        for (const wp of cutoutWaterPolys2D) {
           const cm = core.extrudeRingSolid(mf, wp.outer, wp.holes, -0.5, tMaxZ);
+          if (cm) carveSolids.push(cm);
+        }
+        for (const se of shallowOrnamentalEntries) {
+          const cm = core.extrudeRingSolid(mf, se.outer, se.holes, se.floorZ, tMaxZ);
           if (cm) carveSolids.push(cm);
         }
       } else {
@@ -209,6 +262,11 @@
     }
 
     const queryWaterZAt = (x, y, isFloor = false, ignoreCutout = false) => {
+      for (let i = 0; i < shallowOrnamentalEntries.length; i++) {
+        if (sampler._ptInWaterEntryLocal(x, y, shallowOrnamentalEntries[i])) {
+          return shallowOrnamentalEntries[i].floorZ;
+        }
+      }
       if (waterCutout && !ignoreCutout) return 0.0;
       for (let i = 0; i < elevatedFlatPolys.length; i++) {
         const ep = elevatedFlatPolys[i];

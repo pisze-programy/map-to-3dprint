@@ -1072,6 +1072,35 @@ async function runSuite() {
       'Collinear layer=1 carriageway and micro edge-graze footpath deduplicate cleanly into layer=2 viaduct polygon',
       `bridgeCount=${viaAuds.length}, names=${viaAuds.map(a => a.name).join(',')}`
     );
+
+    // Long-span flat-harbour arch with bridge:support=abutment under waterCutout builds undivided through-arch above deck
+    const sceneHarbourArch = {
+      spanMeters: 1600,
+      metersToUnits: 169.2 / 1600,
+      dem: { grid: [[0.5, 0.5], [0.5, 0.5]], minElev: 0.5, maxElev: 0.5 },
+      waterPolys: [{ outer: [[-22, -40], [22, -40], [22, 40], [-22, 40]], holes: [] }],
+      waterLines: [], greenPolys: [], trees: [], buildings: [],
+      bridgePolys: [{
+        osmId: 9620,
+        name: 'Harbour Steel Arch',
+        outer: [[-28, -2.2], [28, -2.2], [28, 2.2], [-28, 2.2]],
+        holes: [],
+        layer: 1,
+        bridgeStructure: 'arch',
+        bridgeSupport: 'abutment',
+        acrossRoadIds: [],
+        tags: { man_made: 'bridge', 'bridge:structure': 'arch', 'bridge:support': 'abutment', layer: '1' },
+      }],
+      roads: [],
+    };
+    const resHA = buildComplete3DModel(sceneHarbourArch, stA4);
+    assertCleanManifold(resHA.printMetrics, 'Long-span abutment harbour through-arch on 4.0mm waterCutout base');
+    const haAud = (resHA.audit.bridgeAudits || []).find(a => a.name === 'Harbour Steel Arch');
+    check(
+      Boolean(haAud && haAud.isThroughArch === true && haAud.zPylonTop > haAud.zDeckTop + 3.0),
+      'Long-span flat-harbour abutment arch rises as undivided through-arch truss above deck under waterCutout',
+      `isThrough=${haAud?.isThroughArch}, deckTop=${haAud?.zDeckTop?.toFixed(2)}, pyTop=${haAud?.zPylonTop?.toFixed(2)}`
+    );
   }
 
   console.log(`\nETAP 4 BRIDGES GLOBAL SUMMARY: ${passed} passed, ${failed} failed.`);

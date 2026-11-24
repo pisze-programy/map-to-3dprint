@@ -330,5 +330,25 @@ console.log('\n[8/8] Exact Skillion Slope & Zero-Wall Elevated Wedge');
     `maxZ=${wedBounds?.maxZ?.toFixed(4)}, zTop=${wedPrep?.zTop?.toFixed(4)}`);
 }
 
+// ---------------------------------------------------------------------------
+// 9. Multi-Tier Vaulted Roof Shells (building:part=roof + layer >= 2 + spherical/circular)
+// ---------------------------------------------------------------------------
+console.log('\n[9/9] Multi-Tier Vaulted Roof Shells (spherical/circular + elevated layer >= 2)');
+{
+  const col = matcherMod.createS3DBClientCollector(80, 80, 0.20);
+  col.registerCandidate(9101, { building: 'civic', 'building:levels': '5' }, makeRect(0, 0, 24, 16), [], false, 9101, false);
+  col.registerCandidate(9102, { 'building:part': 'roof', layer: '3', 'roof:shape': 'spherical' }, makeRect(-5, 0, 6, 8), [], true, 9101, false);
+  col.registerCandidate(9103, { 'building:part': 'roof', layer: '5', 'roof:shape': 'circular' }, makeRect(5, 0, 6, 8), [], true, 9101, false);
+  const res = col.resolveAndEmitS3DBBuildings();
+  const pod = res.find(b => b.osmId === 9101);
+  const sh3 = res.find(b => b.osmId === 9102);
+  const sh5 = res.find(b => b.osmId === 9103);
+  check(Boolean(sh3 && sh3.roof === 'dome'), 'roof:shape=spherical normalizes to dome (never flat)', `roof=${sh3?.roof}`);
+  check(Boolean(sh5 && sh5.roof === 'round'), 'roof:shape=circular normalizes to round (never flat)', `roof=${sh5?.roof}`);
+  check(Boolean(pod && sh3 && sh5 && sh3.h > pod.h + 5.0 && sh5.h > sh3.h + 5.0),
+    'Elevated building:part=roof shells (layer=3,5) rise cleanly above parent podium height',
+    `podH=${pod?.h}, sh3H=${sh3?.h}, sh5H=${sh5?.h}`);
+}
+
 console.log(`\nS3DB ETAP 3 TEST SUMMARY: ${passed} passed, ${failed} failed.`);
 if (failed > 0) process.exit(1);
