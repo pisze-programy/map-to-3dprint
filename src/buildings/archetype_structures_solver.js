@@ -124,6 +124,165 @@
     return core.batchUnionManifolds(mf, parts);
   }
 
+  /**
+   * Builds a watertight sloped architectural shell or solid tapered wedge from a
+   * full-resolution S3DB skillion polygon (preserving curved arch cutouts and miter edges).
+   * @returns {object|null} Manifold solid or null
+   */
+  function _buildSlopedSkillionLatticePanel(core, mf, ctx, b, outerBed, tags, rawH, rawMinH, zBottom, zTop) {
+    const { scaleMm } = ctx;
+    const partSpanM = Math.max(1e-3, rawH - rawMinH);
+    const explicitRoofHM = Number(
+      b && b.roofH !== undefined ? b.roofH : (tags && tags['roof:height'] !== undefined ? tags['roof:height'] : 0)
+    ) || 0;
+    const dirRad = (Number(b.roofDir) * Math.PI) / 180.0;
+    const dx = Math.sin(dirRad), dy = Math.cos(dirRad); // Downhill unit vector (0=N/+Y, 90=E/+X)
+    const wx = dy, wy = -dx; // Right-handed extrusion axis: d x +Z = [dy, -dx, 0]
+
+    let sMin = Infinity, sMax = -Infinity, wMin = Infinity, wMax = -Infinity;
+    for (let i = 0; i < outerBed.length; i++) {
+      const p = outerBed[i];
+      const s = p[0] * dx + p[1] * dy;
+      const w = p[0] * wx + p[1] * wy;
+      if (s < sMin) sMin = s;
+      if (s > sMax) sMax = s;
+      if (w < wMin) wMin = w;
+      if (w > wMax) wMax = w;
+    }
+    const runU = sMax - sMin;
+    const spanW = wMax - wMin;
+    if (runU < 1e-4 || spanW < 1e-4 || zTop - zBottom < 0.15 / scaleMm) return null;
+
+    const isOpenRoofShell = String(tags.wall || '').toLowerCase() === 'no' ||
+      String(tags['building:part'] || '').toLowerCase() === 'roof';
+    const eavesFrac = (explicitRoofHM > 0 && explicitRoofHM < partSpanM - 0.5)
+      ? Math.max(0, Math.min(0.35, 1.0 - explicitRoofHM / partSpanM))
+      : 0.0;
+    const zEavesU = zBottom + eavesFrac * (zTop - zBottom);
+    const riseU = Math.max(1e-4, zTop - zEavesU);
+    const slope = riseU / runU;
+
+    const padW = 0.25 / scaleMm;
+    const padS = 0.20 / scaleMm;
+    const overlapBot = 0.30 / scaleMm;
+    const overlapTop = 0.45 / scaleMm;
+    const miterPadU = 0.035 / scaleMm;
+
+    let clipRings = [core.ensureWinding(outerBed, true, 4e-4)].filter(r => r.length >= 3);
+    if (clipRings.length === 0) return null;
+    try {
+      const grown = core.clipperOffsetPolys(clipRings, miterPadU, 'Miter', 1e-5)
+        .map(r => core.ensureWinding(r, true, 4e-4)).filter(r => r.length >= 3);
+      if (grown.length > 0) clipRings = grown;
+    } catch (_) {}
+
+    let profileSZ = null;
+    if (isOpenRoofShell) {
+      // Sloped open-underside shell centered on the exact skillion plane, keeping arches open
+      // while ensuring >= 0.85 mm structural landing seat thickness beneath upper floor decks.
+      const tPerpU = Math.max(0.85 / scaleMm, Math.min(1.15 / scaleMm, runU * 0.32));
+      const dzShell = Math.min(
+        (zTop - zBottom) * 0.42,
+        Math.max(0.88 / scaleMm, (tPerpU * Math.hypot(runU, riseU)) / runU)
+      );
+      const halfDz = dzShell * 0.5;
+      // Add an uphill landing haunch strictly along the top seat (s <= sMin + 0.22*runU) so
+      // arched legs embed solidly under upper floor decks without triggering vertical stilts.
+      const topSeatU = Math.min(0.85 / scaleMm, runU * 0.52);
+      if (topSeatU > 1e-4) {
+        const upThresh = sMin + runU * 0.22;
+        clipRings = clipRings.map(r => r.map(p => {
+          const ps = p[0] * dx + p[1] * dy;
+          return ps <= upThresh ? [p[0] - dx * topSeatU, p[1] - dy * topSeatU] : p;
+        }));
+      }
+      const sLo = sMin - topSeatU - padS;
+      const sHi = sMax + padS;
+      // Clamp s >= sMin so the uphill topSeatU haunch stays flush beneath zTop instead of rising past it.
+      const zPlane = (s) => zEavesU + slope * (sMax - Math.max(sMin, s));
+      const zTopAt = (s) => Math.min(zTop + overlapTop, zPlane(s) + halfDz);
+      const zBotAt = (s) => Math.max(zBottom - overlapBot, zPlane(s) - halfDz);
+      // Sample cleanly along [sLo, sHi] so clamped knees at zBottom and zTop are exact.
+      const sKneeTop = sMax - (zTop + overlapTop - halfDz - zEavesU) / slope;
+      const sKneeBot = sMax - (zBottom - overlapBot + halfDz - zEavesU) / slope;
+      const sTopSamples = [sLo, sMin, sKneeTop, sMax, sHi]
+        .filter(s => s >= sLo - 1e-6 && s <= sHi + 1e-6)
+        .sort((a, b) => a - b);
+      const sBotSamples = [sLo, sMin, sKneeBot, sMax, sHi]
+        .filter(s => s >= sLo - 1e-6 && s <= sHi + 1e-6)
+        .sort((a, b) => b - a);
+      const pts = [];
+      for (const s of sTopSamples) {
+        if (!pts.length || Math.abs(s - pts[pts.length - 1][0]) > 1e-5) pts.push([s, zTopAt(s)]);
+      }
+      for (const s of sBotSamples) {
+        const zb = zBotAt(s);
+        if (Math.abs(s - pts[pts.length - 1][0]) > 1e-5 || Math.abs(zb - pts[pts.length - 1][1]) > 1e-5) {
+          pts.push([s, zb]);
+        }
+      }
+      profileSZ = pts;
+    } else {
+      // Solid tapered skillion shaft wedge: extend ONLY the narrow uphill vertices inward
+      // along -d so adjacent trapezoidal faces fuse solidly at the summit without widening
+      // the tapered sides or leaving a zero-thickness knife edge.
+      const inwardCoreU = riseU > runU * 2.2
+        ? Math.max(0.65 / scaleMm, Math.min(1.05 / scaleMm, runU * 0.85))
+        : 0.0;
+      if (inwardCoreU > 1e-4) {
+        const uphillThresh = sMin + runU * 0.25;
+        clipRings = clipRings.map(r => r.map(p => {
+          const ps = p[0] * dx + p[1] * dy;
+          return ps <= uphillThresh ? [p[0] - dx * inwardCoreU, p[1] - dy * inwardCoreU] : p;
+        }));
+      }
+      const sInner = sMin - inwardCoreU - padS;
+      const sOuter = sMax + padS;
+      const zBotFace = zBottom - overlapBot;
+      const zTopFace = zTop + overlapTop;
+      const zOuterEaves = Math.max(zBotFace + 0.15 / scaleMm, zEavesU);
+      profileSZ = [
+        [sInner, zBotFace],
+        [sOuter, zBotFace],
+        [sOuter, zOuterEaves],
+        [sMax, zOuterEaves],
+        [sMin, zTopFace],
+        [sInner, zTopFace],
+      ];
+    }
+
+    const pts2D = core.ensureWinding(profileSZ, true, 1e-5);
+    if (pts2D.length < 3) return null;
+
+    let cs = null, ex = null, prism = null, cutter = null;
+    try {
+      cs = mf.CrossSection.ofPolygons([pts2D], 'Positive');
+      if (cs.isEmpty && cs.isEmpty()) return null;
+      const lenW = spanW + padW * 2;
+      ex = cs.extrude(lenW);
+      const tx = wx * (wMin - padW), ty = wy * (wMin - padW);
+      prism = ex.transform([dx, dy, 0, 0, 0, 0, 1, 0, wx, wy, 0, 0, tx, ty, 0, 1]);
+      const cutSolids = [];
+      for (const r of clipRings) {
+        const cm = core.extrudeRingSolid(mf, r, [], zBottom - overlapBot - 0.1 / scaleMm, zTop + overlapTop + 0.2 / scaleMm);
+        if (cm) cutSolids.push(cm);
+      }
+      if (cutSolids.length === 0) return null;
+      cutter = cutSolids.length === 1 ? cutSolids[0] : core.batchUnionManifolds(mf, cutSolids);
+      const clipped = prism.intersect(cutter);
+      if (clipped && clipped.numTri() > 0) return clipped;
+      core.safeDeleteManifold(clipped);
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      core.safeDeleteManifold(cs);
+      core.safeDeleteManifold(ex);
+      core.safeDeleteManifold(prism);
+      core.safeDeleteManifold(cutter);
+    }
+  }
+
   function buildParametricLatticeManifold(core, mf, ctx, terrainWater, b, outerBed, tags, explicitHeightM, utils) {
     const { scaleMm, mToU, zScale, scaleToBed, minPrintU, maxZUnits } = ctx;
     const laws = _getLaws(ctx);
@@ -145,10 +304,37 @@
     const partH = zTop - zBottom;
     if (partH <= 0.2 / scaleMm) return null;
 
+    // 1. Sloped S3DB skillion lattice face (e.g. multi-stage arched tower legs / tapered shafts):
+    // preserve exact arch polygon geometry on the true inclined skillion plane instead of a boxy cage.
+    const explicitRoofHM = Number(
+      b && b.roofH !== undefined ? b.roofH : (tags && tags['roof:height'] !== undefined ? tags['roof:height'] : 0)
+    ) || 0;
+    const partSpanM = Math.max(1e-3, rawH - rawMinH);
+    const isSlopedSkillionPanel = Boolean(
+      b && b.part && b.roof === 'skillion' && Number.isFinite(b.roofDir) &&
+      (explicitRoofHM >= partSpanM * 0.78 || String(tags.wall || '').toLowerCase() === 'no' || String(tags['building:part'] || '').toLowerCase() === 'roof')
+    );
+    if (isSlopedSkillionPanel) {
+      const panel = _buildSlopedSkillionLatticePanel(core, mf, ctx, b, outerBed, tags, rawH, rawMinH, zBottom, zTop);
+      if (panel) return panel;
+    }
+
+    // 2. Narrow top summit spire/antenna: emit a sleek tapered spire instead of a 6-corner cage.
+    if (isNarrowSpire) {
+      const protMm = Math.max(0.5, partH * scaleMm);
+      const reqBaseR = (laws && typeof laws.minPinDiameterMm === 'function')
+        ? (laws.minPinDiameterMm(protMm) * 0.5) / scaleMm
+        : (0.34 / scaleMm);
+      const rBot = Math.max(reqBaseR, Math.min(obb.spanU, obb.spanV) * 0.45);
+      const rTop = Math.max(minPrintU * 0.35, Math.min(rBot * 0.32, 0.22 / scaleMm));
+      return mf.Manifold.cylinder(partH + 0.25 / scaleMm, rBot, rTop, 10, false)
+        .translate([obb.cx, obb.cy, zBottom - 0.25 / scaleMm]);
+    }
+
     const corners = _extractPerimeterCorners(outerBed, 6);
     if (corners.length < 3) return null;
     const cCen = [corners.reduce((s, p) => s + p[0], 0) / corners.length, corners.reduce((s, p) => s + p[1], 0) / corners.length];
-    let topCenter = cCen, taper = isNarrowSpire ? 0.45 : 0.35;
+    let topCenter = cCen, taper = 0.35;
     if (b && b.roof === 'skillion' && Number.isFinite(b.roofDir)) {
       const rad = (b.roofDir * Math.PI) / 180.0, ux = Math.sin(rad), uy = Math.cos(rad);
       const proj = corners.map(c => (c[0] - cCen[0]) * ux + (c[1] - cCen[1]) * uy);
@@ -158,8 +344,9 @@
       taper = 0.24;
     }
     const topCorners = corners.map(c => [topCenter[0] + (c[0] - topCenter[0]) * taper, topCenter[1] + (c[1] - topCenter[1]) * taper]);
-    const minStrutR = _minStrutRadU(ctx, Math.min(18.0, Math.max(2.5, Math.min(obb.spanU, obb.spanV) * scaleMm)));
-    const legR = Math.max(minStrutR, minPrintU * 0.55, Math.min(Math.min(obb.spanU, obb.spanV) * 0.11, 0.90 / scaleMm), Math.min(partH * 0.032, 0.70 / scaleMm));
+    const minorSpan = Math.min(obb.spanU, obb.spanV);
+    const minStrutR = _minStrutRadU(ctx, Math.min(18.0, Math.max(2.5, minorSpan * scaleMm)));
+    const legR = Math.max(minStrutR, minPrintU * 0.55, Math.min(minorSpan * 0.11, 0.65 / scaleMm));
     const braceR = Math.max(minStrutR, legR * 0.78);
     const nBays = Math.max(2, Math.min(7, Math.round(partH / Math.max(Math.min(obb.spanU, obb.spanV) * 0.85, 1.8 / scaleMm))));
     const rings = [], parts = [];

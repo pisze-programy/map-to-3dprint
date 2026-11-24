@@ -396,13 +396,64 @@ async function run() {
               'rotor:diameter': '3.2',
             },
           },
+          {
+            type: 'node', id: 990002, lat: 48.8581, lon: 2.2942,
+            tags: { man_made: 'mast', 'tower:type': 'lighting' },
+          },
+          {
+            type: 'node', id: 990003, lat: 48.8582, lon: 2.2943,
+            tags: { man_made: 'tower', 'tower:construction': 'building', 'tower:type': 'watchtower' },
+          },
         ],
       };
       const builtMicro = buildComplete3DModel(scMicro, makeState({ supportlessMode: false }));
       check(
         builtMicro.meshes.buildings.length === 0,
-        'Elevated vertical-axis micro wind generator is skipped instead of emitting ground mast + giant blades',
+        'Elevated micro VAWT, untagged lighting mast, and building-watchtower point node emit zero stray spikes',
         `buildingTris=${builtMicro.meshes.buildings.length}`
+      );
+    }
+
+    // Sloped S3DB skillion arched lattice panel (wall=no, roof:height=height-min_height) must
+    // follow the inclined skillion plane cleanly and keep its underside open (not a boxy cage).
+    {
+      const archLeg = [
+        [-14, -14], [14, -14], [14, -10], [8, -10], [5, -6], [-5, -6], [-8, -10], [-14, -10],
+      ];
+      const scArch = {
+        center: [0, 0], bounds: { widthM: 320, heightM: 320 }, halfW: 60, halfH: 60, metersToUnits: 60 / 160,
+        dem: { minElev: 0, maxElev: 0, gridSize: 4, grid: Array.from({ length: 4 }, () => Array(4).fill(0)) },
+        waterPolys: [], waterLines: [], greenery: [], roads: [], treePoints: [], treeRows: [], bridgePolys: [], osmElements: [],
+        buildings: [
+          {
+            id: 1, osmId: 991001, groupId: 991001, outer: rectRing(-11, -12, 3.5, 2.5), holes: [], minH: 0, h: 4, roof: 'flat', part: true,
+          },
+          {
+            id: 2, osmId: 991002, groupId: 991001, outer: rectRing(11, -12, 3.5, 2.5), holes: [], minH: 0, h: 4, roof: 'flat', part: true,
+          },
+          {
+            id: 3, osmId: 991003, groupId: 991001, outer: archLeg, holes: [],
+            minH: 4, h: 58, roof: 'skillion', roofH: 54, roofDir: 180, part: true, towerConstruction: 'lattice',
+            tags: { 'building:part': 'roof', wall: 'no', 'roof:shape': 'skillion', 'roof:height': '54', 'roof:direction': '180' },
+          },
+          {
+            id: 4, osmId: 991004, groupId: 991004, outer: rectRing(20, 20, 4, 2), holes: [], minH: 0, h: 5, roof: 'flat',
+            btype: 'boat', isVessel: true, tags: { building: 'boat', height: '5' },
+          },
+        ],
+      };
+      const builtArch = buildComplete3DModel(scArch, makeState({ waterCutout: true }));
+      const archCenterTris = builtArch.meshes.buildings.filter(t => {
+        const cx = (t.v0[0] + t.v1[0] + t.v2[0]) / 3;
+        const cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3;
+        const cz = (t.v0[2] + t.v1[2] + t.v2[2]) / 3;
+        return Math.abs(cx) < 2.5 && cy > -12 && cy < -8 && cz > 2.0 && cz < 10.0;
+      }).length;
+      const boatTris = builtArch.meshes.buildings.filter(t => (t.v0[0] + t.v1[0] + t.v2[0]) / 3 > 16).length;
+      check(
+        builtArch.printMetrics.isWatertightManifold && archCenterTris === 0 && boatTris === 0,
+        'Sloped skillion lattice arch keeps underside opening clear and waterCutout skips floating boats',
+        `wt=${builtArch.printMetrics.isWatertightManifold}, archCenterTris=${archCenterTris}, boatTris=${boatTris}`
       );
     }
   }

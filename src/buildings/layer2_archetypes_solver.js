@@ -20,6 +20,30 @@
   const IND_SET = new Set(['storage_tank', 'silo', 'chimney', 'cooling_tower', 'crane']);
   const TOWER_SET = new Set(['tower', 'mast', 'communications_tower', 'lighthouse']);
   const MICRO_WIND_TYPES = new Set(['vertical_axis', 'darrieus', 'savonius', 'helix', 'helical']);
+  const MINOR_MAST_TYPES = new Set(['lighting', 'flagpole', 'camera', 'monitoring', 'bell', 'siren', 'weather']);
+
+  /**
+   * Returns true when a point-node mast or tower represents minor street furniture
+   * (lighting pole, camera mast, untagged point mast, or building-tagged watchtower node)
+   * that must not be inflated into a 24-30 m architectural tower spike.
+   * @param {object} el
+   * @param {Record<string, string>|null|undefined} tags
+   * @returns {boolean}
+   */
+  function _isMinorStreetMastNode(el, tags) {
+    if (!tags) return false;
+    const mm = String(tags.man_made || '').toLowerCase().trim();
+    const tt = String(tags['tower:type'] || '').toLowerCase().trim();
+    const tc = String(tags['tower:construction'] || '').toLowerCase().trim();
+    const hM = parseFloat(tags.height);
+    const hasExplicitTallH = Number.isFinite(hM) && hM >= 18.0;
+    if (mm === 'mast' && MINOR_MAST_TYPES.has(tt) && !hasExplicitTallH) return true;
+    if (el && el.type === 'node') {
+      if (mm === 'mast' && !hasExplicitTallH) return true;
+      if (mm === 'tower' && tc === 'building' && !hasExplicitTallH) return true;
+    }
+    return false;
+  }
 
   /**
    * Returns true when an OSM wind generator is a small building-mounted or vertical-axis
@@ -281,6 +305,7 @@
       if ((i & 63) === 0 && i > 0) yield;
       const el = l2Candidates[i];
       if (!el || !el.tags || el.tags.building || handledOsmIds.has(el.id)) continue;
+      if (_isMinorStreetMastNode(el, el.tags)) continue;
       const tags = el.tags, cl = classifyTags(tags);
       if (!cl.isL2) continue;
 

@@ -242,6 +242,9 @@
       const b = buildingsList[i];
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) continue;
       const tags = Object.assign({}, rawTagById.get(b.osmId) || {}, b.tags || {});
+      if (ctx.waterCutout && (b.isVessel || /^(boat|houseboat|ship|barge|floating_home)$/.test(String(tags.building || b.btype || '').toLowerCase()))) {
+        continue;
+      }
       if (root.isLayer2ArchetypeRecord(b, tags)) {
         if (b.id !== undefined) consumedArchBuildingIds.add(b.id);
         if (b.groupId != null) consumedArchGroups.add(String(b.groupId));
