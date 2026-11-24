@@ -224,35 +224,21 @@ def ensure_studio_camera(scene: Any, name: str = "StudioCamera") -> Tuple[Any, A
 
 
 def apply_camera_pose(
-    cam_obj: Any,
-    focus_obj: Any,
-    eye: Tuple[float, float, float],
-    target: Tuple[float, float, float],
-    focus_point: Tuple[float, float, float],
-    lens_mm: float,
-    fstop: float,
-    shift_x: float = 0.0,
-    shift_y: float = 0.0,
-    frame: Optional[int] = None,
+    cam_obj: Any, focus_obj: Any, eye: Tuple[float, float, float], target: Tuple[float, float, float],
+    focus_point: Tuple[float, float, float], lens_mm: float, fstop: float,
+    shift_x: float = 0.0, shift_y: float = 0.0, frame: Optional[int] = None,
 ) -> None:
     """Place camera + focus empty at exact pose; optionally keyframe at `frame`."""
     loc, rot_quat, _ = look_at_matrix(eye, target).decompose()
-    cam_obj.rotation_mode = "QUATERNION"
-    cam_obj.location = loc
-    cam_obj.rotation_quaternion = rot_quat
-    cam_obj.data.lens = float(lens_mm)
-    cam_obj.data.shift_x = float(shift_x)
-    cam_obj.data.shift_y = float(shift_y)
-    cam_obj.data.dof.use_dof = True
-    cam_obj.data.dof.aperture_fstop = float(fstop)
+    cam_obj.rotation_mode, cam_obj.location, cam_obj.rotation_quaternion = "QUATERNION", loc, rot_quat
+    cam_obj.data.lens, cam_obj.data.shift_x, cam_obj.data.shift_y = float(lens_mm), float(shift_x), float(shift_y)
+    cam_obj.data.dof.use_dof, cam_obj.data.dof.aperture_fstop = True, float(fstop)
     focus_obj.location = Vector(focus_point)
-
     if frame is not None:
-        cam_obj.keyframe_insert(data_path="location", frame=frame)
-        cam_obj.keyframe_insert(data_path="rotation_quaternion", frame=frame)
-        cam_obj.data.keyframe_insert(data_path="lens", frame=frame)
-        cam_obj.data.keyframe_insert(data_path="shift_x", frame=frame)
-        cam_obj.data.keyframe_insert(data_path="shift_y", frame=frame)
+        for dp in ("location", "rotation_quaternion"):
+            cam_obj.keyframe_insert(data_path=dp, frame=frame)
+        for dp in ("lens", "shift_x", "shift_y"):
+            cam_obj.data.keyframe_insert(data_path=dp, frame=frame)
         cam_obj.data.dof.keyframe_insert(data_path="aperture_fstop", frame=frame)
         focus_obj.keyframe_insert(data_path="location", frame=frame)
 
@@ -273,16 +259,14 @@ def _compute_wall_still_pose(
     full_corners = compute_full_model_corners(model_bounds, analysis, mount="wall_mount")
 
     if preset_name == "macro_skyline":
-        lens, fstop, elev = 85.0, 2.0, -7.0
+        lens, fstop, elev, shift_y = 85.0, 4.5, -7.0, 0.0
         yaw = -46.0 if rec_yaw <= 0.0 else 46.0
-        shift_y = 0.0
         target, cluster_corners = compute_hero_cluster_corners(analysis, mount="wall_mount")
         dist = max(0.13, compute_fit_distance(yaw, elev, target, cluster_corners, lens, aspect, 0.86, 0.78))
         focus_pt = (hx, hy * 0.55, hz)
     elif preset_name == "profile_low":
-        lens, fstop, elev = 85.0, 3.2, -3.0
+        lens, fstop, elev, shift_y = 85.0, 3.2, -3.0, 0.0
         yaw = -56.0 if rec_yaw <= 0.0 else 56.0
-        shift_y = 0.0
         target = (0.0, -0.35 * max_z, 0.0)
         dist = compute_fit_distance(yaw, elev, target, full_corners, lens, aspect, 0.80, 0.74)
         focus_pt = (hx, hy * 0.6, hz)
@@ -347,13 +331,29 @@ def compute_still_pose(
         off = spherical_offset(yaw, elev, dist)
         eye = (target[0] + off[0], target[1] + off[1], max(desk_z + 0.015, target[2] + off[2]))
     elif preset_name == "macro_skyline":
-        lens, fstop, elev, yaw, shift_y = 90.0, 2.0, 17.5, rec_yaw * 0.85, 0.02
-        target, cluster_corners = compute_hero_cluster_corners(analysis, mount="desk_flat")
-        dist = max(0.115, compute_fit_distance(yaw, elev, target, cluster_corners, lens, aspect, 0.88, 0.76, shift_y))
+        fw, fh = float(analysis["frame_width_m"]), float(analysis["frame_height_m"])
+        edge_hero = (abs(htx) > 0.34 * fw) or (abs(hty) > 0.34 * fh)
+        lens, fstop = (85.0 if edge_hero else 90.0), (7.1 if canonical_env == "11_packshot_white" else 4.5)
+        elev, shift_y = (24.0 if edge_hero else 21.5), 0.01
+        if edge_hero:
+            # Aim across open interior/waterfront sightline away from outer edge towers
+            yaw = 28.0 if htx < 0.0 else -28.0
+            tx = max(-0.24 * fw, min(0.24 * fw, 0.20 * htx + 0.55 * sx + 0.25 * wx))
+            ty = max(-0.24 * fh, min(0.24 * fh, 0.20 * hty + 0.55 * sy + 0.25 * wy))
+            target = (tx, ty, max(0.32 * max_z, 0.006))
+            r_span = min(0.38 * fw, max(0.034, 0.30 * fh))
+            cluster_corners = bbox_corners(tx - r_span, tx + r_span, ty - r_span * 0.85, ty + r_span * 0.85, 0.0, max_z * 1.05)
+            dist = max(0.145, compute_fit_distance(yaw, elev, target, cluster_corners, lens, aspect, 0.86, 0.78, shift_y))
+            cam_dir = spherical_offset(yaw, elev, 1.0)
+            focus_pt = (tx + cam_dir[0] * 0.012, ty + cam_dir[1] * 0.012, max(0.36 * max_z, 0.008))
+        else:
+            yaw = rec_yaw * 0.85
+            target, cluster_corners = compute_hero_cluster_corners(analysis, mount="desk_flat")
+            dist = max(0.125, compute_fit_distance(yaw, elev, target, cluster_corners, lens, aspect, 0.88, 0.76, shift_y))
+            cam_dir = spherical_offset(yaw, elev, 1.0)
+            focus_pt = (htx + cam_dir[0] * 0.003, hty + cam_dir[1] * 0.003, max(0.42 * hz, 0.008))
         off = spherical_offset(yaw, elev, dist)
-        eye = (target[0] + off[0], target[1] + off[1], max(0.012, target[2] + off[2]))
-        cam_dir = spherical_offset(yaw, elev, 1.0)
-        focus_pt = (htx + cam_dir[0] * 0.003, hty + cam_dir[1] * 0.003, max(0.42 * hz, 0.008))
+        eye = (target[0] + off[0], target[1] + off[1], max(0.016, target[2] + off[2]))
     elif preset_name == "macro_waterfront":
         lens, fstop, elev, shift_y = 75.0, 2.2, 32.0, 0.0
         water_side = analysis.get("water_side")

@@ -206,7 +206,7 @@ FRAME_STYLES: Dict[str, str] = {
 STILL_PRESETS: Dict[str, str] = {
     "hero_desk": "Editorial 3/4 desk lifestyle hero framing the full 13x18 matte-black frame, skyline & real scale props.",
     "hero_wall": "Architectural Digest 3/4 gallery wall-mount hero highlighting protruding 3D relief & raking shadows.",
-    "macro_skyline": "Intimate 90mm f/2.0 macro locked onto the tallest hero tower facade showing tactile 10K plaster grain.",
+    "macro_skyline": "Crisp 85-90mm f/4.5-f/7.1 architectural macro framed along unobstructed skyline/waterfront sightlines.",
     "macro_waterfront": "Oblique 75mm f/2.2 macro across matte-black water cutout into white architectural skyscrapers.",
     "profile_low": "Dramatic low-angle 85mm telephoto skyline silhouette emphasizing spire height & thin bezel.",
     "top_down": "Clean 85mm gallery overhead plan view showing crisp street grid geometry inside the black frame.",
