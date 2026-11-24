@@ -20,7 +20,7 @@ Run `python3 studio_blender/render_studio.py --list-props --json` to list all 26
 - **Detail gallery (`18`)**: `18_detail_chalk_gallery` (alias `detail_chalk`, frameless chalk-plaster architectural gallery).
 - **Frame styles (`--frame`)**: `a4_passepartout` (`210x297x30 mm` white-only), `none` (frameless), `single_13x18`, `single_thin`, `single_thick`, `cube_cover`, `triptych_3x1`, `quartet_2x2`.
 - **Mount modes (`--mount`)**: `auto`, `desk_flat`, `wall_mount`.
-- **Still presets (`--preset`)**: `hero_desk`, `hero_wall`, `macro_skyline`, `macro_waterfront`, `profile_low`, `top_down`, `packshot_iso`, `detail_spire`, `detail_canyon`, `detail_oblique_grid`, `detail_edge_horizon`, `all`.
+- **Still presets (`--preset`)**: `hero_desk`, `hero_wall`, `macro_skyline`, `macro_waterfront`, `profile_low`, `top_down`, `packshot_iso`, `detail_spire`, `detail_canyon`, `detail_oblique_grid`, `detail_waterfront`, `all`.
 - **Aspect ratios (`--aspect`)**: `9:16`, `4:5`, `1:1`, `16:9`.
 
 ## 3. Composable Prop and Scene Overrides
@@ -45,7 +45,7 @@ python3 studio_blender/render_studio.py \
   --env 18_detail_chalk_gallery --frame none --preset detail_spire \
   --aspect 1:1 --samples 64 --out ./renders/paris_detail
 ```
-Use `--preset detail_canyon`, `detail_oblique_grid`, or `detail_edge_horizon` for the other three gallery angles.
+Use `--preset detail_canyon`, `detail_oblique_grid`, or `detail_waterfront` for the other three gallery angles.
 
 ### Render A4 Stills, Flow Keyframes, and 1:1 Comparison
 ```bash
