@@ -283,6 +283,14 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
     const cov = rd.covered || (rd.tags && rd.tags.covered);
     const isRail = Boolean((rd.tags && rd.tags.railway) || ['rail', 'light_rail', 'tram', 'monorail', 'subway', 'narrow_gauge', 'funicular'].includes(rd.hwy));
     const isBoardwalk = String((rd.tags && rd.tags.bridge) || rawSt || '').trim().toLowerCase() === 'boardwalk';
+    const keepNonGrazeSub = (sub) => {
+      if (isBoardwalk && !_stationWaterFlagsJS(sub.pts, terrainWater).some(Boolean)) return false;
+      const subLen = _polyLenJS(sub.pts);
+      // Drop tiny carriageway/footpath edge-graze fragments that dip briefly out of their own bridge polygon
+      if (sub.entersRingAtStart && sub.entersRingAtEnd && subLen < Math.max(1.8 / scaleMm, 16 * mToBedXY)) return false;
+      if ((Boolean(sub.entersRingAtStart) !== Boolean(sub.entersRingAtEnd)) && subLen < Math.max(0.95 / scaleMm, 8 * mToBedXY)) return false;
+      return true;
+    };
     let sourcePolylines;
     if (linkedEntries.length > 0) {
       const rings = linkedEntries.map(e => e.outer);
@@ -290,10 +298,49 @@ function _extractBridgeSpecsFromSceneJS(scene, terrainWater, ctx) {
         ? _splitPolylineOutsideRingsJS(rd.pts.map(toBed), rings, polyOverlapU, minOutsideSubU)
         : [];
       if (!subs.length) continue;
-      sourcePolylines = subs.filter(sub => !isBoardwalk || _stationWaterFlagsJS(sub.pts, terrainWater).some(Boolean));
+      sourcePolylines = subs.filter(keepNonGrazeSub);
       if (!sourcePolylines.length) continue;
     } else {
-      sourcePolylines = [{ pts: rd.pts.map(toBed), entersRingAtStart: false, entersRingAtEnd: false }];
+      const bedPts = rd.pts.map(toBed);
+      // Absorb collinear non-rail road/footway ways running inside a man_made=bridge polygon
+      // tagged within +/- 1 layer (e.g. layer=1 bridge carrying layer=2 road, or layer=2 viaduct carrying layer=1 road).
+      const collinRings = [];
+      if (!isRail && polyEntries.length > 0 && bedPts.length >= 2) {
+        const rLayer = rd.hasExplicitLayer !== undefined ? (rd.hasExplicitLayer ? rd.layer : 1) : (rd.layer ?? 1);
+        const rLen = _polyLenJS(bedPts);
+        if (rLen > 0.05) {
+          const rdx = bedPts[bedPts.length - 1][0] - bedPts[0][0];
+          const rdy = bedPts[bedPts.length - 1][1] - bedPts[0][1];
+          const rl = Math.hypot(rdx, rdy) || 1;
+          const rDense = _resamplePolyJS(bedPts, Math.max(7, Math.min(48, Math.ceil(rLen / 0.8) + 1)));
+          const rbb = _bbox2DJS(bedPts);
+          for (const pe of polyEntries) {
+            if (pe.bp.osmId != null && suppressedEnvelopeOsmIds.has(pe.bp.osmId)) continue;
+            const bpLyr = pe.bp.layer ?? 1;
+            if (Math.abs(rLayer - bpLyr) > 1) continue;
+            if (rbb[2] < pe.pbb[0] || rbb[0] > pe.pbb[2] || rbb[3] < pe.pbb[1] || rbb[1] > pe.pbb[3]) continue;
+            const sp = pe.spine;
+            const sdx = sp[sp.length - 1][0] - sp[0][0];
+            const sdy = sp[sp.length - 1][1] - sp[0][1];
+            const sl = Math.hypot(sdx, sdy) || 1;
+            const absDot = Math.abs((rdx / rl) * (sdx / sl) + (rdy / rl) * (sdy / sl));
+            if (absDot < 0.68 && rLen > pe.spineLen * 0.35) continue;
+            let inCnt = 0;
+            for (let q = 0; q < rDense.length; q++) {
+              if (_ptInRingJS(rDense[q][0], rDense[q][1], pe.outer)) inCnt++;
+            }
+            if (inCnt >= Math.ceil(rDense.length * 0.65)) collinRings.push(pe.outer);
+          }
+        }
+      }
+      if (collinRings.length > 0 && typeof _splitPolylineOutsideRingsJS === 'function') {
+        const subs = _splitPolylineOutsideRingsJS(bedPts, collinRings, polyOverlapU, minOutsideSubU);
+        if (!subs.length) continue;
+        sourcePolylines = subs.filter(keepNonGrazeSub);
+        if (!sourcePolylines.length) continue;
+      } else {
+        sourcePolylines = [{ pts: bedPts, entersRingAtStart: false, entersRingAtEnd: false }];
+      }
     }
 
     const effLayer = rd.hasExplicitLayer !== undefined

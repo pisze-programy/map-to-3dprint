@@ -97,8 +97,41 @@
     const arealWaterEntries = sampler._classifyFlatWaterPolys(ctx, core.ringsToOutersWithHoles(arealWaterRings, 1e-5));
 
     const { flatWlPaths, slopedCandidates } = reaches._classifyLinearWaterways(ctx, scene, arealWaterEntries, islandMaskEntries);
+    // Under waterCutout, skip redundant waterway=river routing centerlines that already run inside
+    // an exact natural=water polygon (coarse straight chords can otherwise graze convex headlands
+    // and slice off razor-thin detached shoreline slivers). Canals/streams/ditch lines stay intact.
+    const isRedundantRiverCenterline = (wl, ptsBed, halfW) => {
+      if (!arealWaterEntries.length || !wl || wl.waterway !== 'river' || ptsBed.length < 2) return false;
+      const hw = (ctx.halfW || 60) + 1.0, hh = (ctx.halfH || 60) + 1.0;
+      const stepU = Math.max(0.5 / (ctx.scaleMm || 1), halfW);
+      const nearTolU = Math.max(halfW * 3.5, 2.2 / (ctx.scaleMm || 1));
+      let vis = 0, inside = 0, near = 0;
+      for (let i = 0; i < ptsBed.length - 1; i++) {
+        const a = ptsBed[i], b = ptsBed[i + 1];
+        const segLen = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const nSub = Math.max(1, Math.min(40, Math.ceil(segLen / stepU)));
+        for (let k = 0; k <= nSub; k++) {
+          if (i > 0 && k === 0) continue;
+          const t = k / nSub;
+          const px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t;
+          if (px < -hw || px > hw || py < -hh || py > hh) continue;
+          vis++;
+          if (arealWaterEntries.some(we => sampler._ptInWaterEntryLocal(px, py, we))) {
+            inside++;
+            near++;
+          } else if (arealWaterEntries.some(we => sampler._isPointNearWaterEntry(px, py, we, nearTolU))) {
+            near++;
+          }
+        }
+      }
+      return vis >= 2 && inside >= Math.ceil(vis * 0.65) && near === vis;
+    };
     const allWlPaths = waterCutout
-      ? ((scene && scene.waterLines) || []).filter(w => w && w.pts && w.pts.length >= 2).map(wl => ({ pts: wl.pts.map(toBed), halfW: Math.max(ctx.minPrintU * 0.65, ((wl.width || 0.7) * 0.5) * scaleToBed) }))
+      ? ((scene && scene.waterLines) || [])
+          .filter(w => w && w.pts && w.pts.length >= 2)
+          .map(wl => ({ wl, pts: wl.pts.map(toBed), halfW: Math.max(ctx.minPrintU * 0.65, ((wl.width || 0.7) * 0.5) * scaleToBed) }))
+          .filter(item => !isRedundantRiverCenterline(item.wl, item.pts, item.halfW))
+          .map(({ pts, halfW }) => ({ pts, halfW }))
       : flatWlPaths;
     // Clip the entire buffered waterway ring set together (never ring-by-ring) so CW island holes
     // enclosed by closed canal grids are never inverted into solid water.

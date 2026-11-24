@@ -992,6 +992,86 @@ async function runSuite() {
       'Water-ending arch bridge extends flush >=0.7mm into dry bank (0 gap) and builds aligned under-deck waterCutout arches',
       `bboxX=[${aud?.bbox?.[0]?.toFixed(2)}, ${aud?.bbox?.[2]?.toFixed(2)}], isThrough=${aud?.isThroughArch}, pierMinZ=${aud?.pierMinZ}`
     );
+
+    // Collinear layer=2 pedestrian deck running inside a layer=1 man_made=bridge polygon is absorbed (no stacked duplicate deck/piers)
+    const sceneDup = {
+      ...scene,
+      bridgePolys: [{
+        osmId: 9602,
+        name: 'Helix Outline',
+        outer: [[-9.5, -1.0], [9.5, -1.0], [9.5, 1.0], [-9.5, 1.0]],
+        holes: [],
+        layer: 1,
+        bridgeStructure: 'beam',
+        acrossRoadIds: [],
+        tags: { man_made: 'bridge', layer: '1' },
+      }],
+      roads: [{
+        osmId: 9603,
+        name: 'Helix Deck Way',
+        pts: [[-9.0, 0.0], [9.0, 0.0]],
+        width: 0.9,
+        isBridge: true,
+        isPath: true,
+        layer: 2,
+        hasExplicitLayer: true,
+        tags: { highway: 'pedestrian', bridge: 'yes', layer: '2' },
+      }],
+    };
+    const resDup = buildComplete3DModel(sceneDup, stA4);
+    assertCleanManifold(resDup.printMetrics, 'Collinear layer=2 footway inside layer=1 bridge polygon');
+    const dupAuds = resDup.audit.bridgeAudits || [];
+    check(
+      dupAuds.length === 1 && dupAuds[0].name === 'Helix Outline',
+      'Collinear layer=2 non-rail footway inside layer=1 bridge polygon deduplicates into 1 bridge (no stacked twin pier forest)',
+      `bridgeCount=${dupAuds.length}, names=${dupAuds.map(a => a.name).join(',')}`
+    );
+
+    // Collinear layer=1 road under a layer=2 viaduct polygon + micro boundary-graze spur are absorbed cleanly
+    const sceneViaduct = {
+      ...scene,
+      bridgePolys: [{
+        osmId: 9610,
+        name: 'Bay Viaduct',
+        outer: [[-9.5, -1.6], [9.5, -1.6], [9.5, 1.6], [-9.5, 1.6]],
+        holes: [],
+        layer: 2,
+        bridgeStructure: 'beam',
+        acrossRoadIds: [],
+        tags: { man_made: 'bridge', layer: '2' },
+      }],
+      roads: [
+        {
+          osmId: 9611,
+          name: 'Viaduct Carriageway',
+          pts: [[-9.0, 0.0], [9.0, 0.0]],
+          width: 1.0,
+          isBridge: true,
+          layer: 1,
+          hasExplicitLayer: true,
+          tags: { highway: 'motorway', bridge: 'yes', layer: '1' },
+        },
+        {
+          osmId: 9612,
+          name: 'Edge Graze Footpath',
+          pts: [[-8.0, 1.4], [-1.2, 1.45], [-0.4, 1.68], [0.4, 1.68], [1.2, 1.45], [8.0, 1.4]],
+          width: 0.4,
+          isBridge: true,
+          isPath: true,
+          layer: 2,
+          hasExplicitLayer: true,
+          tags: { highway: 'footway', bridge: 'yes', layer: '2' },
+        },
+      ],
+    };
+    const resViaduct = buildComplete3DModel(sceneViaduct, stA4);
+    assertCleanManifold(resViaduct.printMetrics, 'Collinear layer=1 carriageway + edge-graze footpath on layer=2 viaduct');
+    const viaAuds = resViaduct.audit.bridgeAudits || [];
+    check(
+      viaAuds.length === 1 && viaAuds[0].name === 'Bay Viaduct',
+      'Collinear layer=1 carriageway and micro edge-graze footpath deduplicate cleanly into layer=2 viaduct polygon',
+      `bridgeCount=${viaAuds.length}, names=${viaAuds.map(a => a.name).join(',')}`
+    );
   }
 
   console.log(`\nETAP 4 BRIDGES GLOBAL SUMMARY: ${passed} passed, ${failed} failed.`);

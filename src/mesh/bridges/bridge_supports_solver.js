@@ -276,7 +276,7 @@ function _addBridgeSupportSolidsJS(spec, terrainWater, ctx, strutRU, parts, supp
       for (const lp of colPts) {
         const zFloor = _anchorFloorZJS(lp[0], lp[1], terrainWater, ctx);
         const inWater = terrainWater.isPointInWater(lp[0], lp[1]);
-        const colR = Math.min(halfW * 0.44, (ctx.waterCutout && inWater) ? minColR * 1.25 : minColR);
+        const colR = Math.max(strutRU, Math.min(halfW * 0.88, (ctx.waterCutout && inWater) ? minColR * 1.25 : minColR));
         const zCap = capAt(s, colR);
         if (zCap <= zFloor + 0.04 / scaleMm) continue;
         if (inWater) metrics.syntheticWaterPiers++;

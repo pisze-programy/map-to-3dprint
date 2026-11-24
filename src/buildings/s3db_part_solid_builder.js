@@ -96,13 +96,13 @@
     };
   }
 
-  function widenNarrowSpirePolys(core, adjOuters, adjHoles, platePoly, reqPinDiaMm, scaleMm) {
+  function widenNarrowSpirePolys(core, adjOuters, adjHoles, platePoly, reqPinDiaMm, scaleMm, joinType = 'Round') {
     const obb = root._computeOBB(adjOuters[0], null, 'along', 0);
     const minorMm = Math.min(obb.spanU, obb.spanV) * scaleMm;
     if (minorMm >= reqPinDiaMm) return adjOuters;
     const padU = ((reqPinDiaMm - minorMm) * 0.52) / scaleMm;
     try {
-      const grown = core.clipperOffsetPolys(adjOuters, padU, 'Round', 1e-5).map(r => core.ensureWinding(r, true, 5e-4)).filter(r => r.length >= 3);
+      const grown = core.clipperOffsetPolys(adjOuters, padU, joinType, 1e-5).map(r => core.ensureWinding(r, true, 5e-4)).filter(r => r.length >= 3);
       if (grown.length > 0 && adjHoles.length === 0) {
         const clipped = core.clipperIntersectPolys(grown, platePoly, 1e-5).map(r => core.ensureWinding(r, true, 5e-4)).filter(r => r.length >= 3);
         if (clipped.length > 0) return clipped;
@@ -231,10 +231,20 @@
     let wasWidened = false;
     if (slaLaws && isSpireOrPart && adjOuters.length > 0 && adjHoles.length === 0) {
       const isBracedFlush = Boolean(metaP && metaP.bracedTopM >= rawH_m - 1.5);
+      const isArchitecturalShaft = Boolean(
+        !isTrueNeedleSpire &&
+        !['cone', 'onion', 'pyramidal'].includes(roofShape) &&
+        (unclippedMinorM >= 4.2 || (metaP && metaP.areaM2 >= 18.0))
+      );
       const protMm = Math.max(0.5, (metaP && metaP.bodyTopM > 0 ? Math.max(0.5, rawH_m - metaP.bodyTopM) : (rawH_m - rawMinH_m)) * mToMm);
-      const reqDiaMm = isBracedFlush ? slaLaws.minWallThicknessMm(0) : slaLaws.minPinDiameterMm(protMm);
+      const reqDiaMm = isBracedFlush
+        ? slaLaws.minWallThicknessMm(0)
+        : (isArchitecturalShaft
+            ? slaLaws.minWallThicknessMm(Math.min(18.0, protMm))
+            : slaLaws.minPinDiameterMm(protMm));
+      const joinType = isArchitecturalShaft ? 'Miter' : 'Round';
       const prevRef = adjOuters;
-      adjOuters = widenNarrowSpirePolys(core, adjOuters, adjHoles, platePoly, reqDiaMm, scaleMm);
+      adjOuters = widenNarrowSpirePolys(core, adjOuters, adjHoles, platePoly, reqDiaMm, scaleMm, joinType);
       if (adjOuters !== prevRef) wasWidened = true;
     }
 

@@ -308,3 +308,28 @@ test('VAL-01: pinched edge between touching cubes is separated to zero non-manif
   assert.equal(audit.nonManifoldVerts, 0);
 });
 
+test('VAL-05: grounded full tile drops tiny detached border stub while preserving real islands', async () => {
+  const mf = await mv.__ensureManifoldReady();
+  const scaleMm = 1.0;
+  // Main tile 60 x 60 x 4 mm, tiny border stub 2.2 x 3.5 x 4 mm at East border X=70..72.2, real island 10 x 10 x 4 mm.
+  const mainTile = mf.Manifold.cube([60, 60, 4], false);
+  const borderStub = mf.Manifold.cube([2.2, 3.5, 4], false).translate([70, 25, 0]);
+  const realIsland = mf.Manifold.cube([10, 10, 4], false).translate([61, 42, 0]);
+  const combined = mf.Manifold.union([mainTile, borderStub, realIsland]);
+  mainTile.delete();
+  borderStub.delete();
+  realIsland.delete();
+
+  const tris = core.extractDePinchedStlTriangles(mf, combined, 0, scaleMm);
+  combined.delete();
+
+  // Only mainTile (12 tris) + realIsland (12 tris) survive; tiny borderStub is dropped.
+  assert.equal(tris.length, 24);
+  const bytes = stlMod.buildSTLBytesFromTriangles(tris, 40, 40, scaleMm, 80, 80, {}, true, 0);
+  const audit = auditBinaryStlRound4(bytes);
+  assert.equal(audit.components, 2);
+  assert.equal(audit.openEdges, 0);
+  assert.equal(audit.nonManifoldEdges, 0);
+});
+
+

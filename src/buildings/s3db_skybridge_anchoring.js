@@ -132,6 +132,117 @@
     return false;
   }
 
+  /**
+   * Builds self-supporting >= 42 deg ascending corbel brackets beneath an elevated
+   * skybridge or cantilevered roof deck, growing outward from supporting tower footprints
+   * so MSLA overhang grounding never drops floor-to-ceiling poles through open inter-tower air.
+   * @param {object} core
+   * @param {object} mf
+   * @param {object} rc
+   * @param {object[]} supportRecs
+   * @param {number[][]} platePoly
+   * @param {number} scaleMm
+   * @returns {boolean} True when corbel brackets were added to rc.solid
+   */
+  function _buildSkybridgeTowerCorbels(core, mf, rc, supportRecs, platePoly, scaleMm) {
+    if (!rc || !rc.isElevated || !rc.structured || !rc.structured.length) return false;
+    const clearAboveGroundU = rc.zBase - rc.zGroundSeat;
+    if (clearAboveGroundU < 6.0 / scaleMm) return false;
+
+    const supPolys = [];
+    for (const rg of supportRecs) {
+      if (!rg || rg === rc || rg.isElevated || !rg.structured || !rg.structured.length) continue;
+      if (rg.zTop < rc.zBase - 0.55 / scaleMm || rg.bb.min[2] > rc.zBase - 3.0 / scaleMm) continue;
+      for (const sr of rg.structured) {
+        if (sr && sr.outer && sr.outer.length >= 3) supPolys.push(sr.outer);
+      }
+    }
+    if (supPolys.length === 0) return false;
+
+    const rcPolys = rc.structured.map(sr => sr.outer).filter(r => r && r.length >= 3);
+    if (rcPolys.length === 0) return false;
+
+    let supUnion = supPolys;
+    try {
+      const u = core.clipperUnionPolys(supPolys, 1e-5);
+      if (u && u.length > 0) supUnion = u;
+    } catch (_) {}
+
+    // Check if the skybridge has flat unsupported spans (> 1.35 mm beyond supporting towers).
+    const safeReachU = 1.35 / scaleMm;
+    let overhang = [];
+    try {
+      const safeSup = core.clipperOffsetPolys(supUnion, safeReachU, 'Round', 1e-5);
+      overhang = core.clipperDiffPolys(rcPolys, safeSup, 1e-5);
+    } catch (_) {
+      return false;
+    }
+    if (!overhang || overhang.length === 0) return false;
+
+    // Measure required horizontal reach from supporting towers to cover the full cantilever/span.
+    const maxCapU = Math.min(9.5 / scaleMm, clearAboveGroundU * 0.52);
+    const probeStepU = 0.55 / scaleMm;
+    let reqReachU = maxCapU;
+    for (let r = safeReachU + probeStepU; r <= maxCapU + 1e-5; r += probeStepU) {
+      const rcLim = Math.min(r, maxCapU);
+      try {
+        const grown = core.clipperOffsetPolys(supUnion, rcLim, 'Round', 1e-5);
+        const rem = core.clipperDiffPolys(rcPolys, grown, 1e-5);
+        if (!rem || rem.length === 0) {
+          reqReachU = rcLim;
+          break;
+        }
+      } catch (_) {
+        break;
+      }
+    }
+    const tanCorbel = Math.tan((42 * Math.PI) / 180.0);
+    const totalDropU = Math.min(clearAboveGroundU * 0.48, Math.max(0.8 / scaleMm, reqReachU * tanCorbel));
+    const nSteps = Math.max(6, Math.min(28, Math.ceil(reqReachU / (0.18 / scaleMm))));
+    const stepDropU = totalDropU / nSteps;
+    const zOverlapU = 0.05 / scaleMm;
+    const corbelSolids = [];
+
+    // Ascend from lowest tower-flush bracket up to rc.zBase so every Z-slice grows monotonically <= 0.40 mm.
+    for (let s = 1; s <= nSteps; s++) {
+      const frac = s / nSteps;
+      const reachU = frac * reqReachU;
+      const zBot = rc.zBase - totalDropU + (s - 1) * stepDropU;
+      const zTop = rc.zBase - totalDropU + s * stepDropU + (s === nSteps ? 0.14 / scaleMm : zOverlapU);
+      if (zTop <= zBot + 0.03 / scaleMm) continue;
+      let tierRings = [];
+      try {
+        const grownSup = core.clipperOffsetPolys(supUnion, reachU, 'Round', 1e-5);
+        tierRings = core.clipperIntersectPolys(rcPolys, grownSup, 1e-5);
+        if (tierRings.length > 0 && platePoly) {
+          tierRings = core.clipperIntersectPolys(tierRings, platePoly, 1e-5);
+        }
+      } catch (_) {
+        tierRings = [];
+      }
+      for (const st of core.ringsToOutersWithHoles(tierRings, 1e-5)) {
+        const m = core.extrudeRingSolid(mf, st.outer, st.holes, zBot, zTop);
+        if (m) corbelSolids.push(m);
+      }
+    }
+    if (corbelSolids.length === 0) return false;
+    const corbelUnion = corbelSolids.length === 1 ? corbelSolids[0] : core.batchUnionManifolds(mf, corbelSolids);
+    if (!corbelUnion || corbelUnion.numTri() === 0) {
+      core.safeDeleteManifold(corbelUnion);
+      return false;
+    }
+    const fused = rc.solid.add(corbelUnion);
+    core.safeDeleteManifold(corbelUnion);
+    if (fused && fused.numTri() > 0) {
+      core.safeDeleteManifold(rc.solid);
+      rc.solid = fused;
+      rc.bb = fused.boundingBox();
+      return true;
+    }
+    core.safeDeleteManifold(fused);
+    return false;
+  }
+
   function _groundPortalOnEndPiers(core, mf, rc, platePoly, ctx) {
     const { scaleMm, slaLaws } = ctx;
     if (!rc || !rc.structured.length) return;
@@ -263,6 +374,14 @@
           }
         }
         for (const rc of pending) _groundPortalOnEndPiers(core, mf, rc, platePoly, ctx);
+        const groundedRecs = c.records.filter(r => !r.isElevated);
+        if (groundedRecs.length > 0) {
+          for (const rc of c.records) {
+            if (rc.isElevated && connected.has(rc)) {
+              _buildSkybridgeTowerCorbels(core, mf, rc, groundedRecs, platePoly, scaleMm);
+            }
+          }
+        }
         continue;
       }
       for (const rc of c.records) _groundPortalOnEndPiers(core, mf, rc, platePoly, ctx);

@@ -121,7 +121,7 @@
   }
 
   function buildMarinePiersAndBreakwaters(core, mf, ctx, scene, terrainWater) {
-    const { scaleMm, waterCutout, minPrintU } = ctx;
+    const { scaleMm, waterCutout, minPrintU, toBed } = ctx;
     const laws = _getLaws(ctx);
     const items = _collectPierItems(scene, ctx);
     if (items.length === 0) return { solids: [], pierCount: 0 };
@@ -232,9 +232,85 @@
       return added;
     };
 
+    /**
+     * Returns true when a floating areal pontoon has zero physical contact/overlap with dry bank,
+     * fixed piers, or bridges under waterCutout (so printing it would leave a detached loose shell).
+     * @returns {boolean}
+     */
+    const isDetachedOpenWaterFloatingPontoon = (ring, curItem) => {
+      if (!waterCutout || !ring || ring.length < 3) return false;
+      if (!terrainWater || typeof terrainWater.isPointInWater !== 'function') return false;
+      const shoreReachU = 0.18 / scaleMm;
+      const sampleStepU = Math.max(0.25, 0.40 / scaleMm);
+      const samplePts = [];
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const segLen = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const nSub = Math.max(1, Math.min(24, Math.ceil(segLen / sampleStepU)));
+        for (let s = 0; s < nSub; s++) {
+          const t = s / nSub;
+          samplePts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        }
+      }
+      for (const p of samplePts) {
+        if (!terrainWater.isPointInWater(p[0], p[1])) return false;
+        for (let k = 0; k < 8; k++) {
+          const ang = (k * Math.PI) / 4;
+          if (!terrainWater.isPointInWater(p[0] + Math.cos(ang) * shoreReachU, p[1] + Math.sin(ang) * shoreReachU)) return false;
+        }
+      }
+      const ptToSegDist = (px, py, ax, ay, bx, by) => {
+        const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+        const t = l2 > 1e-12 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+        return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+      };
+      const ptInRing = (px, py, poly) => {
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+          if (((yi > py) !== (yj > py)) && (px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
+        }
+        return inside;
+      };
+      const linkTolU = 0.18 / scaleMm;
+      for (const other of items) {
+        if (other === curItem) continue;
+        const oSolid = other.pierKind === 'breakwater' || other.pierKind === 'groyne';
+        const oClear = _resolvePierClearance(ctx, laws, other.rec, other.pierKind, oSolid);
+        if (oClear.isFloating) continue;
+        const oPts = other.ptsOrRing || [];
+        if (oPts.length < 2) continue;
+        const segCount = other.isArea ? oPts.length : (oPts.length - 1);
+        const effTol = other.isArea ? linkTolU : (linkTolU + (other.widthU || 0));
+        for (const p of samplePts) {
+          if (other.isArea && oPts.length >= 3 && ptInRing(p[0], p[1], oPts)) return false;
+          for (let j = 0; j < segCount; j++) {
+            const a = oPts[j], b = oPts[(j + 1) % oPts.length];
+            if (ptToSegDist(p[0], p[1], a[0], a[1], b[0], b[1]) <= effTol) return false;
+          }
+        }
+      }
+      if (typeof toBed === 'function') {
+        for (const rd of ((scene && scene.roads) || [])) {
+          if (!rd || !(rd.isBridge || rd.bridge) || !rd.pts || rd.pts.length < 2) continue;
+          const bPts = rd.pts.map(toBed);
+          const halfW = Math.max(0.25 / scaleMm, ((rd.width || 0.8) * 0.5) * (ctx.scaleToBed || 1));
+          for (let j = 0; j < bPts.length - 1; j++) {
+            const a = bPts[j], b = bPts[j + 1];
+            for (const p of samplePts) {
+              if (ptToSegDist(p[0], p[1], a[0], a[1], b[0], b[1]) <= linkTolU + halfW) return false;
+            }
+          }
+        }
+      }
+      return true;
+    };
+
     for (const item of items) {
       const { rec, pierKind, isArea, ptsOrRing, holesBed, widthU } = item;
       const isSolidStone = pierKind === 'breakwater' || pierKind === 'groyne';
+      const { rawGapMm, resolvedGapMm, isFloating } = _resolvePierClearance(ctx, laws, rec, pierKind, isSolidStone);
+      if (isArea && isFloating && isDetachedOpenWaterFloatingPontoon(ptsOrRing, item)) continue;
       const obb = computeFootprintOBB(ptsOrRing);
       const inWater = terrainWater && terrainWater.isPointInWater(obb.cx, obb.cy);
       const waterTop = inWater
@@ -248,7 +324,6 @@
         ? 0.0
         : Math.max(0.0, (terrainWater && terrainWater.getWaterFloorZ ? terrainWater.getWaterFloorZ(obb.cx, obb.cy) : ctx.zWaterCarveFloor) - 0.15 / scaleMm);
 
-      const { rawGapMm, resolvedGapMm, isFloating } = _resolvePierClearance(ctx, laws, rec, pierKind, isSolidStone);
       const needsPiles = !isSolidStone && resolvedGapMm >= 0.48;
       const zDeckBot = needsPiles ? (waterTop + resolvedGapMm / scaleMm) : pileFloorZ;
       const zDeckTop = needsPiles

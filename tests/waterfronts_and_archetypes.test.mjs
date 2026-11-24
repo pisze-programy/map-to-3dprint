@@ -690,6 +690,54 @@ async function run() {
       'Closed loop of linear canals (Venice grid) preserves dry central island block under waterCutout=true',
       `baseTris=${vgBuilt.meshes.base.length}, float=${vgBuilt.printMetrics.floatingBuildingsCount}`
     );
+
+    // Detached open-water floating pontoon skipped under waterCutout; skybridge tower corbels
+    // keep inter-tower air gap open; slender rectangular supertall shafts keep sharp miter corners.
+    const skylineBayScene = {
+      center: [1.285, 103.858], spanMeters: 1600, halfW: 60, halfH: 60, metersToUnits: 120 / 1600,
+      dem: { minElev: 0, maxElev: 0, gridSize: 4, grid: Array.from({ length: 4 }, () => Array(4).fill(0)) },
+      waterPolys: [{ outer: [[-55, -55], [10, -55], [10, -4], [4, 0], [10, 4], [10, 55], [-55, 55]], holes: [] }],
+      // Coarse river routing centerline running inside waterPoly and grazing the dry headland at (4..10, 0)
+      waterLines: [{ pts: [[-10, -40], [5.5, 0], [-10, 40]], width: 1.0, waterway: 'river', name: 'Bay River' }],
+      greenPolys: [], trees: [],
+      roads: [{ pts: [[12, -25], [-5, -25]], width: 1.8, type: 'footway', isBridge: true, bridge: 'yes', layer: 1 }],
+      roadPolys: [], bridgePolys: [], bridgeSupports: [], pierLines: [],
+      pierPolys: [
+        // Detached floating pontoon 25 mm out in open bay water (should be skipped under waterCutout)
+        { outer: rectRing(-22, 0, 3.0, 2.0), holes: [], isPier: true, pierKind: 'pier', floating: true, osmId: 99801 },
+        // Fixed pier on shore + detached floating pontoon 0.6 mm away (no physical overlap -> also skipped)
+        { outer: rectRing(8, -18, 2.0, 2.0), holes: [], isPier: true, pierKind: 'pier', floating: false, osmId: 99802 },
+        { outer: rectRing(3.4, -18, 2.0, 2.0), holes: [], isPier: true, pierKind: 'pier', floating: true, osmId: 99803 },
+      ],
+      buildings: [
+        // Twin towers + elevated skybridge + cantilever
+        { id: 1, osmId: 99811, groupId: 99811, cx: 28, cy: -5, outer: rectRing(28, -5, 2.5, 2.2), holes: [], minH: 0, h: 193, roof: 'flat' },
+        { id: 2, osmId: 99812, groupId: 99812, cx: 28, cy: 5, outer: rectRing(28, 5, 2.5, 2.2), holes: [], minH: 0, h: 193, roof: 'flat' },
+        { id: 3, osmId: 99813, groupId: 99813, cx: 28, cy: 1.5, outer: rectRing(28, 1.5, 2.8, 10.5), holes: [], minH: 193, h: 207, roof: 'flat' },
+        // Slender rectangular supertall shaft (16m x 10m x 435m) must NOT be rounded to a wide cylinder
+        { id: 4, osmId: 99814, groupId: 99814, cx: 45, cy: 0, outer: rectRing(45, 0, 0.75, 0.55), holes: [], minH: 0, h: 435, roof: 'flat', part: true },
+      ],
+      osmElements: [],
+    };
+    const sbBuilt = buildComplete3DModel(skylineBayScene, makeState({
+      targetWidthCm: 12, targetHeightCm: 12, bedSizeMm: 120, totalHeightMm: 120,
+      waterCutout: true, solidBaseNoTunnels: true, baseHeightMm: 4.0, zScale: 1.25,
+    }));
+    const midGapTris = sbBuilt.meshes.buildings.filter(t => {
+      const cx = (t.v0[0] + t.v1[0] + t.v2[0]) / 3;
+      const cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3;
+      const cz = (t.v0[2] + t.v1[2] + t.v2[2]) / 3;
+      return cx > 24 && cx < 32 && Math.abs(cy) < 1.8 && cz > 5.0 && cz < 16.0;
+    }).length;
+    const slenderB = sbBuilt.buildingBounds.find(bb => bb.osmId === 99814);
+    const slenderWidthMm = slenderB ? Math.min(slenderB.maxX - slenderB.minX, slenderB.maxY - slenderB.minY) : 99;
+    const pontoonAud = (sbBuilt.audit.pierAudits || []).find(a => a.osmId === 99801 || a.osmId === 99803);
+    const fixedPierAud = (sbBuilt.audit.pierAudits || []).find(a => a.osmId === 99802);
+    check(
+      sbBuilt.printMetrics.isWatertightManifold && midGapTris === 0 && !pontoonAud && Boolean(fixedPierAud) && slenderWidthMm <= 1.8,
+      'Detached floating pontoons skipped under waterCutout (fixed pier kept), redundant river centerline preserves headland, skybridge corbels keep inter-tower gap open, and rectangular supertall avoids circular bloat',
+      `wt=${sbBuilt.printMetrics.isWatertightManifold}, midGapTris=${midGapTris}, detachedSkipped=${!pontoonAud}, fixedKept=${Boolean(fixedPierAud)}, slenderW=${slenderWidthMm.toFixed(2)}mm`
+    );
   }
 
   console.log(`\nSUMMARY: ${passed} passed, ${failed} failed`);

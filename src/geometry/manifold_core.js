@@ -1027,14 +1027,33 @@
     }
 
     const compMinZ = new Float64Array(nv);
+    const compMinX = new Float64Array(nv);
+    const compMaxX = new Float64Array(nv);
+    const compMinY = new Float64Array(nv);
+    const compMaxY = new Float64Array(nv);
     compMinZ.fill(Infinity);
+    compMinX.fill(Infinity);
+    compMaxX.fill(-Infinity);
+    compMinY.fill(Infinity);
+    compMaxY.fill(-Infinity);
     let globalMinZ = Infinity;
+    let globalMinX = Infinity, globalMaxX = -Infinity, globalMinY = Infinity, globalMaxY = -Infinity;
     for (let v = 0; v < nv; v++) {
       if (!usedVerts[v]) continue;
+      const x = vp[v * 3];
+      const y = vp[v * 3 + 1];
       const z = vp[v * 3 + 2];
       if (z < globalMinZ) globalMinZ = z;
+      if (x < globalMinX) globalMinX = x;
+      if (x > globalMaxX) globalMaxX = x;
+      if (y < globalMinY) globalMinY = y;
+      if (y > globalMaxY) globalMaxY = y;
       const r = find(v);
       if (z < compMinZ[r]) compMinZ[r] = z;
+      if (x < compMinX[r]) compMinX[r] = x;
+      if (x > compMaxX[r]) compMaxX[r] = x;
+      if (y < compMinY[r]) compMinY[r] = y;
+      if (y > compMaxY[r]) compMaxY[r] = y;
     }
     if (!Number.isFinite(globalMinZ)) {
       if (ownsSrc) safeDeleteManifold(src);
@@ -1043,6 +1062,44 @@
 
     const groundThreshU = 0.05 / scMm;
     const isGroundedMesh = globalMinZ <= groundThreshU;
+
+    // On full-sized grounded tiles, also drop detached clipped border stubs (thin < 16 mm2
+    // slivers sitting on the tile perimeter that break loose under waterCutout).
+    const dropComp = new Uint8Array(nv);
+    if (isGroundedMesh) {
+      const compVolMm3 = new Float64Array(nv);
+      const scale3 = scMm * scMm * scMm;
+      for (let t = 0; t < nTri; t++) {
+        const i0 = tv[t * 3], i1 = tv[t * 3 + 1], i2 = tv[t * 3 + 2];
+        if (i0 === i1 || i1 === i2 || i2 === i0) continue;
+        const b0 = i0 * 3, b1 = i1 * 3, b2 = i2 * 3;
+        const x0 = vp[b0], y0 = vp[b0 + 1], z0 = vp[b0 + 2];
+        const x1 = vp[b1], y1 = vp[b1 + 1], z1 = vp[b1 + 2];
+        const x2 = vp[b2], y2 = vp[b2 + 1], z2 = vp[b2 + 2];
+        const v6 = x0 * (y1 * z2 - z1 * y2) + y0 * (z1 * x2 - x1 * z2) + z0 * (x1 * y2 - y1 * x2);
+        compVolMm3[find(i0)] += (v6 / 6.0) * scale3;
+      }
+      let mainRoot = -1, mainAreaMm2 = 0;
+      for (let v = 0; v < nv; v++) {
+        if (!usedVerts[v] || find(v) !== v) continue;
+        const area = (compMaxX[v] - compMinX[v]) * (compMaxY[v] - compMinY[v]) * scMm * scMm;
+        if (area > mainAreaMm2) { mainAreaMm2 = area; mainRoot = v; }
+      }
+      const edgeTolU = 0.25 / scMm;
+      if (mainRoot >= 0 && mainAreaMm2 >= 1500.0) {
+        for (let v = 0; v < nv; v++) {
+          if (!usedVerts[v] || find(v) !== v || v === mainRoot) continue;
+          const sxMm = (compMaxX[v] - compMinX[v]) * scMm;
+          const syMm = (compMaxY[v] - compMinY[v]) * scMm;
+          const touchesBorder =
+            compMinX[v] <= globalMinX + edgeTolU || compMaxX[v] >= globalMaxX - edgeTolU ||
+            compMinY[v] <= globalMinY + edgeTolU || compMaxY[v] >= globalMaxY - edgeTolU;
+          if (touchesBorder && sxMm * syMm < 16.0 && Math.min(sxMm, syMm) < 3.0 && Math.abs(compVolMm3[v]) < 65.0) {
+            dropComp[v] = 1;
+          }
+        }
+      }
+    }
 
     // Quantize surviving vertices to Float32 in mm while keeping Manifold index sharing.
     const vToId = new Int32Array(nv);
@@ -1055,7 +1112,8 @@
       const i1 = tv[t * 3 + 1];
       const i2 = tv[t * 3 + 2];
       if (i0 === i1 || i1 === i2 || i2 === i0) continue;
-      if (isGroundedMesh && compMinZ[find(i0)] > groundThreshU) continue;
+      const rComp = find(i0);
+      if (isGroundedMesh && (compMinZ[rComp] > groundThreshU || dropComp[rComp])) continue;
       const tri = [0, 0, 0];
       for (let k = 0; k < 3; k++) {
         const vi = k === 0 ? i0 : (k === 1 ? i1 : i2);
