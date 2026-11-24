@@ -680,8 +680,13 @@ async function testMcpStdioServer() {
     `got=${ndRes.responses.length}`);
   check(ndRes.responses[0]?.result?.protocolVersion === '2024-11-05', 'MCP initialize returns protocolVersion 2024-11-05');
   const toolNames = (ndRes.responses[1]?.result?.tools || []).map(t => t.name);
-  check(toolNames.includes('render_map3d_view') && toolNames.includes('inspect_landmark_3d') && toolNames.includes('audit_scene_fidelity'),
-    'MCP tools/list exposes all 3 tools');
+  check(
+    toolNames.includes('render_map3d_view') &&
+    toolNames.includes('inspect_landmark_3d') &&
+    toolNames.includes('audit_scene_fidelity') &&
+    toolNames.includes('export_map3d_stl'),
+    'MCP tools/list exposes all 4 tools including export_map3d_stl'
+  );
 
   const renderCallJson = JSON.parse(ndRes.responses[2]?.result?.content?.[0]?.text || '{}');
   check(fs.existsSync(renderPng) && inspectPngHeader(fs.readFileSync(renderPng)).sigOk && renderCallJson.renderedTriangles > 0,
@@ -716,8 +721,8 @@ async function testCliAndBenchmark() {
   console.log('\n[5] CLI smoke test & offline Frankfurt benchmark (if snapshot exists)');
 
   const helpOut = execFileSync('node', [path.join(ROOT, 'tools/mcp_map3d_inspector.mjs'), '--help'], { encoding: 'utf8' });
-  check(helpOut.includes('render') && helpOut.includes('inspect-landmark') && helpOut.includes('audit-scene'),
-    'CLI --help lists render, inspect-landmark, and audit-scene');
+  check(helpOut.includes('render') && helpOut.includes('inspect-landmark') && helpOut.includes('audit-scene') && helpOut.includes('export-stl'),
+    'CLI --help lists render, inspect-landmark, audit-scene, and export-stl');
 
   const frankfurtSnap = '/Users/krystianblaszczyk/.gemini/antigravity/brain/acf68bd7-959f-4001-b031-f431964aa593/scratch/frankfurt_osm_live_snapshot.json';
   const frankfurtDem = '/Users/krystianblaszczyk/.gemini/antigravity/brain/acf68bd7-959f-4001-b031-f431964aa593/scratch/dem_tile_cache';
@@ -996,6 +1001,88 @@ async function testArchitecturalFidelityFixes() {
     `historicFlat=${suite6Audit.untaggedHistoricFlatBlocks.count}, crumpled=${suite6Audit.crumpledConcaveLod2Roofs.count}`);
 }
 
+// ============================================================================
+// Suite 7: CLI & MCP A4 12x17 (2x1) 4.0mm Tunnel-Free STL Export
+// ============================================================================
+
+async function testA4TunnelFreeCliAndMcpExport() {
+  console.log('\n[7] CLI & MCP A4 12x17 (2x1) 4.0mm tunnel-free solid-base STL export');
+  const snapPath = path.join(TMP_DIR, 'synthetic_audit_snapshot.json');
+
+  const cliOutDir = path.join(TMP_DIR, 'cli_a4_stl');
+  const cliOut = execFileSync('node', [
+    path.join(ROOT, 'tools/mcp_map3d_inspector.mjs'),
+    'export-stl',
+    '--snapshot', snapPath,
+    '--offline',
+    '--frame-preset', 'a4_12x17',
+    '--prefix', 'Test_A4',
+    '--out-dir', cliOutDir,
+  ], { encoding: 'utf8' });
+  const cliRes = JSON.parse(cliOut);
+
+  check(
+    Array.isArray(cliRes.frameMm) && cliRes.frameMm[0] === 120 && cliRes.frameMm[1] === 170 &&
+    Array.isArray(cliRes.grid) && cliRes.grid[0] === 1 && cliRes.grid[1] === 2,
+    'CLI export-stl --frame-preset a4_12x17 resolves 120x170 mm 1x2 grid',
+    `frameMm=${JSON.stringify(cliRes.frameMm)}, grid=${JSON.stringify(cliRes.grid)}`
+  );
+  check(
+    cliRes.solidBaseNoTunnels === true && Math.abs(cliRes.baseHeightMm - 4.0) < 1e-6 && cliRes.kerfMm === 0,
+    'CLI a4_12x17 enforces solidBaseNoTunnels=true, baseHeightMm=4.0, kerfMm=0',
+    `solid=${cliRes.solidBaseNoTunnels}, baseMm=${cliRes.baseHeightMm}, kerf=${cliRes.kerfMm}`
+  );
+  check(
+    cliRes.tiles && cliRes.tiles.length === 2 &&
+    cliRes.tiles.every(t =>
+      fs.existsSync(t.path) &&
+      t.triangles > 100 &&
+      Math.abs(t.spanMm[0] - 120.0) <= 0.05 &&
+      Math.abs(t.spanMm[1] - 85.0) <= 0.05 &&
+      t.minMm[2] >= -0.01 &&
+      t.maxMm[2] > 4.0
+    ),
+    'CLI export-stl writes 2 exact 120x85 mm tiles above 4.0 mm solid base',
+    JSON.stringify((cliRes.tiles || []).map(t => ({ pos: t.position, span: t.spanMm, tris: t.triangles })))
+  );
+  check(
+    cliRes.printMetrics && cliRes.printMetrics.isWatertightManifold === true && cliRes.printMetrics.openEdgesCount === 0,
+    'CLI exported A4 tiles are strictly watertight 2-manifold',
+    JSON.stringify(cliRes.printMetrics)
+  );
+
+  const mcpOutDir = path.join(TMP_DIR, 'mcp_a4_stl');
+  const mcpRes = await runMcpSession('ndjson', [
+    { jsonrpc: '2.0', id: 21, method: 'initialize', params: { protocolVersion: '2024-11-05' } },
+    {
+      jsonrpc: '2.0',
+      id: 22,
+      method: 'tools/call',
+      params: {
+        name: 'export_map3d_stl',
+        arguments: {
+          snapshotPath: snapPath,
+          offlineOnly: true,
+          framePreset: 'a4_12x17',
+          filePrefix: 'MCP_A4',
+          outputDir: mcpOutDir,
+        },
+      },
+    },
+  ]);
+  const mcpPayload = JSON.parse(mcpRes.responses[1]?.result?.content?.[0]?.text || '{}');
+  check(
+    mcpRes.code === 0 &&
+    mcpPayload.solidBaseNoTunnels === true &&
+    Math.abs(mcpPayload.baseHeightMm - 4.0) < 1e-6 &&
+    Array.isArray(mcpPayload.tiles) &&
+    mcpPayload.tiles.length === 2 &&
+    mcpPayload.tiles.every(t => fs.existsSync(t.path) && Math.abs(t.spanMm[1] - 85.0) <= 0.05),
+    'MCP tools/call export_map3d_stl exports 2 watertight 120x85 mm A4 solid-base STLs',
+    JSON.stringify((mcpPayload.tiles || []).map(t => ({ file: path.basename(t.path), span: t.spanMm })))
+  );
+}
+
 (async function main() {
   try {
     await testSoftwareCanvasAndPngDecode();
@@ -1004,6 +1091,7 @@ async function testArchitecturalFidelityFixes() {
     await testMcpStdioServer();
     await testCliAndBenchmark();
     await testArchitecturalFidelityFixes();
+    await testA4TunnelFreeCliAndMcpExport();
   } finally {
     fs.rmSync(TMP_DIR, { recursive: true, force: true });
   }

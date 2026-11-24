@@ -68,6 +68,8 @@ const PIPELINE_SCRIPTS = [
   'src/mesh/mesh_builder.js',
   'src/render/webgl_math.js',
   'src/render/webgl_shaders.js',
+  'src/export/export_io_utils.js',
+  'src/export/stl_writer.js',
   'src/Water/water_ring_geometry.js',
   'src/Water/water_multipolygon_stitcher.js',
   'src/Water/water_coastline_stitcher.js',
@@ -1894,7 +1896,37 @@ function deepCloneScene(sc) {
   return JSON.parse(JSON.stringify(sc));
 }
 
-function buildStateFromOpts(opts = {}, sandbox, scene) {
+/**
+ * Applies optional preset defaults (e.g. 'a4_12x17' / 'mono4_a4_passepartout_12x17_2x1')
+ * without overriding explicitly supplied caller options.
+ * @param {object} opts
+ * @returns {object}
+ */
+function resolvePresetOptions(opts = {}) {
+  const fp = String(opts.framePreset || opts.presetFrame || '').trim().toLowerCase();
+  if (fp !== 'a4_12x17' && fp !== 'a4-12x17' && fp !== 'mono4_a4_passepartout_12x17_2x1') {
+    return opts;
+  }
+  const preset = {
+    targetWidthCm: 12.0,
+    targetHeightCm: 17.0,
+    tileCols: 1,
+    tileRows: 2,
+    solidBaseNoTunnels: true,
+    baseHeightMm: 4.0,
+    bedSafeMarginMm: 1.0,
+    kerfMm: 0.0,
+    hollowBase: true,
+    showFrame: false,
+  };
+  for (const [k, v] of Object.entries(opts)) {
+    if (v !== undefined) preset[k] = v;
+  }
+  return preset;
+}
+
+function buildStateFromOpts(rawOpts = {}, sandbox, scene) {
+  const opts = resolvePresetOptions(rawOpts);
   const palettes = sandbox.PALETTES || {};
   const paletteKey = opts.palette || 'white';
   const pal = palettes[paletteKey] || palettes.white || {
@@ -1909,16 +1941,24 @@ function buildStateFromOpts(opts = {}, sandbox, scene) {
 
   const targetWidthCm = Number(opts.targetWidthCm) || 50;
   const targetHeightCm = Number(opts.targetHeightCm) || targetWidthCm;
-  const bedSizeMm = targetWidthCm * 10;
-  const totalHeightMm = targetHeightCm * 10;
+  const bedSizeMm = Math.round(targetWidthCm * 10);
+  const totalHeightMm = Math.round(targetHeightCm * 10);
   const defaultCrop = (scene && scene._fetchedCropRatio) ? scene._fetchedCropRatio : 0.88;
+  const solidBaseNoTunnels = Boolean(opts.solidBaseNoTunnels);
+  const explicitBaseMm = (opts.baseBottomMm !== undefined && opts.baseBottomMm !== null)
+    ? Number(opts.baseBottomMm)
+    : ((opts.baseHeightMm !== undefined && opts.baseHeightMm !== null) ? Number(opts.baseHeightMm) : null);
 
   return {
+    plaqueText: opts.title || 'MAP3D',
     targetWidthCm,
     targetHeightCm,
     bedSizeMm,
     totalHeightMm,
-    baseHeightMm: Number(opts.baseHeightMm ?? 2.4),
+    baseHeightMm: Number.isFinite(explicitBaseMm) ? explicitBaseMm : (solidBaseNoTunnels ? 4.0 : 2.35),
+    solidBaseNoTunnels,
+    kerfMm: opts.kerfMm !== undefined ? Number(opts.kerfMm) : 0.08,
+    bedSafeMarginMm: opts.bedSafeMarginMm !== undefined ? Number(opts.bedSafeMarginMm) : 4.0,
     zScale: Number(opts.zScale ?? 1.0),
     terrainScale: Number(opts.terrainScale ?? 1.0),
     contourSteps: Number(opts.contourSteps ?? 8),
@@ -1980,7 +2020,8 @@ function buildStateFromOpts(opts = {}, sandbox, scene) {
  *  3. Live public OSM API v0.6 + AWS Terrarium DEM via `{ lat, lon, spanMeters }`
  * Then applies rotation, runs `buildComplete3DModel`, and returns full geometry + audit data.
  */
-async function loadSceneAndBuildModel(opts = {}) {
+async function loadSceneAndBuildModel(rawOpts = {}) {
+  const opts = resolvePresetOptions(rawOpts);
   const runtime = opts.runtime || createPipelineRuntime(opts);
   const { sandbox, auditState, setOverpassEvaluator } = runtime;
   runtime.resetAuditState();

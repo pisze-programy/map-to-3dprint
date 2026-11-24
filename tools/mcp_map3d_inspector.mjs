@@ -392,23 +392,60 @@ function getEffectiveScaleToBed(meta) {
   return 1.0 / effectiveCrop;
 }
 
-function buildLoadOptions(args = {}, silent = true) {
+/**
+ * Applies optional framePreset defaults (e.g. 'a4_12x17') without overriding explicit args.
+ * @param {object} args
+ * @returns {object}
+ */
+function resolveFramePresetArgs(args = {}) {
+  const fp = String(args.framePreset || '').trim().toLowerCase();
+  if (fp !== 'a4_12x17' && fp !== 'a4-12x17' && fp !== 'mono4_a4_passepartout_12x17_2x1') {
+    return args;
+  }
+  const merged = {
+    targetWidthCm: 12.0,
+    targetHeightCm: 17.0,
+    tileCols: 1,
+    tileRows: 2,
+    solidBaseNoTunnels: true,
+    baseHeightMm: 4.0,
+    bedSafeMarginMm: 1.0,
+    kerfMm: 0.0,
+    hollowBase: true,
+    showFrame: false,
+  };
+  for (const [k, v] of Object.entries(args)) {
+    if (v !== undefined) merged[k] = v;
+  }
+  return merged;
+}
+
+function buildLoadOptions(rawArgs = {}, silent = true) {
+  const args = resolveFramePresetArgs(rawArgs);
   return {
     snapshotPath: args.snapshotPath,
     scenePath: args.scenePath,
     cachedCity: args.cachedCity,
     scene: args.scene,
     osmElements: args.osmElements,
+    title: args.title,
+    framePreset: args.framePreset,
     lat: args.lat,
     lon: args.lon,
     spanMeters: args.spanMeters,
     rotationDeg: args.rotationDeg ?? 0,
     targetWidthCm: args.targetWidthCm ?? 50,
     targetHeightCm: args.targetHeightCm ?? args.targetWidthCm ?? 50,
+    tileCols: args.tileCols ?? 1,
+    tileRows: args.tileRows ?? 1,
+    kerfMm: args.kerfMm,
+    bedSafeMarginMm: args.bedSafeMarginMm,
     palette: args.palette ?? 'white',
     frameStyle: args.frameStyle ?? 'black',
     waterCutout: Boolean(args.waterCutout),
     hollowBase: Boolean(args.hollowBase),
+    solidBaseNoTunnels: Boolean(args.solidBaseNoTunnels),
+    baseHeightMm: args.baseHeightMm,
     supportlessMode: Boolean(args.supportlessMode),
     isResin: true,
     showFrame: args.showFrame !== false,
@@ -426,6 +463,117 @@ function buildLoadOptions(args = {}, silent = true) {
     fast: Boolean(args.fast),
     skipTopologyAudit: Boolean(args.skipTopologyAudit),
     silent,
+  };
+}
+
+/**
+ * Computes exact STL vertex bounds and triangle count from binary STL bytes.
+ * @param {Uint8Array} bytes
+ * @returns {{triangles:number, minMm:number[], maxMm:number[], spanMm:number[]}}
+ */
+function measureBinaryStlBytes(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const triangles = bytes.byteLength >= 84 ? view.getUint32(80, true) : 0;
+  const mn = [Infinity, Infinity, Infinity];
+  const mx = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < triangles; i++) {
+    const base = 84 + i * 50;
+    for (let v = 0; v < 3; v++) {
+      const off = base + 12 + v * 12;
+      const x = view.getFloat32(off, true);
+      const y = view.getFloat32(off + 4, true);
+      const z = view.getFloat32(off + 8, true);
+      if (x < mn[0]) mn[0] = x;
+      if (x > mx[0]) mx[0] = x;
+      if (y < mn[1]) mn[1] = y;
+      if (y > mx[1]) mx[1] = y;
+      if (z < mn[2]) mn[2] = z;
+      if (z > mx[2]) mx[2] = z;
+    }
+  }
+  const r3 = (v) => (Number.isFinite(v) ? Math.round(v * 1000) / 1000 : 0);
+  const minMm = mn.map(r3);
+  const maxMm = mx.map(r3);
+  return {
+    triangles,
+    minMm,
+    maxMm,
+    spanMm: [r3(maxMm[0] - minMm[0]), r3(maxMm[1] - minMm[1]), r3(maxMm[2] - minMm[2])],
+  };
+}
+
+/**
+ * Headlessly builds a 3D map model and exports watertight per-tile binary STL files.
+ * Supports solidBaseNoTunnels, configurable baseHeightMm, and the a4_12x17 (2x1) preset.
+ * @param {object} rawArgs
+ * @param {{silent?: boolean}} [opts]
+ * @returns {Promise<object>}
+ */
+async function handleExportMap3DStl(rawArgs = {}, { silent = true } = {}) {
+  const args = resolveFramePresetArgs(rawArgs);
+  if (!args.outputDir) throw new Error('export_map3d_stl requires outputDir');
+  const tStart = Date.now();
+  const built = await loadSceneAndBuildModel(buildLoadOptions({
+    ...args,
+    showFrame: args.showFrame !== undefined ? args.showFrame : false,
+  }, silent));
+  const { state, meshes, runtime, printMetrics } = built;
+  const sb = runtime && runtime.sandbox;
+  if (!sb || typeof sb.buildBinarySTLBytes !== 'function') {
+    throw new Error('buildBinarySTLBytes is not loaded in headless runtime');
+  }
+
+  const exportState = { ...state, layerMeshes: meshes, printMetrics };
+  const cols = Math.max(1, state.tileCols | 0);
+  const rows = Math.max(1, state.tileRows | 0);
+  const tileW = Math.round(state.bedSizeMm / cols);
+  const tileH = Math.round(state.totalHeightMm / rows);
+  const prefix = String(args.filePrefix || args.title || 'Map3D').replace(/[^A-Za-z0-9_-]+/g, '_');
+  const outDir = path.resolve(args.outputDir);
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const exportedTiles = [];
+  for (let tr = rows - 1; tr >= 0; tr--) {
+    const northRow = rows - tr;
+    for (let tc = 0; tc < cols; tc++) {
+      const tid = tr * cols + tc;
+      const bytes = sb.buildBinarySTLBytes(exportState, 'all', tid);
+      const posLabel = (cols === 1 && rows === 2)
+        ? (tr === 1 ? 'Top' : 'Bottom')
+        : `R${northRow}C${tc + 1}`;
+      const fileName = `${prefix}_${posLabel}_${tileW}x${tileH}mm.stl`;
+      const outPath = path.join(outDir, fileName);
+      fs.writeFileSync(outPath, bytes);
+      const stats = measureBinaryStlBytes(bytes);
+      exportedTiles.push({
+        tileId: tid,
+        label: `R${northRow}C${tc + 1}`,
+        position: posLabel,
+        path: outPath,
+        bytes: bytes.byteLength,
+        ...stats,
+      });
+    }
+  }
+
+  return {
+    outputDir: outDir,
+    frameMm: [state.bedSizeMm, state.totalHeightMm],
+    grid: [cols, rows],
+    solidBaseNoTunnels: Boolean(state.solidBaseNoTunnels),
+    baseHeightMm: state.baseHeightMm,
+    kerfMm: state.kerfMm,
+    waterCutout: Boolean(state.waterCutout),
+    printMetrics: printMetrics ? {
+      isWatertightManifold: printMetrics.isWatertightManifold,
+      openEdgesCount: printMetrics.openEdgesCount,
+      nonManifoldEdgesCount: printMetrics.nonManifoldEdgesCount,
+      floatingBuildingsCount: printMetrics.floatingBuildingsCount,
+      maxZMm: printMetrics.maxZMm,
+      totalVolumeMl: printMetrics.totalVolumeMl,
+    } : null,
+    tiles: exportedTiles,
+    elapsedMs: Date.now() - tStart,
   };
 }
 
@@ -1229,10 +1377,17 @@ const MCP_TOOLS = [
         rotationDeg: { type: 'number' },
         targetWidthCm: { type: 'number' },
         targetHeightCm: { type: 'number' },
+        framePreset: { type: 'string' },
+        tileCols: { type: 'number' },
+        tileRows: { type: 'number' },
+        kerfMm: { type: 'number' },
+        bedSafeMarginMm: { type: 'number' },
         palette: { type: 'string' },
         frameStyle: { type: 'string' },
         waterCutout: { type: 'boolean' },
         hollowBase: { type: 'boolean' },
+        solidBaseNoTunnels: { type: 'boolean' },
+        baseHeightMm: { type: 'number' },
         supportlessMode: { type: 'boolean' },
         isResin: { type: 'boolean' },
         showFrame: { type: 'boolean' },
@@ -1335,6 +1490,43 @@ const MCP_TOOLS = [
       },
     },
   },
+  {
+    name: 'export_map3d_stl',
+    description: 'Headlessly build a 3D map model and export watertight binary per-tile .stl files (supports a4_12x17 preset and solidBaseNoTunnels rigid base).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        snapshotPath: { type: 'string' },
+        cachedCity: { type: 'string' },
+        scenePath: { type: 'string' },
+        title: { type: 'string' },
+        filePrefix: { type: 'string' },
+        outputDir: { type: 'string' },
+        framePreset: { type: 'string' },
+        lat: { type: 'number' },
+        lon: { type: 'number' },
+        spanMeters: { type: 'number' },
+        rotationDeg: { type: 'number' },
+        targetWidthCm: { type: 'number' },
+        targetHeightCm: { type: 'number' },
+        tileCols: { type: 'number' },
+        tileRows: { type: 'number' },
+        kerfMm: { type: 'number' },
+        bedSafeMarginMm: { type: 'number' },
+        waterCutout: { type: 'boolean' },
+        hollowBase: { type: 'boolean' },
+        solidBaseNoTunnels: { type: 'boolean' },
+        baseHeightMm: { type: 'number' },
+        supportlessMode: { type: 'boolean' },
+        zScale: { type: 'number' },
+        terrainScale: { type: 'number' },
+        cropRatio: { type: 'number' },
+        demCacheDir: { type: 'string' },
+        offlineOnly: { type: 'boolean' },
+      },
+      required: ['outputDir'],
+    },
+  },
 ];
 
 function startMcpStdioServer() {
@@ -1398,6 +1590,8 @@ function startMcpStdioServer() {
           result = await handleInspectLandmark3D(toolArgs, { silent: true });
         } else if (name === 'audit_scene_fidelity') {
           result = await handleAuditSceneFidelity(toolArgs, { silent: true });
+        } else if (name === 'export_map3d_stl') {
+          result = await handleExportMap3DStl(toolArgs, { silent: true });
         } else {
           throw new Error(`Unknown MCP tool: ${name}`);
         }
@@ -1562,6 +1756,7 @@ function parseCliArgs(argv) {
 
 function mapCommonCliFlags(flags) {
   const num = (k) => (flags[k] !== undefined && flags[k] !== true && flags[k] !== false) ? Number(flags[k]) : undefined;
+  const boolOpt = (k) => (flags[k] === undefined ? undefined : (flags[k] === true || flags[k] === 'true'));
   const extraDirs = flags['extra-dem-cache-dir']
     ? String(flags['extra-dem-cache-dir']).split(',').map(s => s.trim()).filter(Boolean)
     : undefined;
@@ -1574,15 +1769,23 @@ function mapCommonCliFlags(flags) {
     lon: num('lon'),
     spanMeters: num('span'),
     rotationDeg: num('rot'),
+    framePreset: flags['frame-preset'],
     targetWidthCm: num('width-cm'),
     targetHeightCm: num('height-cm'),
+    tileCols: num('tile-cols'),
+    tileRows: num('tile-rows'),
+    kerfMm: num('kerf-mm'),
+    bedSafeMarginMm: num('bed-margin-mm'),
+    title: flags.title,
     palette: flags.palette,
     frameStyle: flags['frame-style'],
-    waterCutout: flags['water-cutout'] === true || flags['water-cutout'] === 'true',
-    hollowBase: flags['hollow-base'] === true || flags['hollow-base'] === 'true',
-    supportlessMode: flags.supportless === true || flags.supportless === 'true',
+    waterCutout: boolOpt('water-cutout'),
+    hollowBase: boolOpt('hollow-base'),
+    solidBaseNoTunnels: boolOpt('solid-base'),
+    baseHeightMm: num('base-height-mm'),
+    supportlessMode: boolOpt('supportless'),
     isResin: true,
-    showFrame: flags.frame === false ? false : true,
+    showFrame: flags.frame === undefined ? undefined : (flags.frame !== false),
     zScale: num('z-scale'),
     terrainScale: num('terrain-scale'),
     cropRatio: num('crop-ratio'),
@@ -1604,6 +1807,7 @@ Commands:
   render             Render a headless PNG studio preview
   inspect-landmark   Inspect OSM/S3DB/mesh hierarchy + render 4-angle contact sheet
   audit-scene        Run architectural & GIS fidelity + manifold topology audit
+  export-stl         Export watertight binary per-tile .stl files (supports --frame-preset a4_12x17)
   mcp                Run MCP JSON-RPC 2.0 server over stdio
   list-cache         List cached scene_v4 / osm JSON files in cache/
 
@@ -1616,6 +1820,13 @@ Common Scene Options:
   --rot <deg>             Map rotation in degrees (default: 0)
   --width-cm <cm>         Print bed width in cm (default: 50)
   --height-cm <cm>        Print bed height in cm (default: width-cm)
+  --frame-preset <id>     Preset geometry contract (a4_12x17: 12x17 cm, 1x2, 4.0 mm solid base)
+  --tile-cols <n>         Tile columns (default: 1)
+  --tile-rows <n>         Tile rows (default: 1)
+  --kerf-mm <mm>          Inter-tile kerf in mm (default: 0.08; 0.0 for a4_12x17)
+  --bed-margin-mm <mm>    Mono 4 bed safe margin per side in mm (default: 4.0; 1.0 for a4_12x17)
+  --solid-base            Rigid solid tunnel-free base (skips grooves and underside ID)
+  --base-height-mm <mm>   Physical solid base thickness in mm (default: 2.35; 4.0 for solid-base)
   --crop-ratio <r>        Crop ratio override (default: 0.88)
   --palette <name>        PALETTES key (white, nordic, pastel, ocean, ...)
   --frame-style <name>    black | white | oak | walnut
@@ -1654,6 +1865,11 @@ Inspect Landmark Options:
 Audit Scene Options:
   --out <path>            Optional JSON report output path
   --max-examples <n>      Max examples per detector (default: 25)
+
+Export STL Options:
+  --out-dir <dir>         Output directory for per-tile binary .stl files
+  --prefix <name>         Output filename prefix (default: Map3D)
+  --frame-preset a4_12x17 Shortcut for 12x17 cm, 1x2, 4.0 mm solid tunnel-free base
 `.trimStart();
   process.stdout.write(help);
 }
@@ -1746,6 +1962,16 @@ async function runCli() {
     return;
   }
 
+  if (cmd === 'export-stl') {
+    const res = await handleExportMap3DStl({
+      ...baseOpts,
+      outputDir: flags['out-dir'] || flags.out || path.resolve('exports/cli_stl'),
+      filePrefix: flags.prefix || flags.title || 'Map3D',
+    }, { silent: false });
+    process.stdout.write(JSON.stringify(res, null, 2) + '\n');
+    return;
+  }
+
   process.stderr.write(`Unknown command: ${cmd || '(none)'}\n`);
   printHelp();
   process.exit(1);
@@ -1755,6 +1981,7 @@ export {
   handleRenderMap3DView,
   handleInspectLandmark3D,
   handleAuditSceneFidelity,
+  handleExportMap3DStl,
   MCP_TOOLS,
 };
 
