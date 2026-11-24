@@ -50,6 +50,7 @@ def _common_render_kwargs(arguments: Dict[str, Any]) -> Dict[str, Any]:
         "frame_width_mm": float(arguments.get("frame_width_mm", 4.0)),
         "frame_height_mm": float(arguments.get("frame_height_mm", 7.5)),
         "backing_finish": arguments.get("backing_finish", "matte_black"),
+        "passepartout_color": arguments.get("passepartout_color", "white"),
         "show_nameplate": bool(arguments.get("show_nameplate", False)),
         "title": arguments.get("title"),
         "surface": arguments.get("surface"),
@@ -101,6 +102,7 @@ def _handle_tool_call(name: str, arguments: Dict[str, Any]) -> Tuple[Any, bool]:
             camera_mode = str(arguments.get("camera_mode", "kinder_multishot"))
             if camera_mode in ("kinder_multishot", "kinder_continuous"):
                 kw.pop("mount", None)
+                kw.pop("passepartout_color", None)
                 packshot_end = bool(arguments.get("packshot_end", True))
                 result = kinder_video.run_kinder_video(
                     **kw,

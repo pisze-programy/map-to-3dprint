@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from .materials_core import (
     add_map_range,
@@ -13,6 +13,15 @@ from .materials_core import (
     get_or_create_material,
     set_input,
 )
+
+# Museum cotton-rag passe-partout linear RGB swatches (sRGB -> linear):
+# white #F2F0EB, ivory #EAE4D7, charcoal #18191C, greige #CFC8BC
+PASSEPARTOUT_SWATCHES: Dict[str, Tuple[Tuple[float, float, float], Tuple[float, float, float], float]] = {
+    "white": ((0.888, 0.871, 0.831), (0.842, 0.824, 0.785), 0.015),
+    "ivory": ((0.823, 0.776, 0.680), (0.776, 0.728, 0.634), 0.015),
+    "charcoal": ((0.0091, 0.0097, 0.0116), (0.0074, 0.0079, 0.0096), 0.0),
+    "greige": ((0.624, 0.578, 0.503), (0.584, 0.538, 0.466), 0.010),
+}
 
 
 def make_plaster_cement_material(name: str = "PlasterCement") -> Any:
@@ -224,4 +233,160 @@ def make_rubber_foot_material(name: str = "RubberFoot") -> Any:
     set_input(bsdf, "Base Color", (0.008, 0.008, 0.009, 1.0))
     set_input(bsdf, "Roughness", 0.92)
     set_input(bsdf, ("Specular IOR Level", "Specular"), 0.10)
+    return mat
+
+
+def make_a4_gallery_frame_material(name: str = "MatteBlackGalleryFrameA4") -> Any:
+    """Heavy 30mm A4 gallery jet-black matte frame (Roughness 0.74, zero mirror glare/brown tint)."""
+    mat, nt, bsdf, _ = get_or_create_material(name)
+    _, mp = add_tex_coord_mapping(nt, scale=(1.0, 1.0, 1.0), loc=(-880, 0))
+
+    n_micro = nt.nodes.new("ShaderNodeTexNoise")
+    n_micro.location = (-620, -140)
+    n_micro.inputs["Scale"].default_value = 2400.0
+    n_micro.inputs["Detail"].default_value = 6.0
+    n_micro.inputs["Roughness"].default_value = 0.65
+    nt.links.new(mp.outputs["Vector"], n_micro.inputs["Vector"])
+
+    # Strictly neutral jet-black matte architectural lacquer (~#0A0A0C sRGB), zero brown tint
+    set_input(bsdf, "Base Color", (0.0024, 0.0024, 0.0028, 1.0))
+    set_input(bsdf, "Metallic", 0.04)
+    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.16)
+    set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.0)
+
+    mr_r = add_map_range(nt, 0.25, 0.75, 0.70, 0.78, clamp=True, loc=(-280, 40))
+    nt.links.new(n_micro.outputs["Fac"], mr_r.inputs["Value"])
+    nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
+
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.location = (-80, -160)
+    bump.inputs["Strength"].default_value = 0.04
+    bump.inputs["Distance"].default_value = 0.00014
+    nt.links.new(n_micro.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], get_input(bsdf, "Normal"))
+    return mat
+
+
+def make_passepartout_material(
+    color_name: str = "white",
+    is_bevel_core: bool = False,
+    name: Optional[str] = None,
+) -> Any:
+    """Cotton-rag museum matboard (top face in white/ivory/charcoal/greige, or bright white bevel core)."""
+    color_key = (color_name or "white").strip().lower()
+    if color_key not in PASSEPARTOUT_SWATCHES:
+        color_key = "white"
+
+    if is_bevel_core:
+        mat_name = name or "PassePartoutBevelCore"
+        # Bright museum-white cut cotton-rag paper core (#F5F3EE sRGB -> linear)
+        col_hi = (0.913, 0.896, 0.855)
+        col_lo = (0.878, 0.860, 0.818)
+        r_min, r_max = 0.85, 0.91
+        sss_w = 0.02
+        bump_str = 0.070
+        fine_scale = 3400.0
+    else:
+        mat_name = name or f"PassePartout_{color_key}"
+        col_hi, col_lo, sss_w = PASSEPARTOUT_SWATCHES[color_key]
+        r_min, r_max = 0.82, 0.90
+        bump_str = 0.055
+        fine_scale = 2400.0
+
+    mat, nt, bsdf, _ = get_or_create_material(mat_name)
+    _, mp = add_tex_coord_mapping(nt, scale=(1.0, 1.0, 1.0), loc=(-960, -80))
+
+    n_fiber = nt.nodes.new("ShaderNodeTexNoise")
+    n_fiber.location = (-680, -240)
+    n_fiber.inputs["Scale"].default_value = fine_scale
+    n_fiber.inputs["Detail"].default_value = 8.0
+    n_fiber.inputs["Roughness"].default_value = 0.72
+    nt.links.new(mp.outputs["Vector"], n_fiber.inputs["Vector"])
+
+    n_rag = nt.nodes.new("ShaderNodeTexNoise")
+    n_rag.location = (-680, 40)
+    n_rag.inputs["Scale"].default_value = 260.0
+    n_rag.inputs["Detail"].default_value = 4.0
+    n_rag.inputs["Roughness"].default_value = 0.55
+    nt.links.new(mp.outputs["Vector"], n_rag.inputs["Vector"])
+
+    _, fac_c, col_a, col_b, col_out = add_mix_color(nt, "MIX", loc=(-360, 160))
+    col_a.default_value = (*col_hi, 1.0)
+    col_b.default_value = (*col_lo, 1.0)
+    mr_c = add_map_range(nt, 0.30, 0.70, 0.0, 1.0, clamp=True, loc=(-500, 160))
+    nt.links.new(n_rag.outputs["Fac"], mr_c.inputs["Value"])
+    nt.links.new(mr_c.outputs["Result"], fac_c)
+    nt.links.new(col_out, get_input(bsdf, "Base Color"))
+
+    mr_r = add_map_range(nt, 0.25, 0.75, r_min, r_max, clamp=True, loc=(-280, -20))
+    nt.links.new(n_fiber.outputs["Fac"], mr_r.inputs["Value"])
+    nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
+
+    math_mix = nt.nodes.new("ShaderNodeMath")
+    math_mix.operation = "MULTIPLY_ADD"
+    math_mix.location = (-440, -220)
+    math_mix.inputs[1].default_value = 0.35
+    nt.links.new(n_rag.outputs["Fac"], math_mix.inputs[0])
+    nt.links.new(n_fiber.outputs["Fac"], math_mix.inputs[2])
+
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.location = (-80, -220)
+    bump.inputs["Strength"].default_value = bump_str
+    bump.inputs["Distance"].default_value = 0.00018
+    nt.links.new(math_mix.outputs["Value"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], get_input(bsdf, "Normal"))
+
+    set_input(bsdf, "Metallic", 0.0)
+    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.16)
+    set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.0)
+    set_input(bsdf, ("Sheen Weight", "Sheen"), 0.12)
+    set_input(bsdf, ("Subsurface Weight", "Subsurface"), sss_w)
+    if sss_w > 0.0:
+        set_input(bsdf, "Subsurface Scale", 0.0005)
+    return mat
+
+
+def make_matte_black_paper_material(name: str = "MatteBlackArchivalPaper") -> Any:
+    """Thick matte-black archival paper backing (#070709, Roughness 0.74, cotton fiber micro-bump, zero glare)."""
+    mat, nt, bsdf, _ = get_or_create_material(name)
+    _, mp = add_tex_coord_mapping(nt, scale=(1.0, 1.0, 1.0), loc=(-880, -100))
+
+    n_fiber = nt.nodes.new("ShaderNodeTexNoise")
+    n_fiber.location = (-620, -200)
+    n_fiber.inputs["Scale"].default_value = 2600.0
+    n_fiber.inputs["Detail"].default_value = 7.0
+    n_fiber.inputs["Roughness"].default_value = 0.68
+    nt.links.new(mp.outputs["Vector"], n_fiber.inputs["Vector"])
+
+    n_tooth = nt.nodes.new("ShaderNodeTexNoise")
+    n_tooth.location = (-620, 40)
+    n_tooth.inputs["Scale"].default_value = 360.0
+    n_tooth.inputs["Detail"].default_value = 4.0
+    n_tooth.inputs["Roughness"].default_value = 0.55
+    nt.links.new(mp.outputs["Vector"], n_tooth.inputs["Vector"])
+
+    # Deep thick matte black archival paper (#070709 sRGB -> linear ~0.0021, 0.0021, 0.0027)
+    set_input(bsdf, "Base Color", (0.0021, 0.0021, 0.0027, 1.0))
+    set_input(bsdf, "Metallic", 0.0)
+    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.11)
+    set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.0)
+    set_input(bsdf, ("Sheen Weight", "Sheen"), 0.08)
+
+    mr_r = add_map_range(nt, 0.25, 0.75, 0.70, 0.78, clamp=True, loc=(-280, -20))
+    nt.links.new(n_fiber.outputs["Fac"], mr_r.inputs["Value"])
+    nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
+
+    math_mix = nt.nodes.new("ShaderNodeMath")
+    math_mix.operation = "MULTIPLY_ADD"
+    math_mix.location = (-400, -180)
+    math_mix.inputs[1].default_value = 0.30
+    nt.links.new(n_tooth.outputs["Fac"], math_mix.inputs[0])
+    nt.links.new(n_fiber.outputs["Fac"], math_mix.inputs[2])
+
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.location = (-80, -180)
+    bump.inputs["Strength"].default_value = 0.055
+    bump.inputs["Distance"].default_value = 0.00014
+    nt.links.new(math_mix.outputs["Value"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], get_input(bsdf, "Normal"))
     return mat

@@ -1,14 +1,4 @@
-"""Universal STL loader and Variant C 13x18 cm / multi-tile assembly aligner.
-
-Supports:
-- `single_13x18`: True 130x180mm outer Variant C frame (`4.0mm` matte-black bezel ->
-  `122x172mm` inner opening). When 2 tiles are passed (e.g. [P0 Tribeca, P1 One WTC]),
-  preserves their shared X coordinate alignment (`X_max` aligned so streets match 100%
-  across the seam) and butts them seamlessly along Y (`0.0mm` gap, P0 above P1).
-- `single_thin` / `single_thick` / `cube_cover`: tight frame hugging the tile footprint.
-- `triptych_3x1`: 3 tiles side-by-side along X with clean gallery spacing.
-- `quartet_2x2`: 4 tiles in a balanced 2x2 grid.
-"""
+"""Universal STL loader for Variant C 13x18, A4 passe-partout, and multi-tile frames."""
 
 from __future__ import annotations
 
@@ -40,6 +30,9 @@ from studio_blender.landmark_analyzer import (
 MM_TO_M = 0.001
 VARIANT_C_OUTER_W_MM = 130.0
 VARIANT_C_OUTER_H_MM = 180.0
+A4_OPENING_W_MM = 120.0
+A4_OPENING_H_MM = 170.0
+A4_GROOVE_HIDE_MM = 0.55
 _FRAME_MM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*(?:mm)?")
 
 
@@ -267,6 +260,49 @@ def _align_single_13x18(
     return inner_w_mm * MM_TO_M, inner_h_mm * MM_TO_M, tile_metas
 
 
+def _align_a4_passepartout(
+    raw_objs: List[Any],
+    raw_stats: List[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]],
+    stl_paths: Sequence[str],
+    frame_mm_override: Optional[Tuple[float, float]],
+) -> Tuple[float, float, List[Dict[str, Any]]]:
+    """Fit 1-2 tiles inside the A4 120x170mm (or 170x120mm landscape) passe-partout cutout."""
+    n_tiles = len(raw_objs)
+    tile_metas: List[Dict[str, Any]] = []
+    if n_tiles >= 2:
+        op_w, op_h = frame_mm_override if frame_mm_override else (A4_OPENING_W_MM, A4_OPENING_H_MM)
+        y_spans = [max(1.0, st[1][1] - st[0][1]) for st in raw_stats]
+        min_x_all, max_x_all = min(st[0][0] for st in raw_stats), max(st[1][0] for st in raw_stats)
+        span_x, total_y = max_x_all - min_x_all, sum(y_spans)
+        fit = min(1.0, (op_w - 0.7) / max(span_x, 1.0), (op_h - 0.7) / max(total_y, 1.0))
+        shift_x = (0.5 * op_w - 0.35) - max_x_all * fit
+        y_cursor = 0.5 * total_y * fit
+        for idx, (obj, (mn, mx, sc), sp) in enumerate(zip(raw_objs, raw_stats, stl_paths)):
+            th = y_spans[idx] * fit
+            y_bot = y_cursor - th
+            # Seat -0.55 mm below Z=0 backing paper so MSLA underside grooves stay hidden
+            _apply_mesh_transform(obj, (shift_x, y_bot - mn[1] * fit, -mn[2] * fit - A4_GROOVE_HIDE_MM), sc * fit)
+            y_cursor -= th
+            tile_metas.append({
+                "object": obj, "stl_path": str(Path(sp).resolve()),
+                "mesh_size_m": [(mx[0] - mn[0]) * fit * MM_TO_M, th * MM_TO_M, (mx[2] - mn[2]) * fit * MM_TO_M],
+                "offset_x_m": 0.0, "offset_y_m": (y_bot + 0.5 * th) * MM_TO_M, "fit_scale": round(fit, 5),
+            })
+        return op_w * MM_TO_M, op_h * MM_TO_M, tile_metas
+
+    mn, mx, sc = raw_stats[0]
+    sx, sy, sz = mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]
+    op_w, op_h = frame_mm_override if frame_mm_override else ((A4_OPENING_H_MM, A4_OPENING_W_MM) if sx > sy * 1.05 else (A4_OPENING_W_MM, A4_OPENING_H_MM))
+    fit = min(1.0, (op_w - 0.7) / max(sx, 1.0), (op_h - 0.7) / max(sy, 1.0))
+    _apply_mesh_transform(raw_objs[0], (-0.5 * (mn[0] + mx[0]) * fit, -0.5 * (mn[1] + mx[1]) * fit, -mn[2] * fit - A4_GROOVE_HIDE_MM), sc * fit)
+    tile_metas.append({
+        "object": raw_objs[0], "stl_path": str(Path(stl_paths[0]).resolve()),
+        "mesh_size_m": [sx * fit * MM_TO_M, sy * fit * MM_TO_M, sz * fit * MM_TO_M],
+        "offset_x_m": 0.0, "offset_y_m": 0.0, "fit_scale": round(fit, 5),
+    })
+    return op_w * MM_TO_M, op_h * MM_TO_M, tile_metas
+
+
 def _align_multi_or_tight(
     raw_objs: List[Any],
     raw_stats: List[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]],
@@ -289,19 +325,10 @@ def _align_multi_or_tight(
     tile_w_m = max(d[0] for d in tile_dims_mm) * MM_TO_M
     tile_h_m = max(d[1] for d in tile_dims_mm) * MM_TO_M
     border_m = 2.0 * rim_width_mm * MM_TO_M
-    pitch_x = tile_w_m + border_m + tile_gap_m
-    pitch_y = tile_h_m + border_m + tile_gap_m
+    pitch_x, pitch_y = tile_w_m + border_m + tile_gap_m, tile_h_m + border_m + tile_gap_m
 
-    centers_xy: List[Tuple[float, float]] = []
     if frame_style == "quartet_2x2" and n_tiles >= 4:
-        # 2x2 grid: row 0 top (+Y), row 1 bottom (-Y)
-        coords = [
-            (-0.5 * pitch_x, 0.5 * pitch_y),
-            (0.5 * pitch_x, 0.5 * pitch_y),
-            (-0.5 * pitch_x, -0.5 * pitch_y),
-            (0.5 * pitch_x, -0.5 * pitch_y),
-        ]
-        centers_xy = coords[:n_tiles]
+        centers_xy = [(-0.5 * pitch_x, 0.5 * pitch_y), (0.5 * pitch_x, 0.5 * pitch_y), (-0.5 * pitch_x, -0.5 * pitch_y), (0.5 * pitch_x, -0.5 * pitch_y)][:n_tiles]
     elif n_tiles == 1:
         centers_xy = [(0.0, 0.0)]
     else:
@@ -309,23 +336,17 @@ def _align_multi_or_tight(
         centers_xy = [(start_x + i * pitch_x, 0.0) for i in range(n_tiles)]
 
     tile_metas: List[Dict[str, Any]] = []
-    for idx, (obj, (mn, mx, sc), sp, (fw_mm, fh_mm), (cx, cy)) in enumerate(
-        zip(raw_objs, raw_stats, stl_paths, tile_dims_mm, centers_xy)
-    ):
+    for obj, (mn, mx, sc), sp, (fw_mm, fh_mm), (cx, cy) in zip(raw_objs, raw_stats, stl_paths, tile_dims_mm, centers_xy):
         in_x = (mn[0] >= -2.0) and (mx[0] <= fw_mm + 2.0)
         in_y = (mn[1] >= -2.0) and (mx[1] <= fh_mm + 2.0)
         sx_mm = (-0.5 * fw_mm if in_x else -0.5 * (mn[0] + mx[0])) + cx / MM_TO_M
         sy_mm = (-0.5 * fh_mm if in_y else -0.5 * (mn[1] + mx[1])) + cy / MM_TO_M
         _apply_mesh_transform(obj, (sx_mm, sy_mm, -mn[2]), sc)
-        tile_metas.append(
-            {
-                "object": obj,
-                "stl_path": str(Path(sp).resolve()),
-                "mesh_size_m": [(mx[0] - mn[0]) * MM_TO_M, (mx[1] - mn[1]) * MM_TO_M, (mx[2] - mn[2]) * MM_TO_M],
-                "offset_x_m": cx,
-                "offset_y_m": cy,
-            }
-        )
+        tile_metas.append({
+            "object": obj, "stl_path": str(Path(sp).resolve()),
+            "mesh_size_m": [(mx[0] - mn[0]) * MM_TO_M, (mx[1] - mn[1]) * MM_TO_M, (mx[2] - mn[2]) * MM_TO_M],
+            "offset_x_m": cx, "offset_y_m": cy,
+        })
     return tile_w_m, tile_h_m, centers_xy, tile_metas
 
 
@@ -338,7 +359,7 @@ def load_city_stls(
     tile_gap_m: float = 0.016,
     collection: Any = None,
 ) -> Dict[str, Any]:
-    """Load 1-4 STL files, align into Variant C 13x18 or multi-frame layout, and analyze landmarks."""
+    """Load 1-4 STL files, align into Variant C / A4 passe-partout / multi-frame, and analyze."""
     if not stl_paths:
         raise ValueError("At least one STL path must be provided.")
     if bpy is None:
@@ -361,19 +382,17 @@ def load_city_stls(
         raw_stats.append(_measure_raw_mm(obj))
 
     if frame_style == "single_13x18":
-        frame_w_m, frame_h_m, tile_metas = _align_single_13x18(
-            raw_objs, raw_stats, stl_paths, rim_width_mm, frame_mm_override
-        )
-        frame_centers_xy = [(0.0, 0.0)]
-        total_w_m, total_h_m = frame_w_m, frame_h_m
+        frame_w_m, frame_h_m, tile_metas = _align_single_13x18(raw_objs, raw_stats, stl_paths, rim_width_mm, frame_mm_override)
+        frame_centers_xy, total_w_m, total_h_m = [(0.0, 0.0)], frame_w_m, frame_h_m
+    elif frame_style == "a4_passepartout":
+        frame_w_m, frame_h_m, tile_metas = _align_a4_passepartout(raw_objs, raw_stats, stl_paths, frame_mm_override)
+        frame_centers_xy, total_w_m, total_h_m = [(0.0, 0.0)], frame_w_m, frame_h_m
     else:
         frame_w_m, frame_h_m, frame_centers_xy, tile_metas = _align_multi_or_tight(
             raw_objs, raw_stats, stl_paths, frame_style, rim_width_mm, frame_mm_override, tile_gap_m
         )
-        xs = [c[0] for c in frame_centers_xy]
-        ys = [c[1] for c in frame_centers_xy]
-        total_w_m = (max(xs) - min(xs)) + frame_w_m
-        total_h_m = (max(ys) - min(ys)) + frame_h_m
+        xs, ys = [c[0] for c in frame_centers_xy], [c[1] for c in frame_centers_xy]
+        total_w_m, total_h_m = (max(xs) - min(xs)) + frame_w_m, (max(ys) - min(ys)) + frame_h_m
 
     if material is not None:
         for obj in raw_objs:
@@ -384,27 +403,17 @@ def load_city_stls(
 
     analysis = analyze_city_mesh(raw_objs, frame_width_m=total_w_m, frame_height_m=total_h_m)
     return {
-        "objects": raw_objs,
-        "collection": collection,
-        "tiles": tile_metas,
-        "frame_centers_xy": frame_centers_xy,
-        "offsets_x": [c[0] for c in frame_centers_xy],
-        "tile_width_m": frame_w_m,
-        "tile_height_m": frame_h_m,
-        "total_width_m": total_w_m,
-        "total_height_m": total_h_m,
-        "max_z_m": analysis["max_z"],
-        "analysis": analysis,
+        "objects": raw_objs, "collection": collection, "tiles": tile_metas,
+        "frame_centers_xy": frame_centers_xy, "offsets_x": [c[0] for c in frame_centers_xy],
+        "tile_width_m": frame_w_m, "tile_height_m": frame_h_m,
+        "total_width_m": total_w_m, "total_height_m": total_h_m,
+        "max_z_m": analysis["max_z"], "analysis": analysis,
     }
 
 
 __all__ = [
-    "MM_TO_M",
-    "VARIANT_C_OUTER_W_MM",
-    "VARIANT_C_OUTER_H_MM",
-    "analyze_city_mesh",
-    "infer_city_title",
-    "load_city_stls",
-    "parse_frame_mm",
-    "transform_analysis_to_wall_mount",
+    "A4_OPENING_H_MM", "A4_OPENING_W_MM", "MM_TO_M",
+    "VARIANT_C_OUTER_H_MM", "VARIANT_C_OUTER_W_MM",
+    "analyze_city_mesh", "infer_city_title", "load_city_stls",
+    "parse_frame_mm", "transform_analysis_to_wall_mount",
 ]

@@ -16,6 +16,7 @@ from .common import (
     get_or_create_collection,
     make_box_bm,
 )
+from .frame_a4 import build_a4_passepartout_frame
 
 # Default dimensions by frame style (mm -> meters inside build_frame_assembly)
 _STYLE_DEFAULTS: Dict[str, Dict[str, float]] = {
@@ -166,9 +167,19 @@ def build_frame_assembly(
     max_z_m: float = 0.095,
     mount: str = "desk_flat",
     frame_material_style: str = "matte_black",
+    passepartout_color: str = "white",
 ) -> Dict[str, Any]:
-    """Build ultra-thin Variant C matte-black frame + matte archival backing (no nameplate by default)."""
+    """Build matte-black gallery frame + archival backing (supports Variant C 13x18 & A4 passe-partout)."""
     style_key = (style or "single_13x18").lower()
+    if style_key == "a4_passepartout":
+        return build_a4_passepartout_frame(
+            width_m=width_m,
+            height_m=height_m,
+            passepartout_color=passepartout_color,
+            center_xy=center_xy,
+            offset_x=offset_x,
+            mount=mount,
+        )
     if style_key == "cube_cover":
         add_cover = True
         spec_key = "cube_plinth"

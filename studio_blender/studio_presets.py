@@ -181,12 +181,19 @@ FRAME_STYLES: Dict[str, str] = {
         "True Variant C 130x180mm ultra-thin matte-black frame (4.0mm bezel, 7.5mm low-profile "
         "height, matte-black archival backing, no nameplate by default; stacks 2 tiles seamlessly)."
     ),
+    "a4_passepartout": (
+        "Heavy A4 210x297x30mm matte-black gallery frame (15.0mm rim, 7.0mm inner recess, "
+        "2.0mm 45-deg beveled cotton-rag passe-partout with 120x170mm opening, matte-black "
+        "archival paper backing, open-air 3D relief with no glass)."
+    ),
     "single_thin": "Ultra-thin matte-black frame (4.0mm bezel) hugging the exact tile footprint.",
     "single_thick": "Gallery matte-black shadowbox frame (10.0mm bezel) with matte-black backing.",
     "cube_cover": "Matte-black plinth base with crystal-clear museum acrylic cover (IOR 1.49).",
     "triptych_3x1": "3-tile side-by-side matte-black wall/desk collection (pass 3 --stl flags).",
     "quartet_2x2": "4-tile 2x2 matte-black architectural wall/desk grid (pass 4 --stl flags).",
 }
+
+PASSEPARTOUT_COLORS: Tuple[str, ...] = ("white", "ivory", "charcoal", "greige")
 
 STILL_PRESETS: Dict[str, str] = {
     "hero_desk": "Editorial 3/4 desk lifestyle hero framing the full 13x18 matte-black frame, skyline & real scale props.",
@@ -287,6 +294,7 @@ def get_studio_presets() -> Dict[str, Any]:
         "environment_details": ENVIRONMENTS,
         "environment_aliases": ENV_ALIASES,
         "frame_styles": FRAME_STYLES,
+        "passepartout_colors": list(PASSEPARTOUT_COLORS),
         "still_presets": STILL_PRESETS,
         "video_shots": VIDEO_SHOTS,
         "mounts": ["auto", "desk_flat", "wall_mount"],

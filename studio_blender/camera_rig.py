@@ -379,8 +379,8 @@ def compute_still_pose(
         focus_pt = (0.0, 0.0, 0.25 * max_z)
     else:  # packshot_iso
         lens, fstop, elev, yaw, shift_y = 68.0, 7.1, 28.0, rec_yaw, -0.02
-        target = (0.0, 0.0, 0.24 * max_z)
-        dist = compute_fit_distance(yaw, elev, target, full_corners, lens, aspect, 0.92, 0.86, shift_y=shift_y)
+        target = (0.0, 0.0, 0.22 * max_z + 0.25 * desk_z)
+        dist = compute_fit_distance(yaw, elev, target, full_corners, lens, aspect, 0.90, 0.85, shift_y=shift_y)
         off = spherical_offset(yaw, elev, dist)
         eye = (target[0] + off[0], target[1] + off[1], target[2] + off[2])
         focus_pt = (0.5 * htx + 0.5 * sx, 0.5 * hty + 0.5 * sy, 0.34 * max_z)

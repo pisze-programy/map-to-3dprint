@@ -9,11 +9,12 @@ from studio_blender.studio_presets import ALL_ENV_CHOICES, STILL_PRESETS
 
 ENV_ENUM = list(ALL_ENV_CHOICES)
 FRAME_ENUM = [
-    "single_13x18", "single_thin", "single_thick", "cube_cover",
+    "single_13x18", "a4_passepartout", "single_thin", "single_thick", "cube_cover",
     "cube_plinth", "triptych_3x1", "quartet_2x2",
 ]
 MOUNT_ENUM = ["auto", "desk_flat", "wall_mount"]
 BACKING_ENUM = ["matte_black", "satin_black"]
+PASSEPARTOUT_ENUM = ["white", "ivory", "charcoal", "greige"]
 PRESET_ENUM = list(STILL_PRESETS.keys()) + ["all"]
 ASPECT_ENUM = ["9:16", "4:5", "1:1", "16:9"]
 
@@ -62,6 +63,10 @@ def _common_scene_properties() -> Dict[str, Any]:
         "backing_finish": {
             "type": "string", "enum": BACKING_ENUM, "default": "matte_black",
             "description": "Water-cutout backing finish (matte_black or satin_black; zero vanity mirror).",
+        },
+        "passepartout_color": {
+            "type": "string", "enum": PASSEPARTOUT_ENUM, "default": "white",
+            "description": "Museum matboard color for a4_passepartout (white, ivory, charcoal, greige).",
         },
         "show_nameplate": {
             "type": "boolean", "default": False,
