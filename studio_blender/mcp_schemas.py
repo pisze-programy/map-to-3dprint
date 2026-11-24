@@ -116,32 +116,35 @@ def build_tools_schema() -> List[Dict[str, Any]]:
         {
             "camera_mode": {
                 "type": "string",
-                "enum": ["kinder_continuous", "shots"],
-                "default": "kinder_continuous",
-                "description": "kinder_continuous (default C2 speed-ramp single-take) or legacy 4-shot cuts.",
+                "enum": ["kinder_multishot", "kinder_continuous", "shots"],
+                "default": "kinder_multishot",
+                "description": (
+                    "kinder_multishot (default 5-angle Kinder whip-match-cut), "
+                    "kinder_continuous (single-take C2 spline), or legacy 4-shot cuts."
+                ),
             },
             "packshot_end": {
                 "type": "boolean",
                 "default": True,
-                "description": "End kinder_continuous video with a spatially-locked dissolve into 11_packshot_white.",
+                "description": "End video with a spatially-locked dissolve into 11_packshot_white.",
             },
             "duration_sec": {
                 "type": "number",
                 "minimum": 4.0,
                 "maximum": 30.0,
-                "default": 11.0,
-                "description": "Total duration in seconds for kinder_continuous mode (default 11.0).",
+                "default": 10.5,
+                "description": "Total duration in seconds (default 10.5).",
             },
             "shutter": {
                 "type": "number",
                 "minimum": 0.0,
                 "maximum": 1.0,
-                "default": 0.55,
-                "description": "Cycles optical motion blur shutter fraction (default 0.55).",
+                "default": 0.68,
+                "description": "Cycles optical motion blur shutter fraction (default 0.68).",
             },
             "aspect": {"type": "string", "enum": ASPECT_ENUM, "default": "9:16"},
             "resolution": {"type": "string"},
-            "samples": {"type": "integer", "minimum": 8, "maximum": 256, "default": 32},
+            "samples": {"type": "integer", "minimum": 8, "maximum": 256, "default": 56},
             "fps": {"type": "integer", "minimum": 12, "maximum": 60, "default": 24},
             "video_name": {"type": "string"},
             "shots": {"type": "string", "default": "1,2,3,4"},

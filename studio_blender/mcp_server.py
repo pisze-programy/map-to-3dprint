@@ -98,19 +98,20 @@ def _handle_tool_call(name: str, arguments: Dict[str, Any]) -> Tuple[Any, bool]:
 
         if name == "render_commercial_video":
             kw = _common_render_kwargs(arguments)
-            camera_mode = str(arguments.get("camera_mode", "kinder_continuous"))
-            if camera_mode == "kinder_continuous":
+            camera_mode = str(arguments.get("camera_mode", "kinder_multishot"))
+            if camera_mode in ("kinder_multishot", "kinder_continuous"):
                 kw.pop("mount", None)
                 packshot_end = bool(arguments.get("packshot_end", True))
                 result = kinder_video.run_kinder_video(
                     **kw,
+                    camera_mode=camera_mode,
                     packshot_env="11_packshot_white" if packshot_end else "none",
                     aspect=arguments.get("aspect", "9:16"),
                     resolution=arguments.get("resolution"),
-                    samples=int(arguments.get("samples", 32)),
+                    samples=int(arguments.get("samples", 56)),
                     fps=int(arguments.get("fps", 24)),
-                    duration_sec=float(arguments.get("duration_sec", 11.0)),
-                    shutter=float(arguments.get("shutter", 0.55)),
+                    duration_sec=float(arguments.get("duration_sec", 10.5)),
+                    shutter=float(arguments.get("shutter", 0.68)),
                     video_name=arguments.get("video_name"),
                     verbose=False,
                 )

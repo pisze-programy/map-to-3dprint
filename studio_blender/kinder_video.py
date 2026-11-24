@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Universal C2-smooth Kinder-style Cycles Metal commercial video renderer.
+"""Universal Kinder-style Cycles Metal commercial video renderer.
 
-Works with any city STL (1-tile single_thin like Dubai or 2-tile single_13x18
-like NYC), any studio or persona environment (01..17), composable props, DSLR
-compositor finishing, and optional spatially-locked 11_packshot_white dissolve.
+Supports both 5-angle whip-match-cut cinema choreography (`kinder_multishot`,
+default) and single-take continuous C2 spline (`kinder_continuous`), across any
+city STL, any studio/persona environment (01..17), anti-flicker Cycles/OIDN
+settings, gentle ffmpeg hqdn3d temporal polish, and optional white packshot CTA.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 _THIS_FILE = Path(__file__).resolve()
 _REPO_ROOT = _THIS_FILE.parent.parent
@@ -32,6 +33,7 @@ DEFAULT_NYC_STLS: Tuple[str, ...] = (
 ASPECT_VIDEO_RES: Dict[str, Tuple[int, int]] = {
     "9:16": (540, 960), "4:5": (640, 800), "1:1": (720, 720), "16:9": (960, 540),
 }
+WHIP_OVERLAP_FRAMES = 2
 
 
 def _parse_wh(res_str: Optional[str], aspect: str = "9:16") -> Tuple[int, int]:
@@ -40,8 +42,7 @@ def _parse_wh(res_str: Optional[str], aspect: str = "9:16") -> Tuple[int, int]:
     parts = res_str.lower().replace("x", " ").split()
     if len(parts) != 2:
         raise ValueError(f"Invalid --resolution '{res_str}', expected WxH.")
-    w, h = int(parts[0]), int(parts[1])
-    return (w - (w % 2), h - (h % 2))
+    return (int(parts[0]) & ~1, int(parts[1]) & ~1)
 
 
 def _filter_kwargs(fn: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
@@ -49,9 +50,7 @@ def _filter_kwargs(fn: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         params = inspect.signature(fn).parameters
     except (TypeError, ValueError):
         return kwargs
-    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
-        return kwargs
-    return {k: v for k, v in kwargs.items() if k in params}
+    return kwargs if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()) else {k: v for k, v in kwargs.items() if k in params}
 
 
 def _iter_action_fcurves(action: Any) -> List[Any]:
@@ -60,12 +59,7 @@ def _iter_action_fcurves(action: Any) -> List[Any]:
             return list(action.fcurves)
         except Exception:
             pass
-    curves: List[Any] = []
-    for layer in getattr(action, "layers", ()):
-        for strip in getattr(layer, "strips", ()):
-            for bag in getattr(strip, "channelbags", ()):
-                curves.extend(getattr(bag, "fcurves", ()))
-    return curves
+    return [fc for lay in getattr(action, "layers", ()) for st in getattr(lay, "strips", ()) for bag in getattr(st, "channelbags", ()) for fc in getattr(bag, "fcurves", ())]
 
 
 def _clear_blender_scene(scene: Any) -> None:
@@ -85,37 +79,46 @@ def _clear_blender_scene(scene: Any) -> None:
     scene.unit_settings.system, scene.unit_settings.scale_length = "METRIC", 1.0
 
 
-def _optimize_video_shader(plaster_mat: Any) -> None:
-    """Tune live plaster material instance for fast motion-blur Cycles video."""
-    if plaster_mat is None or plaster_mat.node_tree is None:
-        return
-    for node in plaster_mat.node_tree.nodes:
-        if node.type == "AMBIENT_OCCLUSION":
-            node.samples = 1
-        elif node.type == "BSDF_PRINCIPLED":
-            for nm in ("Subsurface Weight", "Subsurface"):
-                if nm in node.inputs:
-                    node.inputs[nm].default_value = 0.0
+def _configure_antiflicker_cycles(scene: Any, samples: int, width: int, height: int, shutter: float) -> Dict[str, Any]:
+    """Configure Metal Cycles + OIDN ACCURATE prefilter + animated seed + motion blur."""
+    from studio_blender.worker_render import configure_cycles_metal
+
+    info = configure_cycles_metal(scene, int(samples), width, height, motion_blur=True)
+    scene.render.use_motion_blur, scene.render.motion_blur_shutter = True, float(shutter)
+    for attr, val in (("motion_blur_position", "CENTER"), ("use_animated_seed", True), ("adaptive_threshold", 0.015), ("sample_clamp_direct", 12.0), ("sample_clamp_indirect", 4.0), ("denoising_input_passes", "RGB_ALBEDO_NORMAL"), ("denoising_prefilter", "ACCURATE")):
+        if hasattr(scene.cycles, attr):
+            setattr(scene.cycles, attr, val)
+    scene.cycles.max_bounces, scene.cycles.diffuse_bounces, scene.cycles.glossy_bounces = 6, 3, 3
+    scene.cycles.transmission_bounces, scene.cycles.transparent_max_bounces, scene.cycles.volume_bounces = 6, 6, 0
+    if hasattr(scene.render, "use_persistent_data"):
+        scene.render.use_persistent_data = True
+    return info
 
 
-def _keyframe_continuous_rig(
-    scene: Any, rig: Any, n_frames: int, fps: int, env_refs: Dict[str, Any], animate_key_light: bool
+def _keyframe_pose_sequence(
+    scene: Any, eval_fn: Callable[[int], Dict[str, Any]], n_frames: int,
+    fps: int, env_refs: Dict[str, Any], animate_key_light: bool,
+    frame_offset: int = 0, clear_existing: bool = True,
 ) -> None:
-    """Keyframe continuous C2 camera, focus empty, and key light with quaternion continuity."""
+    """Keyframe local 0..n_frames+1 onto global frame_offset+f with quaternion continuity."""
     from mathutils import Vector  # type: ignore
 
     from studio_blender import camera_rig, environments
 
     cam_obj, focus_obj = camera_rig.ensure_studio_camera(scene)
     key_light = env_refs.get("key_light") if animate_key_light else None
-    for db in (cam_obj, cam_obj.data, focus_obj, key_light):
-        if db is not None and db.animation_data is not None:
-            db.animation_data_clear()
+    if clear_existing:
+        for db in (cam_obj, cam_obj.data, focus_obj, key_light):
+            if db is not None and db.animation_data is not None:
+                db.animation_data_clear()
 
-    scene.render.fps, scene.frame_start, scene.frame_end = int(fps), 1, int(n_frames)
+    scene.render.fps = int(fps)
+    scene.frame_start = min(scene.frame_start, frame_offset + 1) if not clear_existing else frame_offset + 1
+    scene.frame_end = max(scene.frame_end, frame_offset + n_frames) if not clear_existing else frame_offset + n_frames
     prev_quat: Any = None
     for f in range(0, n_frames + 2):
-        st = rig.evaluate((f - 1) / float(n_frames - 1) * rig.duration_sec)
+        gf = frame_offset + f
+        st = eval_fn(f)
         loc, rot_q, _ = camera_rig.look_at_matrix(st["eye"], st["target"]).decompose()
         if prev_quat is not None and prev_quat.dot(rot_q) < 0.0:
             rot_q = -rot_q
@@ -127,144 +130,168 @@ def _keyframe_continuous_rig(
         cam_obj.data.dof.use_dof, cam_obj.data.dof.aperture_fstop = True, float(st["fstop"])
         focus_obj.location = Vector(st["focus_point"])
         for obj, dp in ((cam_obj, "location"), (cam_obj, "rotation_quaternion"), (cam_obj.data, "lens"), (cam_obj.data, "shift_y"), (cam_obj.data.dof, "aperture_fstop"), (focus_obj, "location")):
-            obj.keyframe_insert(data_path=dp, frame=f)
+            obj.keyframe_insert(data_path=dp, frame=gf)
         if key_light is not None:
             environments.update_key_light_azimuth(env_refs, st["sun_az"], elevation_deg=st["sun_el"])
-            key_light.keyframe_insert(data_path="location", frame=f)
-            key_light.keyframe_insert(data_path="rotation_euler", frame=f)
+            key_light.keyframe_insert(data_path="location", frame=gf)
+            key_light.keyframe_insert(data_path="rotation_euler", frame=gf)
 
     for db in (cam_obj, cam_obj.data, focus_obj, key_light):
         if db is not None and db.animation_data is not None and db.animation_data.action is not None:
             for fc in _iter_action_fcurves(db.animation_data.action):
                 for kp in fc.keyframe_points:
-                    kp.interpolation = "BEZIER"
-                    kp.handle_left_type = kp.handle_right_type = "AUTO_CLAMPED"
+                    kf = int(round(kp.co.x))
+                    if kf == frame_offset or kf == frame_offset + n_frames + 1:
+                        kp.interpolation = "LINEAR"
+                    elif frame_offset < kf <= frame_offset + n_frames:
+                        kp.interpolation = "BEZIER"
+                        kp.handle_left_type = kp.handle_right_type = "AUTO_CLAMPED"
 
 
-def _render_env_pass(
-    env_name: str, args: argparse.Namespace, frames_to_render: Sequence[int],
-    n_frames: int, width: int, height: int, out_dir: Path,
-    room_safe: bool, animate_key_light: bool,
-    apply_overrides: bool = True, base_sun_az_override: Optional[float] = None,
-) -> Dict[str, Any]:
-    """Build clean Blender scene for one environment and render the requested frames."""
+def _setup_scene_for_env(
+    env_name: str, job: Dict[str, Any], width: int, height: int, apply_overrides: bool
+) -> Tuple[Any, Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], str]:
+    """Load city STL(s), matte-black Variant C frame, and environment with anti-flicker Cycles."""
     import bpy  # type: ignore
 
     from studio_blender import environments, materials, stl_loader
-    from studio_blender.kinder_camera_curves import KinderCameraRig, validate_kinder_trajectory
     from studio_blender.studio_presets import resolve_env_name
-    from studio_blender.worker_render import build_product_assembly, configure_cycles_metal
+    from studio_blender.worker_render import build_product_assembly
 
-    canonical_env, t_pass = resolve_env_name(env_name), time.time()
+    canonical = resolve_env_name(env_name)
     scene = bpy.context.scene
     _clear_blender_scene(scene)
-
-    cycles_info = configure_cycles_metal(scene, int(args.samples), width, height, motion_blur=True)
-    scene.render.use_motion_blur, scene.render.motion_blur_shutter = True, float(args.shutter)
-    for attr, val in (("motion_blur_position", "CENTER"), ("adaptive_threshold", 0.032)):
-        if hasattr(scene.cycles, attr):
-            setattr(scene.cycles, attr, val)
-    scene.cycles.max_bounces, scene.cycles.diffuse_bounces, scene.cycles.glossy_bounces = 6, 3, 3
-    scene.cycles.transmission_bounces, scene.cycles.transparent_max_bounces, scene.cycles.volume_bounces = 6, 6, 0
-    if hasattr(scene.render, "use_persistent_data"):
-        scene.render.use_persistent_data = True
+    cycles_info = _configure_antiflicker_cycles(scene, int(job["samples"]), width, height, float(job["shutter"]))
 
     plaster_mat = materials.make_plaster_cement_material()
-    _optimize_video_shader(plaster_mat)
-    lr = stl_loader.load_city_stls(list(args.stl), args.frame, args.frame_width_mm, args.frame_mm, plaster_mat)
-    title = args.title.strip() if args.title else stl_loader.infer_city_title(list(args.stl))
+    if plaster_mat is not None and plaster_mat.node_tree is not None:
+        for nd in plaster_mat.node_tree.nodes:
+            if nd.type == "AMBIENT_OCCLUSION":
+                nd.samples = 1
+            elif nd.type == "BSDF_PRINCIPLED":
+                for nm in ("Subsurface Weight", "Subsurface"):
+                    if nm in nd.inputs:
+                        nd.inputs[nm].default_value = 0.0
+    stls = list(job["stl_paths"])
+    lr = stl_loader.load_city_stls(stls, job["frame"], float(job["frame_width_mm"]), job.get("frame_mm"), plaster_mat)
+    title = (job.get("title") or "").strip() or stl_loader.infer_city_title(stls)
     fi, analysis = build_product_assembly(
-        scene, lr, args.frame, title, "desk_flat",
-        args.frame_width_mm, args.frame_height_mm, args.backing_finish, bool(args.show_nameplate),
+        scene, lr, job["frame"], title, "desk_flat",
+        float(job["frame_width_mm"]), float(job["frame_height_mm"]), job["backing_finish"], bool(job["show_nameplate"]),
     )
-    model_bounds: Dict[str, Any] = {
-        "frame_width_m": lr["total_width_m"], "frame_height_m": lr["total_height_m"],
-        "outer_width_m": fi["outer_width_m"], "outer_height_m": fi["outer_height_m"],
-        "max_z_m": lr["max_z_m"], "max_z": lr["max_z_m"], "desk_z_m": fi["desk_z"],
-        "desk_z": fi["desk_z"], "frame_bottom_z": fi["frame_bottom_z"],
-        "frame_top_z": fi["frame_top_z"], "wall_y": fi["wall_y"], "cover_top_z": fi["cover_top_z"],
-        "mount": "desk_flat", "water_side": analysis["water_side"],
+    mb: Dict[str, Any] = {
+        "frame_width_m": lr["total_width_m"], "frame_height_m": lr["total_height_m"], "outer_width_m": fi["outer_width_m"],
+        "outer_height_m": fi["outer_height_m"], "max_z_m": lr["max_z_m"], "max_z": lr["max_z_m"], "desk_z_m": fi["desk_z"],
+        "desk_z": fi["desk_z"], "frame_bottom_z": fi["frame_bottom_z"], "frame_top_z": fi["frame_top_z"], "wall_y": fi["wall_y"],
+        "cover_top_z": fi["cover_top_z"], "mount": "desk_flat", "water_side": analysis["water_side"],
         "hero_peak": analysis["hero_peak"], "skyline_centroid": analysis["skyline_centroid"],
     }
-    env_kw: Dict[str, Any] = {"env_name": canonical_env, "model_bounds": model_bounds, "mount": "desk_flat"}
+    env_kw: Dict[str, Any] = {"env_name": canonical, "model_bounds": mb, "mount": "desk_flat", "is_video": True}
     if apply_overrides:
-        env_kw.update({
-            "surface_override": args.surface, "window_gobo_override": args.window_gobo,
-            "hdri_override": args.hdri, "sun_azimuth_deg": args.sun_azimuth,
-            "light_temp": args.light_temp, "add_props": args.add_prop,
-            "remove_props": args.remove_prop, "clear_props": bool(args.clear_props),
-        })
+        env_kw.update({k: job.get(src) for k, src in (("surface_override", "surface"), ("window_gobo_override", "window_gobo"), ("hdri_override", "hdri"), ("sun_azimuth_deg", "sun_azimuth"), ("light_temp", "light_temp"), ("add_props", "add_props"), ("remove_props", "remove_props"))})
+        env_kw["clear_props"] = bool(job.get("clear_props", False))
     env_refs = environments.build_environment(**_filter_kwargs(environments.build_environment, env_kw))
     if bpy.data.objects.get("Env_VolumetricHazeBox") is not None:
         bpy.data.objects["Env_VolumetricHazeBox"].hide_render = True
+    return scene, cycles_info, analysis, mb, env_refs, canonical
 
-    default_az = float(env_refs.get("key_rig_meta", {}).get("azimuth_deg", 54.0))
-    base_az = float(base_sun_az_override if base_sun_az_override is not None else (args.sun_azimuth if (apply_overrides and args.sun_azimuth is not None) else default_az))
-    rig = KinderCameraRig(analysis, model_bounds, width / float(height), base_az, float(args.duration), room_safe=room_safe)
-    validation = validate_kinder_trajectory(rig, fps=int(args.fps))
-    _keyframe_continuous_rig(scene, rig, n_frames, int(args.fps), env_refs, animate_key_light=animate_key_light)
+
+def _render_frame_list(
+    scene: Any, frames: Sequence[int], out_dir: Path, tag: str, frame_offset: int = 0
+) -> Tuple[List[str], float]:
+    import bpy  # type: ignore
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    rendered_paths: List[str] = []
-    t_r0 = time.time()
-    for idx, f in enumerate(frames_to_render, start=1):
-        scene.frame_set(int(f))
+    paths, t0 = [], time.time()
+    for idx, f in enumerate(frames, start=1):
+        scene.frame_set(int(frame_offset + f))
         fpath = out_dir / f"frame_{f:04d}.png"
         scene.render.filepath = str(fpath)
         bpy.ops.render.render(write_still=True)
-        rendered_paths.append(str(fpath))
-        if idx == 1 or idx % 24 == 0 or idx == len(frames_to_render):
-            el = time.time() - t_r0
-            print(f"[KINDER:{canonical_env}] {idx}/{len(frames_to_render)} (f={f}) avg={el / idx:.2f}s/f total={el:.1f}s", flush=True)
-
-    r_sec = time.time() - t_r0
-    return {
-        "env": canonical_env, "frames": rendered_paths, "frame_count": len(rendered_paths),
-        "avg_sec_per_frame": round(r_sec / max(1, len(rendered_paths)), 3),
-        "render_elapsed_sec": round(r_sec, 2), "pass_elapsed_sec": round(time.time() - t_pass, 2),
-        "cycles": cycles_info, "validation": validation, "placed_props": env_refs.get("placed_props", []),
-    }
+        paths.append(str(fpath))
+        if idx == 1 or idx % 24 == 0 or idx == len(frames):
+            el = time.time() - t0
+            print(f"[KINDER:{tag}] {idx}/{len(frames)} (f={f}) avg={el / idx:.2f}s/f total={el:.1f}s", flush=True)
+    return paths, time.time() - t0
 
 
-def _run_blender_worker(args: argparse.Namespace) -> int:
-    from studio_blender.kinder_camera_curves import RAW_STUDIO_ENVS
+def _run_blender_worker(job_path: Path) -> int:
+    from studio_blender.kinder_camera_curves import KinderCameraRig, RAW_STUDIO_ENVS, validate_kinder_trajectory
+    from studio_blender.kinder_shots import (
+        build_kinder_multishot_plan, compute_multishot_frame_budget,
+        evaluate_kinder_shot, validate_multishot_plan,
+    )
     from studio_blender.studio_presets import resolve_env_name
 
-    out_dir, width, height = Path(args.out).resolve(), *_parse_wh(args.resolution, args.aspect)
-    frames_root = out_dir / "_frames"
-    fps, duration_sec = int(args.fps), float(args.duration)
-    n_frames = max(2, int(round(duration_sec * fps)))
-    canonical_env = resolve_env_name(args.env)
-    room_safe = canonical_env not in RAW_STUDIO_ENVS
-    use_packshot = args.packshot_env.lower() not in ("", "none", "off")
-    dissolve_start = float(args.dissolve_start) if args.dissolve_start is not None else max(1.0, duration_sec - 1.25)
-    white_start = max(2, min(n_frames - 2, int(round(dissolve_start * fps)) + 1))
-    dark_end = min(n_frames, white_start + max(2, int(round(float(args.dissolve_dur) * fps))) - 1) if use_packshot else n_frames
-
-    if args.preview_only:
-        s_frames = sorted({max(1, min(n_frames, int(round(i * (n_frames - 1) / 11.0)) + 1)) for i in range(12)})
-        dark_frames = [f for f in s_frames if (not use_packshot or f <= dark_end)]
-        white_frames = [f for f in s_frames if (use_packshot and f >= white_start)]
-    else:
-        dark_frames = list(range(1, dark_end + 1))
-        white_frames = list(range(white_start, n_frames + 1)) if use_packshot else []
-
+    job: Dict[str, Any] = json.loads(job_path.read_text(encoding="utf-8"))
+    out_dir, width, height = Path(job["out_dir"]).resolve(), int(job["width"]), int(job["height"])
+    froot, fps, dur = out_dir / "_frames", int(job["fps"]), float(job["duration_sec"])
+    canonical = resolve_env_name(job["env"])
+    room_safe = canonical not in RAW_STUDIO_ENVS
+    pack_env = str(job["packshot_env"])
+    use_packshot = pack_env.lower() not in ("", "none", "off")
+    ov_pack = max(2, int(round(float(job["dissolve_dur"]) * fps))) if use_packshot else 0
+    preview = bool(job.get("preview_only", False))
     t0 = time.time()
-    main_info = _render_env_pass(canonical_env, args, dark_frames, n_frames, width, height, frames_root / "dark", room_safe, True, True)
-    white_info = (
-        _render_env_pass(args.packshot_env, args, white_frames, n_frames, width, height, frames_root / "white", room_safe, False, False, 54.0)
-        if white_frames else None
-    )
+
+    scene, c_info, analysis, mb, env_refs, _ = _setup_scene_for_env(canonical, job, width, height, apply_overrides=True)
+    base_az = float(job["sun_azimuth"] if job.get("sun_azimuth") is not None else env_refs.get("key_rig_meta", {}).get("azimuth_deg", 52.0))
+    aspect_f = width / float(height)
+
+    segments: List[Dict[str, Any]] = []
+    white_info: Optional[Dict[str, Any]] = None
+
+    def _run_white(eval_builder: Callable[[Dict[str, Any], Dict[str, Any]], Callable[[int], Dict[str, Any]]], nf_w: int, ws_w: int, ov_w: int, wlist_w: Sequence[int]) -> Dict[str, Any]:
+        sc_w, _, an_w, mb_w, er_w, _ = _setup_scene_for_env(pack_env, job, width, height, apply_overrides=False)
+        _keyframe_pose_sequence(sc_w, eval_builder(an_w, mb_w), nf_w, fps, er_w, False)
+        wp, ws_sec = _render_frame_list(sc_w, wlist_w, froot / "white", pack_env)
+        return {"env": pack_env, "dir": str(froot / "white"), "start_frame": ws_w, "frame_count": nf_w - ws_w + 1, "overlap_in": ov_w, "frames": wp, "render_sec": round(ws_sec, 2)}
+
+    if job["camera_mode"] == "kinder_multishot":
+        shots = build_kinder_multishot_plan(analysis, mb, aspect_f, base_az, dur, room_safe=room_safe)
+        counts = compute_multishot_frame_budget(shots, fps=fps, whip_overlap_frames=WHIP_OVERLAP_FRAMES)
+        validation = validate_multishot_plan(shots, analysis, mb, aspect_f, fps, room_safe=room_safe)
+        n_total_stitched, nf5 = int(validation["stitched_frames"]), counts[-1]
+        ws5 = max(8, nf5 - max(ov_pack + 14, int(round(1.25 * fps))) + 1)
+        de5 = min(nf5, ws5 + ov_pack - 1) if use_packshot else nf5
+        offsets = [10 + idx * 120 for idx in range(len(shots))]
+        for idx, (shot, nf, off) in enumerate(zip(shots, counts, offsets)):
+            _keyframe_pose_sequence(scene, lambda f, sh=shot, n=nf: evaluate_kinder_shot(sh, (f - 1) / float(n - 1), mb["desk_z"], room_safe), nf, fps, env_refs, True, frame_offset=off, clear_existing=(idx == 0))
+        for idx, (shot, nf, off) in enumerate(zip(shots, counts, offsets)):
+            is_last = idx == len(shots) - 1
+            end_f = de5 if is_last else nf
+            flist = [max(1, min(end_f, int(round(end_f * q)))) for q in ((0.2, 0.7) if not is_last else (0.25, 0.75))] if preview else list(range(1, end_f + 1))
+            paths, rsec = _render_frame_list(scene, flist, froot / shot.shot_id, f"{canonical}:{shot.shot_id}", frame_offset=off)
+            segments.append({"shot_id": shot.shot_id, "dir": str(froot / shot.shot_id), "start_frame": 1, "frame_count": end_f, "overlap_in": 0 if idx == 0 else WHIP_OVERLAP_FRAMES, "frames": paths, "render_sec": round(rsec, 2)})
+        if use_packshot:
+            wlist = [ws5 + ov_pack // 2, nf5] if preview else list(range(ws5, nf5 + 1))
+            white_info = _run_white(lambda a, m: (lambda f, sh=build_kinder_multishot_plan(a, m, aspect_f, base_az, dur, room_safe)[-1]: evaluate_kinder_shot(sh, (f - 1) / float(nf5 - 1), m["desk_z"], room_safe)), nf5, ws5, de5 - ws5 + 1, wlist)
+    else:
+        n_total_stitched = max(2, int(round(dur * fps)))
+        ds = float(job["dissolve_start"]) if job.get("dissolve_start") is not None else max(1.0, dur - 1.25)
+        ws = max(2, min(n_total_stitched - 2, int(round(ds * fps)) + 1))
+        de = min(n_total_stitched, ws + ov_pack - 1) if use_packshot else n_total_stitched
+        rig = KinderCameraRig(analysis, mb, aspect_f, base_az, dur, room_safe=room_safe)
+        validation = validate_kinder_trajectory(rig, fps=fps)
+        _keyframe_pose_sequence(scene, lambda f: rig.evaluate((f - 1) / float(n_total_stitched - 1) * dur), n_total_stitched, fps, env_refs, True)
+        sf = sorted({max(1, min(n_total_stitched, int(round(i * (n_total_stitched - 1) / 11.0)) + 1)) for i in range(12)})
+        flist = [f for f in sf if (not use_packshot or f <= de)] if preview else list(range(1, de + 1))
+        paths, rsec = _render_frame_list(scene, flist, froot / "dark", canonical)
+        segments.append({"shot_id": "continuous", "dir": str(froot / "dark"), "start_frame": 1, "frame_count": de, "overlap_in": 0, "frames": paths, "render_sec": round(rsec, 2)})
+        if use_packshot:
+            wlist = [f for f in sf if f >= ws] if preview else list(range(ws, n_total_stitched + 1))
+            white_info = _run_white(lambda a, m: (lambda f, r=KinderCameraRig(a, m, aspect_f, base_az, dur, room_safe=room_safe): r.evaluate((f - 1) / float(n_total_stitched - 1) * dur)), n_total_stitched, ws, de - ws + 1, wlist)
+
     manifest = {
-        "status": "ok", "mode": "kinder_continuous", "preview_only": bool(args.preview_only),
-        "env": canonical_env, "frame": args.frame, "room_safe": room_safe,
-        "stl_paths": [str(Path(p).resolve()) for p in args.stl], "resolution": [width, height],
-        "fps": fps, "duration_sec": duration_sec, "n_frames": n_frames, "shutter": float(args.shutter),
-        "samples": int(args.samples), "use_packshot": use_packshot, "white_start_frame": white_start,
-        "dark_end_frame": dark_end, "overlap_frames": (dark_end - white_start + 1) if use_packshot else 0,
-        "dark_pass": main_info, "white_pass": white_info, "total_render_sec": round(time.time() - t0, 2),
+        "status": "ok", "camera_mode": job["camera_mode"], "preview_only": preview,
+        "env": canonical, "frame": job["frame"], "room_safe": room_safe,
+        "stl_paths": [str(Path(p).resolve()) for p in job["stl_paths"]], "resolution": [width, height],
+        "fps": fps, "duration_sec": dur, "n_frames": n_total_stitched,
+        "shutter": float(job["shutter"]), "samples": int(job["samples"]), "use_packshot": use_packshot,
+        "cycles": c_info, "validation": validation, "placed_props": env_refs.get("placed_props", []),
+        "segments": segments, "white_pass": white_info, "total_render_sec": round(time.time() - t0, 2),
     }
-    mp = Path(args.manifest).resolve() if args.manifest else (out_dir / "kinder_render_manifest.json")
+    mp = Path(job["manifest_path"]).resolve()
     mp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"[KINDER_MANIFEST] {mp}", flush=True)
     return 0
@@ -280,29 +307,31 @@ def _run_ffmpeg(args: Sequence[str], label: str) -> None:
 
 
 def _encode_kinder_mp4(manifest: Dict[str, Any], out_dir: Path, video_name: str) -> str:
-    fps, froot, out_mp4 = int(manifest["fps"]), out_dir / "_frames", out_dir / video_name
-    d_in = ["-framerate", str(fps), "-start_number", "1", "-i", str(froot / "dark" / "frame_%04d.png")]
-    enc = ["-r", str(fps), "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-movflags", "+faststart", str(out_mp4)]
-    if manifest["use_packshot"] and manifest.get("white_pass"):
-        ws, ov = int(manifest["white_start_frame"]), int(manifest["overlap_frames"])
-        w_in = ["-framerate", str(fps), "-start_number", str(ws), "-i", str(froot / "white" / "frame_%04d.png")]
-        flt = f"[0:v][1:v]xfade=transition=fade:duration={ov / fps:.6f}:offset={(ws - 1) / fps:.6f},format=yuv420p[v]"
-        _run_ffmpeg([*d_in, *w_in, "-filter_complex", flt, "-map", "[v]", *enc], "MP4 encode")
+    fps, out_mp4 = int(manifest["fps"]), out_dir / video_name
+    segs = list(manifest["segments"]) + ([manifest["white_pass"]] if (manifest.get("use_packshot") and manifest.get("white_pass")) else [])
+    ins = [x for s in segs for x in ("-framerate", str(fps), "-start_number", str(s["start_frame"]), "-i", str(Path(s["dir"]) / "frame_%04d.png"))]
+    polish, enc = "hqdn3d=1.0:1.0:3.0:3.0,format=yuv420p", ["-r", str(fps), "-c:v", "libx264", "-preset", "slow", "-crf", "16", "-movflags", "+faststart", str(out_mp4)]
+    if len(segs) == 1:
+        _run_ffmpeg([*ins, "-vf", polish, *enc], "MP4 encode")
     else:
-        _run_ffmpeg([*d_in, "-vf", "format=yuv420p", *enc], "MP4 encode")
+        fparts, cur_lbl, cur_len = [], "[0:v]", int(segs[0]["frame_count"])
+        for i in range(1, len(segs)):
+            ov, nxt = max(1, int(segs[i]["overlap_in"])), f"[x{i}]"
+            fparts.append(f"{cur_lbl}[{i}:v]xfade=transition=fade:duration={ov / fps:.6f}:offset={(cur_len - ov) / fps:.6f}{nxt}")
+            cur_lbl, cur_len = nxt, cur_len + int(segs[i]["frame_count"]) - ov
+        _run_ffmpeg([*ins, "-filter_complex", ";".join([*fparts, f"{cur_lbl}{polish}[vout]"]), "-map", "[vout]", *enc], "MP4 encode")
     return str(out_mp4)
 
 
-def _build_filmstrip(mp4_path: Path, n_frames: int, out_png: Path) -> str:
-    expr = "+".join(f"eq(n\\,{int(round(i * (n_frames - 1) / 11.0))})" for i in range(12))
-    vf = f"select='{expr}',scale=360:640,tile=6x2:padding=6:margin=8:color=0x111111"
-    _run_ffmpeg(["-i", str(mp4_path), "-vf", vf, "-vsync", "vfr", "-frames:v", "1", str(out_png)], "filmstrip")
+def _build_filmstrip(mp4_path: Path, n_frames: int, out_png: Path, count: int = 15) -> str:
+    cols, rows = (5, 3) if count == 15 else (6, 2)
+    expr = "+".join(f"eq(n\\,{int(round(i * (n_frames - 1) / float(count - 1)))})" for i in range(count))
+    _run_ffmpeg(["-i", str(mp4_path), "-vf", f"select='{expr}',scale=360:640,tile={cols}x{rows}:padding=6:margin=8:color=0x111111", "-vsync", "vfr", "-frames:v", "1", str(out_png)], "filmstrip")
     return str(out_png)
 
 
 def _build_preview_strip(manifest: Dict[str, Any], out_png: Path) -> str:
-    dl, wl = list(manifest.get("dark_pass", {}).get("frames", [])), list((manifest.get("white_pass") or {}).get("frames", []))
-    picked = (dl[: max(0, 12 - len(wl))] + wl if wl else dl)[:12]
+    picked = ([fp for s in manifest.get("segments", []) for fp in s.get("frames", [])] + list((manifest.get("white_pass") or {}).get("frames", [])))[:12]
     ins = [x for fp in picked for x in ("-i", fp)]
     sc = "".join(f"[{i}:v]scale=360:640[v{i}];" for i in range(len(picked)))
     st = "".join(f"[v{i}]" for i in range(len(picked)))
@@ -310,63 +339,44 @@ def _build_preview_strip(manifest: Dict[str, Any], out_png: Path) -> str:
     return str(out_png)
 
 
-def run_kinder_video(
-    stl_paths: Sequence[str], out_dir: str, env: str = "09_dark_cinematic",
-    frame: str = "single_13x18", packshot_env: str = "11_packshot_white",
-    aspect: str = "9:16", resolution: Optional[str] = None, fps: int = 24,
-    duration_sec: float = 11.0, dissolve_start: Optional[float] = None,
-    dissolve_dur: float = 0.45, samples: int = 32, shutter: float = 0.55,
-    frame_mm: Optional[str] = None, frame_width_mm: float = 4.0, frame_height_mm: float = 7.5,
-    backing_finish: str = "matte_black", show_nameplate: bool = False, title: Optional[str] = None,
-    surface: Optional[str] = None, window_gobo: Optional[str] = None, hdri: Optional[str] = None,
-    light_temp: Optional[float] = None, sun_azimuth: Optional[float] = None,
-    add_props: Optional[Sequence[str]] = None, remove_props: Optional[Sequence[str]] = None,
-    clear_props: bool = False, video_name: Optional[str] = None, filmstrip_name: Optional[str] = None,
-    preview_only: bool = False, keep_frames: bool = False, blender_bin: Optional[str] = None,
-    verbose: bool = True,
-) -> Dict[str, Any]:
+_DEFAULT_JOB_OPTS: Dict[str, Any] = {
+    "env": "09_dark_cinematic", "frame": "single_13x18", "packshot_env": "11_packshot_white",
+    "camera_mode": "kinder_multishot", "aspect": "9:16", "resolution": None, "fps": 24,
+    "duration_sec": 10.5, "dissolve_start": None, "dissolve_dur": 0.45, "samples": 56,
+    "shutter": 0.68, "frame_mm": None, "frame_width_mm": 4.0, "frame_height_mm": 7.5,
+    "backing_finish": "matte_black", "show_nameplate": False, "title": None, "surface": None,
+    "window_gobo": None, "hdri": None, "light_temp": None, "sun_azimuth": None,
+    "add_props": None, "remove_props": None, "clear_props": False, "video_name": None,
+    "filmstrip_name": None, "preview_only": False, "keep_frames": False, "blender_bin": None, "verbose": True,
+}
+
+
+def run_kinder_video(stl_paths: Sequence[str], out_dir: str, **kwargs: Any) -> Dict[str, Any]:
     """Programmatic entry point used by both CLI and studio-blender MCP server."""
+    cfg: Dict[str, Any] = {**_DEFAULT_JOB_OPTS, **kwargs}
     out_path = Path(out_dir).resolve()
     out_path.mkdir(parents=True, exist_ok=True)
-    vname = video_name or f"{env}_kinder_9x16.mp4"
+    vname = cfg["video_name"] or f"{cfg['env']}_kinder_9x16.mp4"
     vname = vname if vname.lower().endswith(".mp4") else f"{vname}.mp4"
-    fname = filmstrip_name or f"{Path(vname).stem}_filmstrip.png"
-    mpath = out_path / f"{Path(vname).stem}_manifest.json"
-    w, h = _parse_wh(resolution, aspect)
-
-    cmd: List[str] = [
-        find_blender_binary(blender_bin), "--background", "--factory-startup", "--python-exit-code", "1",
-        "--python", str(_THIS_FILE), "--", "--blender-worker", "--out", str(out_path), "--manifest", str(mpath),
-        "--env", env, "--frame", frame, "--packshot-env", packshot_env, "--aspect", aspect,
-        "--resolution", f"{w}x{h}", "--fps", str(int(fps)), "--duration", str(float(duration_sec)),
-        "--dissolve-dur", str(float(dissolve_dur)), "--samples", str(int(samples)), "--shutter", str(float(shutter)),
-        "--frame-width-mm", str(float(frame_width_mm)), "--frame-height-mm", str(float(frame_height_mm)),
-        "--backing-finish", backing_finish, "--video-name", vname,
-    ]
-    cmd.extend(x for p in stl_paths for x in ("--stl", str(Path(p).resolve())))
-    opt_vals = (
-        ("--dissolve-start", dissolve_start), ("--frame-mm", frame_mm), ("--title", title),
-        ("--surface", surface), ("--window-gobo", window_gobo), ("--hdri", hdri),
-        ("--light-temp", light_temp), ("--sun-azimuth", sun_azimuth),
-    )
-    cmd.extend(x for flg, val in opt_vals if val is not None for x in (flg, str(val)))
-    cmd.extend(x for s in (add_props or ()) for x in ("--add-prop", s))
-    cmd.extend(x for pid in (remove_props or ()) for x in ("--remove-prop", pid))
-    cmd.extend(flg for flg, on in (("--clear-props", clear_props), ("--show-nameplate", show_nameplate), ("--preview-only", preview_only)) if on)
-
-    t0 = time.time()
-    proc = subprocess.run(cmd) if verbose else subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"Blender Kinder worker failed (rc={proc.returncode}){'' if verbose else chr(10) + (proc.stderr or '')[-1500:]}")
-
+    fname, mpath, jpath = cfg["filmstrip_name"] or f"{Path(vname).stem}_filmstrip.png", out_path / f"{Path(vname).stem}_manifest.json", out_path / f".{Path(vname).stem}_job.json"
+    w, h = _parse_wh(cfg["resolution"], str(cfg["aspect"]))
+    job = {**cfg, "stl_paths": [str(Path(p).resolve()) for p in stl_paths], "out_dir": str(out_path), "manifest_path": str(mpath), "width": w, "height": h, "add_props": list(cfg["add_props"]) if cfg["add_props"] else None, "remove_props": list(cfg["remove_props"]) if cfg["remove_props"] else None}
+    jpath.write_text(json.dumps(job, indent=2), encoding="utf-8")
+    cmd = [find_blender_binary(cfg["blender_bin"]), "--background", "--factory-startup", "--python-exit-code", "1", "--python", str(_THIS_FILE), "--", "--blender-worker", "--job", str(jpath)]
+    t0, verbose = time.time(), bool(cfg["verbose"])
+    try:
+        proc = subprocess.run(cmd) if verbose else subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"Blender Kinder worker failed (rc={proc.returncode}){'' if verbose else chr(10) + (proc.stderr or '')[-1500:]}")
+    finally:
+        jpath.unlink(missing_ok=True)
     manifest: Dict[str, Any] = json.loads(mpath.read_text(encoding="utf-8"))
-    if preview_only:
+    if cfg["preview_only"]:
         manifest["preview_strip_path"] = _build_preview_strip(manifest, out_path / f"{Path(vname).stem}_preview.png")
     else:
         mp4 = _encode_kinder_mp4(manifest, out_path, vname)
-        manifest["video_path"] = mp4
-        manifest["filmstrip_path"] = _build_filmstrip(Path(mp4), int(manifest["n_frames"]), out_path / fname)
-    if not keep_frames:
+        manifest["video_path"], manifest["filmstrip_path"] = mp4, _build_filmstrip(Path(mp4), int(manifest["n_frames"]), out_path / fname)
+    if not cfg["keep_frames"]:
         shutil.rmtree(out_path / "_frames", ignore_errors=True)
     manifest["total_wall_sec"] = round(time.time() - t0, 2)
     mpath.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -375,42 +385,32 @@ def run_kinder_video(
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Universal Kinder-style Cycles Metal commercial renderer")
-    specs: Tuple[Tuple[str, Dict[str, Any]], ...] = (
-        ("--stl", {"action": "append", "default": None}), ("--out", {"required": True}),
-        ("--env", {"default": "09_dark_cinematic"}), ("--frame", {"default": "single_13x18"}),
-        ("--packshot-env", {"default": "11_packshot_white"}), ("--aspect", {"default": "9:16"}),
-        ("--resolution", {"default": None}), ("--fps", {"type": int, "default": 24}),
-        ("--duration", {"type": float, "default": 11.0}), ("--dissolve-start", {"type": float, "default": None}),
-        ("--dissolve-dur", {"type": float, "default": 0.45}), ("--samples", {"type": int, "default": 32}),
-        ("--shutter", {"type": float, "default": 0.55}), ("--frame-mm", {"default": None}),
-        ("--frame-width-mm", {"type": float, "default": 4.0}), ("--frame-height-mm", {"type": float, "default": 7.5}),
-        ("--backing-finish", {"default": "matte_black"}), ("--show-nameplate", {"action": "store_true", "default": False}),
-        ("--title", {"default": None}), ("--surface", {"default": None}), ("--window-gobo", {"default": None}),
-        ("--hdri", {"default": None}), ("--light-temp", {"type": float, "default": None}),
-        ("--sun-azimuth", {"type": float, "default": None}), ("--add-prop", {"action": "append", "default": None}),
-        ("--remove-prop", {"action": "append", "default": None}), ("--clear-props", {"action": "store_true", "default": False}),
-        ("--video-name", {"default": "nyc_wtc_kinder_commercial_9x16.mp4"}), ("--filmstrip-name", {"default": None}),
-        ("--preview-only", {"action": "store_true", "default": False}), ("--keep-frames", {"action": "store_true", "default": False}),
-        ("--blender-bin", {"default": None}), ("--manifest", {"default": None}),
-        ("--blender-worker", {"action": "store_true", "default": False, "help": argparse.SUPPRESS}),
-    )
-    for flg, kw in specs:
-        p.add_argument(flg, **kw)
+    for flg in ("--out", "--resolution", "--frame-mm", "--title", "--surface", "--window-gobo", "--hdri", "--filmstrip-name", "--blender-bin"):
+        p.add_argument(flg)
+    for flg in ("--stl", "--add-prop", "--remove-prop"):
+        p.add_argument(flg, action="append")
+    for flg in ("--show-nameplate", "--clear-props", "--preview-only", "--keep-frames"):
+        p.add_argument(flg, action="store_true")
+    for flg, df in (("--env", "09_dark_cinematic"), ("--frame", "single_13x18"), ("--packshot-env", "11_packshot_white"), ("--aspect", "9:16"), ("--backing-finish", "matte_black"), ("--video-name", "nyc_wtc_kinder_commercial_9x16.mp4")):
+        p.add_argument(flg, default=df)
+    p.add_argument("--camera-mode", default="kinder_multishot", choices=("kinder_multishot", "kinder_continuous"))
+    for flg, tp, df in (("--fps", int, 24), ("--samples", int, 56), ("--duration", float, 10.5), ("--dissolve-start", float, None), ("--dissolve-dur", float, 0.45), ("--shutter", float, 0.68), ("--frame-width-mm", float, 4.0), ("--frame-height-mm", float, 7.5), ("--light-temp", float, None), ("--sun-azimuth", float, None)):
+        p.add_argument(flg, type=tp, default=df)
+    p.add_argument("--job", help=argparse.SUPPRESS)
+    p.add_argument("--blender-worker", action="store_true", help=argparse.SUPPRESS)
     return p
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw = list(argv) if argv is not None else (sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else sys.argv[1:])
     args = _build_parser().parse_args(raw)
-    if not args.stl:
-        args.stl = list(DEFAULT_NYC_STLS)
     if args.blender_worker:
-        return _run_blender_worker(args)
-    kw = {k: v for k, v in vars(args).items() if k not in ("stl", "out", "duration", "add_prop", "remove_prop", "manifest", "blender_worker")}
-    manifest = run_kinder_video(
-        stl_paths=args.stl, out_dir=args.out, duration_sec=args.duration,
-        add_props=args.add_prop, remove_props=args.remove_prop, verbose=True, **kw,
-    )
+        return _run_blender_worker(Path(args.job))
+    if not args.out:
+        raise ValueError("--out is required.")
+    stls = args.stl or list(DEFAULT_NYC_STLS)
+    kw = {k: v for k, v in vars(args).items() if k not in ("stl", "out", "duration", "add_prop", "remove_prop", "job", "blender_worker")}
+    manifest = run_kinder_video(stls, args.out, duration_sec=args.duration, add_props=args.add_prop, remove_props=args.remove_prop, verbose=True, **kw)
     print(json.dumps({k: manifest.get(k) for k in ("video_path", "filmstrip_path", "preview_strip_path", "total_wall_sec")}, indent=2))
     return 0
 
