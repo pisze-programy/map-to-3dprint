@@ -32,3 +32,6 @@ __pycache__/
 cache/*
 !cache/scene_v3_48.1280_11.5769_48.1396_11.5941.json
 !cache/scene_v5_48.1280_11.5769_48.1396_11.5941.json
+
+# Downloaded CC0 Poly Haven HDRIs, textures, and 3D models
+studio_blender/assets/
