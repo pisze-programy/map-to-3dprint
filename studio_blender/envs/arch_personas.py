@@ -10,6 +10,7 @@ from .. import materials
 from ..materials_personas import make_calacatta_marble_material
 from ..props.cc0_props import build_room_furniture
 from ..props.persona_props import build_basswood_maquette
+from ..props.spine_text import add_spine_label
 from .arch_personas_helpers import (
     box_mat,
     build_library_bookcase,
@@ -165,12 +166,21 @@ def build_persona_executive_study_room(desk_z: float, surface_key: str, wall_key
     objs: List[Any] = [build_desk_slab(f"Env_ExecStudyDesk_{surface_key}", desk_z, 2.35, 1.35, 0.18, desk_mat, col, thickness=0.040)]
     back_y = 0.82
     objs.extend(build_library_bookcase("Arch_ExecBookcase", desk_z, back_y, -2.00, 2.00, wood_mat, col, bays=5, gold_bands=True))
+    # Subtle gold-foil architectural monograph titles on focal eye-level bookcase spines
+    for idx, (lx, title) in enumerate(((-0.22, "METROPOLIS"), (-0.08, "URBAN\nFORM"), (0.04, "ARCHI-\nTECTURE"))):
+        objs.append(
+            add_spine_label(
+                f"Arch_ExecBookTitle_{idx}", title, col,
+                location=(lx, back_y - 0.195, desk_z + 0.135),
+                facing="-Y", font_size_m=0.0062, font_style="sans", foil="gold", letter_spacing=1.08,
+            )
+        )
     for idx, lx in enumerate((-0.78, 0.12, 0.98)):
         objs.append(
             create_area_light(
                 name=f"Light_ExecBookcaseGlow_{idx}", collection=col,
                 location=(lx, back_y - 0.26, desk_z + 0.86), target=(lx, back_y - 0.04, desk_z + 0.22),
-                energy=8.5, color=(1.0, 0.78, 0.48), size_x=0.68, size_y=0.14, spread_deg=85.0, visible_camera=False,
+                energy=6.2, color=(1.0, 0.76, 0.44), size_x=0.68, size_y=0.14, spread_deg=80.0, visible_camera=False,
             )
         )
     return objs

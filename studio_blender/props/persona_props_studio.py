@@ -256,7 +256,7 @@ def build_material_sample_board(
     scale: float = 1.0,
 ) -> List[Any]:
     """Luxury architectural interior finish sample folio board (ZERO text or brochures)."""
-    mat_board = materials.make_book_cover_material("ShowroomSampleLinenBoard", color=(0.48, 0.44, 0.39, 1.0))
+    mat_board = materials.make_book_cover_material("ShowroomSampleLinenBoard", color=(0.15, 0.145, 0.14, 1.0))
     mat_pages = materials.make_book_pages_material("ShowroomSamplePages")
     mat_stone = make_calacatta_marble_material("SampleSwatchMarble")
     mat_oak = materials.make_surface_material("brushed_oak", name="SampleSwatchOak")

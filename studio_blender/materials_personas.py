@@ -1,10 +1,11 @@
-"""CC0 PBR surfaces and bespoke Cycles shaders for Customer Persona environments (12-17)."""
+"""CC0 PBR surfaces and bespoke cinema Cycles shaders for Customer Personas (12-17)."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
-from .assets_cc0 import build_cc0_pbr_material
+from .artwork_gen import ensure_architect_blueprint_texture, ensure_earth_globe_textures
+from .assets_cc0 import build_cc0_pbr_material, load_image_cached
 from .materials_core import (
     Rgba,
     add_map_range,
@@ -17,260 +18,254 @@ from .materials_core import (
 
 # Extra CC0 2K PBR surface presets merged cleanly into materials_studio.SURFACE_CATALOG
 PERSONA_SURFACE_CATALOG: Dict[str, Dict[str, Any]] = {
+    "architect_oiled_oak": {
+        "asset_id": "oak_veneer_01",
+        "tile_scale_m": 0.68,
+        "tint_rgb": (0.42, 0.29, 0.19),
+        "tint_factor": 0.68,
+        "roughness_range": (0.20, 0.56),
+        "normal_strength": 0.68,
+        "specular_level": 0.34,
+        "fallback_rgb": (0.26, 0.18, 0.12),
+    },
+    "persona_oiled_walnut": {
+        "asset_id": "american_walnut_veneer",
+        "tile_scale_m": 0.68,
+        "tint_rgb": (0.19, 0.098, 0.048),
+        "tint_factor": 0.94,
+        "roughness_range": (0.18, 0.52),
+        "normal_strength": 0.62,
+        "specular_level": 0.34,
+        "fallback_rgb": (0.10, 0.052, 0.026),
+    },
     "oiled_mahogany": {
         "asset_id": "dark_wood",
-        "tile_scale_m": 0.78,
-        "tint_rgb": (0.26, 0.105, 0.052),
-        "tint_factor": 0.88,
-        "roughness_range": (0.24, 0.38),
-        "normal_strength": 0.30,
-        "specular_level": 0.34,
-        "fallback_rgb": (0.11, 0.045, 0.022),
+        "tile_scale_m": 0.72,
+        "tint_rgb": (0.20, 0.078, 0.036),
+        "tint_factor": 0.90,
+        "roughness_range": (0.16, 0.44),
+        "normal_strength": 0.54,
+        "specular_level": 0.38,
+        "fallback_rgb": (0.09, 0.036, 0.018),
     },
     "dark_rosewood": {
         "asset_id": "rosewood_veneer_02",
-        "tile_scale_m": 0.80,
-        "tint_rgb": (0.24, 0.12, 0.068),
-        "tint_factor": 0.86,
-        "roughness_range": (0.34, 0.50),
-        "normal_strength": 0.34,
-        "specular_level": 0.28,
-        "fallback_rgb": (0.10, 0.052, 0.028),
+        "tile_scale_m": 0.76,
+        "tint_rgb": (0.18, 0.088, 0.048),
+        "tint_factor": 0.88,
+        "roughness_range": (0.26, 0.54),
+        "normal_strength": 0.52,
+        "specular_level": 0.30,
+        "fallback_rgb": (0.08, 0.040, 0.022),
     },
     "smoked_executive_walnut": {
         "asset_id": "smoked_walnut_veneer",
-        "tile_scale_m": 0.76,
-        "tint_rgb": (0.072, 0.058, 0.050),
-        "tint_factor": 0.95,
-        "roughness_range": (0.24, 0.38),
-        "normal_strength": 0.32,
-        "specular_level": 0.32,
-        "fallback_rgb": (0.07, 0.06, 0.052),
+        "tile_scale_m": 0.70,
+        "tint_rgb": (0.068, 0.052, 0.042),
+        "tint_factor": 0.94,
+        "roughness_range": (0.18, 0.46),
+        "normal_strength": 0.58,
+        "specular_level": 0.36,
+        "fallback_rgb": (0.062, 0.050, 0.042),
     },
     "basswood_ply": {
         "asset_id": "white_maple_veneer",
-        "tile_scale_m": 0.36,
-        "tint_rgb": (0.94, 0.86, 0.72),
-        "tint_factor": 0.36,
-        "roughness_range": (0.58, 0.76),
-        "normal_strength": 0.24,
-        "specular_level": 0.20,
-        "fallback_rgb": (0.72, 0.62, 0.48),
+        "tile_scale_m": 0.34,
+        "tint_rgb": (0.84, 0.72, 0.56),
+        "tint_factor": 0.44,
+        "roughness_range": (0.48, 0.74),
+        "normal_strength": 0.42,
+        "specular_level": 0.22,
+        "fallback_rgb": (0.64, 0.54, 0.42),
     },
     "honed_concrete_pot": {
         "asset_id": "brushed_concrete_03",
-        "tile_scale_m": 0.26,
-        "tint_rgb": (0.24, 0.23, 0.22),
+        "tile_scale_m": 0.24,
+        "tint_rgb": (0.20, 0.195, 0.185),
         "tint_factor": 0.80,
         "blend_mode": "MIX",
         "desaturate": True,
-        "roughness_range": (0.72, 0.88),
-        "normal_strength": 0.55,
-        "specular_level": 0.16,
-        "fallback_rgb": (0.28, 0.27, 0.26),
+        "roughness_range": (0.62, 0.90),
+        "normal_strength": 0.72,
+        "specular_level": 0.20,
+        "fallback_rgb": (0.24, 0.23, 0.22),
     },
     "stitched_espresso_leather": {
         "asset_id": "fabric_leather_02",
-        "tile_scale_m": 0.22,
-        "tint_rgb": (0.058, 0.032, 0.020),
+        "tile_scale_m": 0.20,
+        "tint_rgb": (0.052, 0.028, 0.018),
         "tint_factor": 0.95,
         "blend_mode": "MULTIPLY",
         "desaturate": True,
-        "roughness_range": (0.34, 0.50),
-        "normal_strength": 0.48,
-        "specular_level": 0.28,
-        "fallback_rgb": (0.045, 0.024, 0.015),
+        "roughness_range": (0.26, 0.54),
+        "normal_strength": 0.68,
+        "specular_level": 0.32,
+        "fallback_rgb": (0.042, 0.022, 0.014),
     },
 }
 
 
 def make_calacatta_marble_material(name: str = "CalacattaShowroomMarble") -> Any:
-    """Seamless honed Italian Calacatta Gold veined marble slab (zero grout seams)."""
+    """Rich mid-tone warm dove-grey / taupe veined Italian marble (strong white-city pop)."""
     mat, nt, bsdf, _ = get_or_create_material(name)
-    _, mp = add_tex_coord_mapping(nt, scale=(1.0, 1.0, 1.0), rotation=(0.0, 0.0, 0.48), loc=(-1260, 0))
+    _, mp = add_tex_coord_mapping(nt, scale=(1.0, 1.0, 1.0), rotation=(0.0, 0.0, 0.52), loc=(-1280, 0))
 
-    # Multi-octave organic tectonic warp for authentic Calacatta veining
     n_warp = nt.nodes.new("ShaderNodeTexNoise")
-    n_warp.location = (-1000, 180)
-    n_warp.inputs["Scale"].default_value = 2.4
-    n_warp.inputs["Detail"].default_value = 9.0
-    n_warp.inputs["Roughness"].default_value = 0.62
+    n_warp.location = (-1020, 220)
+    n_warp.inputs["Scale"].default_value = 2.8
+    n_warp.inputs["Detail"].default_value = 10.0
+    n_warp.inputs["Roughness"].default_value = 0.64
     nt.links.new(mp.outputs["Vector"], n_warp.inputs["Vector"])
 
-    # Primary smoky-taupe marble veins
+    # Primary rich charcoal-taupe tectonic marble veins
     wave_main = nt.nodes.new("ShaderNodeTexWave")
-    wave_main.location = (-740, 260)
+    wave_main.location = (-760, 260)
     wave_main.wave_type = "BANDS"
     wave_main.bands_direction = "DIAGONAL"
     wave_main.wave_profile = "SIN"
-    wave_main.inputs["Scale"].default_value = 1.65
-    wave_main.inputs["Distortion"].default_value = 11.5
-    wave_main.inputs["Detail"].default_value = 8.0
-    wave_main.inputs["Detail Scale"].default_value = 2.2
-    wave_main.inputs["Detail Roughness"].default_value = 0.64
+    wave_main.inputs["Scale"].default_value = 1.85
+    wave_main.inputs["Distortion"].default_value = 12.5
+    wave_main.inputs["Detail"].default_value = 9.0
+    wave_main.inputs["Detail Scale"].default_value = 2.4
+    wave_main.inputs["Detail Roughness"].default_value = 0.66
     nt.links.new(mp.outputs["Vector"], wave_main.inputs["Vector"])
 
-    mr_vein = add_map_range(nt, 0.72, 0.96, 0.0, 1.0, clamp=True, loc=(-500, 260))
+    mr_vein = add_map_range(nt, 0.64, 0.95, 0.0, 1.0, clamp=True, loc=(-500, 260))
     nt.links.new(wave_main.outputs["Fac"], mr_vein.inputs["Value"])
 
-    # Secondary warm champagne-gold fine mineral filaments
+    # Secondary warm antique-gold / bronze mineral filaments
     wave_gold = nt.nodes.new("ShaderNodeTexWave")
-    wave_gold.location = (-740, -10)
+    wave_gold.location = (-760, -20)
     wave_gold.wave_type = "BANDS"
     wave_gold.bands_direction = "X"
-    wave_gold.inputs["Scale"].default_value = 2.6
-    wave_gold.inputs["Distortion"].default_value = 15.0
-    wave_gold.inputs["Detail"].default_value = 7.0
+    wave_gold.inputs["Scale"].default_value = 2.9
+    wave_gold.inputs["Distortion"].default_value = 15.5
+    wave_gold.inputs["Detail"].default_value = 8.0
     nt.links.new(mp.outputs["Vector"], wave_gold.inputs["Vector"])
 
-    mr_gold = add_map_range(nt, 0.84, 0.98, 0.0, 0.55, clamp=True, loc=(-500, -10))
+    mr_gold = add_map_range(nt, 0.80, 0.97, 0.0, 0.65, clamp=True, loc=(-500, -20))
     nt.links.new(wave_gold.outputs["Fac"], mr_gold.inputs["Value"])
 
-    # Base cream-ivory marble modulated softly by subtle clouding noise
+    # Mid-dark warm dove-grey / Pietra-Calacatta stone base so white skyscrapers pop dramatically
     _, fac_cloud, ca_c, cb_c, out_cloud = add_mix_color(nt, "MIX", loc=(-500, 480))
-    ca_c.default_value = (0.76, 0.73, 0.68, 1.0)
-    cb_c.default_value = (0.88, 0.85, 0.80, 1.0)
+    ca_c.default_value = (0.21, 0.20, 0.19, 1.0)
+    cb_c.default_value = (0.35, 0.33, 0.31, 1.0)
     nt.links.new(n_warp.outputs["Fac"], fac_cloud)
 
-    # Blend smoky greige-taupe primary veins
     _, fac_v1, ca_v1, cb_v1, out_v1 = add_mix_color(nt, "MIX", loc=(-260, 280))
-    cb_v1.default_value = (0.36, 0.33, 0.29, 1.0)
+    cb_v1.default_value = (0.062, 0.058, 0.056, 1.0)  # deep smoky espresso-slate veins
     nt.links.new(mr_vein.outputs["Result"], fac_v1)
     nt.links.new(out_cloud, ca_v1)
 
-    # Blend warm champagne-gold secondary mineral veins
-    _, fac_v2, ca_v2, cb_v2, out_v2 = add_mix_color(nt, "MIX", loc=(-60, 260))
-    cb_v2.default_value = (0.58, 0.49, 0.37, 1.0)
+    _, fac_v2, ca_v2, cb_v2, out_v2 = add_mix_color(nt, "MIX", loc=(-40, 260))
+    cb_v2.default_value = (0.38, 0.29, 0.18, 1.0)  # warm antique Calacatta gold veins
     nt.links.new(mr_gold.outputs["Result"], fac_v2)
     nt.links.new(out_v1, ca_v2)
     nt.links.new(out_v2, get_input(bsdf, "Base Color"))
 
-    # Honed-satin showroom marble roughness (veins slightly rougher than calcite crystal)
-    mr_r = add_map_range(nt, 0.0, 1.0, 0.18, 0.31, clamp=True, loc=(-240, -100))
-    nt.links.new(mr_vein.outputs["Result"], mr_r.inputs["Value"])
-    nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
-
-    # Micro mineral polish bump
+    # Tactile mineral specular variation (0.12 satin calcite .. 0.42 matte vein fissures)
     n_micro = nt.nodes.new("ShaderNodeTexNoise")
-    n_micro.location = (-500, -260)
-    n_micro.inputs["Scale"].default_value = 95.0
-    n_micro.inputs["Detail"].default_value = 6.0
+    n_micro.location = (-760, -260)
+    n_micro.inputs["Scale"].default_value = 65.0
+    n_micro.inputs["Detail"].default_value = 8.0
+    n_micro.inputs["Roughness"].default_value = 0.62
     nt.links.new(mp.outputs["Vector"], n_micro.inputs["Vector"])
 
+    add_r = nt.nodes.new("ShaderNodeMath")
+    add_r.operation = "MULTIPLY_ADD"
+    add_r.location = (-460, -180)
+    add_r.inputs[1].default_value = 0.65
+    nt.links.new(mr_vein.outputs["Result"], add_r.inputs[0])
+    nt.links.new(n_micro.outputs["Fac"], add_r.inputs[2])
+
+    mr_r = add_map_range(nt, 0.25, 1.35, 0.12, 0.42, clamp=True, loc=(-240, -140))
+    nt.links.new(add_r.outputs["Value"], mr_r.inputs["Value"])
+    nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
+
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.location = (-100, -260)
-    bump.inputs["Strength"].default_value = 0.032
-    bump.inputs["Distance"].default_value = 0.00025
-    nt.links.new(n_micro.outputs["Fac"], bump.inputs["Height"])
+    bump.location = (-80, -280)
+    bump.inputs["Strength"].default_value = 0.080
+    bump.inputs["Distance"].default_value = 0.00038
+    nt.links.new(add_r.outputs["Value"], bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], get_input(bsdf, "Normal"))
 
-    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.42)
-    set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.24)
-    set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.14)
+    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.36)
+    set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.22)
+    set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.16)
     return mat
 
 
-def make_vellum_grid_material(name: str = "ArchitecturalVellumGrid") -> Any:
-    """Heavy matte cream architectural drafting vellum with fine pure CAD grid (zero text)."""
+def make_vellum_grid_material(name: str = "ArchitecturalVellumBlueprint") -> Any:
+    """High-res 2K CAD architectural blueprint & elevation sketch on warm archival vellum."""
     mat, nt, bsdf, _ = get_or_create_material(name)
-    _, mp = add_tex_coord_mapping(nt, scale=(1.0, 1.0, 1.0), loc=(-1080, 0))
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    tc.location = (-1040, 0)
 
-    # Fine 12 mm orthogonal CAD drafting grid along X and Y (zero garbled labels!)
-    wx = nt.nodes.new("ShaderNodeTexWave")
-    wx.location = (-800, 220)
-    wx.wave_type = "BANDS"
-    wx.bands_direction = "X"
-    wx.wave_profile = "SAW"
-    wx.inputs["Scale"].default_value = 54.0
-    nt.links.new(mp.outputs["Vector"], wx.inputs["Vector"])
+    bp_path = ensure_architect_blueprint_texture()
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.location = (-680, 200)
+    tex.image = load_image_cached(bp_path, colorspace="sRGB")
+    nt.links.new(tc.outputs["UV"], tex.inputs["Vector"])
+    nt.links.new(tex.outputs["Color"], get_input(bsdf, "Base Color"))
 
-    wy = nt.nodes.new("ShaderNodeTexWave")
-    wy.location = (-800, 0)
-    wy.wave_type = "BANDS"
-    wy.bands_direction = "Y"
-    wy.wave_profile = "SAW"
-    wy.inputs["Scale"].default_value = 54.0
-    nt.links.new(mp.outputs["Vector"], wy.inputs["Vector"])
-
-    mrx = add_map_range(nt, 0.92, 0.96, 0.0, 1.0, clamp=True, loc=(-580, 220))
-    mry = add_map_range(nt, 0.92, 0.96, 0.0, 1.0, clamp=True, loc=(-580, 0))
-    nt.links.new(wx.outputs["Fac"], mrx.inputs["Value"])
-    nt.links.new(wy.outputs["Fac"], mry.inputs["Value"])
-
-    grid_max = nt.nodes.new("ShaderNodeMath")
-    grid_max.operation = "MAXIMUM"
-    grid_max.location = (-380, 120)
-    nt.links.new(mrx.outputs["Result"], grid_max.inputs[0])
-    nt.links.new(mry.outputs["Result"], grid_max.inputs[1])
-
-    _, fac_c, ca, cb, col_out = add_mix_color(nt, "MIX", loc=(-160, 140))
-    ca.default_value = (0.86, 0.83, 0.77, 1.0)  # heavy archival drafting vellum cream
-    cb.default_value = (0.42, 0.44, 0.46, 1.0)  # delicate slate drafting ink line
-    nt.links.new(grid_max.outputs["Value"], fac_c)
-    nt.links.new(col_out, get_input(bsdf, "Base Color"))
-
-    # Paper fiber micro-texture
+    # Subtle tactile archival vellum paper fiber roughness & micro-bump
     n_fib = nt.nodes.new("ShaderNodeTexNoise")
-    n_fib.location = (-580, -220)
-    n_fib.inputs["Scale"].default_value = 460.0
-    n_fib.inputs["Detail"].default_value = 6.0
-    nt.links.new(mp.outputs["Vector"], n_fib.inputs["Vector"])
+    n_fib.location = (-680, -140)
+    n_fib.inputs["Scale"].default_value = 520.0
+    n_fib.inputs["Detail"].default_value = 7.0
+    n_fib.inputs["Roughness"].default_value = 0.65
+    nt.links.new(tc.outputs["Object"], n_fib.inputs["Vector"])
+
+    mr_r = add_map_range(nt, 0.25, 0.75, 0.72, 0.88, clamp=True, loc=(-320, -60))
+    nt.links.new(n_fib.outputs["Fac"], mr_r.inputs["Value"])
+    nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
 
     bump = nt.nodes.new("ShaderNodeBump")
     bump.location = (-120, -220)
-    bump.inputs["Strength"].default_value = 0.06
-    bump.inputs["Distance"].default_value = 0.00018
+    bump.inputs["Strength"].default_value = 0.14
+    bump.inputs["Distance"].default_value = 0.00025
     nt.links.new(n_fib.outputs["Fac"], bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], get_input(bsdf, "Normal"))
-
-    set_input(bsdf, "Roughness", 0.78)
-    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.16)
+    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.18)
     return mat
 
 
-def make_vintage_globe_material(name: str = "VintageCartographyGlobe") -> Any:
-    """Antique parchment-and-slate cartographic globe sphere with fine graticule (zero text)."""
+def make_vintage_globe_material(name: str = "VintageRealEarthGlobe") -> Any:
+    """Real Natural Earth 2K antique cartography globe with relief bump & varnished lacquer."""
     mat, nt, bsdf, _ = get_or_create_material(name)
-    _, mp = add_tex_coord_mapping(nt, scale=(1.0, 1.0, 1.0), loc=(-1120, 0))
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    tc.location = (-1060, 0)
 
-    # Organic fractal continents vs aged slate-teal vintage ocean
-    n_land = nt.nodes.new("ShaderNodeTexNoise")
-    n_land.location = (-840, 220)
-    n_land.inputs["Scale"].default_value = 2.6
-    n_land.inputs["Detail"].default_value = 8.0
-    n_land.inputs["Roughness"].default_value = 0.58
-    n_land.inputs["Distortion"].default_value = 0.45
-    nt.links.new(mp.outputs["Vector"], n_land.inputs["Vector"])
+    diff_path, bump_path = ensure_earth_globe_textures()
+    # Equirectangular Environment Texture on Object coords gives seam-free real Earth projection
+    tex_diff = nt.nodes.new("ShaderNodeTexEnvironment")
+    tex_diff.location = (-680, 240)
+    tex_diff.projection = "EQUIRECTANGULAR"
+    tex_diff.image = load_image_cached(diff_path, colorspace="sRGB")
+    nt.links.new(tc.outputs["Object"], tex_diff.inputs["Vector"])
+    nt.links.new(tex_diff.outputs["Color"], get_input(bsdf, "Base Color"))
 
-    mr_land = add_map_range(nt, 0.46, 0.53, 0.0, 1.0, clamp=True, loc=(-600, 220))
-    nt.links.new(n_land.outputs["Fac"], mr_land.inputs["Value"])
+    tex_bump = nt.nodes.new("ShaderNodeTexEnvironment")
+    tex_bump.location = (-680, -120)
+    tex_bump.projection = "EQUIRECTANGULAR"
+    tex_bump.image = load_image_cached(bump_path, colorspace="Non-Color")
+    nt.links.new(tc.outputs["Object"], tex_bump.inputs["Vector"])
 
-    _, fac_l, ca_l, cb_l, out_l = add_mix_color(nt, "MIX", loc=(-380, 220))
-    ca_l.default_value = (0.14, 0.21, 0.25, 1.0)  # deep antique ocean slate-teal
-    cb_l.default_value = (0.58, 0.45, 0.28, 1.0)  # rich aged warm parchment landmass
-    nt.links.new(mr_land.outputs["Result"], fac_l)
+    # Varnished antique oceans shinier (~0.18) than matte parchment continents (~0.42)
+    mr_r = add_map_range(nt, 0.35, 0.75, 0.18, 0.42, clamp=True, loc=(-300, -40))
+    nt.links.new(tex_bump.outputs["Color"], mr_r.inputs["Value"])
+    nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
 
-    # Fine latitude rings (graticule lines)
-    w_lat = nt.nodes.new("ShaderNodeTexWave")
-    w_lat.location = (-840, -60)
-    w_lat.wave_type = "BANDS"
-    w_lat.bands_direction = "Z"
-    w_lat.wave_profile = "SAW"
-    w_lat.inputs["Scale"].default_value = 7.5
-    nt.links.new(mp.outputs["Vector"], w_lat.inputs["Vector"])
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.location = (-100, -240)
+    bump.inputs["Strength"].default_value = 0.28
+    bump.inputs["Distance"].default_value = 0.0006
+    nt.links.new(tex_bump.outputs["Color"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], get_input(bsdf, "Normal"))
 
-    mr_lat = add_map_range(nt, 0.93, 0.97, 0.0, 0.45, clamp=True, loc=(-600, -60))
-    nt.links.new(w_lat.outputs["Fac"], mr_lat.inputs["Value"])
-
-    _, fac_g, ca_g, cb_g, out_g = add_mix_color(nt, "MIX", loc=(-140, 180))
-    cb_g.default_value = (0.22, 0.16, 0.10, 1.0)
-    nt.links.new(mr_lat.outputs["Result"], fac_g)
-    nt.links.new(out_l, ca_g)
-    nt.links.new(out_g, get_input(bsdf, "Base Color"))
-
-    set_input(bsdf, "Roughness", 0.34)
-    set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.32)
-    set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.18)
+    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.40)
+    set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.38)
+    set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.14)
     return mat
 
 
@@ -278,16 +273,16 @@ def make_leather_spine_material(
     name: str,
     tint_rgb: Tuple[float, float, float] = (0.14, 0.08, 0.05),
 ) -> Any:
-    """Tactile CC0 leather book cover & spine material (100% zero text)."""
+    """Tactile CC0 pebbled leather book cover & spine material."""
     cc0 = build_cc0_pbr_material(
         name=name,
         asset_id="brown_leather",
-        tile_scale_m=0.26,
+        tile_scale_m=0.22,
         tint_rgb=tint_rgb,
         tint_factor=0.95,
-        roughness_range=(0.34, 0.50),
-        normal_strength=0.44,
-        specular_level=0.28,
+        roughness_range=(0.26, 0.50),
+        normal_strength=0.64,
+        specular_level=0.32,
         blend_mode="MULTIPLY",
         desaturate=True,
     )
@@ -295,39 +290,48 @@ def make_leather_spine_material(
         return cc0
     mat, _, bsdf, _ = get_or_create_material(name)
     set_input(bsdf, "Base Color", (tint_rgb[0], tint_rgb[1], tint_rgb[2], 1.0))
-    set_input(bsdf, "Roughness", 0.46)
+    set_input(bsdf, "Roughness", 0.40)
     return mat
 
 
 def make_polished_gold_material(name: str = "ExecutiveSatinGold") -> Any:
-    """Warm 18k satin-polished architectural gold for fountain pen nib, rings, and book bands."""
-    mat, _, bsdf, _ = get_or_create_material(name)
-    set_input(bsdf, "Base Color", (0.86, 0.66, 0.28, 1.0))
+    """Warm 18k brushed-satin architectural gold for nibs, book foil titles, and bands."""
+    mat, nt, bsdf, _ = get_or_create_material(name)
+    _, mp = add_tex_coord_mapping(nt, scale=(4.0, 180.0, 180.0), loc=(-760, 0))
+    n = nt.nodes.new("ShaderNodeTexNoise")
+    n.location = (-500, 0)
+    n.inputs["Scale"].default_value = 32.0
+    n.inputs["Detail"].default_value = 6.0
+    nt.links.new(mp.outputs["Vector"], n.inputs["Vector"])
+
+    set_input(bsdf, "Base Color", (0.88, 0.66, 0.26, 1.0))
     set_input(bsdf, "Metallic", 0.98)
-    set_input(bsdf, "Roughness", 0.18)
+    mr_r = add_map_range(nt, 0.25, 0.75, 0.14, 0.26, clamp=True, loc=(-240, 20))
+    nt.links.new(n.outputs["Fac"], mr_r.inputs["Value"])
+    nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
     return mat
 
 
 def make_matte_jet_ceramic_material(name: str = "UnbrandedJetBlackMug") -> Any:
-    """Clean unbranded matte jet-black stoneware ceramic mug finish (zero logos)."""
+    """Tactile unbranded matte jet-black stoneware ceramic mug finish (zero logos)."""
     mat, nt, bsdf, _ = get_or_create_material(name)
     _, mp = add_tex_coord_mapping(nt, scale=(1.0, 1.0, 1.0), loc=(-780, 0))
     n = nt.nodes.new("ShaderNodeTexNoise")
     n.location = (-520, 0)
-    n.inputs["Scale"].default_value = 820.0
-    n.inputs["Detail"].default_value = 5.0
+    n.inputs["Scale"].default_value = 740.0
+    n.inputs["Detail"].default_value = 6.0
     nt.links.new(mp.outputs["Vector"], n.inputs["Vector"])
 
-    set_input(bsdf, "Base Color", (0.016, 0.016, 0.018, 1.0))
-    mr_r = add_map_range(nt, 0.25, 0.75, 0.48, 0.62, loc=(-240, 20))
+    set_input(bsdf, "Base Color", (0.014, 0.014, 0.016, 1.0))
+    mr_r = add_map_range(nt, 0.25, 0.75, 0.42, 0.64, clamp=True, loc=(-240, 20))
     nt.links.new(n.outputs["Fac"], mr_r.inputs["Value"])
     nt.links.new(mr_r.outputs["Result"], get_input(bsdf, "Roughness"))
-    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.28)
+    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.34)
 
     bump = nt.nodes.new("ShaderNodeBump")
     bump.location = (-80, -140)
-    bump.inputs["Strength"].default_value = 0.05
-    bump.inputs["Distance"].default_value = 0.00018
+    bump.inputs["Strength"].default_value = 0.11
+    bump.inputs["Distance"].default_value = 0.00025
     nt.links.new(n.outputs["Fac"], bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], get_input(bsdf, "Normal"))
     return mat
@@ -342,7 +346,6 @@ def make_skyline_glass_material(
     mat, nt, bsdf, _ = get_or_create_material(name)
     _, mp = add_tex_coord_mapping(nt, scale=(1.0, 1.0, 1.0), loc=(-960, 0))
 
-    # Subtle floorplate bands along Z + vertical mullion rhythm for authentic blurred high-rise texture
     w_fl = nt.nodes.new("ShaderNodeTexWave")
     w_fl.location = (-680, 140)
     w_fl.wave_type = "BANDS"
@@ -351,13 +354,13 @@ def make_skyline_glass_material(
     nt.links.new(mp.outputs["Vector"], w_fl.inputs["Vector"])
 
     _, fac_c, ca, cb, col_out = add_mix_color(nt, "MIX", loc=(-320, 140))
-    ca.default_value = (tint[0] * 0.58, tint[1] * 0.60, tint[2] * 0.64, 1.0)
+    ca.default_value = (tint[0] * 0.52, tint[1] * 0.55, tint[2] * 0.62, 1.0)
     cb.default_value = (min(1.0, tint[0] * 1.35), min(1.0, tint[1] * 1.32), min(1.0, tint[2] * 1.28), 1.0)
     nt.links.new(w_fl.outputs["Fac"], fac_c)
     nt.links.new(col_out, get_input(bsdf, "Base Color"))
 
-    set_input(bsdf, "Metallic", 0.35)
-    set_input(bsdf, "Roughness", 0.16)
+    set_input(bsdf, "Metallic", 0.38)
+    set_input(bsdf, "Roughness", 0.15)
     set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.55)
     if emit_strength > 1e-4:
         set_input(bsdf, "Emission Color", (tint[0], tint[1], tint[2], 1.0))
@@ -369,7 +372,7 @@ def make_sky_gradient_material(
     name: str,
     horizon_rgb: Tuple[float, float, float],
     zenith_rgb: Tuple[float, float, float],
-    strength: float = 1.9,
+    strength: float = 1.6,
 ) -> Any:
     """Luminous daylight or golden-hour sky gradient backdrop visible through studio windows."""
     mat, nt, _, out = get_or_create_material(name)

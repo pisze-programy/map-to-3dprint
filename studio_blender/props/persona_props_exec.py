@@ -19,6 +19,7 @@ from ..envs.common import (
 )
 from ..materials_core import get_or_create_material
 from ..materials_personas import make_leather_spine_material, make_polished_gold_material
+from .spine_text import add_spine_label
 
 
 def build_law_volumes_row(
@@ -38,17 +39,17 @@ def build_law_volumes_row(
         ("LawVolObsidian", (0.035, 0.036, 0.044)),
     )
     vols = (
-        (0.036, 0.232, 0.168, 0),
-        (0.039, 0.242, 0.172, 1),
-        (0.035, 0.236, 0.168, 2),
-        (0.040, 0.244, 0.172, 3),
-        (0.037, 0.234, 0.168, 4),
+        (0.036, 0.232, 0.168, 0, "CODEX\nI"),
+        (0.039, 0.242, 0.172, 1, "CODEX\nII"),
+        (0.035, 0.236, 0.168, 2, "CODEX\nIII"),
+        (0.040, 0.244, 0.172, 3, "LEX\nCIVIS"),
+        (0.037, 0.234, 0.168, 4, "CODEX\nIV"),
     )
     total_w = sum(v[0] + 0.002 for v in vols)
     cur_x = -total_w * 0.5
     objs: List[Any] = []
 
-    for idx, (thick, height, depth, pidx) in enumerate(vols):
+    for idx, (thick, height, depth, pidx, title) in enumerate(vols):
         cx = cur_x + thick * 0.5
         cur_x += thick + 0.002
         m_name, tint = palette[pidx]
@@ -67,6 +68,21 @@ def build_law_volumes_row(
             )
             add_bevel(band, width=0.0006, segments=2)
             objs.append(band)
+
+        # Crisp subtle 18k gold-foil classical Roman volume title centered between bands
+        objs.append(
+            add_spine_label(
+                f"Prop_LawVolTitle_{idx}",
+                title,
+                collection,
+                location=(cx, -depth * 0.5 - 0.0009, height * 0.62),
+                facing="-Y",
+                font_size_m=0.0080,
+                font_style="serif",
+                foil="gold",
+                letter_spacing=1.10,
+            )
+        )
 
     root = parent_objects_to_empty("Prop_law_volumes_row_Root", objs, collection, location, yaw_deg, scale)
     return [root] + objs

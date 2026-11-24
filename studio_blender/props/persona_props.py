@@ -26,6 +26,7 @@ from ..materials_personas import (
     make_vintage_globe_material,
 )
 from .cad_tableware import _build_single_book_parts
+from .spine_text import add_spine_label
 
 
 def _make_spiral_roll_bm(
@@ -36,8 +37,9 @@ def _make_spiral_roll_bm(
     wall_t: float = 0.00055,
     steps: int = 72,
 ) -> Any:
-    """Create a realistic hollow multi-layer spiral-rolled vellum paper tube along local Y."""
+    """Create a realistic hollow multi-layer spiral-rolled vellum paper tube with clean UVs."""
     bm = bmesh.new()
+    uv_layer = bm.loops.layers.uv.verify()
     hy = length * 0.5
     outer_rings: List[Tuple[Any, Any]] = []
     inner_rings: List[Tuple[Any, Any]] = []
@@ -52,18 +54,35 @@ def _make_spiral_roll_bm(
         inner_rings.append((bm.verts.new((r_in * ca, -hy, r_in * sa)), bm.verts.new((r_in * ca, hy, r_in * sa))))
 
     for i in range(steps):
+        u0, u1 = (i / float(steps)) * 1.6, ((i + 1) / float(steps)) * 1.6
         o0a, o0b = outer_rings[i]
         o1a, o1b = outer_rings[i + 1]
         i0a, i0b = inner_rings[i]
         i1a, i1b = inner_rings[i + 1]
-        bm.faces.new((o0a, o0b, o1b, o1a))
-        bm.faces.new((i1a, i1b, i0b, i0a))
+        fo = bm.faces.new((o0a, o0b, o1b, o1a))
+        for loop, uv in zip(fo.loops, ((u0, 0.0), (u0, 1.0), (u1, 1.0), (u1, 0.0))):
+            loop[uv_layer].uv = uv
+        fi = bm.faces.new((i1a, i1b, i0b, i0a))
+        for loop, uv in zip(fi.loops, ((u1, 0.0), (u1, 1.0), (u0, 1.0), (u0, 0.0))):
+            loop[uv_layer].uv = uv
         bm.faces.new((o0a, o1a, i1a, i0a))
         bm.faces.new((i0b, i1b, o1b, o0b))
 
-    # Cap start and end strip edges cleanly
     bm.faces.new((outer_rings[0][0], inner_rings[0][0], inner_rings[0][1], outer_rings[0][1]))
     bm.faces.new((inner_rings[-1][0], outer_rings[-1][0], outer_rings[-1][1], inner_rings[-1][1]))
+    return bm
+
+
+def _make_uv_blueprint_sheet_bm(w: float, d: float, h: float, center: Vec3) -> Any:
+    """Create thin flat drafting sheet with exact planar [0,1]x[0,1] blueprint UVs."""
+    bm = make_box_bm(w, d, h, center)
+    uv_layer = bm.loops.layers.uv.verify()
+    cx, cy, _ = center
+    x0, y0 = cx - w * 0.5, cy - d * 0.5
+    for face in bm.faces:
+        for loop in face.loops:
+            co = loop.vert.co
+            loop[uv_layer].uv = ((co.x - x0) / max(1e-5, w), (co.y - y0) / max(1e-5, d))
     return bm
 
 
@@ -73,14 +92,13 @@ def build_drafting_vellum_rolls(
     yaw_deg: float = 0.0,
     scale: float = 1.0,
 ) -> List[Any]:
-    """Two spiral-rolled heavy architectural vellum tubes resting on a clean CAD grid sheet."""
-    mat_grid = make_vellum_grid_material("ArchVellumGridSheet")
-    mat_roll = make_vellum_grid_material("ArchVellumRolledTube")
+    """Two spiral-rolled architectural blueprint tubes resting on a crisp CAD vellum sheet."""
+    mat_grid = make_vellum_grid_material("ArchVellumBlueprintSheet")
+    mat_roll = make_vellum_grid_material("ArchVellumBlueprintRoll")
 
-    # Flat clean architectural grid vellum sheet (zero text!)
     sheet = create_mesh_object(
         "Prop_VellumFlatSheet",
-        make_box_bm(0.220, 0.300, 0.0008, (-0.015, -0.020, 0.0004)),
+        _make_uv_blueprint_sheet_bm(0.240, 0.300, 0.0008, (-0.005, -0.015, 0.0004)),
         collection,
         mat_grid,
         False,
@@ -285,19 +303,44 @@ def build_travel_monograph_stack(
     yaw_deg: float = 0.0,
     scale: float = 1.0,
 ) -> List[Any]:
-    """Three stacked blind-debossed linen & leather travel monographs (ZERO spine text)."""
+    """Three stacked cloth & leather travel monographs with crisp gold/ink foil spine titles."""
     mat_pages = materials.make_book_pages_material("TravelMonographPages")
-    mat_b1 = make_leather_spine_material("TravelBookEspresso", (0.10, 0.055, 0.032))
-    mat_b1_d = make_leather_spine_material("TravelBookEspressoDeb", (0.07, 0.038, 0.022))
-    mat_b2 = materials.make_book_cover_material("TravelBookSandLinen", (0.52, 0.47, 0.40, 1.0))
-    mat_b2_d = materials.make_book_cover_material("TravelBookSandDeb", (0.42, 0.38, 0.32, 1.0))
-    mat_b3 = materials.make_book_cover_material("TravelBookCharcoal", (0.16, 0.17, 0.18, 1.0))
-    mat_b3_d = materials.make_book_cover_material("TravelBookCharcoalDeb", (0.11, 0.12, 0.13, 1.0))
+    mat_b1 = make_leather_spine_material("TravelBookEspresso", (0.045, 0.022, 0.012))
+    mat_b1_d = make_leather_spine_material("TravelBookEspressoDeb", (0.030, 0.014, 0.008))
+    mat_b2 = materials.make_book_cover_material("TravelBookSandLinen", (0.16, 0.125, 0.090, 1.0))
+    mat_b2_d = materials.make_book_cover_material("TravelBookSandDeb", (0.11, 0.085, 0.060, 1.0))
+    mat_b3 = materials.make_book_cover_material("TravelBookCharcoal", (0.018, 0.020, 0.024, 1.0))
+    mat_b3_d = materials.make_book_cover_material("TravelBookCharcoalDeb", (0.012, 0.014, 0.017, 1.0))
 
     objs: List[Any] = []
-    objs.extend(_build_single_book_parts("Prop_TravBook1", 0.188, 0.236, 0.024, 0.0000, mat_b1, mat_b1_d, mat_pages, collection, 0.0))
-    objs.extend(_build_single_book_parts("Prop_TravBook2", 0.178, 0.226, 0.022, 0.0242, mat_b2, mat_b2_d, mat_pages, collection, math.radians(3.5)))
-    objs.extend(_build_single_book_parts("Prop_TravBook3", 0.166, 0.214, 0.020, 0.0464, mat_b3, mat_b3_d, mat_pages, collection, math.radians(-2.5)))
+    # Compact luxury boutique travel monographs (152 x 192 mm) so full spine titles sit cleanly in frame
+    specs = (
+        ("Prop_TravBook1", 0.152, 0.192, 0.024, 0.0000, mat_b1, mat_b1_d, 0.0, "LONDON", "gold"),
+        ("Prop_TravBook2", 0.146, 0.186, 0.022, 0.0242, mat_b2, mat_b2_d, math.radians(2.5), "TOKYO", "dark"),
+        ("Prop_TravBook3", 0.140, 0.180, 0.020, 0.0464, mat_b3, mat_b3_d, math.radians(-1.5), "NEW YORK", "gold"),
+    )
+    for pref, bw, bd, bh, z0, mc, md, yrad, title, foil in specs:
+        objs.extend(_build_single_book_parts(pref, bw, bd, bh, z0, mc, md, mat_pages, collection, yrad))
+        # Position crisp 3D embossed foil lettering cleanly proud (+1.4 mm) inside visible spine span
+        sx = -bw * 0.5 - 0.0014
+        sy = -0.056 if len(title) <= 6 else -0.064
+        fsize = 0.0102 if len(title) <= 6 else 0.0088
+        rx = sx * math.cos(yrad) - sy * math.sin(yrad)
+        ry = sx * math.sin(yrad) + sy * math.cos(yrad)
+        objs.append(
+            add_spine_label(
+                f"{pref}_Title",
+                title,
+                collection,
+                location=(rx, ry, z0 + bh * 0.5),
+                facing="-X",
+                font_size_m=fsize,
+                font_style="serif",
+                foil=foil,
+                letter_spacing=1.10,
+                extra_yaw_rad=yrad,
+            )
+        )
     root = parent_objects_to_empty("Prop_travel_monograph_stack_Root", objs, collection, location, yaw_deg, scale)
     return [root] + objs
 
@@ -323,9 +366,9 @@ def build_brass_tabletop_globe(
     center_z = 0.146
     tilt = math.radians(23.5)
 
-    # Smooth UV-mapped sphere tilted 23.5 deg on Earth axis
+    # Smooth sphere tilted 23.5 deg on Earth axis, spun so Europe/Africa/North Atlantic face camera
     bm_sph = bmesh.new()
-    bmesh.ops.create_uvsphere(bm_sph, u_segments=48, v_segments=32, radius=globe_r)
+    bmesh.ops.create_uvsphere(bm_sph, u_segments=64, v_segments=40, radius=globe_r)
     sphere = create_mesh_object(
         "Prop_GlobeSphere",
         bm_sph,
@@ -333,7 +376,7 @@ def build_brass_tabletop_globe(
         mat_globe,
         True,
         location=(0.0, 0.0, center_z),
-        rotation=(0.0, tilt, 0.0),
+        rotation=(0.0, tilt, math.radians(-70.0)),
     )
 
     # Curved brushed-brass half-meridian arc embracing the globe from south pole to north pole

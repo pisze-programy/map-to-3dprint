@@ -36,7 +36,7 @@ def build_metropolitan_skyline_backdrop(
         g_cool = make_skyline_glass_material(f"{prefix}_TowerSlate", (0.14, 0.18, 0.28, 1.0), emit_strength=0.03)
         g_pale = make_skyline_glass_material(f"{prefix}_TowerSun", (0.50, 0.35, 0.22, 1.0), emit_strength=0.08)
     else:
-        sky_mat = make_sky_gradient_material(f"{prefix}_DaySky", (0.86, 0.89, 0.92), (0.38, 0.56, 0.78), strength=1.55)
+        sky_mat = make_sky_gradient_material(f"{prefix}_DaySky", (0.76, 0.80, 0.85), (0.30, 0.46, 0.68), strength=1.20)
         g_warm = make_skyline_glass_material(f"{prefix}_TowerStone", (0.28, 0.29, 0.31, 1.0), emit_strength=0.04)
         g_cool = make_skyline_glass_material(f"{prefix}_TowerGlass", (0.14, 0.23, 0.36, 1.0), emit_strength=0.05)
         g_pale = make_skyline_glass_material(f"{prefix}_TowerBright", (0.36, 0.44, 0.54, 1.0), emit_strength=0.06)

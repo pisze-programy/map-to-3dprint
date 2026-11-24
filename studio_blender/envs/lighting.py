@@ -9,7 +9,8 @@ import bpy
 from mathutils import Vector
 
 from .. import assets_cc0
-from .common import aim_object_at, create_area_light, spherical_offset
+from ..materials_core import get_or_create_material, set_input
+from .common import aim_object_at, create_area_light, create_mesh_object, make_box_bm, spherical_offset
 from .spec import EnvironmentSpec
 
 
@@ -207,3 +208,32 @@ def update_key_light_azimuth(
     meta["azimuth_deg"] = az
     meta["elevation_deg"] = el
     return key_light
+
+
+def build_negative_fill_flags(
+    target_pt: Vector,
+    key_az_deg: float,
+    collection: Any,
+) -> List[Any]:
+    """Place camera-invisible matte-black cinema flags on the shadow side for rich chiaroscuro."""
+    mat, _, bsdf, _ = get_or_create_material("CinemaNegativeFillBlack")
+    set_input(bsdf, "Base Color", (0.002, 0.002, 0.002, 1.0))
+    set_input(bsdf, "Roughness", 1.0)
+    set_input(bsdf, ("Specular IOR Level", "Specular"), 0.0)
+
+    opp_az = key_az_deg - 138.0 if key_az_deg >= 0.0 else key_az_deg + 138.0
+    flag_specs = (
+        ("Env_NegFill_Side", opp_az, 24.0, 0.92, 1.45, 0.95),
+        ("Env_NegFill_Overhead", opp_az + (22.0 if key_az_deg >= 0.0 else -22.0), 62.0, 1.15, 1.35, 1.05),
+    )
+    flags: List[Any] = []
+    for fname, az, el, dist, sx, sy in flag_specs:
+        loc = target_pt + spherical_offset(az, el, dist)
+        flag = create_mesh_object(fname, make_box_bm(sx, sy, 0.004), collection, material=mat, location=tuple(loc))
+        aim_object_at(flag, target_pt)
+        if hasattr(flag, "visible_camera"):
+            flag.visible_camera = False
+        if hasattr(flag, "visible_glossy"):
+            flag.visible_glossy = False
+        flags.append(flag)
+    return flags

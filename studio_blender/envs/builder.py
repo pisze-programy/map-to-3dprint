@@ -31,7 +31,7 @@ from .common import (
     parse_model_bounds,
 )
 from .compositor import setup_photographic_compositor
-from .lighting import build_lighting_rig
+from .lighting import build_lighting_rig, build_negative_fill_flags
 from .spec import get_environment_spec
 
 
@@ -91,6 +91,7 @@ def build_environment(
     add_props: Optional[Sequence[Any]] = None,
     remove_props: Optional[Sequence[str]] = None,
     clear_props: bool = False,
+    is_video: bool = False,
 ) -> Dict[str, Any]:
     """Build one of 11 cohesive studio environments with optional surface/lighting/prop overrides."""
     spec = get_environment_spec(env_name)
@@ -161,6 +162,12 @@ def build_environment(
             )
         )
 
+    # 3b. Camera-invisible matte-black negative-fill flags on persona rooms (12-17) for cinema contrast
+    is_persona = spec.env_id.startswith(("12_persona_", "13_persona_", "14_persona_", "15_persona_", "16_persona_", "17_persona_"))
+    if is_persona and eff_mount == "desk_flat":
+        meta = light_refs["key_rig_meta"]
+        objects.extend(build_negative_fill_flags(target_pt, float(meta["azimuth_deg"]), col))
+
     # 4. Composable real-scale props (desk_flat environments only)
     placed_props: List[Dict[str, Any]] = []
     if eff_mount == "desk_flat":
@@ -180,7 +187,7 @@ def build_environment(
             )
             objects.extend(prop_objs)
 
-    # 5. Blender 5.3.0 DSLR photographic compositor finishing (strictly OFF for 09/10/11)
+    # 5. Blender 5.3.0 DSLR / cinema photographic compositor finishing (strictly OFF for 09/10/11)
     if spec.env_id == "07_evening_warm_desk":
         setup_photographic_compositor(
             bpy.context.scene,
@@ -189,15 +196,21 @@ def build_environment(
             vignette_strength=0.075,
             grain_strength=0.011,
             warm_gain=(1.022, 1.005, 0.980),
+            is_video=is_video,
         )
-    elif spec.env_id in ("14_persona_lawyer", "17_persona_executive_study"):
+    elif is_persona:
+        warm_study = spec.env_id in ("13_persona_traveler", "14_persona_lawyer", "17_persona_executive_study")
         setup_photographic_compositor(
             bpy.context.scene,
             spec.env_id,
-            bloom_strength=0.095,
-            vignette_strength=0.070,
-            grain_strength=0.010,
-            warm_gain=(1.022, 1.004, 0.978),
+            bloom_strength=0.11 if warm_study else 0.08,
+            vignette_strength=0.090 if warm_study else 0.078,
+            grain_strength=0.006,
+            warm_gain=(1.040, 1.008, 0.960) if warm_study else (1.030, 1.006, 0.972),
+            cinema_grade=True,
+            cool_lift=(0.972, 0.990, 1.024) if not warm_study else (0.976, 0.990, 1.016),
+            mid_gamma=(0.990, 0.995, 1.000),
+            is_video=is_video,
         )
     else:
         setup_photographic_compositor(
@@ -207,6 +220,7 @@ def build_environment(
             vignette_strength=0.055,
             grain_strength=0.009,
             warm_gain=(1.015, 1.004, 0.986),
+            is_video=is_video,
         )
 
     return {
