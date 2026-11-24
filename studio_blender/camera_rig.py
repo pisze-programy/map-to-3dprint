@@ -18,7 +18,7 @@ except ImportError:  # pragma: no cover
     Matrix = None  # type: ignore
     Vector = None  # type: ignore
 
-from studio_blender.studio_presets import resolve_env_name
+from studio_blender.studio_presets import PERSONA_HERO_PROFILES, resolve_env_name
 
 
 STILL_PRESETS: Tuple[str, ...] = (
@@ -44,6 +44,7 @@ _DESK_HERO_PROFILES: Dict[str, Tuple[float, float, float, Optional[float], float
     "07_evening_warm_desk": (52.0, 2.6, 22.0, -18.0, 0.035, 0.74, 0.66),
     "08_loft_concrete_studio": (52.0, 3.2, 26.0, -20.0, 0.030, 0.74, 0.68),
     "09_dark_cinematic": (62.0, 2.6, 19.0, None, 0.015, 0.84, 0.76),
+    **PERSONA_HERO_PROFILES,
 }
 
 

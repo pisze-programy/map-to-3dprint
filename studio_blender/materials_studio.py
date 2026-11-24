@@ -7,6 +7,7 @@ from typing import Any, Dict, Tuple
 import bpy
 
 from .assets_cc0 import build_cc0_pbr_material
+from .materials_personas import PERSONA_SURFACE_CATALOG, make_calacatta_marble_material
 from .materials_core import (
     add_map_range,
     add_mix_color,
@@ -201,7 +202,9 @@ SURFACE_CATALOG: Dict[str, Dict[str, Any]] = {
     },
 }
 
-AVAILABLE_SURFACES: Tuple[str, ...] = tuple(SURFACE_CATALOG.keys())
+SURFACE_CATALOG.update(PERSONA_SURFACE_CATALOG)
+
+AVAILABLE_SURFACES: Tuple[str, ...] = tuple(SURFACE_CATALOG.keys()) + ("calacatta_marble",)
 
 
 def _make_procedural_surface_fallback(
@@ -249,6 +252,8 @@ def make_surface_material(surface_key: str, name: str | None = None, rotation_z_
         return make_editorial_backdrop_material(name=name or "EditorialBackdrop", dark=False)
     if key == "packshot_white":
         return make_cyclorama_white_material(name=name or "PackshotWhiteCyclorama")
+    if key == "calacatta_marble":
+        return make_calacatta_marble_material(name=name or "CalacattaShowroomMarble")
 
     spec = SURFACE_CATALOG.get(key, SURFACE_CATALOG["pale_ash_oak"])
     mat_name = name or f"Surface_{key}"

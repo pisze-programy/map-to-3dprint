@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .cad_props import CAD_PROP_BUILDERS
 from .cc0_props import build_cc0_prop, build_custom_prop
+from .persona_props_studio import PERSONA_PROP_BUILDERS, PERSONA_PROP_CATALOG
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,8 @@ PROP_CATALOG: Dict[str, Dict[str, Any]] = {
         "default_offset_mm": (-42.0, 124.0),
     },
 }
+PROP_CATALOG.update(PERSONA_PROP_CATALOG)
+_ALL_CAD_BUILDERS = {**CAD_PROP_BUILDERS, **PERSONA_PROP_BUILDERS}
 
 
 def list_available_props() -> Dict[str, Dict[str, Any]]:
@@ -327,8 +330,8 @@ def place_props(
                 yaw_deg=prop.yaw_deg,
                 scale=prop.scale,
             )
-        elif prop.prop_id in CAD_PROP_BUILDERS:
-            objs = CAD_PROP_BUILDERS[prop.prop_id](collection, loc, prop.yaw_deg, prop.scale)
+        elif prop.prop_id in _ALL_CAD_BUILDERS:
+            objs = _ALL_CAD_BUILDERS[prop.prop_id](collection, loc, prop.yaw_deg, prop.scale)
         elif prop.prop_id in PROP_CATALOG and PROP_CATALOG[prop.prop_id]["kind"] == "cc0":
             meta = PROP_CATALOG[prop.prop_id]
             objs = build_cc0_prop(

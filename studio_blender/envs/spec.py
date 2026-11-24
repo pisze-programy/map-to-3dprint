@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, Tuple
 
 from ..props.registry import PropPlacement
+from .spec_personas import PERSONA_ENV_ALIASES, build_persona_env_specs
 
 Rgb = Tuple[float, float, float]
 
@@ -351,6 +352,8 @@ ENV_SPECS: Dict[str, EnvironmentSpec] = {
     ),
 }
 
+ENV_SPECS.update(build_persona_env_specs(EnvironmentSpec))
+
 ENVIRONMENTS: Tuple[str, ...] = tuple(ENV_SPECS.keys())
 
 ENV_ALIASES: Dict[str, str] = {
@@ -359,6 +362,7 @@ ENV_ALIASES: Dict[str, str] = {
     "dark_cinematic": "09_dark_cinematic",
     "macro_editorial": "10_macro_editorial",
     "packshot_white": "11_packshot_white",
+    **PERSONA_ENV_ALIASES,
 }
 
 

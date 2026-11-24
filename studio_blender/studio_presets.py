@@ -97,6 +97,72 @@ ENVIRONMENTS: Dict[str, Dict[str, str]] = {
             "pure 13x18 Variant C product truth with zero props."
         ),
     },
+    "12_persona_architect": {
+        "mount": "desk_flat",
+        "default_preset": "hero_desk",
+        "description": (
+            "Architect studio: pale ash-oak workbench beside black-mullioned studio window "
+            "overlooking blurred city towers, rolled vellum, concrete pencil cup, basswood maquette & lamp."
+        ),
+    },
+    "13_persona_traveler": {
+        "mount": "desk_flat",
+        "default_preset": "hero_desk",
+        "description": (
+            "Traveler golden-hour walnut desk with real CC0 vintage Leica rangefinder camera, blind-debossed "
+            "travel monographs, sculptural brass tabletop globe, antique compass & sunlit greenery."
+        ),
+    },
+    "14_persona_lawyer": {
+        "mount": "desk_flat",
+        "default_preset": "hero_desk",
+        "description": (
+            "Executive law office: deep oiled mahogany desk in warm 2700K study with gold-banded dark leather "
+            "law volumes, tufted leather chair in bokeh, stitched espresso desk folio & black-and-gold pen."
+        ),
+    },
+    "15_persona_corporate": {
+        "mount": "desk_flat",
+        "default_preset": "hero_desk",
+        "description": (
+            "Corporate high-rise office: smoked-walnut executive desk beside floor-to-ceiling glass curtain wall "
+            "overlooking sunlit skyscrapers, straight aluminum laptop, unbranded matte-black mug & concrete planter."
+        ),
+    },
+    "16_persona_realestate": {
+        "mount": "desk_flat",
+        "default_preset": "hero_desk",
+        "description": (
+            "Luxury real-estate showroom: honed warm Calacatta veined marble table beside glass tower windows, "
+            "fluted crystal vase with real CC0 botanical stems, material-sample board & distant basswood maquette."
+        ),
+    },
+    "17_persona_executive_study": {
+        "mount": "desk_flat",
+        "default_preset": "hero_desk",
+        "description": (
+            "Executive home study (Gabinet): oiled walnut desk before a warm-lit dark wood library bookcase, "
+            "spun brushed-brass dome desk lamp, stitched leather notebook & brass-framed architectural print."
+        ),
+    },
+}
+
+PERSONA_ENV_ALIASES: Dict[str, str] = {
+    "persona_architect": "12_persona_architect",
+    "persona_traveler": "13_persona_traveler",
+    "persona_lawyer": "14_persona_lawyer",
+    "persona_corporate": "15_persona_corporate",
+    "persona_realestate": "16_persona_realestate",
+    "persona_executive_study": "17_persona_executive_study",
+}
+
+PERSONA_HERO_PROFILES: Dict[str, Tuple[float, float, float, float, float, float, float]] = {
+    "12_persona_architect": (50.0, 2.8, 21.0, -17.0, 0.032, 0.68, 0.64),
+    "13_persona_traveler": (50.0, 2.6, 20.0, -16.0, 0.035, 0.68, 0.64),
+    "14_persona_lawyer": (50.0, 2.6, 21.0, -17.0, 0.035, 0.68, 0.64),
+    "15_persona_corporate": (48.0, 2.8, 21.0, -16.0, 0.035, 0.66, 0.62),
+    "16_persona_realestate": (50.0, 2.8, 22.0, -18.0, 0.032, 0.68, 0.64),
+    "17_persona_executive_study": (50.0, 2.6, 20.0, -16.0, 0.035, 0.68, 0.64),
 }
 
 ENV_ALIASES: Dict[str, str] = {
@@ -105,6 +171,7 @@ ENV_ALIASES: Dict[str, str] = {
     "dark_cinematic": "09_dark_cinematic",
     "macro_editorial": "10_macro_editorial",
     "packshot_white": "11_packshot_white",
+    **PERSONA_ENV_ALIASES,
 }
 
 ALL_ENV_CHOICES: Tuple[str, ...] = tuple(ENVIRONMENTS.keys()) + tuple(ENV_ALIASES.keys())
@@ -169,6 +236,22 @@ DEFAULT_PROPS_CATALOG: Dict[str, Dict[str, Any]] = {
     "architect_pen": {"category": "stationery", "approx_mm": [142, 10, 10], "description": "Machined matte-black/brass technical pen"},
     "steel_ruler": {"category": "stationery", "approx_mm": [200, 22, 16], "description": "Brushed-steel triangular architectural scale ruler"},
     "desk_lamp_edge": {"category": "lighting", "approx_mm": [160, 160, 380], "description": "Minimalist architectural desk lamp"},
+    "drafting_vellum_rolls": {"category": "architect", "approx_mm": [240, 320, 45], "description": "Rolled architectural vellum tubes over clean CAD grid sheet"},
+    "concrete_pencil_cup": {"category": "architect", "approx_mm": [78, 78, 156], "description": "Honed-concrete pencil cup holding angled drafting pens"},
+    "basswood_maquette": {"category": "architect", "approx_mm": [160, 125, 116], "description": "Minimalist Swiss basswood pavilion block massing study"},
+    "vintage_camera": {"category": "traveler", "approx_mm": [148, 89, 77], "description": "Real Poly Haven CC0 vintage Leica rangefinder film camera"},
+    "vintage_compass": {"category": "traveler", "approx_mm": [55, 68, 56], "description": "Real Poly Haven CC0 antique brass pocket compass"},
+    "travel_monograph_stack": {"category": "traveler", "approx_mm": [188, 236, 66], "description": "Stacked blind-debossed linen and leather travel monographs (zero text)"},
+    "brass_tabletop_globe": {"category": "traveler", "approx_mm": [176, 176, 235], "description": "Brushed-brass meridian tabletop globe with antique cartography"},
+    "law_volumes_row": {"category": "lawyer", "approx_mm": [195, 172, 244], "description": "Standing dark leather-bound law volumes with subtle gold bands"},
+    "leather_desk_folio": {"category": "lawyer", "approx_mm": [175, 238, 24], "description": "Stitched espresso-leather desk folio with brass corner trim"},
+    "gold_fountain_pen": {"category": "lawyer", "approx_mm": [144, 12, 12], "description": "Jet-black lacquer and 18k gold executive fountain pen"},
+    "matte_black_mug": {"category": "corporate", "approx_mm": [82, 106, 91], "description": "Unbranded matte jet-black ceramic coffee mug (zero logo)"},
+    "concrete_planter_plant": {"category": "corporate", "approx_mm": [145, 145, 275], "description": "Honed concrete cube planter with real CC0 green foliage"},
+    "fluted_crystal_vase_greenery": {"category": "realestate", "approx_mm": [145, 145, 265], "description": "Fluted clear crystal glass vase with water and real CC0 foliage"},
+    "material_sample_board": {"category": "realestate", "approx_mm": [175, 228, 17], "description": "Architectural stone, timber, and brass finish sample board"},
+    "brass_dome_lamp": {"category": "study", "approx_mm": [210, 210, 290], "description": "Spun brushed-brass mid-century dome table lamp with warm pool light"},
+    "brass_arch_print_frame": {"category": "study", "approx_mm": [145, 72, 172], "description": "Brushed-brass tabletop frame with real CC0 monochrome architectural print"},
 }
 
 

@@ -16,6 +16,7 @@ from .arch_interiors import (
     build_living_room_backdrop,
     build_loft_shelving_wall,
 )
+from .arch_personas import PERSONA_ARCH_BUILDERS
 from .architecture import (
     build_dark_cinematic_stage,
     build_desk_slab,
@@ -42,6 +43,10 @@ def _build_desk_architecture(
     col: Any,
 ) -> List[Any]:
     """Assemble tabletop slab and authentic interior room backdrop for lifestyle desk scenes."""
+    persona_fn = PERSONA_ARCH_BUILDERS.get(style)
+    if persona_fn is not None:
+        return persona_fn(desk_z, surface_key, wall_key, col)
+
     objs: List[Any] = []
     desk_mat = materials.make_surface_material(surface_key, name=f"Desk_{surface_key}")
     wall_mat = materials.make_surface_material(wall_key, name=f"BackWall_{wall_key}")
@@ -184,6 +189,15 @@ def build_environment(
             vignette_strength=0.075,
             grain_strength=0.011,
             warm_gain=(1.022, 1.005, 0.980),
+        )
+    elif spec.env_id in ("14_persona_lawyer", "17_persona_executive_study"):
+        setup_photographic_compositor(
+            bpy.context.scene,
+            spec.env_id,
+            bloom_strength=0.095,
+            vignette_strength=0.070,
+            grain_strength=0.010,
+            warm_gain=(1.022, 1.004, 0.978),
         )
     else:
         setup_photographic_compositor(
