@@ -20,18 +20,11 @@ except ImportError:  # pragma: no cover
     bpy = None  # type: ignore
     Matrix = None  # type: ignore
 
-from studio_blender.landmark_analyzer import (
-    analyze_city_mesh,
-    get_mesh_coords_array,
-    transform_analysis_to_wall_mount,
-)
+from studio_blender.landmark_analyzer import analyze_city_mesh, get_mesh_coords_array, transform_analysis_to_wall_mount
 
-
-MM_TO_M = 0.001
-VARIANT_C_OUTER_W_MM = 130.0
-VARIANT_C_OUTER_H_MM = 180.0
-A4_OPENING_W_MM = 120.0
-A4_OPENING_H_MM = 170.0
+RawStat = Tuple[Tuple[float, float, float], Tuple[float, float, float], float]
+MM_TO_M, VARIANT_C_OUTER_W_MM, VARIANT_C_OUTER_H_MM = 0.001, 130.0, 180.0
+A4_OPENING_W_MM, A4_OPENING_H_MM = 120.0, 170.0
 _FRAME_MM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*(?:mm)?")
 _GRID_RC_RE = re.compile(r"_R([12])C([12])", re.IGNORECASE)
 
@@ -228,13 +221,28 @@ def _align_single_13x18(
     return inner_w_mm * MM_TO_M, inner_h_mm * MM_TO_M, tile_metas
 
 
+def _is_landscape_a4_strips(raw_stats: Sequence[RawStat], stl_paths: Sequence[str], frame_mm_override: Optional[Tuple[float, float]]) -> bool:
+    """Return True when multi-tile A4 inputs are landscape 3x1 (56.7x120mm) or 2x1 (85x120mm) strips."""
+    n = len(raw_stats)
+    if n < 2:
+        return False
+    if frame_mm_override is not None:
+        return frame_mm_override[0] > frame_mm_override[1] + 5.0
+    for sp in stl_paths:
+        fm = _infer_frame_mm_from_filename(sp)
+        if fm and abs(fm[1] - A4_OPENING_W_MM) <= 1.5 and (abs(fm[0] - 56.7) <= 1.2 or abs(fm[0] - 85.0) <= 1.2):
+            return True
+        if fm and abs(fm[0] - A4_OPENING_W_MM) <= 1.5 and (abs(fm[1] - 56.7) <= 1.2 or abs(fm[1] - 85.0) <= 1.2):
+            return False
+    nom_w = A4_OPENING_H_MM / float(n)
+    max_dy = max(mx[1] - mn[1] for mn, mx, _ in raw_stats)
+    return max_dy > nom_w + 5.0 and all(mn[0] >= -2.0 and mx[0] <= nom_w + 2.0 and mn[1] >= -2.0 and mx[1] <= A4_OPENING_W_MM + 2.0 for mn, mx, _ in raw_stats)
+
+
 def _align_a4_passepartout(
-    raw_objs: List[Any],
-    raw_stats: List[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]],
-    stl_paths: Sequence[str],
-    frame_mm_override: Optional[Tuple[float, float]],
+    raw_objs: List[Any], raw_stats: List[RawStat], stl_paths: Sequence[str], frame_mm_override: Optional[Tuple[float, float]],
 ) -> Tuple[float, float, List[Dict[str, Any]]]:
-    """Fit 1x3 (120x56.7mm), 1x2 (120x85mm), 2x2 (_R#C#), or single tile flush in 120x170mm cutout."""
+    """Fit Portrait 1x3/1x2 (120x170mm), Landscape 3x1/2x1 (170x120mm), 2x2 (_R#C#), or 1 tile flush."""
     n_tiles = len(raw_objs)
     tile_metas: List[Dict[str, Any]] = []
     rc_matches = [_GRID_RC_RE.search(Path(sp).stem) for sp in stl_paths]
@@ -254,26 +262,32 @@ def _align_a4_passepartout(
         return op_w * MM_TO_M, op_h * MM_TO_M, tile_metas
 
     if n_tiles >= 2:
-        op_w, op_h = frame_mm_override if frame_mm_override else (A4_OPENING_W_MM, A4_OPENING_H_MM)
-        y_spans = [max(1.0, st[1][1] - st[0][1]) for st in raw_stats]
-        min_x_all, max_x_all = min(st[0][0] for st in raw_stats), max(st[1][0] for st in raw_stats)
-        span_x, total_y, nom_h = max_x_all - min_x_all, sum(y_spans), op_h / float(n_tiles)
-        in_nom_x = (min_x_all >= -2.0) and (max_x_all <= op_w + 2.0)
-        in_nom_y = all((st[0][1] >= -2.0) and (st[1][1] <= nom_h + 2.0) for st in raw_stats)
-        eff_w, eff_h = (op_w if in_nom_x else span_x), (op_h if in_nom_y else total_y)
-        fit = 1.0 if (eff_w <= op_w + 0.35 and eff_h <= op_h + 0.35) else min(1.0, op_w / max(eff_w, 1.0), op_h / max(eff_h, 1.0))
-        shift_x = (-0.5 * op_w * fit) if in_nom_x else (-0.5 * (min_x_all + max_x_all) * fit)
-        y_cursor = 0.5 * total_y * fit
+        is_land = _is_landscape_a4_strips(raw_stats, stl_paths, frame_mm_override)
+        op_w, op_h = frame_mm_override if frame_mm_override else ((A4_OPENING_H_MM, A4_OPENING_W_MM) if is_land else (A4_OPENING_W_MM, A4_OPENING_H_MM))
+        s, c = (0, 1) if is_land else (1, 0)
+        op_s, op_c = (op_w, op_h) if is_land else (op_h, op_w)
+        s_spans = [max(1.0, st[1][s] - st[0][s]) for st in raw_stats]
+        min_c, max_c = min(st[0][c] for st in raw_stats), max(st[1][c] for st in raw_stats)
+        total_s, span_c, nom_s = sum(s_spans), max_c - min_c, op_s / float(n_tiles)
+        in_nom_c = (min_c >= -2.0) and (max_c <= op_c + 2.0)
+        in_nom_s = all((st[0][s] >= -2.0) and (st[1][s] <= nom_s + 2.0) for st in raw_stats)
+        eff_s, eff_c = (op_s if in_nom_s else total_s), (op_c if in_nom_c else span_c)
+        fit = 1.0 if (eff_s <= op_s + 0.35 and eff_c <= op_c + 0.35) else min(1.0, op_s / max(eff_s, 1.0), op_c / max(eff_c, 1.0))
+        shift_c = (-0.5 * op_c * fit) if in_nom_c else (-0.5 * (min_c + max_c) * fit)
+        cursor_s = (-0.5 * total_s * fit) if is_land else (0.5 * total_s * fit)
         for idx, (obj, (mn, mx, sc), sp) in enumerate(zip(raw_objs, raw_stats, stl_paths)):
-            if in_nom_y:
-                th, y_bot = nom_h * fit, (0.5 * op_h - (idx + 1) * nom_h) * fit
-                shift_y = y_bot
+            if in_nom_s:
+                ts = nom_s * fit
+                s_lo = ((-0.5 * op_s + idx * nom_s) if is_land else (0.5 * op_s - (idx + 1) * nom_s)) * fit
+                shift_s = s_lo
             else:
-                th = y_spans[idx] * fit
-                y_bot, shift_y = y_cursor - th, (y_cursor - th) - mn[1] * fit
-                y_cursor -= th
-            _apply_mesh_transform(obj, (shift_x, shift_y, -mn[2] * fit), sc * fit)
-            tile_metas.append(_tile_meta(obj, sp, mn, mx, 0.0, (y_bot + 0.5 * th) * MM_TO_M, fit))
+                ts = s_spans[idx] * fit
+                s_lo = cursor_s if is_land else (cursor_s - ts)
+                shift_s, cursor_s = s_lo - mn[s] * fit, (cursor_s + ts if is_land else cursor_s - ts)
+            sh_x, sh_y = (shift_s, shift_c) if is_land else (shift_c, shift_s)
+            off_x, off_y = (((s_lo + 0.5 * ts) * MM_TO_M, 0.0) if is_land else (0.0, (s_lo + 0.5 * ts) * MM_TO_M))
+            _apply_mesh_transform(obj, (sh_x, sh_y, -mn[2] * fit), sc * fit)
+            tile_metas.append(_tile_meta(obj, sp, mn, mx, off_x, off_y, fit))
         return op_w * MM_TO_M, op_h * MM_TO_M, tile_metas
 
     mn, mx, sc = raw_stats[0]
@@ -281,32 +295,24 @@ def _align_a4_passepartout(
     op_w, op_h = frame_mm_override if frame_mm_override else ((A4_OPENING_H_MM, A4_OPENING_W_MM) if sx > sy * 1.05 else (A4_OPENING_W_MM, A4_OPENING_H_MM))
     in_nom_x, in_nom_y = (mn[0] >= -2.0 and mx[0] <= op_w + 2.0), (mn[1] >= -2.0 and mx[1] <= op_h + 2.0)
     fit = 1.0 if (sx <= op_w + 0.25 and sy <= op_h + 0.25) else min(1.0, op_w / max(sx, 1.0), op_h / max(sy, 1.0))
-    shx = (-0.5 * op_w * fit) if in_nom_x else (-0.5 * (mn[0] + mx[0]) * fit)
-    shy = (-0.5 * op_h * fit) if in_nom_y else (-0.5 * (mn[1] + mx[1]) * fit)
+    shx, shy = ((-0.5 * op_w * fit) if in_nom_x else (-0.5 * (mn[0] + mx[0]) * fit)), ((-0.5 * op_h * fit) if in_nom_y else (-0.5 * (mn[1] + mx[1]) * fit))
     _apply_mesh_transform(raw_objs[0], (shx, shy, -mn[2] * fit), sc * fit)
     tile_metas.append(_tile_meta(raw_objs[0], stl_paths[0], mn, mx, 0.0, 0.0, fit))
     return op_w * MM_TO_M, op_h * MM_TO_M, tile_metas
 
 
 def _align_multi_or_tight(
-    raw_objs: List[Any],
-    raw_stats: List[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]],
-    stl_paths: Sequence[str],
-    frame_style: str,
-    rim_width_mm: float,
-    frame_mm_override: Optional[Tuple[float, float]],
-    tile_gap_m: float,
+    raw_objs: List[Any], raw_stats: List[RawStat], stl_paths: Sequence[str], frame_style: str,
+    rim_width_mm: float, frame_mm_override: Optional[Tuple[float, float]], tile_gap_m: float,
 ) -> Tuple[float, float, List[Tuple[float, float]], List[Dict[str, Any]]]:
     """Align single tight frame, triptych_3x1 (1x3), or quartet_2x2 (2x2)."""
-    n_tiles = len(raw_objs)
-    tile_dims_mm: List[Tuple[float, float]] = []
+    n_tiles, tile_dims_mm = len(raw_objs), []
     for (mn, mx, _), sp in zip(raw_stats, stl_paths):
         sx, sy = mx[0] - mn[0], mx[1] - mn[1]
         fm = frame_mm_override or _infer_frame_mm_from_filename(sp)
         if fm is None:
             fm = (max(mx[0], sx), max(mx[1], sy)) if (mn[0] >= -1.0 and mn[1] >= -1.0) else (sx, sy)
         tile_dims_mm.append((max(fm[0], sx), max(fm[1], sy)))
-
     tile_w_m, tile_h_m = max(d[0] for d in tile_dims_mm) * MM_TO_M, max(d[1] for d in tile_dims_mm) * MM_TO_M
     border_m = 2.0 * rim_width_mm * MM_TO_M
     pitch_x, pitch_y = tile_w_m + border_m + tile_gap_m, tile_h_m + border_m + tile_gap_m
@@ -315,9 +321,7 @@ def _align_multi_or_tight(
     elif n_tiles == 1:
         centers_xy = [(0.0, 0.0)]
     else:
-        start_x = -0.5 * (n_tiles - 1) * pitch_x
-        centers_xy = [(start_x + i * pitch_x, 0.0) for i in range(n_tiles)]
-
+        centers_xy = [(-0.5 * (n_tiles - 1) * pitch_x + i * pitch_x, 0.0) for i in range(n_tiles)]
     tile_metas: List[Dict[str, Any]] = []
     for obj, (mn, mx, sc), sp, (fw_mm, fh_mm), (cx, cy) in zip(raw_objs, raw_stats, stl_paths, tile_dims_mm, centers_xy):
         in_x, in_y = (mn[0] >= -2.0 and mx[0] <= fw_mm + 2.0), (mn[1] >= -2.0 and mx[1] <= fh_mm + 2.0)
@@ -328,16 +332,12 @@ def _align_multi_or_tight(
     return tile_w_m, tile_h_m, centers_xy, tile_metas
 
 
-def _is_a4_strip_set(
-    raw_stats: Sequence[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]],
-    stl_paths: Sequence[str],
-    frame_mm_override: Optional[Tuple[float, float]],
-) -> bool:
-    """Return True when multi-tile frameless inputs are A4 1x3 (120x56.7mm) or 1x2 (120x85mm) strips."""
+def _is_a4_strip_set(raw_stats: Sequence[RawStat], stl_paths: Sequence[str], frame_mm_override: Optional[Tuple[float, float]]) -> bool:
+    """Return True when multi-tile frameless inputs are Portrait 1x3/1x2 or Landscape 3x1/2x1 A4 strips."""
     n = len(raw_stats)
     if n < 2:
         return False
-    if frame_mm_override is not None:
+    if frame_mm_override is not None or _is_landscape_a4_strips(raw_stats, stl_paths, frame_mm_override):
         return True
     for sp in stl_paths:
         fm = _infer_frame_mm_from_filename(sp)
@@ -348,27 +348,20 @@ def _is_a4_strip_set(
 
 
 def load_city_stls(
-    stl_paths: Sequence[str],
-    frame_style: str = "single_13x18",
-    rim_width_mm: float = 4.0,
-    frame_mm: Optional[str] = None,
-    material: Any = None,
-    tile_gap_m: float = 0.016,
-    collection: Any = None,
+    stl_paths: Sequence[str], frame_style: str = "single_13x18", rim_width_mm: float = 4.0,
+    frame_mm: Optional[str] = None, material: Any = None, tile_gap_m: float = 0.016, collection: Any = None,
 ) -> Dict[str, Any]:
     """Load 1-4 STL files, align into Variant C / A4 passe-partout / multi-frame, and analyze."""
     if not stl_paths:
         raise ValueError("At least one STL path must be provided.")
     if bpy is None:
         raise RuntimeError("load_city_stls must be run inside Blender.")
-
     frame_mm_override = parse_frame_mm(frame_mm) if isinstance(frame_mm, str) else frame_mm
     if collection is None:
         collection = bpy.data.collections.new("CityModels")
         bpy.context.scene.collection.children.link(collection)
-
     raw_objs: List[Any] = []
-    raw_stats: List[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]] = []
+    raw_stats: List[RawStat] = []
     for idx, stl_path in enumerate(stl_paths):
         obj = _import_stl_raw(stl_path)
         obj.name = f"CityTile_{idx + 1:02d}"
@@ -377,7 +370,6 @@ def load_city_stls(
         collection.objects.link(obj)
         raw_objs.append(obj)
         raw_stats.append(_measure_raw_mm(obj))
-
     if frame_style == "a4_passepartout" or (frame_style == "none" and _is_a4_strip_set(raw_stats, stl_paths, frame_mm_override)):
         frame_w_m, frame_h_m, tile_metas = _align_a4_passepartout(raw_objs, raw_stats, stl_paths, frame_mm_override)
         frame_centers_xy, total_w_m, total_h_m = [(0.0, 0.0)], frame_w_m, frame_h_m
@@ -393,14 +385,12 @@ def load_city_stls(
         )
         xs, ys = [c[0] for c in frame_centers_xy], [c[1] for c in frame_centers_xy]
         total_w_m, total_h_m = (max(xs) - min(xs)) + frame_w_m, (max(ys) - min(ys)) + frame_h_m
-
     if material is not None:
         for obj in raw_objs:
             if len(obj.data.materials) == 0:
                 obj.data.materials.append(material)
             else:
                 obj.data.materials[0] = material
-
     analysis = analyze_city_mesh(raw_objs, frame_width_m=total_w_m, frame_height_m=total_h_m)
     return {
         "objects": raw_objs, "collection": collection, "tiles": tile_metas,

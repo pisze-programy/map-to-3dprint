@@ -416,17 +416,25 @@
       }
       const sLo = sMin - topSeatU - padS;
       const sHi = sMax + padS;
-      // Clamp s >= sMin so the uphill topSeatU haunch stays flush beneath zTop instead of rising past it.
+      // Clamp s >= sMin on the top profile so the uphill haunch stays flush beneath zTop,
+      // while sloping the underside upward at >= 51 deg so no flat shelf overhangs an open arch.
       const zPlane = (s) => zEavesU + slope * (sMax - Math.max(sMin, s));
+      const slopeHaunch = Math.max(1.25, Math.min(slope, 1.85));
       const zTopAt = (s) => Math.min(zTop + overlapTop, zPlane(s) + halfDz);
-      const zBotAt = (s) => Math.max(zBottom - overlapBot, zPlane(s) - halfDz);
-      // Sample cleanly along [sLo, sHi] so clamped knees at zBottom and zTop are exact.
+      const zBotAt = (s) => {
+        if (s < sMin) {
+          return Math.min(zTop - 0.04 / scaleMm, (zPlane(sMin) - halfDz) + (sMin - s) * slopeHaunch);
+        }
+        return Math.max(zBottom - overlapBot, zPlane(s) - halfDz);
+      };
+      // Sample cleanly along [sLo, sHi] so clamped knees at zBottom, haunch, and zTop are exact.
       const sKneeTop = sMax - (zTop + overlapTop - halfDz - zEavesU) / slope;
       const sKneeBot = sMax - (zBottom - overlapBot + halfDz - zEavesU) / slope;
+      const sKneeHaunch = sMin - Math.max(0, ((zTop - 0.04 / scaleMm) - (zPlane(sMin) - halfDz)) / slopeHaunch);
       const sTopSamples = [sLo, sMin, sKneeTop, sMax, sHi]
         .filter(s => s >= sLo - 1e-6 && s <= sHi + 1e-6)
         .sort((a, b) => a - b);
-      const sBotSamples = [sLo, sMin, sKneeBot, sMax, sHi]
+      const sBotSamples = [sLo, sKneeHaunch, sMin, sKneeBot, sMax, sHi]
         .filter(s => s >= sLo - 1e-6 && s <= sHi + 1e-6)
         .sort((a, b) => b - a);
       const pts = [];
@@ -456,7 +464,9 @@
       }
       const sInner = sMin - inwardCoreU - padS;
       const sOuter = sMax + padS;
-      const zBotFace = zBottom - overlapBot;
+      // Keep elevated upper-tier shafts seated inside the floor deck above zBottom
+      // so they never punch a flat solid bottom through the deck ceiling below.
+      const zBotFace = rawMinH > 0.2 ? (zBottom + 0.08 / scaleMm) : (zBottom - overlapBot);
       const zTopFace = zTop + overlapTop;
       const zOuterEaves = Math.max(zBotFace + 0.15 / scaleMm, zEavesU);
       profileSZ = [

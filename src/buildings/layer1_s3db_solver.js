@@ -158,6 +158,58 @@
       if (gArr.length > 1) for (let k = 0; k < gArr.length; k++) _prepMeta[gArr[k]].isMultiGroup = true;
     }
 
+    // Prune low/mid-rise buildings sliced into razor slivers along the exact outer frame
+    // border, plus any tiny (< 1.0 mm) sidewalk annex fins directly attached to them.
+    if (typeof root.isOuterBorderSlicedSliver === 'function') {
+      const prunedBorderBoxes = [];
+      for (let i = 0; i < _prepMeta.length; i++) {
+        const pm = _prepMeta[i];
+        if (!pm || pm.skip) continue;
+        if (root.isOuterBorderSlicedSliver(core, pm.outerBed, pm.rawH, halfW, halfH, scaleMm)) {
+          pm.skip = true;
+          pm.skipReason = 'outer_border_sliver';
+          let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
+          for (let k = 0; k < pm.outerBed.length; k++) {
+            const px = pm.outerBed[k][0], py = pm.outerBed[k][1];
+            if (px < bx0) bx0 = px; if (px > bx1) bx1 = px;
+            if (py < by0) by0 = py; if (py > by1) by1 = py;
+          }
+          prunedBorderBoxes.push({ bx0, bx1, by0, by1 });
+        }
+      }
+      if (prunedBorderBoxes.length > 0) {
+        const edgeBandU = 3.5 / scaleMm;
+        const touchTolU = 0.25 / scaleMm;
+        for (let i = 0; i < _prepMeta.length; i++) {
+          const pm = _prepMeta[i];
+          if (!pm || pm.skip || pm.rawH >= 20.0) continue;
+          let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
+          for (let k = 0; k < pm.outerBed.length; k++) {
+            const px = pm.outerBed[k][0], py = pm.outerBed[k][1];
+            if (px < bx0) bx0 = px; if (px > bx1) bx1 = px;
+            if (py < by0) by0 = py; if (py > by1) by1 = py;
+          }
+          const nearOuterEdge =
+            bx0 < -halfW + edgeBandU || bx1 > halfW - edgeBandU ||
+            by0 < -halfH + edgeBandU || by1 > halfH - edgeBandU;
+          if (!nearOuterEdge) continue;
+          const obb = root._computeOBB(pm.outerBed, null, 'along', 0);
+          if (Math.min(obb.spanU, obb.spanV) * scaleMm >= 1.0) continue;
+          for (let pi = 0; pi < prunedBorderBoxes.length; pi++) {
+            const pb = prunedBorderBoxes[pi];
+            if (
+              bx0 <= pb.bx1 + touchTolU && bx1 >= pb.bx0 - touchTolU &&
+              by0 <= pb.by1 + touchTolU && by1 >= pb.by0 - touchTolU
+            ) {
+              pm.skip = true;
+              pm.skipReason = 'outer_border_sliver_annex';
+              break;
+            }
+          }
+        }
+      }
+    }
+
     const seenStamp = new Int32Array(_prepMeta.length);
     let stampToken = 0;
     for (let i = 0; i < _prepMeta.length; i++) {

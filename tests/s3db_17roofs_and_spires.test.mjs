@@ -350,5 +350,87 @@ console.log('\n[9/9] Multi-Tier Vaulted Roof Shells (spherical/circular + elevat
     `podH=${pod?.h}, sh3H=${sh3?.h}, sh5H=${sh5?.h}`);
 }
 
+// ---------------------------------------------------------------------------
+// 10. Inscribed Dome Radius (0.48), Narrow Lattice Dome Cornice & Perimeter Soffit
+// ---------------------------------------------------------------------------
+console.log('\n[10/10] Inscribed Dome Radius (0.48), Narrow Lattice Deck Cornice & Outward Soffit');
+{
+  // 10a. Square building with roof:shape=dome: dome stays strictly inside vertical parapet walls
+  const resDomeSq = buildComplete3DModel({
+    spanMeters: 200, dem: { grid: [[2, 2], [2, 2]], minElev: 2, maxElev: 2 },
+    waterPolys: [], waterLines: [], greenPolys: [], trees: [], roads: [], bridgePolys: [],
+    buildings: [{
+      id: 9201, outer: makeRect(0, 0, 4, 4), holes: [], h: 20, minH: 0,
+      roof: 'dome', roofH: 6, hasExplicitRoofH: true,
+      tags: { building: 'yes', height: '20', 'roof:shape': 'dome', 'roof:height': '6' },
+    }],
+  }, makeState());
+  assertClean(resDomeSq, 'Square building inscribed dome');
+  const domePrep = resDomeSq.audit.preparedList.find(p => p.id === 9201);
+  const dSt = getBuildingStats(resDomeSq);
+  let domeMaxDx = 0;
+  const zDomeLo = domePrep.zEaves + (domePrep.zTop - domePrep.zEaves) * 0.08;
+  for (const p of dSt.pts) {
+    if (p[2] >= zDomeLo) domeMaxDx = Math.max(domeMaxDx, Math.abs(p[0] - dSt.cx));
+  }
+  check(dSt.halfX > 1.0 && domeMaxDx <= dSt.halfX * 0.97, 'Dome roof stays strictly inscribed inside square wall parapet (no side bulge)',
+    `domeMaxDx=${domeMaxDx.toFixed(3)}, wallHalfX=${dSt.halfX.toFixed(3)}`);
+
+  // 10b. Lattice tower group with hollow 1st-floor ring deck + narrow elevated domed upper deck
+  const resLat = buildComplete3DModel({
+    spanMeters: 780, dem: { grid: [[2, 2], [2, 2]], minElev: 2, maxElev: 2 },
+    waterPolys: [], waterLines: [], greenPolys: [], trees: [], roads: [], bridgePolys: [],
+    buildings: [
+      { id: 9210, groupId: 9200, part: true, outer: makeRect(-6, -6, 2.2, 2.2), holes: [], h: 58, minH: 0, roof: 'flat', towerConstruction: 'lattice', tags: { 'building:part': 'yes', 'tower:construction': 'lattice', height: '58' } },
+      { id: 9211, groupId: 9200, part: true, outer: makeRect(6, -6, 2.2, 2.2), holes: [], h: 58, minH: 0, roof: 'flat', towerConstruction: 'lattice', tags: { 'building:part': 'yes', 'tower:construction': 'lattice', height: '58' } },
+      { id: 9212, groupId: 9200, part: true, outer: makeRect(6, 6, 2.2, 2.2), holes: [], h: 58, minH: 0, roof: 'flat', towerConstruction: 'lattice', tags: { 'building:part': 'yes', 'tower:construction': 'lattice', height: '58' } },
+      { id: 9213, groupId: 9200, part: true, outer: makeRect(-6, 6, 2.2, 2.2), holes: [], h: 58, minH: 0, roof: 'flat', towerConstruction: 'lattice', tags: { 'building:part': 'yes', 'tower:construction': 'lattice', height: '58' } },
+      { id: 9214, groupId: 9200, part: true, outer: makeRect(0, 0, 7.6, 7.6), holes: [makeRect(0, 0, 3.1, 3.1)], h: 61, minH: 58, roof: 'flat', tags: { 'building:part': 'yes', height: '61', min_height: '58' } },
+      { id: 9215, groupId: 9200, part: true, outer: makeRect(0, 0, 1.8, 1.8), holes: [], h: 300, minH: 276, roof: 'dome', roofH: 10, hasExplicitRoofH: true, tags: { 'building:part': 'yes', height: '300', min_height: '276', 'roof:shape': 'dome', 'roof:height': '10' } },
+    ],
+  }, makeState({ targetWidthCm: 12, targetHeightCm: 17, bedSizeMm: 120, totalHeightMm: 170 }));
+  const bRing = resLat.buildingBounds.find(b => b.id === 9214);
+  const bSummit = resLat.buildingBounds.find(b => b.id === 9215);
+  check(Boolean(bRing && bSummit), 'Elevated lattice ring deck and domed upper observation deck both build cleanly');
+  const summitSpan = bSummit ? Math.min(bSummit.maxX - bSummit.minX, bSummit.maxY - bSummit.minY) : 0;
+  check(summitSpan > 3.6 + 0.35, 'Narrow elevated domed lattice observation deck receives stepped gallery cornice',
+    `summitSpanU=${summitSpan.toFixed(2)} (raw=3.60)`);
+}
+
+// ---------------------------------------------------------------------------
+// 11. Outer-Border Sliced-Building Sliver Guard (Low-Rise Blades vs Interior & Towers)
+// ---------------------------------------------------------------------------
+console.log('\n[11/11] Outer-Border Sliced-Building Sliver Guard');
+{
+  // Plate 120x170 mm -> halfW = 59.718, halfH = 84.60, scaleMm ~ 1.0047
+  const halfW = 59.718;
+  const resBorder = buildComplete3DModel({
+    spanMeters: 780, dem: { grid: [[2, 2], [2, 2]], minElev: 2, maxElev: 2 },
+    waterPolys: [], waterLines: [], greenPolys: [], trees: [], roads: [], bridgePolys: [],
+    buildings: [
+      // 1) Low-rise razor blade on West border (only 1.4 mm inside, h=24m) -> MUST be skipped
+      { id: 9301, outer: makeRect(-halfW - 1.5, -20, 2.9, 8.0), holes: [], h: 24, minH: 0, roof: 'flat', tags: { building: 'yes', height: '24' } },
+      // 2) Tiny 0.5 mm sidewalk annex attached directly to pruned West sliver -> MUST be skipped
+      { id: 9302, outer: makeRect(-halfW + 1.65, -20, 0.25, 1.8), holes: [], h: 12, minH: 0, roof: 'flat', tags: { building: 'yes', height: '12' } },
+      // 3) Low-rise minority stub on East border (4.5 mm inside out of 14 mm -> 32% < 45%) -> MUST be skipped
+      { id: 9303, outer: makeRect(halfW + 2.5, 10, 7.0, 5.0), holes: [], h: 22, minH: 0, roof: 'flat', tags: { building: 'yes', height: '22' } },
+      // 4) Complete interior building strictly inside plate -> MUST stay intact
+      { id: 9304, outer: makeRect(0, 0, 5.0, 4.0), holes: [], h: 20, minH: 0, roof: 'flat', tags: { building: 'yes', height: '20' } },
+      // 5) Border-clipped 258 m supertall skyscraper on West border -> MUST stay intact (>= 65 m)
+      { id: 9305, outer: makeRect(-halfW + 0.5, 40, 2.5, 4.0), holes: [], h: 258, minH: 0, roof: 'flat', tags: { building: 'yes', height: '258' } },
+      // 6) Chunky majority-inside block on East border (6.0 mm inside out of 8.0 mm -> 75%) -> MUST stay intact
+      { id: 9306, outer: makeRect(halfW - 2.0, -30, 4.0, 4.0), holes: [], h: 24, minH: 0, roof: 'flat', tags: { building: 'yes', height: '24' } },
+    ],
+  }, makeState({ targetWidthCm: 12, targetHeightCm: 17, bedSizeMm: 120, totalHeightMm: 170, cropCenterX: 0, cropCenterY: 0 }));
+  assertClean(resBorder, 'Outer-border sliver guard scene');
+  const ids = new Set(resBorder.buildingBounds.map(b => b.id));
+  check(!ids.has(9301), 'Skips West-border low-rise razor sliver (< 3.2 mm inside)', `emitted=${[...ids]}`);
+  check(!ids.has(9302), 'Skips tiny < 1.0 mm annex attached to pruned border sliver', `emitted=${[...ids]}`);
+  check(!ids.has(9303), 'Skips East-border minority stub (< 45% footprint inside)', `emitted=${[...ids]}`);
+  check(ids.has(9304), 'Preserves complete interior building intact', `emitted=${[...ids]}`);
+  check(ids.has(9305), 'Preserves 258 m border-clipped skyscraper (>= 65 m guard)', `emitted=${[...ids]}`);
+  check(ids.has(9306), 'Preserves chunky majority-inside border block (75% inside, 6 mm thick)', `emitted=${[...ids]}`);
+}
+
 console.log(`\nS3DB ETAP 3 TEST SUMMARY: ${passed} passed, ${failed} failed.`);
 if (failed > 0) process.exit(1);

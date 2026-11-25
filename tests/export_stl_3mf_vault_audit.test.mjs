@@ -923,6 +923,62 @@ async function runAudit() {
   assert.ok(topOverhang.maxHalfSpanMm <= 2.2, `Expected narrow coastal strip VAL-04 <= 2.2 mm, got ${topOverhang.maxHalfSpanMm.toFixed(2)}`);
   console.log(`  PASS: Systemic MSLA fixes verified (Mid Z=0.15..1.15 cav=0, lakeTop=${midBaseSlices[4].maxSealedCavityMm2.toFixed(1)}mm2, courtyardZ4.5=${midBaseSlices[5].maxSealedCavityMm2.toFixed(1)}mm2, maxZ=${midAudit.maxZ.toFixed(1)}mm, TopNarrowVAL04=${topOverhang.maxHalfSpanMm.toFixed(2)}mm)`);
 
+  // -------------------------------------------------------------------------
+  // 10. Hollow Lattice Tower Elevated Ring Deck: Zero Center Arch Pipes + VAL-04 Pass
+  // -------------------------------------------------------------------------
+  console.log('\n[10/10] Lattice Tower Elevated Ring Deck: Zero Center Arch Pipes & VAL-04 Pass');
+  const latState = {
+    ...sysState,
+    tileCols: 1,
+    tileRows: 1,
+    targetWidthCm: 12.0,
+    targetHeightCm: 12.0,
+    bedSizeMm: 120.0,
+    totalHeightMm: 120.0,
+    waterCutout: false,
+  };
+  const latSpec = resolveSceneScaleAndSpec(latState, null);
+  const latU = 1.0 / latSpec.scaleMm;
+  const latScene = {
+    spanMeters: 780,
+    dem: { grid: [[0.1, 0.1], [0.1, 0.1]], minElev: 0.1, maxElev: 0.1 },
+    waterPolys: [], waterLines: [], greenPolys: [], trees: [], roads: [], bridgePolys: [],
+    buildings: [
+      // 4 inclined perimeter walls forming a hollow 16x16 mm arch frame rising to Z=17 mm
+      { id: 9501, groupId: 9500, part: true, outer: [[-8.2 * latU, -8.2 * latU], [8.2 * latU, -8.2 * latU], [8.2 * latU, -6.4 * latU], [-8.2 * latU, -6.4 * latU]], holes: [], h: 58, minH: 0, roof: 'flat', towerConstruction: 'lattice', tags: { 'building:part': 'yes', 'tower:construction': 'lattice', height: '58' } },
+      { id: 9502, groupId: 9500, part: true, outer: [[-8.2 * latU, 6.4 * latU], [8.2 * latU, 6.4 * latU], [8.2 * latU, 8.2 * latU], [-8.2 * latU, 8.2 * latU]], holes: [], h: 58, minH: 0, roof: 'flat', towerConstruction: 'lattice', tags: { 'building:part': 'yes', 'tower:construction': 'lattice', height: '58' } },
+      { id: 9503, groupId: 9500, part: true, outer: [[-8.2 * latU, -8.2 * latU], [-6.4 * latU, -8.2 * latU], [-6.4 * latU, 8.2 * latU], [-8.2 * latU, 8.2 * latU]], holes: [], h: 58, minH: 0, roof: 'flat', towerConstruction: 'lattice', tags: { 'building:part': 'yes', 'tower:construction': 'lattice', height: '58' } },
+      { id: 9504, groupId: 9500, part: true, outer: [[6.4 * latU, -8.2 * latU], [8.2 * latU, -8.2 * latU], [8.2 * latU, 8.2 * latU], [6.4 * latU, 8.2 * latU]], holes: [], h: 58, minH: 0, roof: 'flat', towerConstruction: 'lattice', tags: { 'building:part': 'yes', 'tower:construction': 'lattice', height: '58' } },
+      // Hollow 15.2x15.2 mm elevated observation deck ring with 6.2x6.2 mm central cutout (overhangs 3.3 mm inward)
+      { id: 9505, groupId: 9500, part: true, outer: makeSq(0, 0, 7.6 * latU), holes: [makeSq(0, 0, 3.1 * latU)], h: 61, minH: 58, roof: 'flat', tags: { 'building:part': 'yes', height: '61', min_height: '58' } },
+    ],
+  };
+  const latBuilt = buildComplete3DModel(latScene, latState);
+  const latBytes = stlMod.buildBinarySTLBytes({ ...latState, layerMeshes: latBuilt.meshes }, 'all', 0);
+  const latAudit = parseAndAuditRawStlBytes(latBytes);
+  assert.equal(latAudit.openEdges, 0, `lattice ring open=${latAudit.openEdges}`);
+  assert.equal(latAudit.nonManifoldEdges, 0, `lattice ring nm=${latAudit.nonManifoldEdges}`);
+  const latOverhang = auditRawStlOverhangsVal04(latBytes);
+  assert.ok(latOverhang.maxHalfSpanMm <= 2.2, `Expected lattice ring VAL-04 <= 2.2 mm, got ${latOverhang.maxHalfSpanMm.toFixed(2)}`);
+  // Verify the central 8x8 mm hollow void at Z=9.0 mm (well below soffit) has ZERO vertical pipes!
+  const latView = new DataView(latBytes.buffer, latBytes.byteOffset, latBytes.byteLength);
+  const latN = latView.getUint32(80, true);
+  let centerVoidTris = 0;
+  for (let i = 0; i < latN; i++) {
+    const o = 84 + i * 50;
+    const x0 = latView.getFloat32(o + 12, true), y0 = latView.getFloat32(o + 16, true), z0 = latView.getFloat32(o + 20, true);
+    const x1 = latView.getFloat32(o + 24, true), y1 = latView.getFloat32(o + 28, true), z1 = latView.getFloat32(o + 32, true);
+    const x2 = latView.getFloat32(o + 36, true), y2 = latView.getFloat32(o + 40, true), z2 = latView.getFloat32(o + 44, true);
+    const zMinT = Math.min(z0, z1, z2), zMaxT = Math.max(z0, z1, z2);
+    if (zMinT < 9.0 && zMaxT > 9.0) {
+      const cx = (x0 + x1 + x2) / 3 - 60.0;
+      const cy = (y0 + y1 + y2) / 3 - 60.0;
+      if (Math.abs(cx) < 4.5 && Math.abs(cy) < 4.5) centerVoidTris++;
+    }
+  }
+  assert.equal(centerVoidTris, 0, `Expected 0 overhang pipe triangles inside lattice center void at Z=9mm, got ${centerVoidTris}`);
+  console.log(`  PASS: Lattice ring center void clean at Z=9mm (centerVoidTris=0, VAL-04=${latOverhang.maxHalfSpanMm.toFixed(2)}mm)`);
+
   console.log(`\nETAP 6 AUDIT PASSED in ${Date.now() - tStart} ms.`);
 }
 

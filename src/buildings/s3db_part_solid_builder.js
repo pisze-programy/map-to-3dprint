@@ -114,6 +114,8 @@
   /**
    * Builds a self-supporting >= 52 deg stepped gallery cornice and crisp parapet rim
    * around elevated horizontal observation decks belonging to lattice tower groups.
+   * Underside bracket steps stay strictly along the outer perimeter collar so they
+   * never extend a full-area flat slab below zBase over an open interior void.
    * @param {object} core
    * @param {object} mf
    * @param {{ outer: number[][], holes: number[][] }} sr
@@ -126,16 +128,28 @@
     if (!sr || !sr.outer || sr.outer.length < 3) return null;
     const obb = root._computeOBB(sr.outer, null, 'along', 0);
     const minorU = Math.min(obb.spanU, obb.spanV);
-    if (minorU * scaleMm < 2.2) return null;
+    const minorMm = minorU * scaleMm;
+    if (minorMm < 1.15) return null;
 
     const outU = Math.min(0.42 / scaleMm, Math.max(0.26 / scaleMm, minorU * 0.055));
     const dropU = outU * 1.15;
     const zDeckTop = Math.max(zTop + 0.20 / scaleMm, zBase + 0.62 / scaleMm);
     const steps = [
-      { off: outU * 0.34, z0: zBase - dropU, z1: zBase - dropU * 0.44 },
-      { off: outU * 0.68, z0: zBase - dropU * 0.48, z1: zBase + 0.04 / scaleMm },
-      { off: outU, z0: zBase - 0.02 / scaleMm, z1: zDeckTop },
+      { off: outU * 0.34, z0: zBase - dropU, z1: zBase - dropU * 0.44, collarOnly: true },
+      { off: outU * 0.68, z0: zBase - dropU * 0.48, z1: zBase + 0.04 / scaleMm, collarOnly: true },
+      { off: outU, z0: zBase - 0.02 / scaleMm, z1: zDeckTop, collarOnly: false },
     ];
+    let collarInnerHoles = null;
+    if (minorMm >= 2.2) {
+      try {
+        const innerCut = core.clipperOffsetPolys([sr.outer], -0.60 / scaleMm, 'Miter', 1e-5)
+          .map(r => core.ensureWinding(r, true, 5e-4))
+          .filter(r => r.length >= 3);
+        if (innerCut.length > 0) collarInnerHoles = innerCut;
+      } catch (_) {
+        collarInnerHoles = null;
+      }
+    }
     const tiers = [];
     for (const st of steps) {
       if (st.z1 <= st.z0 + 0.04 / scaleMm) continue;
@@ -148,10 +162,134 @@
         grown = null;
       }
       if (!grown || grown.length === 0) continue;
+      const stepHoles = (st.collarOnly && collarInnerHoles) ? collarInnerHoles : (sr.holes || []);
       for (const r of grown) {
-        const m = core.extrudeRingSolid(mf, r, sr.holes || [], st.z0, st.z1);
+        const m = core.extrudeRingSolid(mf, r, stepHoles, st.z0, st.z1);
         if (m) tiers.push(m);
       }
+    }
+    return tiers.length > 0 ? core.batchUnionManifolds(mf, tiers) : null;
+  }
+
+  /**
+   * Builds a self-supporting 45 deg outward-tapering stepped perimeter vaulted soffit
+   * tucked directly beneath an elevated lattice-tower floor deck so inward deck slabs
+   * transfer load cleanly into outer inclined legs and arch spandrels with zero center
+   * overhang piers and zero obstruction of the open arches below.
+   * @param {object} core
+   * @param {object} mf
+   * @param {{ outer: number[][], holes: number[][] }} sr
+   * @param {number} zBase
+   * @param {number} zGroundSeat
+   * @param {number} scaleMm
+   * @returns {object|null} Manifold solid or null
+   */
+  function buildLatticeDeckPerimeterSoffit(core, mf, sr, zBase, zGroundSeat, scaleMm) {
+    if (!sr || !sr.outer || sr.outer.length < 3) return null;
+    if (zBase <= zGroundSeat + 1.5 / scaleMm) return null;
+    const obb = root._computeOBB(sr.outer, null, 'along', 0);
+    const halfMinU = Math.min(obb.spanU, obb.spanV) * 0.5;
+    if (halfMinU * scaleMm < 2.1) return null;
+
+    let deckPolys = [sr.outer];
+    if (sr.holes && sr.holes.length > 0) {
+      try {
+        const holesCCW = sr.holes
+          .map(h => core.ensureWinding(h, true, 5e-4))
+          .filter(h => h.length >= 3);
+        const diff = holesCCW.length > 0
+          ? core.clipperDiffPolys([sr.outer], holesCCW, 1e-5).filter(r => r.length >= 3)
+          : [];
+        if (diff.length > 0) deckPolys = diff;
+      } catch (_) {}
+    }
+
+    // Measure exact maximum solid inward span from sr.outer (preserving CW hole rings in deckPolys).
+    const probeStepU = 0.25 / scaleMm;
+    let dMaxU = 0;
+    for (let d = halfMinU - 0.10 / scaleMm; d >= 1.20 / scaleMm; d -= probeStepU) {
+      try {
+        const coreIn = core.clipperOffsetPolys([sr.outer], -d, 'Miter', 1e-5);
+        if (!coreIn || coreIn.length === 0) continue;
+        const hit = core.clipperIntersectPolys(deckPolys, coreIn, 1e-5)
+          .filter(r => r.length >= 3);
+        const netArea = hit.reduce((acc, r) => acc + root._ringAreaSigned(r), 0);
+        if (Math.abs(netArea) > 0.08 / (scaleMm * scaleMm)) {
+          dMaxU = Math.min(halfMinU, d + probeStepU * 0.5);
+          break;
+        }
+      } catch (_) {}
+    }
+    if (dMaxU * scaleMm <= 2.20) return null;
+
+    const isSolidCenterDeck = dMaxU >= halfMinU * 0.82;
+    const dTopU = Math.max(1.20 / scaleMm, dMaxU - 0.70 / scaleMm);
+    const dBotU = Math.min(dTopU - 0.25 / scaleMm, isSolidCenterDeck ? 1.45 / scaleMm : 0.95 / scaleMm);
+    const travelU = dTopU - dBotU;
+    if (travelU <= 0.15 / scaleMm) return null;
+
+    const tanSlope = 0.855; // ~40.5 deg self-supporting overhang (>= SLA 40 deg floor)
+    const maxAvailDropU = Math.max(0, (zBase - zGroundSeat) - 0.80 / scaleMm);
+    const dropU = Math.min(maxAvailDropU, travelU * tanSlope);
+    if (dropU <= 0.25 / scaleMm) return null;
+
+    const nSteps = Math.max(5, Math.min(12, Math.ceil(travelU / (0.32 / scaleMm))));
+    const zOverlapU = 0.05 / scaleMm;
+    const spandrelRimU = 0.35 / scaleMm;
+    const halfU = obb.spanU * 0.5;
+    const halfV = obb.spanV * 0.5;
+    const makeObbRect = (u0, u1, v0, v1) => [
+      [obb.cx + obb.ux * u0 + obb.vx * v0, obb.cy + obb.uy * u0 + obb.vy * v0],
+      [obb.cx + obb.ux * u1 + obb.vx * v0, obb.cy + obb.uy * u1 + obb.vy * v0],
+      [obb.cx + obb.ux * u1 + obb.vx * v1, obb.cy + obb.uy * u1 + obb.vy * v1],
+      [obb.cx + obb.ux * u0 + obb.vx * v1, obb.cy + obb.uy * u0 + obb.vy * v1],
+    ];
+
+    const tiers = [];
+    for (let s = 0; s < nSteps; s++) {
+      const f0 = s / nSteps;
+      const f1 = (s + 1) / nSteps;
+      const zHi = zBase - f0 * dropU + zOverlapU;
+      const zLo = zBase - f1 * dropU;
+      if (zHi <= zLo + 0.04 / scaleMm) continue;
+      const dInner = dTopU - f0 * travelU;
+      const dzLo = f1 * dropU;
+      const dzMid = ((f0 + f1) * 0.5) * dropU;
+      const outGrow = Math.min(0.45 / scaleMm, dzMid * 0.22);
+      try {
+        const outerRings = (outGrow > 1e-5
+          ? core.clipperOffsetPolys([sr.outer], outGrow, 'Miter', 1e-5)
+          : [sr.outer])
+          .map(r => core.ensureWinding(r, true, 5e-4))
+          .filter(r => r.length >= 3);
+        if (outerRings.length === 0) continue;
+
+        const cutouts = core.clipperOffsetPolys([sr.outer], -dInner, 'Miter', 1e-5)
+          .map(r => core.ensureWinding(r, true, 5e-4))
+          .filter(r => r.length >= 3);
+
+        // For solid-center elevated lattice decks spanning four corner legs, carve a
+        // 45 deg cross-arch groin vault so loads transfer cleanly onto the 4 corners
+        // without bridging flat shelves across open mid-side arches.
+        if (isSolidCenterDeck && dzLo > spandrelRimU) {
+          const archHalf = Math.min(halfMinU * 0.56, (dzLo - spandrelRimU) * 1.05);
+          if (archHalf > 0.15 / scaleMm) {
+            const padU = halfU + outGrow + 0.5 / scaleMm;
+            const padV = halfV + outGrow + 0.5 / scaleMm;
+            cutouts.push(core.ensureWinding(makeObbRect(-padU, padU, -archHalf, archHalf), true, 5e-4));
+            cutouts.push(core.ensureWinding(makeObbRect(-archHalf, archHalf, -padV, padV), true, 5e-4));
+          }
+        }
+
+        const ringPolys = cutouts.length > 0
+          ? core.clipperDiffPolys(outerRings, cutouts, 1e-5)
+          : outerRings;
+        const stepStructs = core.ringsToOutersWithHoles(ringPolys, 5e-4);
+        for (const st of stepStructs) {
+          const m = core.extrudeRingSolid(mf, st.outer, st.holes || [], zLo, zHi);
+          if (m) tiers.push(m);
+        }
+      } catch (_) {}
     }
     return tiers.length > 0 ? core.batchUnionManifolds(mf, tiers) : null;
   }
@@ -178,9 +316,76 @@
     return tiers.length > 0 ? core.batchUnionManifolds(mf, tiers) : null;
   }
 
+  /**
+   * Returns true when a low/mid-rise building (< 65 m) crosses the exact outer
+   * map frame boundary and leaves only a razor-thin sliced blade (< 3.2 mm minor
+   * span) or minority stub (< 45% of its raw footprint area) inside the plate.
+   * Internal multi-tile seams are untouched; only the exact outer plate box is tested.
+   * @param {object} core
+   * @param {number[][]} outerBed
+   * @param {number} rawH_m
+   * @param {number} halfW
+   * @param {number} halfH
+   * @param {number} scaleMm
+   * @returns {boolean}
+   */
+  function isOuterBorderSlicedSliver(core, outerBed, rawH_m, halfW, halfH, scaleMm) {
+    if (!outerBed || outerBed.length < 3) return false;
+    if (!(halfW > 0 && halfH > 0 && scaleMm > 0)) return false;
+    if (halfW * scaleMm < 25.0 || halfH * scaleMm < 25.0) return false;
+    if (Number(rawH_m) >= 65.0) return false;
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let k = 0; k < outerBed.length; k++) {
+      const px = outerBed[k][0], py = outerBed[k][1];
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }
+    const eps = 1e-4;
+    if (minX >= -halfW - eps && maxX <= halfW + eps && minY >= -halfH - eps && maxY <= halfH + eps) {
+      return false;
+    }
+    if (maxX <= -halfW + eps || minX >= halfW - eps || maxY <= -halfH + eps || minY >= halfH - eps) {
+      return true;
+    }
+
+    const wound = core.ensureWinding(outerBed, true, 6e-4);
+    if (wound.length < 3) return true;
+    const rawAreaU2 = Math.abs(root._ringAreaSigned(wound));
+    if (rawAreaU2 <= 1e-8) return true;
+
+    const exactPlatePoly = [[[-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]]];
+    let insidePieces = [];
+    try {
+      insidePieces = core.clipperIntersectPolys([wound], exactPlatePoly, 1e-5)
+        .map(r => core.ensureWinding(r, true, 6e-4))
+        .filter(r => r.length >= 3);
+    } catch (_) {
+      return false;
+    }
+    if (insidePieces.length === 0) return true;
+
+    let insideAreaU2 = 0;
+    let maxInsideMinorMm = 0;
+    for (let i = 0; i < insidePieces.length; i++) {
+      const r = insidePieces[i];
+      insideAreaU2 += Math.abs(root._ringAreaSigned(r));
+      const obb = root._computeOBB(r, null, 'along', 0);
+      const minorMm = Math.min(obb.spanU, obb.spanV) * scaleMm;
+      if (minorMm > maxInsideMinorMm) maxInsideMinorMm = minorMm;
+    }
+    const areaRatio = insideAreaU2 / rawAreaU2;
+    if (areaRatio >= 0.999) return false;
+    return maxInsideMinorMm < 3.2 || areaRatio < 0.45;
+  }
+
   function buildS3DBPartSolid(core, b, tags, metaP, groupDatumById, platePoly, scene, ctx, terrainWater) {
     const { mf, toBed, scaleToBed, mToU, zScale, scaleMm, maxZUnits, slaLaws } = ctx;
     const outerBed = (metaP && metaP.outerBed) ? metaP.outerBed : b.outer.map(toBed);
+    const preRawH_m = Number((b.h !== undefined && b.h !== null) ? b.h : (b.height !== undefined ? b.height : 9.0));
+    if (isOuterBorderSlicedSliver(core, outerBed, preRawH_m, ctx.halfW, ctx.halfH, scaleMm)) return null;
     const holesBed = (b.holes && b.holes.length > 0) ? b.holes.filter(h => h && h.length >= 3).map(h => h.map(toBed)) : [];
     const strictlyInPlate = Boolean(metaP && metaP.strictlyInsidePlate);
     let cleanOuters;
@@ -319,9 +524,23 @@
       if (minHU > 0) {
         const corbel = buildSupportlessCorbel(core, mf, sr, zBase, zGroundSeat, ctx);
         if (corbel) partSolids.push(corbel);
-        if (metaP && metaP.inLatticeGroup && roofShape === 'flat' && rawMinH_m >= 15.0 && (rawH_m - rawMinH_m) >= 1.5 && (rawH_m - rawMinH_m) <= 12.0) {
-          const cornice = buildLatticeDeckGalleryCornice(core, mf, sr, zBase, zTop, scaleMm);
-          if (cornice) partSolids.push(cornice);
+        if (metaP && metaP.inLatticeGroup) {
+          const soffit = buildLatticeDeckPerimeterSoffit(core, mf, sr, zBase, zGroundSeat, scaleMm);
+          if (soffit) partSolids.push(soffit);
+          const partSpanM = rawH_m - rawMinH_m;
+          if (
+            (roofShape === 'flat' || roofShape === 'dome') &&
+            rawMinH_m >= 15.0 &&
+            partSpanM >= 1.5 &&
+            partSpanM <= 32.0
+          ) {
+            const isTallDeckWithRoof = roofShape !== 'flat' || partSpanM > 12.0;
+            const zCorniceRef = isTallDeckWithRoof
+              ? Math.min(zEaves - 0.15 / scaleMm, zBase + 0.72 / scaleMm)
+              : zTop;
+            const cornice = buildLatticeDeckGalleryCornice(core, mf, sr, zBase, zCorniceRef, scaleMm);
+            if (cornice) partSolids.push(cornice);
+          }
         }
       }
     }
@@ -342,6 +561,9 @@
     _buildRoofManifold,
     sampleFootprintTerrainZ,
     widenNarrowSpirePolys,
+    isOuterBorderSlicedSliver,
+    buildLatticeDeckGalleryCornice,
+    buildLatticeDeckPerimeterSoffit,
     buildSupportlessCorbel,
     buildS3DBPartSolid,
   };

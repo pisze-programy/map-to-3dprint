@@ -129,7 +129,8 @@
 
   function _buildLatheRoofClipped(core, mf, outer, holes, zEaves, roofH, isOnion = false, rotDeg = 0) {
     const obb = _computeOBB(outer, null, 'along', rotDeg);
-    const rx = Math.max(0.2, obb.spanU * 0.52), ry = Math.max(0.2, obb.spanV * 0.52), baseR = Math.max(rx, ry);
+    const radFrac = isOnion ? 0.48 : 0.43;
+    const rx = Math.max(0.2, obb.spanU * radFrac), ry = Math.max(0.2, obb.spanV * radFrac), baseR = Math.max(rx, ry);
     const prof = [[0, 0]];
     if (!isOnion) {
       for (let i = 0; i <= 10; i++) {
