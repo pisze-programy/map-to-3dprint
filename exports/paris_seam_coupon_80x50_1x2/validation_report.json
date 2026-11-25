@@ -3,16 +3,16 @@
   "manifest": "assembly_manifest.json",
   "sku_id": "custom_grid",
   "format_id": "custom_grid",
-  "city_slug": "paris_coupon",
-  "validated_at": "2026-11-25T18:09:08.398092+00:00",
+  "city_slug": "paris_seam_coupon",
+  "validated_at": "2026-11-25T20:43:07.426571+00:00",
   "verdict": "PASS",
   "summary": {
     "tiles_checked": 2,
     "seam_pairs_checked": 1,
     "corners_4way_checked": 0,
     "master_volume_mm3": 14706.4709,
-    "sum_tile_volume_mm3": 14676.202,
-    "volume_diff_pct": 0.2058,
+    "sum_tile_volume_mm3": 14676.231,
+    "volume_diff_pct": 0.2056,
     "blocking_failures": 0,
     "warnings": 4
   },
@@ -61,7 +61,7 @@
         9.3561
       ],
       "volume_ml": 7.5419,
-      "volume_mm3": 7541.881,
+      "volume_mm3": 7541.931,
       "z0_area_mm2": 1081.781,
       "shells": [
         {
@@ -118,7 +118,7 @@
     "R1C1": {
       "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_seam_coupon_80x50_1x2/Map3D_PARIS_COUPON_Top_80x25mm.stl",
       "verdict": "PASS",
-      "triangles": 13610,
+      "triangles": 13514,
       "orig_zmin_mm": 0.0,
       "bbox_mm": [
         0.0,
@@ -134,8 +134,8 @@
         9.8791
       ],
       "volume_ml": 7.1343,
-      "volume_mm3": 7134.321,
-      "z0_area_mm2": 1104.055,
+      "volume_mm3": 7134.3,
+      "z0_area_mm2": 1104.054,
       "shells": [
         {
           "shell_index": 0,
@@ -160,7 +160,7 @@
             0.0,
             9.8791
           ],
-          "z0_area_mm2": 892.982,
+          "z0_area_mm2": 892.981,
           "min_width_mm": 25.0
         }
       ],

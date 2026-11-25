@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "manifest": "assembly_manifest.json",
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "chicago_loop",
+  "validated_at": "2026-11-25T20:42:30.082487+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "tiles_checked": 3,
+    "seam_pairs_checked": 2,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 139563.9979,
+    "sum_tile_volume_mm3": 139472.757,
+    "volume_diff_pct": 0.0654,
+    "blocking_failures": 0,
+    "warnings": 13
+  },
+  "failures": [],
+  "warnings": [
+    "[R3C1] VAL-02: Small sealed upper-story cavities (max 60.6 mm2 < 100 mm2) from Z=4.15 to Z=11.65 mm; add a vent if the part is thin.",
+    "[R3C1] VAL-07: High Z-slice peel area (6125 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R3C1] VAL-07: Sudden cross-section peel jump (+1524 mm2 at Z=1.25 mm).",
+    "[R3C1] VAL-08: Print consumes 44.5 ml resin; verify VAT fill level before starting.",
+    "[R2C1] VAL-02: Small sealed upper-story cavities (max 68.8 mm2 < 100 mm2) from Z=3.65 to Z=8.15 mm; add a vent if the part is thin.",
+    "[R2C1] VAL-07: High Z-slice peel area (6957 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R2C1] VAL-07: Sudden cross-section peel jump (+1778 mm2 at Z=1.25 mm).",
+    "[R2C1] VAL-08: Print consumes 55.6 ml resin; verify VAT fill level before starting.",
+    "[R1C1] VAL-02: Small sealed upper-story cavities (max 93.5 mm2 < 100 mm2) from Z=3.65 to Z=13.15 mm; add a vent if the part is thin.",
+    "[R1C1] VAL-04: Shallow arch/bridge at Z=5.36 mm XY=(119.2, 29.4) (half_span=2.8 mm, min_ang=1.0 deg).",
+    "[R1C1] VAL-07: High Z-slice peel area (5863 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R1C1] VAL-07: Sudden cross-section peel jump (+1048 mm2 at Z=1.25 mm).",
+    "[R1C1] VAL-08: Print consumes 39.4 ml resin; verify VAT fill level before starting."
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R3C1",
+        "R2C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": -31.8333,
+      "area_a_mm2": 1302.298,
+      "area_b_mm2": 1302.309,
+      "area_delta_mm2": 0.011,
+      "true_diff_mm2": 0.0111,
+      "max_step_mm": 0.002,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R3C1_R2C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 28.8333,
+      "area_a_mm2": 1030.933,
+      "area_b_mm2": 1030.965,
+      "area_delta_mm2": 0.032,
+      "true_diff_mm2": 0.032,
+      "max_step_mm": 0.1339,
+      "max_flatness_dev_mm": 0.0033,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "tiles": {
+    "R3C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/chicago_loop_a4_120x170_1x3/Map3D_CHICAGO_A4_Bottom_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 112606,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        53.1667,
+        0.0,
+        61.8792
+      ],
+      "span_mm": [
+        120.0,
+        53.1667,
+        61.8792
+      ],
+      "volume_ml": 44.5371,
+      "volume_mm3": 44537.107,
+      "z0_area_mm2": 3794.154,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            53.1667,
+            0.0,
+            61.8792
+          ],
+          "z0_area_mm2": 3794.154,
+          "min_width_mm": 53.167
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3793.69,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3869.56,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4320.19,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4767.75,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 60.6 mm2 < 100 mm2) from Z=4.15 to Z=11.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6125 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1524 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 44.5 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R2C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/chicago_loop_a4_120x170_1x3/Map3D_CHICAGO_A4_Middle_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 112224,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        -0.0,
+        60.6667,
+        0.0,
+        37.7053
+      ],
+      "span_mm": [
+        120.0,
+        60.6667,
+        37.7053
+      ],
+      "volume_ml": 55.5713,
+      "volume_mm3": 55571.32,
+      "z0_area_mm2": 4127.997,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            -0.0,
+            60.6667,
+            0.0,
+            37.7053
+          ],
+          "z0_area_mm2": 4127.997,
+          "min_width_mm": 60.667
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 4105.25,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 4177.75,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4754.38,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 5298.38,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 68.8 mm2 < 100 mm2) from Z=3.65 to Z=8.15 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6957 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1778 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 55.6 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/chicago_loop_a4_120x170_1x3/Map3D_CHICAGO_A4_Top_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 122748,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        56.1667,
+        0.0,
+        50.221
+      ],
+      "span_mm": [
+        120.0,
+        56.1667,
+        50.221
+      ],
+      "volume_ml": 39.3643,
+      "volume_mm3": 39364.33,
+      "z0_area_mm2": 3760.158,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            56.1667,
+            0.0,
+            50.221
+          ],
+          "z0_area_mm2": 3760.158,
+          "min_width_mm": 56.167
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3736.56,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3811.25,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4251.06,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4633.75,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [
+        {
+          "area_mm2": 6.34,
+          "unsupported_half_span_mm": 2.8,
+          "min_angle_deg": 1.0,
+          "z_mm": 5.36,
+          "center_xy": [
+            119.2,
+            29.4
+          ]
+        }
+      ],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 93.5 mm2 < 100 mm2) from Z=3.65 to Z=13.15 mm; add a vent if the part is thin.",
+        "VAL-04: Shallow arch/bridge at Z=5.36 mm XY=(119.2, 29.4) (half_span=2.8 mm, min_ang=1.0 deg).",
+        "VAL-07: High Z-slice peel area (5863 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1048 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 39.4 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    }
+  }
+}

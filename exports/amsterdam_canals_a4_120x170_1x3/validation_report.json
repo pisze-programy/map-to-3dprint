@@ -1,0 +1,291 @@
+{
+  "schema_version": 1,
+  "manifest": "assembly_manifest.json",
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "amsterdam_canals",
+  "validated_at": "2026-11-25T21:56:57.651309+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "tiles_checked": 3,
+    "seam_pairs_checked": 2,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 83034.7437,
+    "sum_tile_volume_mm3": 82957.856,
+    "volume_diff_pct": 0.0926,
+    "blocking_failures": 0,
+    "warnings": 10
+  },
+  "failures": [],
+  "warnings": [
+    "[R3C1] VAL-02: Small sealed upper-story cavities (max 57.1 mm2 < 100 mm2) from Z=4.15 to Z=6.15 mm; add a vent if the part is thin.",
+    "[R3C1] VAL-07: High Z-slice peel area (5522 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R3C1] VAL-07: Sudden cross-section peel jump (+1009 mm2 at Z=1.25 mm).",
+    "[R2C1] VAL-02: Small sealed upper-story cavities (max 47.3 mm2 < 100 mm2) from Z=4.15 to Z=7.15 mm; add a vent if the part is thin.",
+    "[R2C1] VAL-07: High Z-slice peel area (6900 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R2C1] VAL-07: Sudden cross-section peel jump (+1381 mm2 at Z=1.25 mm).",
+    "[R2C1] VAL-08: Print consumes 32.2 ml resin; verify VAT fill level before starting.",
+    "[R1C1] VAL-02: Small sealed upper-story cavities (max 59.3 mm2 < 100 mm2) from Z=4.15 to Z=5.65 mm; add a vent if the part is thin.",
+    "[R1C1] VAL-07: High Z-slice peel area (5531 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R1C1] VAL-07: Sudden cross-section peel jump (+1115 mm2 at Z=1.25 mm)."
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R3C1",
+        "R2C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": -30.3333,
+      "area_a_mm2": 409.69,
+      "area_b_mm2": 409.69,
+      "area_delta_mm2": 0.0,
+      "true_diff_mm2": 0.0,
+      "max_step_mm": 0.0003,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R3C1_R2C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 32.9333,
+      "area_a_mm2": 481.454,
+      "area_b_mm2": 481.504,
+      "area_delta_mm2": 0.05,
+      "true_diff_mm2": 0.0531,
+      "max_step_mm": 0.0108,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "tiles": {
+    "R3C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/amsterdam_canals_a4_120x170_1x3/Map3D_AMSTERDAM_A4_Bottom_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 145548,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        54.6667,
+        0.0,
+        8.5224
+      ],
+      "span_mm": [
+        120.0,
+        54.6667,
+        8.5224
+      ],
+      "volume_ml": 25.392,
+      "volume_mm3": 25392.045,
+      "z0_area_mm2": 3924.643,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            54.6667,
+            0.0,
+            8.5224
+          ],
+          "z0_area_mm2": 3924.643,
+          "min_width_mm": 54.667
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3918.06,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3986.12,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4308.25,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4617.0,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 57.1 mm2 < 100 mm2) from Z=4.15 to Z=6.15 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (5522 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1009 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R2C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/amsterdam_canals_a4_120x170_1x3/Map3D_AMSTERDAM_A4_Middle_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 208160,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        -0.0,
+        63.2667,
+        0.0,
+        9.4623
+      ],
+      "span_mm": [
+        120.0,
+        63.2667,
+        9.4623
+      ],
+      "volume_ml": 32.2097,
+      "volume_mm3": 32209.696,
+      "z0_area_mm2": 4304.64,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            -0.0,
+            63.2667,
+            0.0,
+            9.4623
+          ],
+          "z0_area_mm2": 4304.64,
+          "min_width_mm": 63.267
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 4278.12,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 4341.0,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4892.0,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 5405.12,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 47.3 mm2 < 100 mm2) from Z=4.15 to Z=7.15 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6900 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1381 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 32.2 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/amsterdam_canals_a4_120x170_1x3/Map3D_AMSTERDAM_A4_Top_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 167322,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        52.0667,
+        0.0,
+        8.2492
+      ],
+      "span_mm": [
+        120.0,
+        52.0667,
+        8.2492
+      ],
+      "volume_ml": 25.3561,
+      "volume_mm3": 25356.115,
+      "z0_area_mm2": 3655.635,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            52.0667,
+            0.0,
+            8.2492
+          ],
+          "z0_area_mm2": 3655.635,
+          "min_width_mm": 52.067
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3630.69,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3698.12,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4096.75,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4443.75,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 59.3 mm2 < 100 mm2) from Z=4.15 to Z=5.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (5531 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1115 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    }
+  }
+}

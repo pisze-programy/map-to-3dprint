@@ -1,0 +1,321 @@
+{
+  "schema_version": 1,
+  "manifest": "assembly_manifest.json",
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "london_tower_bridge",
+  "validated_at": "2026-11-25T21:38:29.099120+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "tiles_checked": 3,
+    "seam_pairs_checked": 2,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 87189.24,
+    "sum_tile_volume_mm3": 87109.609,
+    "volume_diff_pct": 0.0913,
+    "blocking_failures": 0,
+    "warnings": 12
+  },
+  "failures": [],
+  "warnings": [
+    "[R3C1] VAL-02: Small sealed upper-story cavities (max 36.7 mm2 < 100 mm2) from Z=4.15 to Z=5.65 mm; add a vent if the part is thin.",
+    "[R3C1] VAL-06: Shells #0 and #1 are 0.0 mm apart (<12.0 mm classic FEP tenting margin).",
+    "[R3C1] VAL-07: High Z-slice peel area (4775 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R3C1] VAL-07: Sudden cross-section peel jump (+1162 mm2 at Z=1.25 mm).",
+    "[R2C1] VAL-02: Small sealed upper-story cavities (max 43.8 mm2 < 100 mm2) from Z=4.15 to Z=21.65 mm; add a vent if the part is thin.",
+    "[R2C1] VAL-06: Shells #0 and #1 are 0.0 mm apart (<12.0 mm classic FEP tenting margin).",
+    "[R2C1] VAL-07: High Z-slice peel area (5769 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R2C1] VAL-07: Sudden cross-section peel jump (+1488 mm2 at Z=1.25 mm).",
+    "[R1C1] VAL-02: Small sealed upper-story cavities (max 41.4 mm2 < 100 mm2) from Z=4.15 to Z=6.65 mm; add a vent if the part is thin.",
+    "[R1C1] VAL-07: High Z-slice peel area (6768 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R1C1] VAL-07: Sudden cross-section peel jump (+1337 mm2 at Z=1.25 mm).",
+    "[R1C1] VAL-08: Print consumes 37.1 ml resin; verify VAT fill level before starting."
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R3C1",
+        "R2C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": -33.0333,
+      "area_a_mm2": 338.362,
+      "area_b_mm2": 338.366,
+      "area_delta_mm2": 0.003,
+      "true_diff_mm2": 0.0044,
+      "max_step_mm": 0.0012,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R3C1_R2C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 28.8333,
+      "area_a_mm2": 542.795,
+      "area_b_mm2": 542.797,
+      "area_delta_mm2": 0.002,
+      "true_diff_mm2": 0.0022,
+      "max_step_mm": 0.0007,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "tiles": {
+    "R3C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/london_tower_bridge_a4_120x170_1x3/Map3D_LONDON_A4_Bottom_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 112472,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        51.9667,
+        0.0,
+        39.0379
+      ],
+      "span_mm": [
+        120.0,
+        51.9667,
+        39.0379
+      ],
+      "volume_ml": 22.4875,
+      "volume_mm3": 22487.506,
+      "z0_area_mm2": 3004.796,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            118.4087,
+            0.0,
+            51.9667,
+            0.0,
+            39.0379
+          ],
+          "z0_area_mm2": 2641.359,
+          "min_width_mm": 51.967
+        },
+        {
+          "shell_index": 1,
+          "bbox": [
+            82.0696,
+            120.0,
+            25.5305,
+            51.9667,
+            0.0,
+            7.617
+          ],
+          "z0_area_mm2": 363.438,
+          "min_width_mm": 26.436
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3005.75,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3067.88,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 3405.69,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 3744.25,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 36.7 mm2 < 100 mm2) from Z=4.15 to Z=5.65 mm; add a vent if the part is thin.",
+        "VAL-06: Shells #0 and #1 are 0.0 mm apart (<12.0 mm classic FEP tenting margin).",
+        "VAL-07: High Z-slice peel area (4775 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1162 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R2C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/london_tower_bridge_a4_120x170_1x3/Map3D_LONDON_A4_Middle_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 162046,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        61.8667,
+        0.0,
+        22.0831
+      ],
+      "span_mm": [
+        120.0,
+        61.8667,
+        22.0831
+      ],
+      "volume_ml": 27.5462,
+      "volume_mm3": 27546.152,
+      "z0_area_mm2": 3396.197,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            45.875,
+            0.0,
+            16.9573,
+            0.0,
+            12.0233
+          ],
+          "z0_area_mm2": 323.631,
+          "min_width_mm": 16.957
+        },
+        {
+          "shell_index": 1,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            61.8667,
+            0.0,
+            22.0831
+          ],
+          "z0_area_mm2": 3072.567,
+          "min_width_mm": 61.867
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3368.5,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3430.75,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 3903.5,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4382.19,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 43.8 mm2 < 100 mm2) from Z=4.15 to Z=21.65 mm; add a vent if the part is thin.",
+        "VAL-06: Shells #0 and #1 are 0.0 mm apart (<12.0 mm classic FEP tenting margin).",
+        "VAL-07: High Z-slice peel area (5769 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1488 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/london_tower_bridge_a4_120x170_1x3/Map3D_LONDON_A4_Top_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 117040,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        56.1667,
+        0.0,
+        35.4209
+      ],
+      "span_mm": [
+        120.0,
+        56.1667,
+        35.4209
+      ],
+      "volume_ml": 37.076,
+      "volume_mm3": 37075.951,
+      "z0_area_mm2": 4140.695,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            56.1667,
+            0.0,
+            35.4209
+          ],
+          "z0_area_mm2": 4140.695,
+          "min_width_mm": 56.167
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 4121.25,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 4201.06,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4750.25,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 5234.94,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 41.4 mm2 < 100 mm2) from Z=4.15 to Z=6.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6768 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1337 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 37.1 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    }
+  }
+}

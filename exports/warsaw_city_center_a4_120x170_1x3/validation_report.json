@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "manifest": "assembly_manifest.json",
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "warsaw_city_center",
+  "validated_at": "2026-11-25T20:39:56.975589+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "tiles_checked": 3,
+    "seam_pairs_checked": 2,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 102736.8401,
+    "sum_tile_volume_mm3": 102648.109,
+    "volume_diff_pct": 0.0864,
+    "blocking_failures": 0,
+    "warnings": 12
+  },
+  "failures": [],
+  "warnings": [
+    "[R3C1] VAL-02: Small sealed upper-story cavities (max 67.0 mm2 < 100 mm2) from Z=4.15 to Z=8.15 mm; add a vent if the part is thin.",
+    "[R3C1] VAL-07: High Z-slice peel area (6768 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R3C1] VAL-07: Sudden cross-section peel jump (+1715 mm2 at Z=1.25 mm).",
+    "[R3C1] VAL-08: Print consumes 34.6 ml resin; verify VAT fill level before starting.",
+    "[R2C1] VAL-02: Small sealed upper-story cavities (max 72.7 mm2 < 100 mm2) from Z=3.65 to Z=6.65 mm; add a vent if the part is thin.",
+    "[R2C1] VAL-07: High Z-slice peel area (6768 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R2C1] VAL-07: Sudden cross-section peel jump (+1740 mm2 at Z=1.25 mm).",
+    "[R2C1] VAL-08: Print consumes 35.3 ml resin; verify VAT fill level before starting.",
+    "[R1C1] VAL-02: Small sealed upper-story cavities (max 58.3 mm2 < 100 mm2) from Z=4.15 to Z=8.15 mm; add a vent if the part is thin.",
+    "[R1C1] VAL-07: High Z-slice peel area (6768 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R1C1] VAL-07: Sudden cross-section peel jump (+1349 mm2 at Z=1.25 mm).",
+    "[R1C1] VAL-08: Print consumes 32.8 ml resin; verify VAT fill level before starting."
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R3C1",
+        "R2C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": -28.3333,
+      "area_a_mm2": 541.459,
+      "area_b_mm2": 541.459,
+      "area_delta_mm2": 0.001,
+      "true_diff_mm2": 0.0006,
+      "max_step_mm": 0.0004,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R3C1_R2C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 28.3333,
+      "area_a_mm2": 514.34,
+      "area_b_mm2": 514.34,
+      "area_delta_mm2": 0.0,
+      "true_diff_mm2": 0.0,
+      "max_step_mm": 0.0,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "tiles": {
+    "R3C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/warsaw_city_center_a4_120x170_1x3/Map3D_WARSAW_A4_Bottom_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 123342,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        56.6667,
+        0.0,
+        51.7335
+      ],
+      "span_mm": [
+        120.0,
+        56.6667,
+        51.7335
+      ],
+      "volume_ml": 34.5633,
+      "volume_mm3": 34563.281,
+      "z0_area_mm2": 4184.921,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            56.6667,
+            0.0,
+            51.7335
+          ],
+          "z0_area_mm2": 4184.921,
+          "min_width_mm": 56.667
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 4183.31,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 4263.44,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4778.06,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 5286.12,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 67.0 mm2 < 100 mm2) from Z=4.15 to Z=8.15 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6768 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1715 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 34.6 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R2C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/warsaw_city_center_a4_120x170_1x3/Map3D_WARSAW_A4_Middle_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 157764,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        -0.0,
+        56.6667,
+        0.0,
+        40.4926
+      ],
+      "span_mm": [
+        120.0,
+        56.6667,
+        40.4926
+      ],
+      "volume_ml": 35.314,
+      "volume_mm3": 35314.02,
+      "z0_area_mm2": 3788.038,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            -0.0,
+            56.6667,
+            0.0,
+            40.4926
+          ],
+          "z0_area_mm2": 3788.038,
+          "min_width_mm": 56.667
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3771.0,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3843.12,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4446.25,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 5024.38,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 72.7 mm2 < 100 mm2) from Z=3.65 to Z=6.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6768 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1740 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 35.3 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/warsaw_city_center_a4_120x170_1x3/Map3D_WARSAW_A4_Top_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 145022,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        56.6667,
+        0.0,
+        28.6357
+      ],
+      "span_mm": [
+        120.0,
+        56.6667,
+        28.6357
+      ],
+      "volume_ml": 32.7708,
+      "volume_mm3": 32770.808,
+      "z0_area_mm2": 4184.907,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            56.6667,
+            0.0,
+            28.6357
+          ],
+          "z0_area_mm2": 4184.907,
+          "min_width_mm": 56.667
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 4165.06,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 4245.19,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4798.38,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 5286.06,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 58.3 mm2 < 100 mm2) from Z=4.15 to Z=8.15 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6768 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1349 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 32.8 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    }
+  }
+}

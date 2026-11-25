@@ -1,0 +1,321 @@
+{
+  "schema_version": 1,
+  "manifest": "assembly_manifest.json",
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "venice_grand_canal",
+  "validated_at": "2026-11-25T21:53:21.380888+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "tiles_checked": 3,
+    "seam_pairs_checked": 2,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 76711.7834,
+    "sum_tile_volume_mm3": 76640.358,
+    "volume_diff_pct": 0.0931,
+    "blocking_failures": 0,
+    "warnings": 12
+  },
+  "failures": [],
+  "warnings": [
+    "[R3C1] VAL-02: Small sealed upper-story cavities (max 21.9 mm2 < 100 mm2) from Z=4.15 to Z=7.15 mm; add a vent if the part is thin.",
+    "[R3C1] VAL-06: Shells #0 and #1 are 0.0 mm apart (<12.0 mm classic FEP tenting margin).",
+    "[R3C1] VAL-07: High Z-slice peel area (2911 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R3C1] VAL-07: Sudden cross-section peel jump (+433 mm2 at Z=1.25 mm).",
+    "[R2C1] VAL-02: Small sealed upper-story cavities (max 33.5 mm2 < 100 mm2) from Z=3.65 to Z=6.65 mm; add a vent if the part is thin.",
+    "[R2C1] VAL-07: High Z-slice peel area (6393 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R2C1] VAL-07: Sudden cross-section peel jump (+1342 mm2 at Z=1.25 mm).",
+    "[R2C1] VAL-08: Print consumes 33.1 ml resin; verify VAT fill level before starting.",
+    "[R1C1] VAL-02: Small sealed upper-story cavities (max 20.5 mm2 < 100 mm2) from Z=4.15 to Z=6.65 mm; add a vent if the part is thin.",
+    "[R1C1] VAL-06: Shells #0 and #1 are 0.0 mm apart (<12.0 mm classic FEP tenting margin).",
+    "[R1C1] VAL-07: High Z-slice peel area (5625 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R1C1] VAL-07: Sudden cross-section peel jump (+670 mm2 at Z=1.25 mm)."
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R3C1",
+        "R2C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": -28.8333,
+      "area_a_mm2": 565.162,
+      "area_b_mm2": 565.173,
+      "area_delta_mm2": 0.011,
+      "true_diff_mm2": 0.0435,
+      "max_step_mm": 0.0053,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R3C1_R2C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 30.0833,
+      "area_a_mm2": 532.947,
+      "area_b_mm2": 532.958,
+      "area_delta_mm2": 0.011,
+      "true_diff_mm2": 0.0463,
+      "max_step_mm": 0.0851,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "tiles": {
+    "R3C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/venice_grand_canal_a4_120x170_1x3/Map3D_VENICE_A4_Bottom_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 100546,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        7.9511,
+        56.1667,
+        0.0,
+        13.1097
+      ],
+      "span_mm": [
+        120.0,
+        48.2156,
+        13.1097
+      ],
+      "volume_ml": 15.0934,
+      "volume_mm3": 15093.427,
+      "z0_area_mm2": 2200.51,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            56.184,
+            7.9511,
+            45.6544,
+            0.0,
+            11.7359
+          ],
+          "z0_area_mm2": 846.545,
+          "min_width_mm": 37.703
+        },
+        {
+          "shell_index": 1,
+          "bbox": [
+            0.0,
+            120.0,
+            34.0787,
+            56.1667,
+            0.0,
+            13.1097
+          ],
+          "z0_area_mm2": 1353.965,
+          "min_width_mm": 22.088
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 2195.75,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 2231.62,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 2395.88,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 2534.44,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 21.9 mm2 < 100 mm2) from Z=4.15 to Z=7.15 mm; add a vent if the part is thin.",
+        "VAL-06: Shells #0 and #1 are 0.0 mm apart (<12.0 mm classic FEP tenting margin).",
+        "VAL-07: High Z-slice peel area (2911 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+433 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R2C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/venice_grand_canal_a4_120x170_1x3/Map3D_VENICE_A4_Middle_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 268626,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        -0.0,
+        58.9167,
+        0.0,
+        11.374
+      ],
+      "span_mm": [
+        120.0,
+        58.9167,
+        11.374
+      ],
+      "volume_ml": 33.1493,
+      "volume_mm3": 33149.329,
+      "z0_area_mm2": 4269.742,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            -0.0,
+            58.9167,
+            0.0,
+            11.374
+          ],
+          "z0_area_mm2": 4269.742,
+          "min_width_mm": 58.917
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 4273.75,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 4342.0,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4771.69,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 5168.88,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 33.5 mm2 < 100 mm2) from Z=3.65 to Z=6.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6393 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1342 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 33.1 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/venice_grand_canal_a4_120x170_1x3/Map3D_VENICE_A4_Top_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 203590,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        54.9167,
+        0.0,
+        10.965
+      ],
+      "span_mm": [
+        120.0,
+        54.9167,
+        10.965
+      ],
+      "volume_ml": 28.3976,
+      "volume_mm3": 28397.602,
+      "z0_area_mm2": 4206.491,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            73.1433,
+            0.0,
+            54.9167,
+            0.0,
+            8.3694
+          ],
+          "z0_area_mm2": 1933.279,
+          "min_width_mm": 54.917
+        },
+        {
+          "shell_index": 1,
+          "bbox": [
+            36.846,
+            120.0,
+            0.0,
+            54.9167,
+            0.0,
+            10.965
+          ],
+          "z0_area_mm2": 2273.212,
+          "min_width_mm": 54.917
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 4197.44,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 4255.56,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4546.94,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4800.5,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 20.5 mm2 < 100 mm2) from Z=4.15 to Z=6.65 mm; add a vent if the part is thin.",
+        "VAL-06: Shells #0 and #1 are 0.0 mm apart (<12.0 mm classic FEP tenting margin).",
+        "VAL-07: High Z-slice peel area (5625 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+670 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    }
+  }
+}

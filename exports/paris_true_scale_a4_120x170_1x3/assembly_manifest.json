@@ -2,16 +2,17 @@
   "schema_version": 1,
   "sku_id": "single_a4_1x3",
   "format_id": "single_a4_1x3",
-  "city_slug": "map3d_paris_a4",
-  "generated_at": "2026-11-25T17:15:59.095Z",
+  "city_slug": "paris_true_scale",
+  "generated_at": "2026-11-25T20:38:09.080Z",
   "source_params": {
-    "title": "Map3D_PARIS_A4",
+    "title": "PARIS",
     "lat": 48.8586,
     "lon": 2.2942,
     "span_m": 780,
     "rotation_deg": -46,
     "z_scale": 1.05,
     "terrain_scale": 1,
+    "dem_mode": "flat",
     "window_mm": [
       120,
       170
@@ -31,7 +32,7 @@
     "dfm06_chamfer_height_mm": 0.5,
     "underside_relief_enabled": true
   },
-  "master_volume_mm3": 133735.3124,
+  "master_volume_mm3": 81311.1805,
   "nudged_seams": [],
   "frames": [
     {
@@ -72,8 +73,8 @@
       "local_col": 0,
       "file": "Map3D_PARIS_A4_Bottom_120x57mm.stl",
       "skipped_empty_water": false,
-      "byte_length": 3605984,
-      "sha256": "7f027196f7af6ae2dec95f9b16b5d7965c337040cc26516f2a792013ba3b8ebe",
+      "byte_length": 3180884,
+      "sha256": "68b6a4308f9349af0badf744ad651f68dd0c4006f149ccf2c0fa5c7137a74ba3",
       "stl_rotation_deg": 0,
       "nominal_rect_mm": {
         "x_min": -60,
@@ -100,8 +101,8 @@
       "local_col": 0,
       "file": "Map3D_PARIS_A4_Middle_120x57mm.stl",
       "skipped_empty_water": false,
-      "byte_length": 4690684,
-      "sha256": "9b4c210e6e23d3e64b096243022f0dfe3436b0b36194f9868c6eb1a8a0e414fe",
+      "byte_length": 4435084,
+      "sha256": "71b15894211e752b22aeafd2bdecdd81866fe88bb3475b9824c7836c69402e4c",
       "stl_rotation_deg": 0,
       "nominal_rect_mm": {
         "x_min": -60,
@@ -128,8 +129,8 @@
       "local_col": 0,
       "file": "Map3D_PARIS_A4_Top_120x57mm.stl",
       "skipped_empty_water": false,
-      "byte_length": 2071184,
-      "sha256": "058d1f547cd42a6d6343ea199670a736c2b0842bb79760ea9206b4ffc5765ff3",
+      "byte_length": 1730784,
+      "sha256": "7815e5e248471fdc94df220bca2820d0c549b24168e03432dd1738ed43c33665",
       "stl_rotation_deg": 0,
       "nominal_rect_mm": {
         "x_min": -60,
@@ -149,9 +150,9 @@
   "validation": {
     "status": "PASS",
     "verdict": "PASS",
-    "validated_at": "2026-11-25T17:40:02.831791+00:00",
+    "validated_at": "2026-11-25T20:38:31.091478+00:00",
     "validator": "calibration/validate_assembly.py",
     "report_file": "validation_report.json",
-    "report_sha256": "06e79eaa96921cde6dea8fb7ce55dcfc8daaa0ac838d0c17622facc4ee947255"
+    "report_sha256": "4b02efd74a268d74b088c8f4c047749db3d785939d78106c48c01de6aed1da7f"
   }
 }

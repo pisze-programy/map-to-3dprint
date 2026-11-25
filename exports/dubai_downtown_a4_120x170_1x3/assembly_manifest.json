@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "dubai_downtown",
+  "generated_at": "2026-11-25T22:01:18.084Z",
+  "source_params": {
+    "title": "DUBAI",
+    "lat": 25.1979,
+    "lon": 55.2756,
+    "span_m": 1480,
+    "rotation_deg": 0,
+    "z_scale": 1.05,
+    "terrain_scale": 1,
+    "dem_mode": "flat",
+    "window_mm": [
+      120,
+      170
+    ],
+    "grid": [
+      1,
+      3
+    ],
+    "inter_frame_gap_mm": 0,
+    "water_cutout": true,
+    "solid_base_no_tunnels": true,
+    "hollow_base": true,
+    "base_height_mm": 4,
+    "kerf_mm": 0,
+    "bed_safe_margin_mm": 4,
+    "dfm06_chamfer_inset_mm": 0.25,
+    "dfm06_chamfer_height_mm": 0.5,
+    "underside_relief_enabled": true
+  },
+  "master_volume_mm3": 103585.8712,
+  "nudged_seams": [
+    {
+      "axis": "y",
+      "index": 0,
+      "delta_mm": 2.5
+    },
+    {
+      "axis": "y",
+      "index": 1,
+      "delta_mm": -4.5
+    }
+  ],
+  "frames": [
+    {
+      "frame_id": "F1",
+      "frame_index": 0,
+      "frame_col": 0,
+      "frame_row": 0,
+      "north_frame_row": 1,
+      "frame_style": "heavy_a4",
+      "frame_outer_mm": [
+        210,
+        297
+      ],
+      "window_mm": [
+        120,
+        170
+      ],
+      "nominal_origin_mm": [
+        -60,
+        -85
+      ],
+      "tile_ids": [
+        0,
+        1,
+        2
+      ]
+    }
+  ],
+  "tiles": [
+    {
+      "tile_idx": 0,
+      "tile_id": "R3C1",
+      "frame_id": "F1",
+      "row": 0,
+      "north_row": 3,
+      "col": 0,
+      "local_row": 0,
+      "local_col": 0,
+      "file": "Map3D_DUBAI_A4_Bottom_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 2730584,
+      "sha256": "a738f7a68c4fa3f16350ad2cca71d5b32e23c566b2719ee2a835aab1520cabfb",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -60,
+        "x_max": 60,
+        "y_min": -85,
+        "y_max": -25.833333
+      },
+      "neighbors": {
+        "north": "R2C1",
+        "south": null,
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": []
+    },
+    {
+      "tile_idx": 1,
+      "tile_id": "R2C1",
+      "frame_id": "F1",
+      "row": 1,
+      "north_row": 2,
+      "col": 0,
+      "local_row": 1,
+      "local_col": 0,
+      "file": "Map3D_DUBAI_A4_Middle_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 2565484,
+      "sha256": "187aa75627b5c65684e450f7461d1cd7c40ea9835bd65be30beba6ae8f6470ae",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -60,
+        "x_max": 60,
+        "y_min": -25.833333,
+        "y_max": 23.833334
+      },
+      "neighbors": {
+        "north": "R1C1",
+        "south": "R3C1",
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": []
+    },
+    {
+      "tile_idx": 2,
+      "tile_id": "R1C1",
+      "frame_id": "F1",
+      "row": 2,
+      "north_row": 1,
+      "col": 0,
+      "local_row": 2,
+      "local_col": 0,
+      "file": "Map3D_DUBAI_A4_Top_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 3111584,
+      "sha256": "5d40d0cf988ba4033f2c7404208140fdcfce414596a02058a697e2ad9b80abc8",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -60,
+        "x_max": 60,
+        "y_min": 23.833333,
+        "y_max": 85
+      },
+      "neighbors": {
+        "north": null,
+        "south": "R2C1",
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": []
+    }
+  ],
+  "validation": {
+    "status": "PASS",
+    "verdict": "PASS",
+    "validated_at": "2026-11-25T22:01:49.570745+00:00",
+    "validator": "calibration/validate_assembly.py",
+    "report_file": "validation_report.json",
+    "report_sha256": "04c6381253500f6ce0737bb9bb42d6a6056178e52f49ead98512ead05355226a"
+  }
+}

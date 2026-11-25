@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "manifest": "assembly_manifest.json",
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "sydney_harbour",
+  "validated_at": "2026-11-25T22:02:20.183870+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "tiles_checked": 3,
+    "seam_pairs_checked": 2,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 101018.7481,
+    "sum_tile_volume_mm3": 100965.906,
+    "volume_diff_pct": 0.0523,
+    "blocking_failures": 0,
+    "warnings": 9
+  },
+  "failures": [],
+  "warnings": [
+    "[R3C1] VAL-02: Small sealed upper-story cavities (max 31.9 mm2 < 100 mm2) from Z=6.15 to Z=13.65 mm; add a vent if the part is thin.",
+    "[R3C1] VAL-07: High Z-slice peel area (6264 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R3C1] VAL-07: Sudden cross-section peel jump (+1637 mm2 at Z=1.25 mm).",
+    "[R3C1] VAL-08: Print consumes 66.3 ml resin; verify VAT fill level before starting.",
+    "[R2C1] VAL-02: Small sealed upper-story cavities (max 18.6 mm2 < 100 mm2) from Z=5.15 to Z=8.65 mm; add a vent if the part is thin.",
+    "[R2C1] VAL-07: High Z-slice peel area (4654 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R2C1] VAL-07: Sudden cross-section peel jump (+1092 mm2 at Z=1.25 mm).",
+    "[R2C1] VAL-08: Print consumes 30.0 ml resin; verify VAT fill level before starting.",
+    "[R1C1] VAL-02: Small sealed upper-story cavities (max 12.5 mm2 < 100 mm2) from Z=5.15 to Z=5.65 mm; add a vent if the part is thin."
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R3C1",
+        "R2C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": -32.5333,
+      "area_a_mm2": 836.52,
+      "area_b_mm2": 836.521,
+      "area_delta_mm2": 0.001,
+      "true_diff_mm2": 0.0019,
+      "max_step_mm": 0.0015,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R3C1_R2C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 25.8333,
+      "area_a_mm2": 290.191,
+      "area_b_mm2": 290.194,
+      "area_delta_mm2": 0.003,
+      "true_diff_mm2": 0.0026,
+      "max_step_mm": 0.0048,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "tiles": {
+    "R3C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/sydney_harbour_a4_120x170_1x3/Map3D_SYDNEY_A4_Bottom_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 151488,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        52.4667,
+        0.0,
+        40.6331
+      ],
+      "span_mm": [
+        120.0,
+        52.4667,
+        40.6331
+      ],
+      "volume_ml": 66.2766,
+      "volume_mm3": 66276.637,
+      "z0_area_mm2": 3814.061,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            52.4667,
+            0.0,
+            40.6331
+          ],
+          "z0_area_mm2": 3814.061,
+          "min_width_mm": 52.467
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3811.44,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3889.44,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4370.06,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4852.62,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 31.9 mm2 < 100 mm2) from Z=6.15 to Z=13.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6264 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1637 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 66.3 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R2C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/sydney_harbour_a4_120x170_1x3/Map3D_SYDNEY_A4_Middle_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 123488,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        58.3667,
+        0.0,
+        16.694
+      ],
+      "span_mm": [
+        120.0,
+        58.3667,
+        16.694
+      ],
+      "volume_ml": 30.0432,
+      "volume_mm3": 30043.209,
+      "z0_area_mm2": 2808.331,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            58.3667,
+            0.0,
+            16.694
+          ],
+          "z0_area_mm2": 2808.331,
+          "min_width_mm": 58.367
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 2787.88,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 2831.94,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 3201.12,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 3582.88,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 18.6 mm2 < 100 mm2) from Z=5.15 to Z=8.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (4654 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1092 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 30.0 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/sydney_harbour_a4_120x170_1x3/Map3D_SYDNEY_A4_Top_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 44666,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.1815,
+        108.8217,
+        0.0,
+        59.1667,
+        0.0,
+        20.2691
+      ],
+      "span_mm": [
+        108.6402,
+        59.1667,
+        20.2691
+      ],
+      "volume_ml": 4.6461,
+      "volume_mm3": 4646.06,
+      "z0_area_mm2": 518.728,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.1815,
+            44.0037,
+            0.0,
+            59.1667,
+            0.0,
+            20.2691
+          ],
+          "z0_area_mm2": 361.828,
+          "min_width_mm": 43.822
+        },
+        {
+          "shell_index": 1,
+          "bbox": [
+            80.7557,
+            93.9417,
+            0.0,
+            8.6791,
+            0.0,
+            11.705
+          ],
+          "z0_area_mm2": 95.031,
+          "min_width_mm": 8.679
+        },
+        {
+          "shell_index": 2,
+          "bbox": [
+            94.3514,
+            108.8217,
+            52.3817,
+            59.1667,
+            0.0,
+            7.238
+          ],
+          "z0_area_mm2": 61.869,
+          "min_width_mm": 6.785
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 516.19,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 529.44,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 561.88,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 603.94,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 12.5 mm2 < 100 mm2) from Z=5.15 to Z=5.65 mm; add a vent if the part is thin."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    }
+  }
+}

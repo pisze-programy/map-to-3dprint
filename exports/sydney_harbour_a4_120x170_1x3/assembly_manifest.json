@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "sydney_harbour",
+  "generated_at": "2026-11-25T22:01:54.671Z",
+  "source_params": {
+    "title": "SYDNEY",
+    "lat": -33.8585,
+    "lon": 151.2115,
+    "span_m": 1720,
+    "rotation_deg": 15,
+    "z_scale": 1.25,
+    "terrain_scale": 1,
+    "dem_mode": "terrarium",
+    "window_mm": [
+      120,
+      170
+    ],
+    "grid": [
+      1,
+      3
+    ],
+    "inter_frame_gap_mm": 0,
+    "water_cutout": true,
+    "solid_base_no_tunnels": true,
+    "hollow_base": true,
+    "base_height_mm": 4,
+    "kerf_mm": 0,
+    "bed_safe_margin_mm": 4,
+    "dfm06_chamfer_inset_mm": 0.25,
+    "dfm06_chamfer_height_mm": 0.5,
+    "underside_relief_enabled": true
+  },
+  "master_volume_mm3": 101018.7481,
+  "nudged_seams": [
+    {
+      "axis": "y",
+      "index": 0,
+      "delta_mm": -4.2
+    },
+    {
+      "axis": "y",
+      "index": 1,
+      "delta_mm": -2.5
+    }
+  ],
+  "frames": [
+    {
+      "frame_id": "F1",
+      "frame_index": 0,
+      "frame_col": 0,
+      "frame_row": 0,
+      "north_frame_row": 1,
+      "frame_style": "heavy_a4",
+      "frame_outer_mm": [
+        210,
+        297
+      ],
+      "window_mm": [
+        120,
+        170
+      ],
+      "nominal_origin_mm": [
+        -60,
+        -85
+      ],
+      "tile_ids": [
+        0,
+        1,
+        2
+      ]
+    }
+  ],
+  "tiles": [
+    {
+      "tile_idx": 0,
+      "tile_id": "R3C1",
+      "frame_id": "F1",
+      "row": 0,
+      "north_row": 3,
+      "col": 0,
+      "local_row": 0,
+      "local_col": 0,
+      "file": "Map3D_SYDNEY_A4_Bottom_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 7574484,
+      "sha256": "db73821ddb66586550498c40cbbff08b0283072b1aa49484c4890442328ad5fd",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -60,
+        "x_max": 60,
+        "y_min": -85,
+        "y_max": -32.533333
+      },
+      "neighbors": {
+        "north": "R2C1",
+        "south": null,
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": []
+    },
+    {
+      "tile_idx": 1,
+      "tile_id": "R2C1",
+      "frame_id": "F1",
+      "row": 1,
+      "north_row": 2,
+      "col": 0,
+      "local_row": 1,
+      "local_col": 0,
+      "file": "Map3D_SYDNEY_A4_Middle_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 6174484,
+      "sha256": "81f7c580a7c0c47b79db176e318d07be9e1b00cdaca85822b5960f35c749a05f",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -60,
+        "x_max": 60,
+        "y_min": -32.533333,
+        "y_max": 25.833334
+      },
+      "neighbors": {
+        "north": "R1C1",
+        "south": "R3C1",
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": []
+    },
+    {
+      "tile_idx": 2,
+      "tile_id": "R1C1",
+      "frame_id": "F1",
+      "row": 2,
+      "north_row": 1,
+      "col": 0,
+      "local_row": 2,
+      "local_col": 0,
+      "file": "Map3D_SYDNEY_A4_Top_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 2233384,
+      "sha256": "7e1bcbe83cdc738b742559a529cf4bc4292db6e0aa2fc027f641259be4829afa",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -60,
+        "x_max": 60,
+        "y_min": 25.833333,
+        "y_max": 85
+      },
+      "neighbors": {
+        "north": null,
+        "south": "R2C1",
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": [
+        {
+          "bbox_xy": [
+            80.76,
+            93.94,
+            0,
+            8.68
+          ],
+          "z0_area_mm2": 95.03,
+          "min_width_mm": 8.68,
+          "reason": "water_cutout_split_landmass"
+        },
+        {
+          "bbox_xy": [
+            94.35,
+            108.82,
+            52.38,
+            59.17
+          ],
+          "z0_area_mm2": 61.87,
+          "min_width_mm": 6.78,
+          "reason": "water_cutout_split_landmass"
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "status": "PASS",
+    "verdict": "PASS",
+    "validated_at": "2026-11-25T22:02:20.183870+00:00",
+    "validator": "calibration/validate_assembly.py",
+    "report_file": "validation_report.json",
+    "report_sha256": "f0c21fcc57cf2656dd1951cdd38e5ccc6599f524bf738a5dea6cc10e1669bfa7"
+  }
+}

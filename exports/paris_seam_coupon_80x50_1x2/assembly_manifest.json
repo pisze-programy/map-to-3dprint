@@ -2,8 +2,8 @@
   "schema_version": 1,
   "sku_id": "custom_grid",
   "format_id": "custom_grid",
-  "city_slug": "paris_coupon",
-  "generated_at": "2026-11-25T18:04:16.061Z",
+  "city_slug": "paris_seam_coupon",
+  "generated_at": "2026-11-25T20:43:05.621Z",
   "source_params": {
     "title": "PARIS_COUPON",
     "lat": 48.8619,
@@ -12,6 +12,7 @@
     "rotation_deg": 65,
     "z_scale": 1.05,
     "terrain_scale": 1,
+    "dem_mode": "flat",
     "window_mm": [
       80,
       50
@@ -72,7 +73,7 @@
       "file": "Map3D_PARIS_COUPON_Bottom_80x25mm.stl",
       "skipped_empty_water": false,
       "byte_length": 816984,
-      "sha256": "ffc22c3de41f02ac798fab7186d89a79d341bd5b251afa30321fbd94607e2acb",
+      "sha256": "e1b8a19e0a9fab6e478d7e3b6f8cf05110728e51c9539abb891e170809921368",
       "stl_rotation_deg": 0,
       "nominal_rect_mm": {
         "x_min": -40,
@@ -99,8 +100,8 @@
       "local_col": 0,
       "file": "Map3D_PARIS_COUPON_Top_80x25mm.stl",
       "skipped_empty_water": false,
-      "byte_length": 680584,
-      "sha256": "419a53cf03c9f949cce8216746475d0d9264743cb2968e6507ff3a2a42b88347",
+      "byte_length": 675784,
+      "sha256": "13134997dd8eb0f0b75418ffc1087fa7315aa6e2416e6d63db0f70ab646cb217",
       "stl_rotation_deg": 0,
       "nominal_rect_mm": {
         "x_min": -40,
@@ -132,9 +133,9 @@
   "validation": {
     "status": "PASS",
     "verdict": "PASS",
-    "validated_at": "2026-11-25T18:09:08.398092+00:00",
+    "validated_at": "2026-11-25T20:43:07.426571+00:00",
     "validator": "calibration/validate_assembly.py",
     "report_file": "validation_report.json",
-    "report_sha256": "1806e99fde04594fecae9602cb647830689547991a2ed15f05e8e88b0623d60c"
+    "report_sha256": "5f3f58af3697f9fb9b98ffe39e6984b17b7b1a092c59dd5667881ba24d1e42c3"
   }
 }

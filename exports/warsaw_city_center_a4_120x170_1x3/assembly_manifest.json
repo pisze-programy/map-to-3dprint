@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "warsaw_city_center",
+  "generated_at": "2026-11-25T20:39:19.079Z",
+  "source_params": {
+    "title": "WARSAW",
+    "lat": 52.2324,
+    "lon": 21.0045,
+    "span_m": 1380,
+    "rotation_deg": 10,
+    "z_scale": 1.25,
+    "terrain_scale": 1,
+    "dem_mode": "flat",
+    "window_mm": [
+      120,
+      170
+    ],
+    "grid": [
+      1,
+      3
+    ],
+    "inter_frame_gap_mm": 0,
+    "water_cutout": true,
+    "solid_base_no_tunnels": true,
+    "hollow_base": true,
+    "base_height_mm": 4,
+    "kerf_mm": 0,
+    "bed_safe_margin_mm": 4,
+    "dfm06_chamfer_inset_mm": 0.25,
+    "dfm06_chamfer_height_mm": 0.5,
+    "underside_relief_enabled": true
+  },
+  "master_volume_mm3": 102736.8401,
+  "nudged_seams": [],
+  "frames": [
+    {
+      "frame_id": "F1",
+      "frame_index": 0,
+      "frame_col": 0,
+      "frame_row": 0,
+      "north_frame_row": 1,
+      "frame_style": "heavy_a4",
+      "frame_outer_mm": [
+        210,
+        297
+      ],
+      "window_mm": [
+        120,
+        170
+      ],
+      "nominal_origin_mm": [
+        -60,
+        -85
+      ],
+      "tile_ids": [
+        0,
+        1,
+        2
+      ]
+    }
+  ],
+  "tiles": [
+    {
+      "tile_idx": 0,
+      "tile_id": "R3C1",
+      "frame_id": "F1",
+      "row": 0,
+      "north_row": 3,
+      "col": 0,
+      "local_row": 0,
+      "local_col": 0,
+      "file": "Map3D_WARSAW_A4_Bottom_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 6167184,
+      "sha256": "296ff00dce00250f640ee7c9eed7d53c53d69bd0c19e3ca0f780b1bfb96f4c41",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -60,
+        "x_max": 60,
+        "y_min": -85,
+        "y_max": -28.333333
+      },
+      "neighbors": {
+        "north": "R2C1",
+        "south": null,
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": []
+    },
+    {
+      "tile_idx": 1,
+      "tile_id": "R2C1",
+      "frame_id": "F1",
+      "row": 1,
+      "north_row": 2,
+      "col": 0,
+      "local_row": 1,
+      "local_col": 0,
+      "file": "Map3D_WARSAW_A4_Middle_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 7888284,
+      "sha256": "937201f2a536b277c85c0c84007d82fb9e437da51d6f45f3151a01ae2839bd1c",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -60,
+        "x_max": 60,
+        "y_min": -28.333333,
+        "y_max": 28.333334
+      },
+      "neighbors": {
+        "north": "R1C1",
+        "south": "R3C1",
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": []
+    },
+    {
+      "tile_idx": 2,
+      "tile_id": "R1C1",
+      "frame_id": "F1",
+      "row": 2,
+      "north_row": 1,
+      "col": 0,
+      "local_row": 2,
+      "local_col": 0,
+      "file": "Map3D_WARSAW_A4_Top_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 7251184,
+      "sha256": "1cb6d560e362cbe2bdcc750328fc88c42cb14b87de22bc7cecf06e1f460f6ad6",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -60,
+        "x_max": 60,
+        "y_min": 28.333333,
+        "y_max": 85
+      },
+      "neighbors": {
+        "north": null,
+        "south": "R2C1",
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": []
+    }
+  ],
+  "validation": {
+    "status": "PASS",
+    "verdict": "PASS",
+    "validated_at": "2026-11-25T20:39:56.975589+00:00",
+    "validator": "calibration/validate_assembly.py",
+    "report_file": "validation_report.json",
+    "report_sha256": "9e2ac18f1bb40aae1a429cceecc57208a79756061816e91e40bd43bad8510ba4"
+  }
+}
