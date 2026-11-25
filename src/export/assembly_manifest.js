@@ -207,6 +207,22 @@
       ? cfgMod.resolveBaseBottomMm(state, cfgMod.PRINT_PHYSICS_CONFIG)
       : Number((state && state.baseHeightMm) || 2.35);
 
+    const defaultChamfer = Boolean(state && state.solidBaseNoTunnels) || tileCols > 1 || tileRows > 1;
+    const chamferInsetMm = (cached && Number.isFinite(cached.chamferInsetMm))
+      ? cached.chamferInsetMm
+      : (defaultChamfer ? 0.25 : 0.0);
+    const chamferHeightMm = (cached && Number.isFinite(cached.chamferHeightMm))
+      ? cached.chamferHeightMm
+      : (defaultChamfer ? 0.50 : 0.0);
+    const undersideReliefEnabled = (cached && typeof cached.undersideReliefApplied === 'boolean')
+      ? cached.undersideReliefApplied
+      : Boolean(state && state.solidBaseNoTunnels);
+    const demMode = String(
+      (extraMeta && extraMeta.dem_mode) ||
+      (state && state.demMode) ||
+      'flat'
+    );
+
     return {
       schema_version: 1,
       sku_id: String((extraMeta && extraMeta.sku_id) || fmt.format_id || 'custom_grid'),
@@ -221,6 +237,7 @@
         rotation_deg: Number(state && state.mapRotationDeg) || 0,
         z_scale: Number((state && state.zScale) ?? 1.0),
         terrain_scale: Number((state && state.terrainScale) ?? 1.0),
+        dem_mode: demMode,
         window_mm: [Number(spec.totalWidthMm.toFixed(4)), Number(spec.totalHeightMm.toFixed(4))],
         grid: [tileCols, tileRows],
         inter_frame_gap_mm: Number(layout.interFrameGapMm || 0.0),
@@ -230,9 +247,9 @@
         base_height_mm: Number(safeBaseMm),
         kerf_mm: Number((state && state.kerfMm) ?? 0.0),
         bed_safe_margin_mm: Number((state && state.bedSafeMarginMm) ?? 4.0),
-        dfm06_chamfer_inset_mm: Boolean(state && state.solidBaseNoTunnels) || tileCols > 1 || tileRows > 1 ? 0.25 : 0.0,
-        dfm06_chamfer_height_mm: Boolean(state && state.solidBaseNoTunnels) || tileCols > 1 || tileRows > 1 ? 0.50 : 0.0,
-        underside_relief_enabled: Boolean(state && state.solidBaseNoTunnels) || (tileCols > 1 || tileRows > 1),
+        dfm06_chamfer_inset_mm: Number(chamferInsetMm),
+        dfm06_chamfer_height_mm: Number(chamferHeightMm),
+        underside_relief_enabled: undersideReliefEnabled,
       },
       master_volume_mm3: masterVolMm3,
       nudged_seams: cached && Array.isArray(cached.nudgedSeams) ? cached.nudgedSeams : [],

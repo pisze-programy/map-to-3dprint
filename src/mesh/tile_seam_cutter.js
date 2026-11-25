@@ -137,11 +137,12 @@
    * @param {number} pitch
    * @param {Array<number>} avoidPlanes
    * @param {number} minCutGap
+   * @param {number} [minSpan]
    * @returns {Array<number>}
    */
-  function _computeGrooveCoords1D(lo, hi, pitch, avoidPlanes, minCutGap) {
+  function _computeGrooveCoords1D(lo, hi, pitch, avoidPlanes, minCutGap, minSpan = 4.0) {
     const span = hi - lo;
-    if (span < 4.0) return [];
+    if (span < minSpan) return [];
     const nLines = Math.max(2, Math.round(span / pitch) + 1);
     const step = span / (nLines - 1);
     const coords = [];
@@ -161,8 +162,8 @@
 
   /**
    * Carves a continuous seam-aligned 45 deg gabled underside stress-relief network
-   * on the uncut master solid (Z = 0..1.50 mm, width 2.6 mm, pitch ~9.0 mm) with an
-   * unbroken >= 8.0 mm solid perimeter skirt along all 4 outer passe-partout walls.
+   * on the uncut master solid (Z = 0..1.50 mm, width 2.6 mm, pitch synced to format_catalog.json)
+   * with an unbroken >= 8.0 mm solid perimeter skirt along all 4 outer passe-partout walls.
    * Enclosed inland lakes (>= 18 mm2) vent into this network so outer walls stay smooth.
    * @param {object} core
    * @param {object} poly
@@ -176,18 +177,21 @@
    * @param {Array<number>} cutXsU
    * @param {Array<number>} cutYsU
    * @param {number} baseBottomMm
+   * @param {object|null} [reliefDefaults]
    * @returns {object}
    */
-  function _carveUndersideStressReliefNetwork(core, poly, mf, ventMod, vaultMod, masterSolid, scaleMm, halfW, halfH, cutXsU, cutYsU, baseBottomMm) {
+  function _carveUndersideStressReliefNetwork(core, poly, mf, ventMod, vaultMod, masterSolid, scaleMm, halfW, halfH, cutXsU, cutYsU, baseBottomMm, reliefDefaults = null) {
     if (!masterSolid || masterSolid.numTri() === 0 || !ventMod) return masterSolid;
     const totalWMm = 2 * halfW * scaleMm;
     const totalHMm = 2 * halfH * scaleMm;
     if (totalWMm < 36.0 || totalHMm < 36.0) return masterSolid;
 
-    const skirtMm = 8.0;
-    const grooveWidthMm = 2.6;
-    const pitchMm = 8.8;
-    const reliefHeightMm = Math.min(1.50, Math.max(0.85, baseBottomMm - 1.20));
+    const rDef = (reliefDefaults && typeof reliefDefaults === 'object') ? reliefDefaults : {};
+    const skirtMm = Number(rDef.underside_relief_skirt_mm) > 0 ? Number(rDef.underside_relief_skirt_mm) : 8.0;
+    const grooveWidthMm = Number(rDef.underside_relief_width_mm) > 0 ? Number(rDef.underside_relief_width_mm) : 2.6;
+    const pitchMm = Number(rDef.underside_relief_pitch_mm) > 0 ? Number(rDef.underside_relief_pitch_mm) : 8.8;
+    const reliefCapMm = Number(rDef.underside_relief_height_mm) > 0 ? Number(rDef.underside_relief_height_mm) : 1.50;
+    const reliefHeightMm = Math.min(reliefCapMm, Math.max(0.85, baseBottomMm - 1.20));
     const jambTopMm = Math.min(0.85, reliefHeightMm * 0.56);
     const gableRiseMm = Math.max(0.20, reliefHeightMm - jambTopMm);
     const skirtU = skirtMm / scaleMm;
@@ -214,10 +218,51 @@
     if (basePolys.length === 0) return masterSolid;
 
     // Erode outer shoreline so relief grooves stay >= 2.0 mm inside open water coastlines,
-    // and skip < 250 mm2 small islands so stress-relief channels never split islands into crumbs.
+    // and skip < 220 mm2 global islands AND < 180 mm2 per-tile coastal peninsulas so
+    // stress-relief grooves never reduce a secondary landmass below VAL-05's 60 mm2 floor.
     try {
       const safeShell = mf.CrossSection.ofPolygons(basePolys, 'Positive');
-      const er = safeShell.offset(-2.00 / scaleMm, 'Miter');
+      let er = safeShell.offset(-2.00 / scaleMm, 'Miter');
+      if (er && !er.isEmpty() && (cutXsU.length > 0 || cutYsU.length > 0)) {
+        const xsAllR = [-halfW, ...cutXsU, halfW];
+        const ysAllR = [-halfH, ...cutYsU, halfH];
+        const smallPeninsulas = [];
+        for (let tr = 0; tr < ysAllR.length - 1; tr++) {
+          for (let tc = 0; tc < xsAllR.length - 1; tc++) {
+            const tRect = mf.CrossSection.ofPolygons(
+              [[[xsAllR[tc], ysAllR[tr]], [xsAllR[tc + 1], ysAllR[tr]], [xsAllR[tc + 1], ysAllR[tr + 1]], [xsAllR[tc], ysAllR[tr + 1]]]],
+              'Positive'
+            );
+            let tInter = null;
+            let tComps = [];
+            try {
+              tInter = safeShell.intersect(tRect);
+              if (tInter && !tInter.isEmpty()) tComps = tInter.decompose();
+              for (const tcComp of tComps) {
+                if (tcComp.area() * scaleMm * scaleMm < 180.0) {
+                  const dil = tcComp.offset(1.00 / scaleMm, 'Miter');
+                  if (dil && !dil.isEmpty()) smallPeninsulas.push(dil);
+                  else core.safeDeleteManifold(dil);
+                }
+              }
+            } catch (_) {
+            } finally {
+              for (const tcComp of tComps) core.safeDeleteManifold(tcComp);
+              core.safeDeleteManifold(tInter);
+              core.safeDeleteManifold(tRect);
+            }
+          }
+        }
+        if (smallPeninsulas.length > 0) {
+          for (const sp of smallPeninsulas) {
+            const nextEr = er.subtract(sp);
+            core.safeDeleteManifold(sp);
+            core.safeDeleteManifold(er);
+            er = nextEr;
+            if (!er || er.isEmpty()) break;
+          }
+        }
+      }
       if (er && !er.isEmpty()) {
         const comps = er.decompose();
         for (const c of comps) {
@@ -235,8 +280,9 @@
     if (erodedPolys.length === 0) return masterSolid;
 
     const minCutGapU = 3.8 / scaleMm;
-    const xLinesU = _computeGrooveCoords1D(ax0, ax1, pitchMm / scaleMm, cutXsU, minCutGapU);
-    const yLinesU = _computeGrooveCoords1D(ay0, ay1, pitchMm / scaleMm, cutYsU, minCutGapU);
+    const minGrooveSpanU = 4.0 / scaleMm;
+    const xLinesU = _computeGrooveCoords1D(ax0, ax1, pitchMm / scaleMm, cutXsU, minCutGapU, minGrooveSpanU);
+    const yLinesU = _computeGrooveCoords1D(ay0, ay1, pitchMm / scaleMm, cutYsU, minCutGapU, minGrooveSpanU);
 
     // Clip each groove segment strictly inside erodedPolys so narrow coastlines never get hollowed.
     const runs = [];
@@ -251,6 +297,86 @@
       return inside;
     };
 
+    // Build a coarse exterior-water mask on basePolys so relief grooves stopping at an internal
+    // river/canal (e.g. Chicago River, Amsterdam canals) can extend into open water without
+    // ever notching the outer >= 8.0 mm passe-partout frame walls.
+    let waterGridInfo = null;
+    if (vaultMod && typeof vaultMod._rasterizePolysToGrid === 'function') {
+      const bBB = masterSolid.boundingBox();
+      const sXMm = (bBB.max[0] - bBB.min[0]) * scaleMm;
+      const sYMm = (bBB.max[1] - bBB.min[1]) * scaleMm;
+      const wStepMm = Math.max(0.55, Math.max(sXMm, sYMm) / 240);
+      const wStepU = wStepMm / scaleMm;
+      const wNx = Math.ceil((bBB.max[0] - bBB.min[0]) / wStepU) + 2;
+      const wNy = Math.ceil((bBB.max[1] - bBB.min[1]) / wStepU) + 2;
+      const wOx = bBB.min[0] - wStepU;
+      const wOy = bBB.min[1] - wStepU;
+      const wSolid = vaultMod._rasterizePolysToGrid(basePolys, wNx, wNy, wOx, wOy, wStepU);
+      const wTot = wNx * wNy;
+      const wExt = new Uint8Array(wTot);
+      const wQ = new Int32Array(wTot);
+      let wQh = 0, wQt = 0;
+      for (let x = 0; x < wNx; x++) {
+        if (!wSolid[x]) { wExt[x] = 1; wQ[wQt++] = x; }
+        const ti = (wNy - 1) * wNx + x;
+        if (!wSolid[ti] && !wExt[ti]) { wExt[ti] = 1; wQ[wQt++] = ti; }
+      }
+      for (let y = 0; y < wNy; y++) {
+        const li = y * wNx;
+        if (!wSolid[li] && !wExt[li]) { wExt[li] = 1; wQ[wQt++] = li; }
+        const ri = y * wNx + (wNx - 1);
+        if (!wSolid[ri] && !wExt[ri]) { wExt[ri] = 1; wQ[wQt++] = ri; }
+      }
+      for (let cx of cutXsU) {
+        const gx = Math.round((cx - wOx) / wStepU);
+        if (gx >= 0 && gx < wNx) {
+          for (let gy = 0; gy < wNy; gy++) {
+            const idx = gy * wNx + gx;
+            if (!wSolid[idx] && !wExt[idx]) { wExt[idx] = 1; wQ[wQt++] = idx; }
+          }
+        }
+      }
+      for (let cy of cutYsU) {
+        const gy = Math.round((cy - wOy) / wStepU);
+        if (gy >= 0 && gy < wNy) {
+          for (let gx = 0; gx < wNx; gx++) {
+            const idx = gy * wNx + gx;
+            if (!wSolid[idx] && !wExt[idx]) { wExt[idx] = 1; wQ[wQt++] = idx; }
+          }
+        }
+      }
+      while (wQh < wQt) {
+        const cur = wQ[wQh++];
+        const cx = cur % wNx, cy = (cur - cx) / wNx;
+        if (cx > 0 && !wSolid[cur - 1] && !wExt[cur - 1]) { wExt[cur - 1] = 1; wQ[wQt++] = cur - 1; }
+        if (cx + 1 < wNx && !wSolid[cur + 1] && !wExt[cur + 1]) { wExt[cur + 1] = 1; wQ[wQt++] = cur + 1; }
+        if (cy > 0 && !wSolid[cur - wNx] && !wExt[cur - wNx]) { wExt[cur - wNx] = 1; wQ[wQt++] = cur - wNx; }
+        if (cy + 1 < wNy && !wSolid[cur + wNx] && !wExt[cur + wNx]) { wExt[cur + wNx] = 1; wQ[wQt++] = cur + wNx; }
+      }
+      waterGridInfo = { wNx, wNy, wOx, wOy, wStepU, wExt };
+    }
+
+    const isOpenWaterAt = (px, py) => {
+      if (!waterGridInfo) return false;
+      if (px <= ax0 + 0.5 / scaleMm || px >= ax1 - 0.5 / scaleMm || py <= ay0 + 0.5 / scaleMm || py >= ay1 - 0.5 / scaleMm) {
+        return false;
+      }
+      const gx = Math.floor((px - waterGridInfo.wOx) / waterGridInfo.wStepU);
+      const gy = Math.floor((py - waterGridInfo.wOy) / waterGridInfo.wStepU);
+      if (gx < 0 || gx >= waterGridInfo.wNx || gy < 0 || gy >= waterGridInfo.wNy) return false;
+      return waterGridInfo.wExt[gy * waterGridInfo.wNx + gx] === 1;
+    };
+
+    const findWaterDrainExtU = (px, py, dx, dy) => {
+      for (const distMm of [1.8, 2.8, 3.8, 4.8]) {
+        const dU = distMm / scaleMm;
+        const tx = px + dx * dU;
+        const ty = py + dy * dU;
+        if (isOpenWaterAt(tx, ty)) return dU;
+      }
+      return 0;
+    };
+
     const addClippedRunsAlongX = (yVal) => {
       let curStart = null;
       const nSteps = Math.max(2, Math.ceil((ax1 - ax0) / stepCheckU));
@@ -260,9 +386,15 @@
         const ok = isInsideSafe(xVal, yVal);
         if (ok && curStart === null) curStart = xVal;
         if ((!ok || i === nSteps) && curStart !== null) {
-          const endX = ok ? xVal : (ax0 + (i - 1) * ds);
-          if (endX - curStart >= 4.0 / scaleMm) {
-            runs.push({ pts: [[curStart, yVal], [endX, yVal]], halfW: halfWGrooveU });
+          let sx = curStart;
+          let ex = ok ? xVal : (ax0 + (i - 1) * ds);
+          let drainsWater = false;
+          const dLeft = findWaterDrainExtU(sx, yVal, -1, 0);
+          if (dLeft > 0) { sx -= dLeft; drainsWater = true; }
+          const dRight = findWaterDrainExtU(ex, yVal, 1, 0);
+          if (dRight > 0) { ex += dRight; drainsWater = true; }
+          if (ex - sx >= 4.0 / scaleMm) {
+            runs.push({ pts: [[sx, yVal], [ex, yVal]], halfW: halfWGrooveU, drainsWater });
           }
           curStart = null;
         }
@@ -278,9 +410,15 @@
         const ok = isInsideSafe(xVal, yVal);
         if (ok && curStart === null) curStart = yVal;
         if ((!ok || i === nSteps) && curStart !== null) {
-          const endY = ok ? yVal : (ay0 + (i - 1) * ds);
-          if (endY - curStart >= 4.0 / scaleMm) {
-            runs.push({ pts: [[xVal, curStart], [xVal, endY]], halfW: halfWGrooveU });
+          let sy = curStart;
+          let ey = ok ? yVal : (ay0 + (i - 1) * ds);
+          let drainsWater = false;
+          const dSouth = findWaterDrainExtU(xVal, sy, 0, -1);
+          if (dSouth > 0) { sy -= dSouth; drainsWater = true; }
+          const dNorth = findWaterDrainExtU(xVal, ey, 0, 1);
+          if (dNorth > 0) { ey += dNorth; drainsWater = true; }
+          if (ey - sy >= 4.0 / scaleMm) {
+            runs.push({ pts: [[xVal, sy], [xVal, ey]], halfW: halfWGrooveU, drainsWater });
           }
           curStart = null;
         }
@@ -290,10 +428,57 @@
     for (let i = 0; i < xLinesU.length; i++) addClippedRunsAlongY(xLinesU[i]);
     for (let i = 0; i < yLinesU.length; i++) addClippedRunsAlongX(yLinesU[i]);
 
+    // On multi-tile plates, keep ONLY relief grooves connected to an open interior tile seam
+    // OR open interior water (river/canal) so closed blocks never get self-inflicted suction cups.
+    const hasInteriorSeams = (cutXsU.length > 0 || cutYsU.length > 0);
+    let activeRuns = runs;
+    if (hasInteriorSeams && runs.length > 0) {
+      const nR = runs.length;
+      const runBB = runs.map((r) => {
+        const p0 = r.pts[0];
+        const p1 = r.pts[r.pts.length - 1];
+        const hw = r.halfW;
+        return [
+          Math.min(p0[0], p1[0]) - hw,
+          Math.max(p0[0], p1[0]) + hw,
+          Math.min(p0[1], p1[1]) - hw,
+          Math.max(p0[1], p1[1]) + hw,
+        ];
+      });
+      const vented = new Uint8Array(nR);
+      const bfs = [];
+      for (let i = 0; i < nR; i++) {
+        const bb = runBB[i];
+        const hitsX = cutXsU.some((cx) => cx >= bb[0] && cx <= bb[1]);
+        const hitsY = cutYsU.some((cy) => cy >= bb[2] && cy <= bb[3]);
+        if (hitsX || hitsY || runs[i].drainsWater) {
+          vented[i] = 1;
+          bfs.push(i);
+        }
+      }
+      let bh = 0;
+      while (bh < bfs.length) {
+        const cur = bfs[bh++];
+        const cb = runBB[cur];
+        for (let j = 0; j < nR; j++) {
+          if (vented[j]) continue;
+          const ob = runBB[j];
+          if (cb[1] >= ob[0] && cb[0] <= ob[1] && cb[3] >= ob[2] && cb[2] <= ob[3]) {
+            vented[j] = 1;
+            bfs.push(j);
+          }
+        }
+      }
+      activeRuns = [];
+      for (let i = 0; i < nR; i++) {
+        if (vented[i]) activeRuns.push(runs[i]);
+      }
+    }
+
     let out = masterSolid;
-    if (runs.length > 0) {
+    if (activeRuns.length > 0) {
       const tunnelCut = ventMod.buildGabledTunnelManifold(
-        core, mf, runs, -0.15 / scaleMm, jambTopMm / scaleMm, gableRiseMm / scaleMm, scaleMm
+        core, mf, activeRuns, -0.15 / scaleMm, jambTopMm / scaleMm, gableRiseMm / scaleMm, scaleMm
       );
       if (tunnelCut && tunnelCut.numTri() > 0) {
         const carved = out.subtract(tunnelCut);
@@ -309,38 +494,28 @@
       }
     }
 
-    // Vent any enclosed inland lakes (>= 18 mm2) into the relief network / interior seams
-    // WITHOUT cutting notches through the outer >= 8.0 mm passe-partout frame walls when multi-tile.
-    const hasInteriorSeams = (cutXsU.length > 0 || cutYsU.length > 0);
+    // Vent any enclosed base pockets (>= 5.0 mm2) at BOTH Z = 0.55 mm and Z = 1.15 mm
+    // into open relief channels / interior seams WITHOUT notching outer >= 8.0 mm frame walls.
     if (typeof ventMod.ventLargeBasePocketsUnderside === 'function' && vaultMod && vaultMod._rasterizePolysToGrid) {
-      const seamFlags = hasInteriorSeams
-        ? {
-            south: false,
-            north: false,
-            west: false,
-            east: false,
-            cutXsU,
-            cutYsU,
-            keepOuterSkirtIntact: true,
-          }
-        : null;
-      // Check CW holes >= 18 mm2 at Z = 0.25..1.15 mm on out; vent any remaining trapped pocket
-      // directly into open relief channels or interior seam crossings.
-      let probeAfter = null;
-      let polysAfter = [];
-      try {
-        probeAfter = out.slice(0.55 / scaleMm);
-        if (probeAfter && !probeAfter.isEmpty()) polysAfter = probeAfter.toPolygons();
-      } catch (_) {
-        polysAfter = [];
-      } finally {
-        core.safeDeleteManifold(probeAfter);
-      }
-      if (polysAfter.length > 0) {
+      const ventJambMm = Math.min(1.24, Math.max(jambTopMm, baseBottomMm - 1.50));
+      const ventGableMm = Math.max(0.42, Math.min(0.65, baseBottomMm - 1.0 - ventJambMm));
+      for (const probeZMm of [0.55, 1.15]) {
+        let probeAfter = null;
+        let polysAfter = [];
+        try {
+          probeAfter = out.slice(probeZMm / scaleMm);
+          if (probeAfter && !probeAfter.isEmpty()) polysAfter = probeAfter.toPolygons();
+        } catch (_) {
+          polysAfter = [];
+        } finally {
+          core.safeDeleteManifold(probeAfter);
+        }
+        if (polysAfter.length === 0) continue;
+
         const outBB = out.boundingBox();
         const spanXMm = (outBB.max[0] - outBB.min[0]) * scaleMm;
         const spanYMm = (outBB.max[1] - outBB.min[1]) * scaleMm;
-        const stepMm = Math.max(0.60, Math.max(spanXMm, spanYMm) / 240);
+        const stepMm = Math.max(0.45, Math.max(spanXMm, spanYMm) / 280);
         const stepU = stepMm / scaleMm;
         const nx = Math.ceil((outBB.max[0] - outBB.min[0]) / stepU) + 2;
         const ny = Math.ceil((outBB.max[1] - outBB.min[1]) / stepU) + 2;
@@ -393,10 +568,10 @@
           if (cy + 1 < ny) { const nb = cur + nx; if (!solidGrid[nb] && !extAir[nb]) { extAir[nb] = 1; q[qt++] = nb; } }
         }
 
-        // Group remaining enclosed air pockets (not reached by relief grid or outer water)
+        // Group remaining enclosed air pockets >= 5.0 mm2 (safely below VAL-02/03 8.0 mm2 limit)
         const pocketLabel = new Int32Array(total);
         const pockets = [];
-        const minCells = Math.max(4, Math.ceil(16.0 / (stepMm * stepMm)));
+        const minCells = Math.max(3, Math.ceil(5.0 / (stepMm * stepMm)));
         for (let i = 0; i < total; i++) {
           if (solidGrid[i] || extAir[i] || pocketLabel[i] !== 0) continue;
           const pid = pockets.length + 1;
@@ -443,7 +618,7 @@
           }
           if (lakeRuns.length > 0) {
             const lakeVent = ventMod.buildGabledTunnelManifold(
-              core, mf, lakeRuns, -0.15 / scaleMm, jambTopMm / scaleMm, gableRiseMm / scaleMm, scaleMm
+              core, mf, lakeRuns, -0.15 / scaleMm, ventJambMm / scaleMm, ventGableMm / scaleMm, scaleMm
             );
             if (lakeVent && lakeVent.numTri() > 0) {
               const carved2 = out.subtract(lakeVent);
@@ -459,7 +634,6 @@
             }
           }
         }
-        void seamFlags;
       }
     }
 
@@ -530,41 +704,83 @@
           }
           if (polys.length === 0) continue;
 
-          // Keep a clean corbel pier inside the component footprint anchored to Z=0
+          // Keep a clean corbel pier inside the component footprint anchored to Z=0.
+          // Recess 0.08 mm away from interior seam edges so VAL-09 cut-caps remain identical.
+          // Ground tier k=0 NEVER vanishes: fallback to unshrunk base pillar if eroded ring is empty.
           const ccwRings = polys.filter(r => r && r.length >= 3 && poly.signedArea2D(r) > 1e-8);
           if (ccwRings.length === 0) continue;
+          const seamRecessU = 0.08 / scaleMm;
+          const isCutVal = (arr, v) => arr.some(c0 => Math.abs(c0 - v) <= seamTolU);
+          const rMinX = tb.minX + (isCutVal(cutXsU, tb.minX) ? seamRecessU : 0);
+          const rMaxX = tb.maxX - (isCutVal(cutXsU, tb.maxX) ? seamRecessU : 0);
+          const rMinY = tb.minY + (isCutVal(cutYsU, tb.minY) ? seamRecessU : 0);
+          const rMaxY = tb.maxY - (isCutVal(cutYsU, tb.maxY) ? seamRecessU : 0);
           let cs = null;
+          let recessRect = null;
+          let recessed = null;
           let shrunk = null;
           try {
             cs = mf.CrossSection.ofPolygons(ccwRings, 'Positive');
-            shrunk = cs.offset(-0.08 / scaleMm, 'Miter');
-            const usePolys = (shrunk && !shrunk.isEmpty()) ? shrunk.toPolygons() : ccwRings;
-            // Stepped >= 45 deg corbel tiers from Z = 0 up to probeZ + 0.08/scaleMm
+            if (rMaxX > rMinX + 1e-5 && rMaxY > rMinY + 1e-5) {
+              recessRect = mf.CrossSection.ofPolygons(
+                [[[rMinX, rMinY], [rMaxX, rMinY], [rMaxX, rMaxY], [rMinX, rMaxY]]],
+                'Positive'
+              );
+              recessed = cs.intersect(recessRect);
+            }
+            const minPierAreaU2 = (0.18 / scaleMm) * (0.18 / scaleMm);
+            const hasRecessedPier = recessed && !recessed.isEmpty() && recessed.area() >= minPierAreaU2;
             const zTopU = probeZ + 0.08 / scaleMm;
-            const nTiers = Math.max(1, Math.min(4, Math.ceil((hAboveU * scaleMm) / 1.5)));
-            for (let k = 0; k < nTiers; k++) {
-              const frac = (k + 1) / nTiers;
-              const z0 = k === 0 ? (-0.05 / scaleMm) : ((hAboveU * (k / nTiers)) - 0.03 / scaleMm);
-              const z1 = (k === nTiers - 1) ? zTopU : ((hAboveU * frac) + 0.03 / scaleMm);
-              const stepShrinkU = (1 - frac) * Math.min(0.65 / scaleMm, hAboveU * 0.45);
-              let tierCs = mf.CrossSection.ofPolygons(usePolys, 'Positive');
-              if (stepShrinkU > 1e-5) {
-                const er = tierCs.offset(-stepShrinkU, 'Miter');
+
+            if (hasRecessedPier) {
+              shrunk = recessed.offset(-0.04 / scaleMm, 'Miter');
+              const basePolys = (shrunk && !shrunk.isEmpty() && shrunk.area() >= minPierAreaU2)
+                ? shrunk.toPolygons()
+                : recessed.toPolygons();
+              // Stepped >= 45 deg corbel tiers from Z = 0 up to probeZ + 0.08/scaleMm.
+              // Guarantee ground tier k=0 always extrudes (fallback to unshrunk basePolys).
+              const nTiers = Math.max(1, Math.min(4, Math.ceil((hAboveU * scaleMm) / 1.5)));
+              for (let k = 0; k < nTiers; k++) {
+                const frac = (k + 1) / nTiers;
+                const z0 = k === 0 ? (-0.05 / scaleMm) : ((hAboveU * (k / nTiers)) - 0.03 / scaleMm);
+                const z1 = (k === nTiers - 1) ? zTopU : ((hAboveU * frac) + 0.03 / scaleMm);
+                const stepShrinkU = (1 - frac) * Math.min(0.65 / scaleMm, hAboveU * 0.45);
+                let tierCs = mf.CrossSection.ofPolygons(basePolys, 'Positive');
+                if (stepShrinkU > 1e-5) {
+                  const er = tierCs.offset(-stepShrinkU, 'Miter');
+                  if (er && !er.isEmpty() && (k > 0 || er.area() >= minPierAreaU2)) {
+                    core.safeDeleteManifold(tierCs);
+                    tierCs = er;
+                  } else {
+                    core.safeDeleteManifold(er);
+                  }
+                }
+                if (tierCs && !tierCs.isEmpty()) {
+                  const rawExt = tierCs.extrude(Math.max(0.05 / scaleMm, z1 - z0));
+                  const shifted = rawExt ? rawExt.translate([0, 0, z0]) : null;
+                  core.safeDeleteManifold(rawExt);
+                  if (shifted && shifted.numTri() > 0) buttressParts.push(shifted);
+                  else core.safeDeleteManifold(shifted);
+                }
                 core.safeDeleteManifold(tierCs);
-                tierCs = er;
               }
-              if (tierCs && !tierCs.isEmpty()) {
-                const rawExt = tierCs.extrude(Math.max(0.05 / scaleMm, z1 - z0));
-                const shifted = rawExt ? rawExt.translate([0, 0, z0]) : null;
-                core.safeDeleteManifold(rawExt);
-                if (shifted && shifted.numTri() > 0) buttressParts.push(shifted);
-                else core.safeDeleteManifold(shifted);
-              }
-              core.safeDeleteManifold(tierCs);
+            } else {
+              // Shallow < 0.26 mm cantilever protrusion past seam: add symmetric grounded corbel
+              // straddling the seam on masterSolid before final cut so both tiles match 100% (VAL-09).
+              const symCs = cs.offset(0.14 / scaleMm, 'Miter');
+              const useSym = (symCs && !symCs.isEmpty()) ? symCs : cs;
+              const rawExt = useSym.extrude(Math.max(0.05 / scaleMm, zTopU + 0.05 / scaleMm));
+              const shifted = rawExt ? rawExt.translate([0, 0, -0.05 / scaleMm]) : null;
+              core.safeDeleteManifold(rawExt);
+              if (symCs && symCs !== cs) core.safeDeleteManifold(symCs);
+              if (shifted && shifted.numTri() > 0) buttressParts.push(shifted);
+              else core.safeDeleteManifold(shifted);
             }
           } catch (_) {
           } finally {
             core.safeDeleteManifold(shrunk);
+            core.safeDeleteManifold(recessed);
+            core.safeDeleteManifold(recessRect);
             core.safeDeleteManifold(cs);
           }
         }
@@ -592,8 +808,194 @@
   }
 
   /**
-   * Checks bounded seam-nudge (+-2..5 mm within Mono 4 safe bed) when a nominal cut
-   * slices off a < 35 mm2 or < 4.0 mm narrow Z=0 peninsula crumb.
+   * Intersects 2D polygon rings with a 1D scanline along axis ('x' or 'y') and returns merged intervals.
+   * @param {Array<Array<Array<number>>>} polys
+   * @param {'x'|'y'} axis
+   * @param {number} coordU
+   * @returns {Array<[number, number]>}
+   */
+  function _scanPolysIntervals1D(polys, axis, coordU) {
+    const aIdx = axis === 'x' ? 0 : 1;
+    const uIdx = axis === 'x' ? 1 : 0;
+    const hits = [];
+    for (let pi = 0; pi < polys.length; pi++) {
+      const ring = polys[pi];
+      const n = ring ? ring.length : 0;
+      if (n < 3) continue;
+      for (let i = 0; i < n; i++) {
+        const p0 = ring[i];
+        const p1 = ring[(i + 1) % n];
+        const c0 = p0[aIdx];
+        const c1 = p1[aIdx];
+        if ((c0 <= coordU && c1 > coordU) || (c1 <= coordU && c0 > coordU)) {
+          const t = (coordU - c0) / (c1 - c0);
+          hits.push(p0[uIdx] + t * (p1[uIdx] - p0[uIdx]));
+        }
+      }
+    }
+    if (hits.length < 2) return [];
+    hits.sort((a, b) => a - b);
+    const merged = [];
+    for (let i = 0; i + 1 < hits.length; i += 2) {
+      const s = hits[i];
+      const e = hits[i + 1];
+      if (e - s <= 1e-6) continue;
+      if (merged.length > 0 && s <= merged[merged.length - 1][1] + 1e-6) {
+        if (e > merged[merged.length - 1][1]) merged[merged.length - 1][1] = e;
+      } else {
+        merged.push([s, e]);
+      }
+    }
+    return merged;
+  }
+
+  /**
+   * Subtracts sorted merged 1D intervals subIvs from baseIvs.
+   * @param {Array<[number, number]>} baseIvs
+   * @param {Array<[number, number]>} subIvs
+   * @returns {Array<[number, number]>}
+   */
+  function _subtractIntervals1D(baseIvs, subIvs) {
+    if (!baseIvs || baseIvs.length === 0) return [];
+    if (!subIvs || subIvs.length === 0) return baseIvs.slice();
+    const out = [];
+    for (let i = 0; i < baseIvs.length; i++) {
+      let cur = baseIvs[i][0];
+      const be = baseIvs[i][1];
+      for (let j = 0; j < subIvs.length; j++) {
+        const ss = subIvs[j][0];
+        const se = subIvs[j][1];
+        if (se <= cur) continue;
+        if (ss >= be) break;
+        if (ss > cur) out.push([cur, Math.min(be, ss)]);
+        cur = Math.max(cur, se);
+        if (cur >= be) break;
+      }
+      if (cur < be - 1e-6) out.push([cur, be]);
+    }
+    return out;
+  }
+
+  /**
+   * Merges sorted or unsorted 1D intervals.
+   * @param {Array<[number, number]>} ivs
+   * @returns {Array<[number, number]>}
+   */
+  function _mergeIntervals1D(ivs) {
+    if (!ivs || ivs.length === 0) return [];
+    const sorted = ivs.slice().sort((a, b) => a[0] - b[0]);
+    const out = [[sorted[0][0], sorted[0][1]]];
+    for (let i = 1; i < sorted.length; i++) {
+      const s = sorted[i][0];
+      const e = sorted[i][1];
+      if (s <= out[out.length - 1][1] + 1e-6) {
+        if (e > out[out.length - 1][1]) out[out.length - 1][1] = e;
+      } else {
+        out.push([s, e]);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Counts grounded < 0.40 mm facade slivers along a candidate seam plane across upper Z slices (DFM-01).
+   * Mirrors validate_assembly.py _audit_seam_dfm01_slivers (strict_d + dilated_d + vertical persistence).
+   * @param {Array<{zMm: number, polys: Array<Array<Array<number>>>}>} upperSlices
+   * @param {'x'|'y'} axis
+   * @param {number} coordU
+   * @param {number} scaleMm
+   * @returns {number}
+   */
+  function _countSeamSliversAtPlane(upperSlices, axis, coordU, scaleMm) {
+    if (!upperSlices || upperSlices.length === 0) return { major: 0, minor: 0 };
+    const nearOffU = 0.02 / scaleMm;
+    const deepOffU = 0.40 / scaleMm;
+    const strictPadU = 0.15 / scaleMm;
+    const dilatePadU = 1.50 / scaleMm;
+    const minStrictLenU = 2.50 / scaleMm;
+    const minDilatedLenU = 2.50 / scaleMm;
+    const minMinorLenU = 0.35 / scaleMm;
+    const overlapTolU = 1.50 / scaleMm;
+    let totalMajor = 0;
+    let totalMinor = 0;
+
+    for (const sign of [-1, 1]) {
+      let prevRuns = [];
+      let prevMinorRuns = [];
+      for (let si = 0; si < upperSlices.length; si++) {
+        const polys = upperSlices[si].polys;
+        const ivN = _scanPolysIntervals1D(polys, axis, coordU + sign * nearOffU);
+        if (ivN.length === 0) {
+          prevRuns = [];
+          prevMinorRuns = [];
+          continue;
+        }
+        const ivD = _scanPolysIntervals1D(polys, axis, coordU + sign * deepOffU);
+        const dilatedD = _mergeIntervals1D(ivD.map(([s, e]) => [s - dilatePadU, e + dilatePadU]));
+        const strictD = _mergeIntervals1D(ivD.map(([s, e]) => [s - strictPadU, e + strictPadU]));
+
+        const unbackedRaw = [];
+        const minorRaw = [];
+        const remDil = _subtractIntervals1D(ivN, dilatedD);
+        for (let k = 0; k < remDil.length; k++) {
+          if (remDil[k][1] - remDil[k][0] >= minDilatedLenU) unbackedRaw.push(remDil[k]);
+        }
+        for (let k = 0; k < ivN.length; k++) {
+          const u0 = ivN[k][0];
+          const u1 = ivN[k][1];
+          const len = u1 - u0;
+          if (len < minMinorLenU) continue;
+          let backed = false;
+          for (let j = 0; j < strictD.length; j++) {
+            if (Math.min(u1, strictD[j][1]) - Math.max(u0, strictD[j][0]) > 0) {
+              backed = true;
+              break;
+            }
+          }
+          if (!backed) {
+            if (len >= minStrictLenU) unbackedRaw.push([u0, u1]);
+            else minorRaw.push([u0, u1]);
+          }
+        }
+        const unbacked = _mergeIntervals1D(unbackedRaw);
+        const curRuns = [];
+        for (let k = 0; k < unbacked.length; k++) {
+          const u0 = unbacked[k][0];
+          const u1 = unbacked[k][1];
+          let bestLen = 1;
+          for (let p = 0; p < prevRuns.length; p++) {
+            if (Math.min(u1, prevRuns[p][1]) - Math.max(u0, prevRuns[p][0]) > overlapTolU && prevRuns[p][2] + 1 > bestLen) {
+              bestLen = prevRuns[p][2] + 1;
+            }
+          }
+          curRuns.push([u0, u1, bestLen]);
+          if (bestLen >= 6) totalMajor++;
+        }
+        prevRuns = curRuns;
+
+        const minorMerged = _mergeIntervals1D(minorRaw);
+        const curMinorRuns = [];
+        for (let k = 0; k < minorMerged.length; k++) {
+          const u0 = minorMerged[k][0];
+          const u1 = minorMerged[k][1];
+          let bestLen = 1;
+          for (let p = 0; p < prevMinorRuns.length; p++) {
+            if (Math.min(u1, prevMinorRuns[p][1]) - Math.max(u0, prevMinorRuns[p][0]) > overlapTolU && prevMinorRuns[p][2] + 1 > bestLen) {
+              bestLen = prevMinorRuns[p][2] + 1;
+            }
+          }
+          curMinorRuns.push([u0, u1, bestLen]);
+          if (bestLen >= 4) totalMinor++;
+        }
+        prevMinorRuns = curMinorRuns;
+      }
+    }
+    return { major: totalMajor, minor: totalMinor };
+  }
+
+  /**
+   * Checks bounded seam-nudge (+-0.5..5.0 mm within Mono 4 safe bed) when a nominal cut
+   * slices off a narrow Z=0 peninsula crumb (VAL-12) or a < 0.40 mm facade sliver (DFM-01).
    * Inter-frame seams in multi-frame SKUs are locked so physical passe-partout openings remain exact.
    * @param {object} core
    * @param {object} poly
@@ -607,9 +1009,10 @@
    * @param {object} state
    * @param {Set<number>|null} [lockedXIndices]
    * @param {Set<number>|null} [lockedYIndices]
+   * @param {number} [baseBottomMm]
    * @returns {{cutXsU: Array<number>, cutYsU: Array<number>, nudgedSeams: Array<object>}}
    */
-  function _resolveBoundedSeamNudges(core, poly, mf, masterSolid, cutXsU, cutYsU, halfW, halfH, scaleMm, state, lockedXIndices = null, lockedYIndices = null) {
+  function _resolveBoundedSeamNudges(core, poly, mf, masterSolid, cutXsU, cutYsU, halfW, halfH, scaleMm, state, lockedXIndices = null, lockedYIndices = null, baseBottomMm = 4.0, maxConnectivityZU = null) {
     const nudgedSeams = [];
     if (cutXsU.length === 0 && cutYsU.length === 0) {
       return { cutXsU: cutXsU.slice(), cutYsU: cutYsU.slice(), nudgedSeams };
@@ -628,6 +1031,35 @@
       return { cutXsU: cutXsU.slice(), cutYsU: cutYsU.slice(), nudgedSeams };
     }
 
+    // Sample exact 0.25 mm Z slices matching validate_assembly.py _audit_seam_dfm01_slivers
+    // so nudges never create < 0.40 mm DFM-01 facade slivers at any floor level.
+    const masterBB = masterSolid.boundingBox();
+    const maxZMm = masterBB.max[2] * scaleMm;
+    const upperSlicePolys = [];
+    const probeZMmList = [];
+    const midCapZ = Math.min(maxZMm - 0.15, Math.max(baseBottomMm + 16.0, 20.0));
+    for (let z = 1.65; z <= midCapZ; z += 0.25) {
+      probeZMmList.push(Number(z.toFixed(2)));
+    }
+    for (let z = midCapZ + 0.50; z <= maxZMm - 0.15; z += 0.50) {
+      probeZMmList.push(Number(z.toFixed(2)));
+    }
+    for (let pi = 0; pi < probeZMmList.length; pi++) {
+      const zMm = probeZMmList[pi];
+      if (zMm < 1.60 || zMm > maxZMm - 0.15) continue;
+      let sUp = null;
+      try {
+        sUp = masterSolid.slice(zMm / scaleMm);
+        if (sUp && !sUp.isEmpty()) {
+          const pUp = sUp.toPolygons();
+          if (pUp.length > 0) upperSlicePolys.push({ zMm, polys: pUp });
+        }
+      } catch (_) {
+      } finally {
+        core.safeDeleteManifold(sUp);
+      }
+    }
+
     const { cfgMod } = _getDeps();
     const sa = (cfgMod && typeof cfgMod.resolveMono4SafeArea === 'function')
       ? cfgMod.resolveMono4SafeArea(state)
@@ -638,146 +1070,268 @@
 
     const outXs = cutXsU.slice();
     const outYs = cutYsU.slice();
-    const crossSectionZ0 = mf.CrossSection.ofPolygons(polys0, 'Positive');
+    const zBotEvalU = Math.min(-0.10 / scaleMm, masterBB.min[2] - 0.10 / scaleMm);
+    const zTopEvalU = (Number.isFinite(maxConnectivityZU) && maxConnectivityZU > 0)
+      ? Math.min(masterBB.max[2] + 0.50 / scaleMm, maxConnectivityZU + 2.50 / scaleMm)
+      : (masterBB.max[2] + 0.50 / scaleMm);
+    const defChamferInMm = 0.25;
+    const defChamferHMm = 0.50;
+    const seamFloatTolU = 0.25 / Math.max(1e-6, scaleMm);
+    const groundZMaxU = 0.05 / Math.max(1e-6, scaleMm);
 
-    const countSmallCrumbsForAxis = (xs, ys, focusAxis = null, focusCoordU = null) => {
+    // Exact 3D tile-pair evaluation: accounts for 3D bridges connecting islands across canals
+    // and ignores grounded water piers that are joined to the mainland above Z=0.15 mm.
+    const evalAdjacentTiles3D = (srcSolid, xs, ys, axis, idx, candCoordU) => {
       const xsAll = [-halfW, ...xs, halfW];
       const ysAll = [-halfH, ...ys, halfH];
-      const nearTolU = 1.5 / Math.max(1e-6, scaleMm);
-      let badCount = 0;
-      let badMinArea = Infinity;
-      let nearBadCount = 0;
-      let nearBadMinArea = Infinity;
-      for (let tr = 0; tr < ysAll.length - 1; tr++) {
+      const tileList = [];
+      if (axis === 'y') {
         for (let tc = 0; tc < xsAll.length - 1; tc++) {
-          const rx0 = xsAll[tc], rx1 = xsAll[tc + 1];
-          const ry0 = ysAll[tr], ry1 = ysAll[tr + 1];
-          const rect = mf.CrossSection.ofPolygons([[[rx0, ry0], [rx1, ry0], [rx1, ry1], [rx0, ry1]]], 'Positive');
-          let tile2d = null;
-          let decomp = [];
-          try {
-            tile2d = crossSectionZ0.intersect(rect);
-            if (tile2d && !tile2d.isEmpty()) decomp = tile2d.decompose();
-            for (let k = 0; k < decomp.length; k++) {
-              const dp = decomp[k];
-              const aMm2 = dp.area() * scaleMm * scaleMm;
-              const b = dp.bounds();
-              const wMm = (b.max[0] - b.min[0]) * scaleMm;
-              const hMm = (b.max[1] - b.min[1]) * scaleMm;
-              if (aMm2 < 78.0 || Math.min(wMm, hMm) < 5.5) {
-                badCount++;
-                if (aMm2 < badMinArea) badMinArea = aMm2;
-                if (focusAxis === 'y' && focusCoordU !== null) {
-                  if (b.min[1] <= focusCoordU + nearTolU && b.max[1] >= focusCoordU - nearTolU) {
-                    nearBadCount++;
-                    if (aMm2 < nearBadMinArea) nearBadMinArea = aMm2;
-                  }
-                } else if (focusAxis === 'x' && focusCoordU !== null) {
-                  if (b.min[0] <= focusCoordU + nearTolU && b.max[0] >= focusCoordU - nearTolU) {
-                    nearBadCount++;
-                    if (aMm2 < nearBadMinArea) nearBadMinArea = aMm2;
-                  }
-                }
-              }
+          tileList.push([xsAll[tc], xsAll[tc + 1], ysAll[idx], ysAll[idx + 1]]);
+          tileList.push([xsAll[tc], xsAll[tc + 1], ysAll[idx + 1], ysAll[idx + 2]]);
+        }
+      } else {
+        for (let tr = 0; tr < ysAll.length - 1; tr++) {
+          tileList.push([xsAll[idx], xsAll[idx + 1], ysAll[tr], ysAll[tr + 1]]);
+          tileList.push([xsAll[idx + 1], xsAll[idx + 2], ysAll[tr], ysAll[tr + 1]]);
+        }
+      }
+
+      let fatalGrounded = 0;
+      let softGrounded = 0;
+      let seamFloating = 0;
+      let minBadAreaMm2 = Infinity;
+
+      for (let ti = 0; ti < tileList.length; ti++) {
+        const [x0, x1, y0, y1] = tileList[ti];
+        const box = buildChamferedTileClipBox(mf, x0, x1, y0, y1, zBotEvalU, zTopEvalU, scaleMm, defChamferInMm, defChamferHMm);
+        if (!box) continue;
+        let tile = null;
+        let comps = [];
+        try {
+          tile = srcSolid.intersect(box);
+          if (tile && tile.numTri() > 0 && typeof tile.decompose === 'function') {
+            comps = tile.decompose();
+          }
+          const grounded = [];
+          for (let ci = 0; ci < comps.length; ci++) {
+            const c = comps[ci];
+            if (!c || c.numTri() === 0) continue;
+            const cbb = c.boundingBox();
+            if (cbb.min[2] > groundZMaxU) {
+              const nearSeam = axis === 'y'
+                ? (Math.abs(cbb.min[1] - candCoordU) <= seamFloatTolU || Math.abs(cbb.max[1] - candCoordU) <= seamFloatTolU)
+                : (Math.abs(cbb.min[0] - candCoordU) <= seamFloatTolU || Math.abs(cbb.max[0] - candCoordU) <= seamFloatTolU);
+              if (nearSeam) seamFloating++;
+              continue;
             }
-          } finally {
-            for (const dp of decomp) core.safeDeleteManifold(dp);
-            core.safeDeleteManifold(tile2d);
-            core.safeDeleteManifold(rect);
+            let z0AreaMm2 = 0;
+            let s0 = null;
+            try {
+              s0 = c.slice(0.15 / scaleMm);
+              if (s0 && !s0.isEmpty()) z0AreaMm2 = s0.area() * scaleMm * scaleMm;
+            } catch (_) {
+            } finally {
+              core.safeDeleteManifold(s0);
+            }
+            const wMm = (cbb.max[0] - cbb.min[0]) * scaleMm;
+            const hMm = (cbb.max[1] - cbb.min[1]) * scaleMm;
+            grounded.push({ aMm2: z0AreaMm2, minDim: Math.min(wMm, hMm) });
+          }
+          grounded.sort((u, v) => v.aMm2 - u.aMm2);
+          for (let rank = 0; rank < grounded.length; rank++) {
+            const { aMm2, minDim } = grounded[rank];
+            // Small < 180 mm2 per-tile peninsulas are shielded from underside relief grooves,
+            // so only the ~6 mm2 DFM-06 bottom chamfer shrinkage applies to secondary landmasses.
+            const isFatal = rank === 0
+              ? (aMm2 < 40.0 || minDim < 4.25)
+              : (aMm2 < 68.0 || minDim < 5.20);
+            const isSoft = aMm2 < 78.0 || minDim < 5.4;
+            if (isFatal) {
+              fatalGrounded++;
+              if (aMm2 < minBadAreaMm2) minBadAreaMm2 = aMm2;
+            } else if (isSoft) {
+              softGrounded++;
+              if (aMm2 < minBadAreaMm2) minBadAreaMm2 = aMm2;
+            }
+          }
+        } catch (_) {
+        } finally {
+          for (let ci = 0; ci < comps.length; ci++) core.safeDeleteManifold(comps[ci]);
+          core.safeDeleteManifold(tile);
+          core.safeDeleteManifold(box);
+        }
+      }
+      return { fatalGrounded, softGrounded, seamFloating, minBadAreaMm2 };
+    };
+
+    const deltasMm = [
+      0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 2.5, -2.5, 3, -3, 3.5, -3.5, 4, -4, 4.5, -4.5, 5, -5,
+    ];
+    const quarterDeltasMm = [
+      0.25, -0.25, 0.75, -0.75, 1.25, -1.25, 1.75, -1.75, 2.25, -2.25, 2.75, -2.75,
+      3.25, -3.25, 3.75, -3.75, 4.25, -4.25, 4.75, -4.75,
+    ];
+    const buildLocalFineDeltas = (rankedCands, triedSet) => {
+      const out = [];
+      const seen = new Set(triedSet);
+      const seeds = rankedCands.slice(0, 3).map(r => r.dm);
+      seeds.push(-4.75, 4.75);
+      for (const s of seeds) {
+        for (const off of [0.1, -0.1, 0.2, -0.2, 0.3, -0.3]) {
+          const v = Number((s + off).toFixed(2));
+          if (Math.abs(v) <= 5.0 && !seen.has(v)) {
+            seen.add(v);
+            out.push(v);
           }
         }
       }
-      return { badCount, badMinArea, nearBadCount, nearBadMinArea };
+      return out;
     };
+    const scoreOf = (st, slv) =>
+      (st.fatalGrounded * 100000) + (slv.major * 10000) + (st.softGrounded * 500) + (slv.minor * 50) + (st.seamFloating * 25);
 
-    try {
-      let curStats = countSmallCrumbsForAxis(outXs, outYs);
-      if (curStats.badCount === 0) {
-        return { cutXsU: outXs, cutYsU: outYs, nudgedSeams };
+    for (let yi = 0; yi < outYs.length; yi++) {
+      if (lockedYIndices && lockedYIndices.has(yi)) continue;
+      const origY = outYs[yi];
+      const prevY = yi === 0 ? -halfH : outYs[yi - 1];
+      const nextY = yi === outYs.length - 1 ? halfH : outYs[yi + 1];
+      // Pre-clip masterSolid to the 2-row slab [prevY, nextY] and connectivity Z-band once (~8x faster on dense cities)
+      let pairBox = null;
+      let pairSolid = masterSolid;
+      try {
+        pairBox = core.boxManifoldFromBounds(mf, -halfW - 0.1 / scaleMm, halfW + 0.1 / scaleMm, prevY - 0.1 / scaleMm, nextY + 0.1 / scaleMm, zBotEvalU, zTopEvalU);
+        const clippedPair = pairBox ? masterSolid.intersect(pairBox) : null;
+        if (clippedPair && clippedPair.numTri() > 0) pairSolid = clippedPair;
+        else core.safeDeleteManifold(clippedPair);
+      } catch (_) {
+        pairSolid = masterSolid;
+      } finally {
+        core.safeDeleteManifold(pairBox);
       }
-      const deltasMm = [2, -2, 3, -3, 4, -4, 5, -5];
-      for (let yi = 0; yi < outYs.length; yi++) {
-        if (lockedYIndices && lockedYIndices.has(yi)) continue;
-        const origY = outYs[yi];
-        const seamBase = countSmallCrumbsForAxis(outXs, outYs, 'y', origY);
-        if (seamBase.nearBadCount === 0) continue;
-        const prevY = yi === 0 ? -halfH : outYs[yi - 1];
-        const nextY = yi === outYs.length - 1 ? halfH : outYs[yi + 1];
-        const tileWEst = (outXs.length === 0 ? 2 * halfW : (outXs[0] - (-halfW))) * scaleMm;
+      try {
+        const seamBase = evalAdjacentTiles3D(pairSolid, outXs, outYs, 'y', yi, origY);
+        const baseSlivers = _countSeamSliversAtPlane(upperSlicePolys, 'y', origY, scaleMm);
+        const checkFloatNudge = Boolean(state && state.waterCutout);
+        if (seamBase.fatalGrounded === 0 && seamBase.softGrounded === 0 && (!checkFloatNudge || seamBase.seamFloating === 0) && baseSlivers.major === 0) continue;
+        const xsBounds = [-halfW, ...outXs, halfW];
+        const colWidthsMm = [];
+        for (let ci = 0; ci < xsBounds.length - 1; ci++) {
+          colWidthsMm.push((xsBounds[ci + 1] - xsBounds[ci]) * scaleMm);
+        }
         let bestY = origY;
-        let bestCount = seamBase.badCount;
-        let bestNearCount = seamBase.nearBadCount;
-        let bestNearMinArea = seamBase.nearBadMinArea;
+        let bestScore = scoreOf(seamBase, baseSlivers);
+        let bestMinArea = seamBase.minBadAreaMm2;
         let bestDelta = 0;
-        for (const dm of deltasMm) {
-          const candY = origY + dm / scaleMm;
-          const h0Mm = (candY - prevY) * scaleMm;
-          const h1Mm = (nextY - candY) * scaleMm;
-          if (!fitsSafe(tileWEst, h0Mm) || !fitsSafe(tileWEst, h1Mm)) continue;
-          const testYs = outYs.slice();
-          testYs[yi] = candY;
-          const st = countSmallCrumbsForAxis(outXs, testYs, 'y', candY);
-          const strictlyBetterCount = st.badCount < bestCount;
-          const sameCountBetterNear = st.badCount === bestCount && (
-            st.nearBadCount < bestNearCount ||
-            (st.nearBadCount === bestNearCount && st.nearBadMinArea > bestNearMinArea + 2.0)
-          );
-          if (strictlyBetterCount || sameCountBetterNear) {
-            bestCount = st.badCount;
-            bestNearCount = st.nearBadCount;
-            bestNearMinArea = st.nearBadMinArea;
-            bestY = candY;
-            bestDelta = dm;
+        const triedSet = new Set([0]);
+        const rankedCands = [{ dm: 0, sc: bestScore }];
+        const tryListY = (list, stopUnderScore) => {
+          for (const dm of list) {
+            triedSet.add(dm);
+            const candY = origY + dm / scaleMm;
+            const h0Mm = (candY - prevY) * scaleMm;
+            const h1Mm = (nextY - candY) * scaleMm;
+            if (!colWidthsMm.every(wMm => fitsSafe(wMm, h0Mm) && fitsSafe(wMm, h1Mm))) continue;
+            const testYs = outYs.slice();
+            testYs[yi] = candY;
+            const candSlivers = _countSeamSliversAtPlane(upperSlicePolys, 'y', candY, scaleMm);
+            if (candSlivers.major * 10000 > bestScore) continue;
+            const st = evalAdjacentTiles3D(pairSolid, outXs, testYs, 'y', yi, candY);
+            const sc = scoreOf(st, candSlivers);
+            rankedCands.push({ dm, sc });
+            if (sc < bestScore || (sc === bestScore && st.minBadAreaMm2 > bestMinArea + 2.0)) {
+              bestScore = sc;
+              bestMinArea = st.minBadAreaMm2;
+              bestY = candY;
+              bestDelta = dm;
+              if (bestScore <= stopUnderScore) return;
+            }
           }
+        };
+        tryListY(deltasMm, 0);
+        if (bestScore >= 10000) tryListY(quarterDeltasMm, 9999);
+        if (bestScore >= 100000) {
+          rankedCands.sort((a, b) => a.sc - b.sc);
+          tryListY(buildLocalFineDeltas(rankedCands, triedSet), 9999);
         }
         if (bestY !== origY) {
           outYs[yi] = bestY;
-          curStats = countSmallCrumbsForAxis(outXs, outYs);
           nudgedSeams.push({ axis: 'y', index: yi, delta_mm: bestDelta });
         }
+      } finally {
+        if (pairSolid !== masterSolid) core.safeDeleteManifold(pairSolid);
       }
-      for (let xi = 0; xi < outXs.length; xi++) {
-        if (lockedXIndices && lockedXIndices.has(xi)) continue;
-        const origX = outXs[xi];
-        const seamBase = countSmallCrumbsForAxis(outXs, outYs, 'x', origX);
-        if (seamBase.nearBadCount === 0) continue;
-        const prevX = xi === 0 ? -halfW : outXs[xi - 1];
-        const nextX = xi === outXs.length - 1 ? halfW : outXs[xi + 1];
-        const tileHEst = (outYs.length === 0 ? 2 * halfH : (outYs[0] - (-halfH))) * scaleMm;
+    }
+
+    for (let xi = 0; xi < outXs.length; xi++) {
+      if (lockedXIndices && lockedXIndices.has(xi)) continue;
+      const origX = outXs[xi];
+      const prevX = xi === 0 ? -halfW : outXs[xi - 1];
+      const nextX = xi === outXs.length - 1 ? halfW : outXs[xi + 1];
+      let pairBox = null;
+      let pairSolid = masterSolid;
+      try {
+        pairBox = core.boxManifoldFromBounds(mf, prevX - 0.1 / scaleMm, nextX + 0.1 / scaleMm, -halfH - 0.1 / scaleMm, halfH + 0.1 / scaleMm, zBotEvalU, zTopEvalU);
+        const clippedPair = pairBox ? masterSolid.intersect(pairBox) : null;
+        if (clippedPair && clippedPair.numTri() > 0) pairSolid = clippedPair;
+        else core.safeDeleteManifold(clippedPair);
+      } catch (_) {
+        pairSolid = masterSolid;
+      } finally {
+        core.safeDeleteManifold(pairBox);
+      }
+      try {
+        const seamBase = evalAdjacentTiles3D(pairSolid, outXs, outYs, 'x', xi, origX);
+        const baseSlivers = _countSeamSliversAtPlane(upperSlicePolys, 'x', origX, scaleMm);
+        const checkFloatNudge = Boolean(state && state.waterCutout);
+        if (seamBase.fatalGrounded === 0 && seamBase.softGrounded === 0 && (!checkFloatNudge || seamBase.seamFloating === 0) && baseSlivers.major === 0) continue;
+        const ysBounds = [-halfH, ...outYs, halfH];
+        const rowHeightsMm = [];
+        for (let ri = 0; ri < ysBounds.length - 1; ri++) {
+          rowHeightsMm.push((ysBounds[ri + 1] - ysBounds[ri]) * scaleMm);
+        }
         let bestX = origX;
-        let bestCount = seamBase.badCount;
-        let bestNearCount = seamBase.nearBadCount;
-        let bestNearMinArea = seamBase.nearBadMinArea;
+        let bestScore = scoreOf(seamBase, baseSlivers);
+        let bestMinArea = seamBase.minBadAreaMm2;
         let bestDelta = 0;
-        for (const dm of deltasMm) {
-          const candX = origX + dm / scaleMm;
-          const w0Mm = (candX - prevX) * scaleMm;
-          const w1Mm = (nextX - candX) * scaleMm;
-          if (!fitsSafe(w0Mm, tileHEst) || !fitsSafe(w1Mm, tileHEst)) continue;
-          const testXs = outXs.slice();
-          testXs[xi] = candX;
-          const st = countSmallCrumbsForAxis(testXs, outYs, 'x', candX);
-          const strictlyBetterCount = st.badCount < bestCount;
-          const sameCountBetterNear = st.badCount === bestCount && (
-            st.nearBadCount < bestNearCount ||
-            (st.nearBadCount === bestNearCount && st.nearBadMinArea > bestNearMinArea + 2.0)
-          );
-          if (strictlyBetterCount || sameCountBetterNear) {
-            bestCount = st.badCount;
-            bestNearCount = st.nearBadCount;
-            bestNearMinArea = st.nearBadMinArea;
-            bestX = candX;
-            bestDelta = dm;
+        const triedSet = new Set([0]);
+        const rankedCands = [{ dm: 0, sc: bestScore }];
+        const tryListX = (list, stopUnderScore) => {
+          for (const dm of list) {
+            triedSet.add(dm);
+            const candX = origX + dm / scaleMm;
+            const w0Mm = (candX - prevX) * scaleMm;
+            const w1Mm = (nextX - candX) * scaleMm;
+            if (!rowHeightsMm.every(hMm => fitsSafe(w0Mm, hMm) && fitsSafe(w1Mm, hMm))) continue;
+            const testXs = outXs.slice();
+            testXs[xi] = candX;
+            const candSlivers = _countSeamSliversAtPlane(upperSlicePolys, 'x', candX, scaleMm);
+            if (candSlivers.major * 10000 > bestScore) continue;
+            const st = evalAdjacentTiles3D(pairSolid, testXs, outYs, 'x', xi, candX);
+            const sc = scoreOf(st, candSlivers);
+            rankedCands.push({ dm, sc });
+            if (sc < bestScore || (sc === bestScore && st.minBadAreaMm2 > bestMinArea + 2.0)) {
+              bestScore = sc;
+              bestMinArea = st.minBadAreaMm2;
+              bestX = candX;
+              bestDelta = dm;
+              if (bestScore <= stopUnderScore) return;
+            }
           }
+        };
+        tryListX(deltasMm, 0);
+        if (bestScore >= 10000) tryListX(quarterDeltasMm, 9999);
+        if (bestScore >= 100000) {
+          rankedCands.sort((a, b) => a.sc - b.sc);
+          tryListX(buildLocalFineDeltas(rankedCands, triedSet), 9999);
         }
         if (bestX !== origX) {
           outXs[xi] = bestX;
-          curStats = countSmallCrumbsForAxis(outXs, outYs);
           nudgedSeams.push({ axis: 'x', index: xi, delta_mm: bestDelta });
         }
+      } finally {
+        if (pairSolid !== masterSolid) core.safeDeleteManifold(pairSolid);
       }
-    } finally {
-      core.safeDeleteManifold(crossSectionZ0);
     }
 
     return { cutXsU: outXs, cutYsU: outYs, nudgedSeams };
@@ -855,7 +1409,8 @@
       }
 
       const baseTris = allInputTris.filter(t => t.layerId === 1);
-      const overTris = allInputTris.filter(t => t.layerId !== 1);
+      const treeTris = allInputTris.filter(t => t.layerId === 2 && t.buildingId === -2);
+      const overTris = allInputTris.filter(t => t.layerId !== 1 && !(t.layerId === 2 && t.buildingId === -2));
       const solids = core.trianglesToShellManifolds(mf, baseTris);
       for (const m of core.trianglesToShellManifolds(mf, overTris)) {
         const bb = m.boundingBox();
@@ -867,10 +1422,12 @@
           solids.push(m);
         }
       }
-      if (solids.length === 0) return [];
+      if (solids.length === 0 && treeTris.length === 0) return [];
 
-      let masterSolid = solids.length === 1 ? solids[0] : core.batchUnionManifolds(mf, solids);
-      if (!masterSolid || masterSolid.numTri() === 0) {
+      let masterSolid = solids.length === 0
+        ? null
+        : (solids.length === 1 ? solids[0] : core.batchUnionManifolds(mf, solids));
+      if ((!masterSolid || masterSolid.numTri() === 0) && treeTris.length === 0) {
         core.safeDeleteManifold(masterSolid);
         return [];
       }
@@ -882,16 +1439,21 @@
       const rowSpan = (2 * halfH) / tileRows;
       for (let tr = 1; tr < tileRows; tr++) nominalCutYsU.push(-halfH + tr * rowSpan);
 
-      const uBB = masterSolid.boundingBox();
+      const uBB = masterSolid ? masterSolid.boundingBox() : { min: [0, 0, 1], max: [0, 0, 1] };
       const spanXMm = (uBB.max[0] - uBB.min[0]) * scaleMm;
       const spanYMm = (uBB.max[1] - uBB.min[1]) * scaleMm;
-      const isFullSceneBase = uBB.min[2] <= 0.05 / scaleMm &&
+      const isFullSceneBase = Boolean(masterSolid) && uBB.min[2] <= 0.05 / scaleMm &&
         Math.max(spanXMm, spanYMm) >= 25.0 &&
         Math.min(spanXMm, spanYMm) >= 6.0;
+
+      const catalogDefaults = (catalogMod && catalogMod.FORMAT_CATALOG && catalogMod.FORMAT_CATALOG.defaults)
+        ? catalogMod.FORMAT_CATALOG.defaults
+        : {};
 
       let activeCutXsU = nominalCutXsU.slice();
       let activeCutYsU = nominalCutYsU.slice();
       let nudgedSeams = [];
+      let undersideReliefApplied = false;
 
       if (isFullSceneBase) {
         // 1. Plug small inland holes BEFORE cutting (no per-tile seam false-positives)
@@ -911,9 +1473,9 @@
           );
         }
 
-        // 3. Resolve any bounded seam-nudges (+-2..5 mm) before carving seam-aligned relief
+        // 3. Resolve bounded seam-nudges (+-0.5..5.0 mm) before unioning trees & carving relief.
         // Lock inter-frame boundaries in multi-frame SKUs so physical passe-partout windows stay exact.
-        if (isCutout && (activeCutXsU.length > 0 || activeCutYsU.length > 0)) {
+        if (activeCutXsU.length > 0 || activeCutYsU.length > 0) {
           const layoutForLock = (catalogMod && typeof catalogMod.computeFormatFrameAndTileLayout === 'function')
             ? catalogMod.computeFormatFrameAndTileLayout(state)
             : null;
@@ -934,14 +1496,84 @@
               if ((yi + 1) % tpfR === 0) lockedY.add(yi);
             }
           }
+          let maxConnZU = baseBottomMm / scaleMm;
+          for (let ti = 0; ti < allInputTris.length; ti++) {
+            const tr = allInputTris[ti];
+            if (tr.layerId !== 1 && tr.layerId !== 3) continue;
+            if (tr.v0[2] > maxConnZU) maxConnZU = tr.v0[2];
+            if (tr.v1[2] > maxConnZU) maxConnZU = tr.v1[2];
+            if (tr.v2[2] > maxConnZU) maxConnZU = tr.v2[2];
+          }
           const nudgeRes = _resolveBoundedSeamNudges(
-            core, poly, mf, masterSolid, activeCutXsU, activeCutYsU, halfW, halfH, scaleMm, state, lockedX, lockedY
+            core, poly, mf, masterSolid, activeCutXsU, activeCutYsU, halfW, halfH, scaleMm, state, lockedX, lockedY, baseBottomMm, maxConnZU
           );
           activeCutXsU = nudgeRes.cutXsU;
           activeCutYsU = nudgeRes.cutYsU;
           nudgedSeams = nudgeRes.nudgedSeams;
         }
+      }
 
+      // 3b. Union trees AFTER seam nudging, pruning any tree crown overlapping a nudged seam plane.
+      if (treeTris.length > 0) {
+        const treeClearPadU = 0.16 / scaleMm;
+        const nudgedXs = nudgedSeams.filter(ns => ns.axis === 'x').map(ns => activeCutXsU[ns.index]);
+        const nudgedYs = nudgedSeams.filter(ns => ns.axis === 'y').map(ns => activeCutYsU[ns.index]);
+        const keptTrees = [];
+        for (const tm of core.trianglesToShellManifolds(mf, treeTris)) {
+          const tbb = tm.boundingBox();
+          let hitsNudgedSeam = false;
+          for (let i = 0; i < nudgedXs.length; i++) {
+            if (tbb.min[0] <= nudgedXs[i] + treeClearPadU && tbb.max[0] >= nudgedXs[i] - treeClearPadU) {
+              hitsNudgedSeam = true;
+              break;
+            }
+          }
+          if (!hitsNudgedSeam) {
+            for (let i = 0; i < nudgedYs.length; i++) {
+              if (tbb.min[1] <= nudgedYs[i] + treeClearPadU && tbb.max[1] >= nudgedYs[i] - treeClearPadU) {
+                hitsNudgedSeam = true;
+                break;
+              }
+            }
+          }
+          if (hitsNudgedSeam) {
+            core.safeDeleteManifold(tm);
+            continue;
+          }
+          if (tbb.min[2] > 0.02) {
+            const s = tm.translate([0, 0, -Math.min(0.002, tbb.min[2] * 0.1)]);
+            core.safeDeleteManifold(tm);
+            keptTrees.push(s);
+          } else {
+            keptTrees.push(tm);
+          }
+        }
+        if (keptTrees.length > 0) {
+          const allT = keptTrees.length === 1 ? keptTrees[0] : core.batchUnionManifolds(mf, keptTrees);
+          if (allT && allT.numTri() > 0) {
+            if (!masterSolid) {
+              masterSolid = allT;
+            } else {
+              const mergedT = masterSolid.add(allT);
+              core.safeDeleteManifold(allT);
+              if (mergedT && mergedT.numTri() > 0) {
+                core.safeDeleteManifold(masterSolid);
+                masterSolid = mergedT;
+              } else {
+                core.safeDeleteManifold(mergedT);
+              }
+            }
+          } else {
+            core.safeDeleteManifold(allT);
+          }
+        }
+      }
+      if (!masterSolid || masterSolid.numTri() === 0) {
+        core.safeDeleteManifold(masterSolid);
+        return [];
+      }
+
+      if (isFullSceneBase) {
         // 4. Carve continuous seam-aligned 45 deg gabled underside stress-relief & venting network
         let z0AreaMm2 = 0;
         let hasInlandLake = false;
@@ -965,9 +1597,12 @@
         }
 
         if (solidBaseNoTunnels && (z0AreaMm2 > 3500.0 || hasInlandLake || tileCols > 1 || tileRows > 1)) {
+          const totalWMm = 2 * halfW * scaleMm;
+          const totalHMm = 2 * halfH * scaleMm;
+          if (totalWMm >= 36.0 && totalHMm >= 36.0) undersideReliefApplied = true;
           masterSolid = _carveUndersideStressReliefNetwork(
             core, poly, mf, ventMod, vaultMod, masterSolid, scaleMm, halfW, halfH,
-            activeCutXsU, activeCutYsU, baseBottomMm
+            activeCutXsU, activeCutYsU, baseBottomMm, catalogDefaults
           );
         } else if (isCutout === true && hasInlandLake && ventMod && typeof ventMod.ventLargeBasePocketsUnderside === 'function' && vaultMod && vaultMod._rasterizePolysToGrid) {
           const masterSeams = (activeCutXsU.length > 0 || activeCutYsU.length > 0)
@@ -990,7 +1625,9 @@
           );
         }
         if (vaultMod && typeof vaultMod._cleanupDetachedBorderSlivers === 'function') {
-          masterSolid = vaultMod._cleanupDetachedBorderSlivers(core, mf, masterSolid, scaleMm);
+          masterSolid = vaultMod._cleanupDetachedBorderSlivers(
+            core, mf, masterSolid, scaleMm, { cutXsU: activeCutXsU, cutYsU: activeCutYsU }
+          );
         }
       }
 
@@ -1044,8 +1681,10 @@
         : { maxWMm: 145.45, maxHMm: 79.05 };
       const stlTrisOptionsBase = { interiorSeams: { cutXsMm, cutYsMm } };
       const useChamfer = isFullSceneBase && (tileCols > 1 || tileRows > 1 || solidBaseNoTunnels);
-      const chamferInsetMm = useChamfer ? 0.25 : 0.0;
-      const chamferHeightMm = useChamfer ? 0.50 : 0.0;
+      const defChamferInset = Number(catalogDefaults.dfm06_chamfer_inset_mm) > 0 ? Number(catalogDefaults.dfm06_chamfer_inset_mm) : 0.25;
+      const defChamferHeight = Number(catalogDefaults.dfm06_chamfer_height_mm) > 0 ? Number(catalogDefaults.dfm06_chamfer_height_mm) : 0.50;
+      const chamferInsetMm = useChamfer ? defChamferInset : 0.0;
+      const chamferHeightMm = useChamfer ? defChamferHeight : 0.0;
 
       for (let ti = 0; ti < tileBoxes.length; ti++) {
         const tb = tileBoxes[ti];
@@ -1152,6 +1791,9 @@
         cutXsMm,
         cutYsMm,
         nudgedSeams,
+        undersideReliefApplied,
+        chamferInsetMm,
+        chamferHeightMm,
         tileBoxes,
         tileBoundsMmById,
         allowLandmassesById,

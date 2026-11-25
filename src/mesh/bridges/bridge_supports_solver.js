@@ -229,12 +229,20 @@ function _collectSeamCrossingStationsJS(spec, ctx, scaleMm, terrainWater, existi
     if (Number.isFinite(ctx.halfH) && Math.abs(pt[1]) >= ctx.halfH - 0.1 / scaleMm) continue;
     if (!terrainWater.isPointInWater(pt[0], pt[1])) continue;
     const perpCos = cr.axis === 'x' ? Math.abs(tx) : Math.abs(ty);
-    const twinOffU = Math.min(1.40 / scaleMm, 0.85 / (scaleMm * Math.max(0.35, perpCos)));
-    if (perpCos < 0.45 || cr.s - twinOffU < clampMin || cr.s + twinOffU > clampMax) {
-      if (!hasSupportNear(cr.s, 0)) out.push(Math.max(clampMin, Math.min(clampMax, cr.s)));
-    } else {
-      if (!hasSupportNear(cr.s, -1)) out.push(Math.max(clampMin, Math.min(clampMax, cr.s - twinOffU)));
-      if (!hasSupportNear(cr.s, 1)) out.push(Math.max(clampMin, Math.min(clampMax, cr.s + twinOffU)));
+    const twinOffU = Math.min(2.40 / scaleMm, Math.max(0.85 / scaleMm, 0.70 / (scaleMm * Math.max(0.20, perpCos))));
+    const sMinus = cr.s - twinOffU;
+    const sPlus = cr.s + twinOffU;
+    let placedAny = false;
+    if (sMinus >= clampMin && !hasSupportNear(cr.s, -1)) {
+      out.push(Math.max(clampMin, Math.min(clampMax, sMinus)));
+      placedAny = true;
+    }
+    if (sPlus <= clampMax && !hasSupportNear(cr.s, 1)) {
+      out.push(Math.max(clampMin, Math.min(clampMax, sPlus)));
+      placedAny = true;
+    }
+    if (!placedAny && sMinus < clampMin && sPlus > clampMax && !hasSupportNear(cr.s, 0)) {
+      out.push(Math.max(clampMin, Math.min(clampMax, cr.s)));
     }
   }
   return out;

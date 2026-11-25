@@ -996,22 +996,25 @@
     const vertLockX = new Uint8Array(nv);
     const vertLockY = new Uint8Array(nv);
     if (lockXsMm.length > 0 || lockYsMm.length > 0) {
-      const planeTolMm = 0.001;
+      const planeTolMm = 0.009;
+      const snapTolMm = 2e-4;
       for (let v = 0; v < nv; v++) {
         const b = v * 3;
         const xMm = vp[b] * scMm;
         const yMm = vp[b + 1] * scMm;
         for (let i = 0; i < lockXsMm.length; i++) {
-          if (Math.abs(xMm - lockXsMm[i]) < planeTolMm) {
+          const dx = Math.abs(xMm - lockXsMm[i]);
+          if (dx < planeTolMm) {
             vertLockX[v] = 1;
-            if (Math.abs(xMm - lockXsMm[i]) < 2e-4) vp[b] = lockXsMm[i] / scMm;
+            if (dx < snapTolMm) vp[b] = lockXsMm[i] / scMm;
             break;
           }
         }
         for (let i = 0; i < lockYsMm.length; i++) {
-          if (Math.abs(yMm - lockYsMm[i]) < planeTolMm) {
+          const dy = Math.abs(yMm - lockYsMm[i]);
+          if (dy < planeTolMm) {
             vertLockY[v] = 1;
-            if (Math.abs(yMm - lockYsMm[i]) < 2e-4) vp[b + 1] = lockYsMm[i] / scMm;
+            if (dy < snapTolMm) vp[b + 1] = lockYsMm[i] / scMm;
             break;
           }
         }
@@ -1263,8 +1266,69 @@
       }
     }
 
-    // Repair near-collinear Float32 triangles while keeping seam/outer cut-plane vertices locked (VAL-01, VAL-09).
-    for (let pass = 0; pass < 10; pass++) {
+    // Build vertex -> incident triangle list so collinearity nudges never break neighbors.
+    const vertTris = new Array(verts.length);
+    for (let id = 0; id < verts.length; id++) vertTris[id] = [];
+    for (let i = 0; i < tris.length; i++) {
+      const tri = tris[i];
+      if (tri[0] === tri[1] || tri[1] === tri[2] || tri[2] === tri[0]) continue;
+      vertTris[tri[0]].push(i);
+      vertTris[tri[1]].push(i);
+      vertTris[tri[2]].push(i);
+    }
+
+    const r4 = (v) => Math.round(v * 1e4) * 1e-4;
+    const originXMm = (tbMm && Number.isFinite(Number(tbMm.minX))) ? Number(tbMm.minX) : 0;
+    const originYMm = (tbMm && Number.isFinite(Number(tbMm.minY))) ? Number(tbMm.minY) : 0;
+    const evalTriMetrics = (p0, p1, p2) => {
+      const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+      const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+      const wx = p2[0] - p1[0], wy = p2[1] - p1[1], wz = p2[2] - p1[2];
+      const nx = uy * vz - uz * vy;
+      const ny = uz * vx - ux * vz;
+      const nz = ux * vy - uy * vx;
+      const len2 = nx * nx + ny * ny + nz * nz;
+      const e01 = ux * ux + uy * uy + uz * uz;
+      const e02 = vx * vx + vy * vy + vz * vz;
+      const e12 = wx * wx + wy * wy + wz * wz;
+      const maxE2 = Math.max(e01, e02, e12);
+
+      // Mirror Python VAL-01 round(p, 4) topology area2 check in exact tile-local Float32 STL coordinates.
+      const r0x = r4(Math.fround(p0[0] - originXMm)), r0y = r4(Math.fround(p0[1] - originYMm)), r0z = r4(Math.fround(Math.max(0, p0[2])));
+      const r1x = r4(Math.fround(p1[0] - originXMm)), r1y = r4(Math.fround(p1[1] - originYMm)), r1z = r4(Math.fround(Math.max(0, p1[2])));
+      const r2x = r4(Math.fround(p2[0] - originXMm)), r2y = r4(Math.fround(p2[1] - originYMm)), r2z = r4(Math.fround(Math.max(0, p2[2])));
+      const sameR4 =
+        (r0x === r1x && r0y === r1y && r0z === r1z) ||
+        (r1x === r2x && r1y === r2y && r1z === r2z) ||
+        (r2x === r0x && r2y === r0y && r2z === r0z);
+      let area2R4 = 0;
+      if (!sameR4) {
+        const rux = r1x - r0x, ruy = r1y - r0y, ruz = r1z - r0z;
+        const rvx = r2x - r0x, rvy = r2y - r0y, rvz = r2z - r0z;
+        const rnx = ruy * rvz - ruz * rvy;
+        const rny = ruz * rvx - rux * rvz;
+        const rnz = rux * rvy - ruy * rvx;
+        area2R4 = Math.hypot(rnx, rny, rnz);
+      }
+      return { len2, maxE2, e01, e02, e12, area2R4, sameR4 };
+    };
+
+    const MIN_SAFE_AREA2_R4 = 5e-7; // 50x above VAL-01 area2 < 1e-8 threshold
+    const MIN_SAFE_LEN2_F32 = 1e-13; // sqrt = 3.16e-7 (> 30x above 1e-8)
+    const isTriHealthy = (m) =>
+      !m.sameR4 && m.area2R4 >= MIN_SAFE_AREA2_R4 && m.len2 > MIN_SAFE_LEN2_F32 &&
+      m.len2 > 1.6e-7 * m.maxE2;
+
+    const evalTriWithOverride = (triIdx, ovId, tx, ty, tz) => {
+      const t = tris[triIdx];
+      const q0 = t[0] === ovId ? [tx, ty, tz] : verts[t[0]];
+      const q1 = t[1] === ovId ? [tx, ty, tz] : verts[t[1]];
+      const q2 = t[2] === ovId ? [tx, ty, tz] : verts[t[2]];
+      return evalTriMetrics(q0, q1, q2);
+    };
+
+    // Repair near-collinear Float32 and round(p, 4) triangles while keeping seam/outer cut-plane vertices locked (VAL-01, VAL-09).
+    for (let pass = 0; pass < 16; pass++) {
       let found = 0;
       for (let i = 0; i < tris.length; i++) {
         const tri = tris[i];
@@ -1275,74 +1339,115 @@
         const p0 = verts[a];
         const p1 = verts[b];
         const p2 = verts[c];
-        const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
-        const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
-        const wx = p2[0] - p1[0], wy = p2[1] - p1[1], wz = p2[2] - p1[2];
-        const nx = uy * vz - uz * vy;
-        const ny = uz * vx - ux * vz;
-        const nz = ux * vy - uy * vx;
-        const len2 = nx * nx + ny * ny + nz * nz;
-        const e01 = ux * ux + uy * uy + uz * uz;
-        const e02 = vx * vx + vy * vy + vz * vz;
-        const e12 = wx * wx + wy * wy + wz * wz;
-        const maxE2 = Math.max(e01, e02, e12);
-        if (len2 > 1e-8 && len2 > 1.6e-7 * maxE2) continue;
+        const curM = evalTriMetrics(p0, p1, p2);
+        if (isTriHealthy(curM)) continue;
 
         found++;
         const g = ensureMmGrid();
-        const best = (e12 >= e02 && e12 >= e01) ? 0 : (e02 >= e01 ? 1 : 2);
+        const best = (curM.e12 >= curM.e02 && curM.e12 >= curM.e01) ? 0 : (curM.e02 >= curM.e01 ? 1 : 2);
         const triIds = [a, b, c];
-        let cand = triIds[(best + pass) % 3];
-        let bestLockScore = (mmLockX[cand] ? 1 : 0) + (mmLockY[cand] ? 1 : 0);
-        for (let k = 0; k < 3; k++) {
-          const cid = triIds[(best + pass + k) % 3];
-          const sc = (mmLockX[cid] ? 1 : 0) + (mmLockY[cid] ? 1 : 0);
-          if (sc < bestLockScore) {
-            bestLockScore = sc;
-            cand = cid;
-          }
-        }
-        const lx = Boolean(mmLockX[cand]);
-        const ly = Boolean(mmLockY[cand]);
-        const o1 = cand === a ? p1 : p0;
-        const o2 = cand === c ? p1 : p2;
-        const ex = o2[0] - o1[0];
-        const ey = o2[1] - o1[1];
-        const elen = Math.hypot(ex, ey);
-        const vpC = verts[cand];
-        let baseSign = (((cand + pass) * 2654435761) & 1) ? 1 : -1;
-        if (elen > 1e-5) {
-          const d = (vpC[0] - o1[0]) * (-ey / elen) + (vpC[1] - o1[1]) * (ex / elen);
-          if (Math.abs(d) > 1e-6) baseSign = d >= 0 ? 1 : -1;
-        }
-        const scales = [1, -1, 1.37, -1.37, 1.91, -1.91];
-        let chosenX = vpC[0];
-        let chosenY = vpC[1];
-        let chosenZ = vpC[2];
-        for (let si = 0; si < scales.length; si++) {
-          const eps = 0.0025 * baseSign * scales[si];
-          let tx = vpC[0];
-          let ty = vpC[1];
-          let tz = vpC[2];
+        const orderedCands = [0, 1, 2]
+          .map(k => triIds[(best + pass + k) % 3])
+          .sort((u, v) => ((mmLockX[u] ? 1 : 0) + (mmLockY[u] ? 1 : 0)) - ((mmLockX[v] ? 1 : 0) + (mmLockY[v] ? 1 : 0)));
+
+        const stepMags = [0.0012, 0.0022, 0.0036, 0.0055, 0.0080, 0.0120];
+        let applied = false;
+
+        candLoop: for (let ci = 0; ci < orderedCands.length; ci++) {
+          const cand = orderedCands[ci];
+          const lx = Boolean(mmLockX[cand]);
+          const ly = Boolean(mmLockY[cand]);
+          const vpC = verts[cand];
+          const zFree = vpC[2] > 0.05;
+          const o1 = cand === a ? p1 : p0;
+          const o2 = cand === c ? p1 : p2;
+          const ex = o2[0] - o1[0];
+          const ey = o2[1] - o1[1];
+          const ez = o2[2] - o1[2];
+
+          const dirs = [];
+          const pushDir = (dx, dy, dz) => {
+            if (lx) dx = 0;
+            if (ly) dy = 0;
+            if (!zFree) dz = 0;
+            const dl = Math.hypot(dx, dy, dz);
+            if (dl < 1e-9) return;
+            dirs.push([dx / dl, dy / dl, dz / dl]);
+          };
+
           if (lx && ly) {
-            if (vpC[2] > 0.05) tz = Math.fround(vpC[2] + eps * 0.5);
-          } else if (elen > 1e-5 && !lx && !ly) {
-            tx = Math.fround(vpC[0] + (-ey / elen) * eps);
-            ty = Math.fround(vpC[1] + (ex / elen) * eps);
+            pushDir(0, 0, 1);
+            pushDir(0, 0, -1);
+          } else if (lx && !ly) {
+            // Locked X plane: move strictly inside YZ plane perpendicular to opposite edge (0, ey, ez).
+            pushDir(0, -ez, ey);
+            pushDir(0, ez, -ey);
+            pushDir(0, 0, 1);
+            pushDir(0, 0, -1);
+            pushDir(0, 1, 0);
+            pushDir(0, -1, 0);
+          } else if (!lx && ly) {
+            // Locked Y plane: move strictly inside XZ plane perpendicular to opposite edge (ex, 0, ez).
+            pushDir(-ez, 0, ex);
+            pushDir(ez, 0, -ex);
+            pushDir(0, 0, 1);
+            pushDir(0, 0, -1);
+            pushDir(1, 0, 0);
+            pushDir(-1, 0, 0);
           } else {
-            if (!lx) tx = Math.fround(vpC[0] + eps);
-            if (!ly) ty = Math.fround(vpC[1] - eps * (lx ? 1.0 : 0.73));
-            if (vpC[2] > 0.05) tz = Math.fround(vpC[2] + eps * 0.5);
+            // Interior vertex: prefer XY perpendicular, then Z and axis-aligned fallbacks.
+            pushDir(-ey, ex, 0);
+            pushDir(ey, -ex, 0);
+            pushDir(0, 0, 1);
+            pushDir(0, 0, -1);
+            pushDir(1, 0, 0);
+            pushDir(-1, 0, 0);
+            pushDir(0, 1, 0);
+            pushDir(0, -1, 0);
           }
-          const isClear = !g.hasClose(tx, ty, tz, cand);
-          if (isClear || si === scales.length - 1) {
-            chosenX = tx;
-            chosenY = ty;
-            chosenZ = tz;
-            if (isClear) break;
+
+          const inc = vertTris[cand];
+          for (let si = 0; si < stepMags.length; si++) {
+            const mag = stepMags[si];
+            for (let di = 0; di < dirs.length; di++) {
+              const d = dirs[di];
+              const tx = lx ? vpC[0] : Math.fround(vpC[0] + d[0] * mag);
+              const ty = ly ? vpC[1] : Math.fround(vpC[1] + d[1] * mag);
+              const tz = zFree ? Math.fround(Math.max(0.051, vpC[2] + d[2] * mag)) : vpC[2];
+              if (tx === vpC[0] && ty === vpC[1] && tz === vpC[2]) continue;
+              if (g.hasClose(tx, ty, tz, cand)) continue;
+
+              const newM = evalTriWithOverride(i, cand, tx, ty, tz);
+              if (newM.sameR4 || newM.area2R4 < MIN_SAFE_AREA2_R4 || newM.len2 <= MIN_SAFE_LEN2_F32 || newM.len2 <= 1.6e-7 * newM.maxE2) continue;
+
+              // Ensure moving cand does not degenerate any incident triangle after round(p, 4).
+              let neighborBroken = false;
+              for (let ni = 0; ni < inc.length; ni++) {
+                const ntIdx = inc[ni];
+                if (ntIdx === i) continue;
+                const nt = tris[ntIdx];
+                const beforeM = evalTriMetrics(verts[nt[0]], verts[nt[1]], verts[nt[2]]);
+                const afterM = evalTriWithOverride(ntIdx, cand, tx, ty, tz);
+                if (!isTriHealthy(afterM)) {
+                  if (isTriHealthy(beforeM)) {
+                    neighborBroken = true;
+                    break;
+                  }
+                  if (afterM.area2R4 < beforeM.area2R4) {
+                    neighborBroken = true;
+                    break;
+                  }
+                }
+              }
+              if (neighborBroken) continue;
+
+              moveVertMm(cand, tx, ty, tz);
+              applied = true;
+              break candLoop;
+            }
           }
         }
-        moveVertMm(cand, chosenX, chosenY, chosenZ);
+        void applied;
       }
       if (found === 0) break;
     }

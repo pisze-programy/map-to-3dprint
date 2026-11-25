@@ -781,7 +781,7 @@ function createHeadlessCanvas(initialW = 300, initialH = 150) {
 // HTTP Helpers (Remote Public OSM / AWS Terrarium Only) & DEM Tile Cache
 // ============================================================================
 
-function httpsGetBuffer(url, timeoutMs = 15000, headers = {}) {
+function httpsGetBufferOnce(url, timeoutMs = 15000, headers = {}) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, {
       timeout: timeoutMs,
@@ -792,7 +792,7 @@ function httpsGetBuffer(url, timeoutMs = 15000, headers = {}) {
     }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        httpsGetBuffer(res.headers.location, timeoutMs, headers).then(resolve, reject);
+        httpsGetBufferOnce(res.headers.location, timeoutMs, headers).then(resolve, reject);
         return;
       }
       const chunks = [];
@@ -814,6 +814,23 @@ function httpsGetBuffer(url, timeoutMs = 15000, headers = {}) {
   });
 }
 
+async function httpsGetBuffer(url, timeoutMs = 15000, headers = {}) {
+  const retryDelaysMs = [2500, 6000, 12000];
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+    try {
+      return await httpsGetBufferOnce(url, timeoutMs, headers);
+    } catch (err) {
+      lastErr = err;
+      const code = Number(err && err.status);
+      const retryable = code === 429 || code === 502 || code === 503 || code === 504;
+      if (!retryable || attempt >= retryDelaysMs.length) throw err;
+      await new Promise(r => setTimeout(r, retryDelaysMs[attempt]));
+    }
+  }
+  throw lastErr;
+}
+
 function findCachedDemTileFile(demCacheDirs, zoom, tx, ty) {
   for (const dir of demCacheDirs) {
     if (!dir) continue;
@@ -829,15 +846,19 @@ function findCachedDemTileFile(demCacheDirs, zoom, tx, ty) {
 }
 
 function createHeadlessImageClass(opts = {}) {
+  const demModeRaw = typeof opts.demMode === 'string' ? opts.demMode.trim().toLowerCase() : '';
+  const demMode = (demModeRaw === 'flat' || demModeRaw === 'terrarium') ? demModeRaw : '';
   const demCacheDirs = [];
   if (opts.demCacheDir) demCacheDirs.push(opts.demCacheDir);
   if (Array.isArray(opts.extraDemCacheDirs)) demCacheDirs.push(...opts.extraDemCacheDirs);
+  const repoTerrariumDir = path.join(REPO_ROOT, 'cache', 'dem_terrarium');
+  if (!demCacheDirs.includes(repoTerrariumDir)) demCacheDirs.push(repoTerrariumDir);
   const repoCacheDir = path.join(REPO_ROOT, 'cache');
   if (!demCacheDirs.includes(repoCacheDir)) demCacheDirs.push(repoCacheDir);
 
-  const primaryWriteDir = opts.demCacheDir || null;
-  const offlineFallbackDem = opts.offlineFallbackDem !== false;
-  const allowRemoteDem = opts.allowRemoteDem !== false && !opts.offlineOnly;
+  const primaryWriteDir = opts.demCacheDir || repoTerrariumDir;
+  const offlineFallbackDem = demMode === 'terrarium' ? false : (opts.offlineFallbackDem !== false);
+  const allowRemoteDem = demMode === 'flat' ? false : (opts.allowRemoteDem !== false && !opts.offlineOnly);
 
   return class HeadlessImage {
     constructor() {
@@ -888,6 +909,10 @@ function createHeadlessImageClass(opts = {}) {
 
         const m = url.match(/\/terrarium\/(\d+)\/(\d+)\/(\d+)\.png/i);
         if (m) {
+          if (demMode === 'flat') {
+            this._finishFlatDem();
+            return;
+          }
           const [, z, tx, ty] = m;
           const cachedPath = findCachedDemTileFile(demCacheDirs, z, tx, ty);
           if (cachedPath) {
@@ -909,7 +934,7 @@ function createHeadlessImageClass(opts = {}) {
             this._finishFlatDem();
             return;
           }
-          throw new Error(`DEM tile ${z}/${tx}/${ty} not cached locally and remote DEM disabled`);
+          throw new Error(`DEM tile ${z}/${tx}/${ty} not cached locally (demMode=${demMode || 'auto'}) and remote DEM disabled`);
         }
 
         if (fs.existsSync(url)) {
@@ -2034,6 +2059,9 @@ function buildStateFromOpts(rawOpts = {}, sandbox, scene) {
     layerHeightMm: Number(opts.layerHeightMm ?? 0.05),
     printProfile: opts.printProfile || 'sla_mono4',
     mapRotationDeg: Number(opts.rotationDeg ?? 0),
+    demMode: (typeof opts.demMode === 'string' && (opts.demMode === 'flat' || opts.demMode === 'terrarium'))
+      ? opts.demMode
+      : (opts.offlineOnly && !opts.demCacheDir ? 'flat' : 'terrarium'),
     selectedIds: opts.selectedIds || [],
     hoveredBuildingId: Number(opts.hoveredBuildingId ?? -999),
     userClickedBuilding: Number(opts.userClickedBuilding ?? -999),
@@ -2151,6 +2179,16 @@ async function loadSceneAndBuildModel(rawOpts = {}) {
         north: selBBox.fetchNorth,
         east: selBBox.fetchEast,
       });
+      if (opts.saveSnapshotPath && Array.isArray(rawElements) && rawElements.length > 0) {
+        try {
+          fs.mkdirSync(path.dirname(opts.saveSnapshotPath), { recursive: true });
+          const payload = {
+            bbox: [selBBox.fetchSouth, selBBox.fetchWest, selBBox.fetchNorth, selBBox.fetchEast],
+            elements: rawElements,
+          };
+          fs.writeFileSync(opts.saveSnapshotPath, JSON.stringify(payload));
+        } catch (_) {}
+      }
     }
 
     auditState.osmElements = rawElements;

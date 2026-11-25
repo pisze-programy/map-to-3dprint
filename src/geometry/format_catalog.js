@@ -33,7 +33,7 @@
       dfm06_chamfer_height_mm: 0.50,
       underside_relief_height_mm: 1.50,
       underside_relief_width_mm: 2.60,
-      underside_relief_pitch_mm: 9.50,
+      underside_relief_pitch_mm: 8.80,
       underside_relief_skirt_mm: 8.0
     },
     formats: {

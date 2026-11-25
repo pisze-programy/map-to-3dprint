@@ -10,8 +10,12 @@
 
 import fs from 'fs';
 import path from 'path';
+import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
+
+const __inspectorFile = fileURLToPath(import.meta.url);
+const REPO_ROOT = path.resolve(path.dirname(__inspectorFile), '..');
 
 const require = createRequire(import.meta.url);
 const harness = require('./headless_scene_harness.js');
@@ -456,6 +460,7 @@ function buildLoadOptions(rawArgs = {}, silent = true) {
   const args = resolveFramePresetArgs(rawArgs);
   return {
     snapshotPath: args.snapshotPath,
+    saveSnapshotPath: args.saveSnapshotPath,
     scenePath: args.scenePath,
     cachedCity: args.cachedCity,
     scene: args.scene,
@@ -492,6 +497,7 @@ function buildLoadOptions(rawArgs = {}, silent = true) {
     cropCenterY: args.cropCenterY,
     layerVisible: args.layerVisible,
     sunAngleDeg: args.sunAngleDeg,
+    demMode: args.demMode,
     demCacheDir: args.demCacheDir,
     extraDemCacheDirs: args.extraDemCacheDirs,
     offlineFallbackDem: args.offlineFallbackDem !== false,
@@ -600,17 +606,46 @@ async function handleExportMap3DStl(rawArgs = {}, { silent = true } = {}) {
   if (typeof sb.buildAssemblyManifest === 'function') {
     const manifestObj = sb.buildAssemblyManifest(exportState, manifestRecords, {
       sku_id: args.formatId || exportState.formatId,
-      city_slug: args.title || exportState.plaqueText || prefix,
+      city_slug: args.citySlug || args.title || exportState.plaqueText || prefix,
+      dem_mode: exportState.demMode || args.demMode || 'flat',
     });
     manifestPath = path.join(outDir, 'assembly_manifest.json');
     fs.writeFileSync(manifestPath, JSON.stringify(manifestObj, null, 2));
+  } else {
+    throw new Error('buildAssemblyManifest is not loaded in headless runtime; refusing unvalidated STL export');
+  }
+
+  // Zero-bypass automatic VAL-01..14 whole-assembly verification gate
+  const validatorScript = path.join(REPO_ROOT, 'calibration', 'validate_assembly.py');
+  const valArgs = [validatorScript, manifestPath];
+  if (silent) valArgs.push('--quiet');
+  const valProc = spawnSync('python3', valArgs, { cwd: REPO_ROOT, encoding: 'utf8' });
+  const reportPath = path.join(outDir, 'validation_report.json');
+  let valReport = null;
+  if (fs.existsSync(reportPath)) {
+    try { valReport = JSON.parse(fs.readFileSync(reportPath, 'utf8')); } catch (_) {}
+  }
+  if (valProc.status !== 0 || !valReport || valReport.verdict !== 'PASS') {
+    const fails = (valReport && Array.isArray(valReport.failures) && valReport.failures.length > 0)
+      ? valReport.failures.join(' | ')
+      : ((valProc.stderr || valProc.stdout || `exit code ${valProc.status}`).trim());
+    throw new Error(`Assembly validation FAILED (VAL-01..14) for ${outDir}: ${fails}`);
   }
 
   return {
     outputDir: outDir,
     manifestPath,
+    reportPath,
+    validation: {
+      verdict: valReport.verdict,
+      blockingFailures: valReport.summary ? valReport.summary.blocking_failures : 0,
+      warnings: valReport.summary ? valReport.summary.warnings : 0,
+      seamPairsChecked: valReport.summary ? valReport.summary.seam_pairs_checked : 0,
+      volumeDiffPct: valReport.summary ? valReport.summary.volume_diff_pct : null,
+    },
     frameMm: [state.bedSizeMm, state.totalHeightMm],
     grid: [cols, rows],
+    demMode: exportState.demMode || 'flat',
     solidBaseNoTunnels: Boolean(state.solidBaseNoTunnels),
     baseHeightMm: state.baseHeightMm,
     kerfMm: state.kerfMm,
@@ -1842,6 +1877,7 @@ function mapCommonCliFlags(flags) {
     zScale: num('z-scale'),
     terrainScale: num('terrain-scale'),
     cropRatio: num('crop-ratio'),
+    demMode: flags['dem-mode'],
     demCacheDir: flags['dem-cache-dir'],
     extraDemCacheDirs: extraDirs,
     offlineOnly: Boolean(flags.offline),

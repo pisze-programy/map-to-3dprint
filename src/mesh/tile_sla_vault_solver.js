@@ -1207,6 +1207,58 @@
     return grid;
   }
 
+  /**
+   * Exact cell-center scanline rasterizer matching validate_msla_stl.py slice_grid_2d.
+   * Unlike _rasterizePolysToGrid, does not dilate sub-cell walls so narrow 0.35-0.55 mm
+   * courtyard alleys stay open instead of pinching large cavities into hidden fragments.
+   * @param {Array<Array<Array<number>>>} polys
+   * @param {number} nx
+   * @param {number} ny
+   * @param {number} ox
+   * @param {number} oy
+   * @param {number} stepU
+   * @returns {Uint8Array}
+   */
+  function _rasterizePolysCenterGrid(polys, nx, ny, ox, oy, stepU) {
+    const grid = new Uint8Array(nx * ny);
+    if (!polys || polys.length === 0) return grid;
+    const rowSegs = Array.from({ length: ny }, () => []);
+    for (let pi = 0; pi < polys.length; pi++) {
+      const ring = polys[pi];
+      if (!ring || ring.length < 3) continue;
+      for (let i = 0, n = ring.length; i < n; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % n];
+        const ay = a[1], by = b[1];
+        if (ay === by) continue;
+        const r0 = Math.max(0, Math.floor((Math.min(ay, by) - oy) / stepU - 0.5));
+        const r1 = Math.min(ny - 1, Math.ceil((Math.max(ay, by) - oy) / stepU - 0.5));
+        for (let r = r0; r <= r1; r++) {
+          const yc = oy + (r + 0.5) * stepU;
+          if ((ay <= yc && by > yc) || (by <= yc && ay > yc)) {
+            rowSegs[r].push(a[0] + ((yc - ay) * (b[0] - a[0])) / (by - ay));
+          }
+        }
+      }
+    }
+    for (let r = 0; r < ny; r++) {
+      const xs = rowSegs[r];
+      if (xs.length < 2) continue;
+      xs.sort((a, b) => a - b);
+      const rowOff = r * nx;
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const x0 = xs[k], x1 = xs[k + 1];
+        const c0 = Math.max(0, Math.floor((x0 - ox) / stepU));
+        const c1 = Math.min(nx - 1, Math.floor((x1 - ox) / stepU));
+        for (let c = c0; c <= c1; c++) {
+          const xc = ox + (c + 0.5) * stepU;
+          if (x0 <= xc && xc <= x1) grid[rowOff + c] = 1;
+        }
+      }
+    }
+    return grid;
+  }
+
   function _sliceCrossSectionPolys(core, man, zU) {
     let cs = null;
     try {
@@ -1328,9 +1380,8 @@
 
   function _ventUpperSealedCourtyards(core, poly, mf, unified, scaleMm, baseBottomMm = 2.35, ventMod = null) {
     const safeBaseMm = (Number(baseBottomMm) > 0) ? Number(baseBottomMm) : 2.35;
-    const minHoleAreaU2 = 75.0 / (scaleMm * scaleMm);
-    const minArchwayAreaU2 = 80.0 / (scaleMm * scaleMm);
-    const closeRadU = 0.22 / scaleMm;
+    const minHoleAreaU2 = 65.0 / (scaleMm * scaleMm);
+    const minArchwayAreaU2 = 65.0 / (scaleMm * scaleMm);
     const initBB = unified.boundingBox();
     const maxZMm = initBB.max[2] * scaleMm;
     // Strictly ascending scan from base top up to +12.0 mm: dense 0.15-0.25 mm spacing
@@ -1349,125 +1400,165 @@
       zListMm.push(zm);
     }
     const zSlabCheckMm = Math.max(1.85, safeBaseMm - 0.50);
+    const zBaseTopCheckMm = Math.max(2.10, safeBaseMm - 0.15);
     const zBotFloorMm = Math.max(2.30, safeBaseMm - 0.05);
 
     const spanXMm = (initBB.max[0] - initBB.min[0]) * scaleMm;
     const spanYMm = (initBB.max[1] - initBB.min[1]) * scaleMm;
-    const stepMm = Math.max(0.55, Math.max(spanXMm, spanYMm) / 260);
+    // Match VAL-02 0.30 mm raster pitch exactly (never < 0.30 mm, which leaks through <=0.28 mm
+    // cracks that VAL-02 treats as sealed) and align origin with validate_msla_stl.py (-2*step).
+    const stepMm = Math.max(0.30, Math.max(spanXMm, spanYMm) / 800);
     const stepU = stepMm / scaleMm;
-    const nx = Math.ceil((initBB.max[0] - initBB.min[0]) / stepU) + 2;
-    const ny = Math.ceil((initBB.max[1] - initBB.min[1]) / stepU) + 2;
-    const ox = initBB.min[0] - stepU;
-    const oy = initBB.min[1] - stepU;
+    const nx = Math.ceil((initBB.max[0] - initBB.min[0]) / stepU) + 4;
+    const ny = Math.ceil((initBB.max[1] - initBB.min[1]) / stepU) + 4;
+    const ox = initBB.min[0] - 2 * stepU;
+    const oy = initBB.min[1] - 2 * stepU;
     const total = nx * ny;
 
-    let ventSeed = null;
-    const ensureVentSeed = () => {
-      if (ventSeed !== null) return;
-      const polys115 = _sliceCrossSectionPolys(core, unified, 1.15 / scaleMm);
-      const polys185 = _sliceCrossSectionPolys(core, unified, zSlabCheckMm / scaleMm);
-      const solid115 = _rasterizePolysToGrid(polys115, nx, ny, ox, oy, stepU);
-      const solid185 = _rasterizePolysToGrid(polys185, nx, ny, ox, oy, stepU);
-      ventSeed = new Uint8Array(total);
-      for (let i = 0; i < total; i++) {
-        if (!solid115[i] && !solid185[i]) ventSeed[i] = 1;
+    const phases = [[0, 0], [0.5, 0], [0, 0.5], [0.5, 0.5]];
+    const ventSeedByPhase = [null, null, null, null];
+    let baseSeedPolysCache = null;
+    const ensureVentSeedForPhase = (pi) => {
+      if (ventSeedByPhase[pi] !== null) return ventSeedByPhase[pi];
+      if (baseSeedPolysCache === null) {
+        baseSeedPolysCache = {
+          p115: _sliceCrossSectionPolys(core, unified, 1.15 / scaleMm),
+          p185: _sliceCrossSectionPolys(core, unified, zSlabCheckMm / scaleMm),
+          pTop: _sliceCrossSectionPolys(core, unified, zBaseTopCheckMm / scaleMm),
+        };
       }
+      const pOx = ox + phases[pi][0] * stepU;
+      const pOy = oy + phases[pi][1] * stepU;
+      const solid115 = _rasterizePolysCenterGrid(baseSeedPolysCache.p115, nx, ny, pOx, pOy, stepU);
+      const solid185 = _rasterizePolysCenterGrid(baseSeedPolysCache.p185, nx, ny, pOx, pOy, stepU);
+      const solidTop = _rasterizePolysCenterGrid(baseSeedPolysCache.pTop, nx, ny, pOx, pOy, stepU);
+      const seed = new Uint8Array(total);
+      for (let i = 0; i < total; i++) {
+        if (!solid115[i] && !solid185[i] && !solidTop[i]) seed[i] = 1;
+      }
+      ventSeedByPhase[pi] = seed;
+      return seed;
     };
+
+    const minRasterCells = Math.max(6, Math.ceil(65.0 / (stepMm * stepMm)));
 
     for (let zi = 0; zi < zListMm.length; zi++) {
       const zMm = zListMm[zi];
       const curBB = unified.boundingBox();
       if (zMm >= curBB.max[2] * scaleMm - 0.15) continue;
 
-      let lastExtAir = null;
-      for (let iter = 0; iter < 3; iter++) {
+      const lastExtAirByPhase = [null, null, null, null];
+      for (let iter = 0; iter < 6; iter++) {
         let sCur = null;
-        let dilCur = null;
-        let closedCur = null;
         let polys = [];
         try {
           sCur = unified.slice(zMm / scaleMm);
-          if (!sCur.isEmpty()) {
-            dilCur = sCur.offset(closeRadU, 'Round');
-            if (!dilCur.isEmpty()) {
-              closedCur = dilCur.offset(-closeRadU, 'Round');
-              if (!closedCur.isEmpty()) polys = closedCur.toPolygons();
-            }
-          }
+          if (sCur && !sCur.isEmpty()) polys = sCur.toPolygons();
         } catch (_) {
           polys = [];
         } finally {
           core.safeDeleteManifold(sCur);
-          core.safeDeleteManifold(dilCur);
-          core.safeDeleteManifold(closedCur);
         }
         if (polys.length === 0) break;
 
-        const cwHoles = [];
-        const ccwOuters = [];
-        for (let i = 0; i < polys.length; i++) {
-          const r = polys[i];
-          if (!r || r.length < 3) continue;
-          const sa = poly.signedArea2D(r);
-          if (sa < -1e-7 && Math.abs(sa) >= minHoleAreaU2) {
-            cwHoles.push({ ring: r, area: Math.abs(sa), bb: _ringBBox2D(r) });
-          } else if (sa > 1e-7) {
-            ccwOuters.push({ ring: r, area: sa, bb: _ringBBox2D(r) });
+        // Scan across all 4 half-cell grid phases so a phase shift between masterSolid and
+        // an individual cut tile (VAL-02 0.30 mm grid) can never hide a sealed courtyard.
+        let activePhase = -1;
+        let solidCur = null;
+        let extAir = null;
+        let rasterPockets = [];
+        for (let pi = 0; pi < phases.length; pi++) {
+          const pOx = ox + phases[pi][0] * stepU;
+          const pOy = oy + phases[pi][1] * stepU;
+          const sGrid = _rasterizePolysCenterGrid(polys, nx, ny, pOx, pOy, stepU);
+          const eAir = new Uint8Array(total);
+          const q = new Int32Array(total);
+          let qh = 0, qt = 0;
+          if (!sGrid[0]) { eAir[0] = 1; q[qt++] = 0; }
+          if (ventSeedByPhase[pi] !== null) {
+            const vSeed = ventSeedByPhase[pi];
+            for (let i = 0; i < total; i++) {
+              if (vSeed[i] && !sGrid[i] && !eAir[i]) {
+                eAir[i] = 1;
+                q[qt++] = i;
+              }
+            }
           }
-        }
-
-        const solidCur = _rasterizePolysToGrid(polys, nx, ny, ox, oy, stepU);
-        const extAir = new Uint8Array(total);
-        const q = new Int32Array(total);
-        let qh = 0, qt = 0;
-        if (!solidCur[0]) { extAir[0] = 1; q[qt++] = 0; }
-        if (ventSeed !== null) {
+          while (qh < qt) {
+            const cur = q[qh++];
+            const cx = cur % nx, cy = (cur - cx) / nx;
+            if (cx > 0 && !sGrid[cur - 1] && !eAir[cur - 1]) { eAir[cur - 1] = 1; q[qt++] = cur - 1; }
+            if (cx + 1 < nx && !sGrid[cur + 1] && !eAir[cur + 1]) { eAir[cur + 1] = 1; q[qt++] = cur + 1; }
+            if (cy > 0 && !sGrid[cur - nx] && !eAir[cur - nx]) { eAir[cur - nx] = 1; q[qt++] = cur - nx; }
+            if (cy + 1 < ny && !sGrid[cur + nx] && !eAir[cur + nx]) { eAir[cur + nx] = 1; q[qt++] = cur + nx; }
+          }
+          let anyEncl = false;
           for (let i = 0; i < total; i++) {
-            if (ventSeed[i] && !solidCur[i] && !extAir[i]) {
-              extAir[i] = 1;
-              q[qt++] = i;
+            if (!sGrid[i] && !eAir[i]) { anyEncl = true; break; }
+          }
+          if (anyEncl && ventSeedByPhase[pi] === null) {
+            const vSeed = ensureVentSeedForPhase(pi);
+            let addedSeed = false;
+            for (let i = 0; i < total; i++) {
+              if (vSeed[i] && !sGrid[i] && !eAir[i]) {
+                eAir[i] = 1;
+                q[qt++] = i;
+                addedSeed = true;
+              }
+            }
+            if (addedSeed) {
+              while (qh < qt) {
+                const cur = q[qh++];
+                const cx = cur % nx, cy = (cur - cx) / nx;
+                if (cx > 0 && !sGrid[cur - 1] && !eAir[cur - 1]) { eAir[cur - 1] = 1; q[qt++] = cur - 1; }
+                if (cx + 1 < nx && !sGrid[cur + 1] && !eAir[cur + 1]) { eAir[cur + 1] = 1; q[qt++] = cur + 1; }
+                if (cy > 0 && !sGrid[cur - nx] && !eAir[cur - nx]) { eAir[cur - nx] = 1; q[qt++] = cur - nx; }
+                if (cy + 1 < ny && !sGrid[cur + nx] && !eAir[cur + nx]) { eAir[cur + nx] = 1; q[qt++] = cur + nx; }
+              }
             }
           }
-        }
-        while (qh < qt) {
-          const cur = q[qh++];
-          const cx = cur % nx, cy = (cur - cx) / nx;
-          if (cx > 0 && !solidCur[cur - 1] && !extAir[cur - 1]) { extAir[cur - 1] = 1; q[qt++] = cur - 1; }
-          if (cx + 1 < nx && !solidCur[cur + 1] && !extAir[cur + 1]) { extAir[cur + 1] = 1; q[qt++] = cur + 1; }
-          if (cy > 0 && !solidCur[cur - nx] && !extAir[cur - nx]) { extAir[cur - nx] = 1; q[qt++] = cur - nx; }
-          if (cy + 1 < ny && !solidCur[cur + nx] && !extAir[cur + nx]) { extAir[cur + nx] = 1; q[qt++] = cur + nx; }
-        }
-        lastExtAir = extAir;
-        if (cwHoles.length === 0) break;
+          lastExtAirByPhase[pi] = eAir;
+          if (!anyEncl) continue;
 
-        if (ventSeed === null) {
-          ensureVentSeed();
-          let addedSeed = false;
+          const pocketSeen = new Uint8Array(total);
+          const pFound = [];
           for (let i = 0; i < total; i++) {
-            if (ventSeed[i] && !solidCur[i] && !extAir[i]) {
-              extAir[i] = 1;
-              q[qt++] = i;
-              addedSeed = true;
+            if (sGrid[i] || eAir[i] || pocketSeen[i]) continue;
+            const cells = [];
+            const stk = [i];
+            pocketSeen[i] = 1;
+            while (stk.length > 0) {
+              const cur = stk.pop();
+              cells.push(cur);
+              const cx = cur % nx;
+              const cy = (cur - cx) / nx;
+              if (cx > 0 && !sGrid[cur - 1] && !eAir[cur - 1] && !pocketSeen[cur - 1]) { pocketSeen[cur - 1] = 1; stk.push(cur - 1); }
+              if (cx + 1 < nx && !sGrid[cur + 1] && !eAir[cur + 1] && !pocketSeen[cur + 1]) { pocketSeen[cur + 1] = 1; stk.push(cur + 1); }
+              if (cy > 0 && !sGrid[cur - nx] && !eAir[cur - nx] && !pocketSeen[cur - nx]) { pocketSeen[cur - nx] = 1; stk.push(cur - nx); }
+              if (cy + 1 < ny && !sGrid[cur + nx] && !eAir[cur + nx] && !pocketSeen[cur + nx]) { pocketSeen[cur + nx] = 1; stk.push(cur + nx); }
+            }
+            if (cells.length >= minRasterCells) {
+              pFound.push({ cells, areaU2: (cells.length * stepMm * stepMm) / (scaleMm * scaleMm) });
             }
           }
-          if (addedSeed) {
-            while (qh < qt) {
-              const cur = q[qh++];
-              const cx = cur % nx, cy = (cur - cx) / nx;
-              if (cx > 0 && !solidCur[cur - 1] && !extAir[cur - 1]) { extAir[cur - 1] = 1; q[qt++] = cur - 1; }
-              if (cx + 1 < nx && !solidCur[cur + 1] && !extAir[cur + 1]) { extAir[cur + 1] = 1; q[qt++] = cur + 1; }
-              if (cy > 0 && !solidCur[cur - nx] && !extAir[cur - nx]) { extAir[cur - nx] = 1; q[qt++] = cur - nx; }
-              if (cy + 1 < ny && !solidCur[cur + nx] && !extAir[cur + nx]) { extAir[cur + nx] = 1; q[qt++] = cur + nx; }
-            }
+          if (pFound.length > 0) {
+            activePhase = pi;
+            solidCur = sGrid;
+            extAir = eAir;
+            rasterPockets = pFound;
+            break;
           }
         }
+        if (activePhase < 0 || rasterPockets.length === 0) break;
 
+        const actOx = ox + phases[activePhase][0] * stepU;
+        const actOy = oy + phases[activePhase][1] * stepU;
         let sHigh = null;
         let didCut = false;
         try {
           sHigh = unified.slice((zMm + 0.65) / scaleMm);
           const highPolys = sHigh.isEmpty() ? [] : sHigh.toPolygons();
-          const blockedRaw = _rasterizePolysToGrid(highPolys, nx, ny, ox, oy, stepU);
+          const blockedRaw = _rasterizePolysToGrid(highPolys, nx, ny, actOx, actOy, stepU);
           const blocked = new Uint8Array(total);
           for (let r = 0; r < ny; r++) {
             for (let c = 0; c < nx; c++) {
@@ -1485,48 +1576,21 @@
 
           const allBermRuns = [];
           const allArchRuns = [];
-          for (let hi = 0; hi < cwHoles.length; hi++) {
-            const hObj = cwHoles[hi];
-            const innerOuters = ccwOuters.filter(o =>
-              o.area < hObj.area &&
-              o.bb[2] >= hObj.bb[0] && o.bb[0] <= hObj.bb[2] &&
-              o.bb[3] >= hObj.bb[1] && o.bb[1] <= hObj.bb[3]
-            );
-            const c0 = Math.max(1, Math.floor((hObj.bb[0] - ox) / stepU));
-            const c1 = Math.min(nx - 2, Math.ceil((hObj.bb[2] - ox) / stepU));
-            const r0 = Math.max(1, Math.floor((hObj.bb[1] - oy) / stepU));
-            const r1 = Math.min(ny - 2, Math.ceil((hObj.bb[3] - oy) / stepU));
-            const cavityCells = [];
-            for (let r = r0; r <= r1; r++) {
-              const cy = oy + (r + 0.5) * stepU;
-              const rowOff = r * nx;
-              for (let c = c0; c <= c1; c++) {
-                const idx = rowOff + c;
-                if (solidCur[idx] || extAir[idx]) continue;
-                const cx = ox + (c + 0.5) * stepU;
-                if (!poly.pointInPoly2D(cx, cy, hObj.ring)) continue;
-                let insideIsland = false;
-                for (let oi = 0; oi < innerOuters.length; oi++) {
-                  const ob = innerOuters[oi].bb;
-                  if (cx >= ob[0] && cx <= ob[2] && cy >= ob[1] && cy <= ob[3] &&
-                      poly.pointInPoly2D(cx, cy, innerOuters[oi].ring)) {
-                    insideIsland = true;
-                    break;
-                  }
-                }
-                if (!insideIsland) cavityCells.push(idx);
-              }
-            }
+          for (let hi = 0; hi < rasterPockets.length; hi++) {
+            const pObj = rasterPockets[hi];
+            const cavityCells = pObj.cells;
             if (cavityCells.length === 0) continue;
 
-            const bermRuns = _findShortestBermRuns(cavityCells, blocked, solidCur, extAir, nx, ny, ox, oy, stepU, scaleMm);
+            const bermRuns = iter < 4
+              ? _findShortestBermRuns(cavityCells, blocked, solidCur, extAir, nx, ny, actOx, actOy, stepU, scaleMm)
+              : [];
             if (bermRuns.length > 0) {
               for (let i = 0; i < bermRuns.length; i++) allBermRuns.push(bermRuns[i]);
-            } else if (hObj.area >= minArchwayAreaU2 && ventMod && typeof ventMod.findShortestSolidVentRuns === 'function') {
-              // Courtyard enclosed 360 deg by taller buildings: carve one street-level gabled
-              // pedestrian archway (1.70 mm wide, >= 45 deg self-supporting crown) through shortest wall.
+            } else if (pObj.areaU2 >= minArchwayAreaU2 && ventMod && typeof ventMod.findShortestSolidVentRuns === 'function') {
+              // Courtyard enclosed 360 deg by taller buildings (or berm cut pinched by adjacent walls):
+              // carve one street-level gabled pedestrian archway (1.70 mm wide, >= 45 deg crown).
               const archRuns = ventMod.findShortestSolidVentRuns(
-                cavityCells, extAir, solidCur, nx, ny, ox, oy, stepU, scaleMm, 0.85
+                cavityCells, extAir, solidCur, nx, ny, actOx, actOy, stepU, scaleMm, 0.85
               );
               for (let i = 0; i < archRuns.length; i++) allArchRuns.push(archRuns[i]);
             }
@@ -1610,8 +1674,10 @@
         }
         if (!didCut) break;
       }
-      if (lastExtAir !== null && ventSeed !== null) {
-        ventSeed = lastExtAir;
+      for (let pi = 0; pi < phases.length; pi++) {
+        if (lastExtAirByPhase[pi] !== null && ventSeedByPhase[pi] !== null) {
+          ventSeedByPhase[pi] = lastExtAirByPhase[pi];
+        }
       }
     }
     return unified;
@@ -1897,22 +1963,23 @@
       for (let ci = 0; ci < clusters.length; ci++) {
         const { tris, zLo, zHi } = clusters[ci];
         let bands;
-        if ((zHi - zLo) * scaleMm > 0.35) {
+        if ((zHi - zLo) * scaleMm > 0.20) {
           const byBin = new Map();
           for (let ti = 0; ti < tris.length; ti++) {
             const tr = tris[ti];
-            const zBin = Math.floor((tr.minZ * scaleMm) / 0.35);
+            const zBin = Math.floor((tr.minZ * scaleMm) / 0.20);
             let b = byBin.get(zBin);
             if (!b) {
-              b = { zBin, tris: [], zLo: Infinity };
+              b = { zBin, tris: [], zLo: Infinity, zHi: -Infinity };
               byBin.set(zBin, b);
             }
             b.tris.push(tr);
             if (tr.minZ < b.zLo) b.zLo = tr.minZ;
+            if (tr.maxZ > b.zHi) b.zHi = tr.maxZ;
           }
           bands = Array.from(byBin.values()).sort((a, b) => b.zBin - a.zBin);
         } else {
-          bands = [{ tris, zLo, isSingleBand: true }];
+          bands = [{ tris, zLo, zHi, isSingleBand: true }];
         }
 
         const clusterPiers = [];
@@ -2080,7 +2147,7 @@
     return unified;
   }
 
-  function _cleanupDetachedBorderSlivers(core, mf, unified, scaleMm) {
+  function _cleanupDetachedBorderSlivers(core, mf, unified, scaleMm, interiorCutPlanes = null) {
     if (!unified || typeof unified.decompose !== 'function') return unified;
     let comps;
     try {
@@ -2109,22 +2176,60 @@
       return unified;
     }
 
+    const cutXsU = (interiorCutPlanes && Array.isArray(interiorCutPlanes.cutXsU)) ? interiorCutPlanes.cutXsU : [];
+    const cutYsU = (interiorCutPlanes && Array.isArray(interiorCutPlanes.cutYsU)) ? interiorCutPlanes.cutYsU : [];
+    const seamProtectTolU = 0.15 / scaleMm;
+    const touchesInteriorSeam = (bb) => {
+      for (let i = 0; i < cutXsU.length; i++) {
+        const cx = cutXsU[i];
+        if (Math.abs(bb.min[0] - cx) <= seamProtectTolU || Math.abs(bb.max[0] - cx) <= seamProtectTolU) return true;
+      }
+      for (let i = 0; i < cutYsU.length; i++) {
+        const cy = cutYsU[i];
+        if (Math.abs(bb.min[1] - cy) <= seamProtectTolU || Math.abs(bb.max[1] - cy) <= seamProtectTolU) return true;
+      }
+      return false;
+    };
+
     const minZMax = 0.05 / scaleMm;
     const minVol = 2.5 / (scaleMm ** 3);
     const tinyLooseVolU3 = 12.0 / (scaleMm ** 3);
     const minSpan = 3.5 / scaleMm;
     const narrowPadMinU = 2.2 / scaleMm;
     const narrowPadMaxAreaU2 = 24.0 / (scaleMm * scaleMm);
+    const isFullProductionPlate = maxVol > 5000.0 / (scaleMm ** 3);
     const kept = [];
     for (let i = 0; i < meta.length; i++) {
       const { c, vol, bb } = meta[i];
       const dx = bb.max[0] - bb.min[0];
       const dy = bb.max[1] - bb.min[1];
       const isFloating = bb.min[2] > minZMax;
+      // Never delete any component (grounded or floating) touching an interior seam plane on
+      // masterSolid; deleting one side creates a vertical cliff on the cut plane (VAL-09).
+      if (touchesInteriorSeam(bb)) {
+        kept.push(c);
+        continue;
+      }
       const isTinyBorderSliver = vol < minVol && Math.max(dx, dy) < minSpan;
       const isTinyLooseShell = vol < tinyLooseVolU3 && vol < maxVol * 0.005;
       const isLooseNarrowIsland = vol < maxVol * 0.01 && Math.min(dx, dy) < narrowPadMinU && (dx * dy) < narrowPadMaxAreaU2;
-      const keep = !isFloating && !isTinyBorderSliver && !isTinyLooseShell && !isLooseNarrowIsland;
+      let isCrumbIsland = false;
+      if (isFullProductionPlate && !isFloating && vol < maxVol * 0.05) {
+        const minWmm = Math.min(dx, dy) * scaleMm;
+        let z0AreaMm2 = (dx * dy) * scaleMm * scaleMm;
+        let s0 = null;
+        try {
+          s0 = c.slice(0.15 / scaleMm);
+          z0AreaMm2 = (s0 && !s0.isEmpty()) ? (s0.area() * scaleMm * scaleMm) : 0;
+        } catch (_) {
+        } finally {
+          core.safeDeleteManifold(s0);
+        }
+        if (z0AreaMm2 < 62.0 || minWmm < 5.15) {
+          isCrumbIsland = true;
+        }
+      }
+      const keep = !isFloating && !isTinyBorderSliver && !isTinyLooseShell && !isLooseNarrowIsland && !isCrumbIsland;
       if (keep) kept.push(c);
       else core.safeDeleteManifold(c);
     }
