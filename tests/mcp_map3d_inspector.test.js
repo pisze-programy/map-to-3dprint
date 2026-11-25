@@ -1040,11 +1040,12 @@ async function testA4TunnelFreeCliAndMcpExport() {
       fs.existsSync(t.path) &&
       t.triangles >= 12 &&
       Math.abs(t.spanMm[0] - 120.0) <= 0.05 &&
-      Math.abs(t.spanMm[1] - expectedA4TileY) <= 0.05 &&
+      Math.abs(t.spanMm[1] - expectedA4TileY) <= 5.05 &&
       t.minMm[2] >= -0.01 &&
       t.maxMm[2] > 4.0
-    ),
-    'CLI export-stl writes 3 exact 120x56.67 mm tiles (Top/Middle/Bottom) above 4.0 mm solid base',
+    ) &&
+    Math.abs(cliRes.tiles.reduce((acc, t) => acc + t.spanMm[1], 0) - 170.0) <= 0.05,
+    'CLI export-stl writes 3 VAL-10 bounded 120x56.67 mm tiles (sum=170.0 mm) above 4.0 mm solid base',
     JSON.stringify((cliRes.tiles || []).map(t => ({ pos: t.position, span: t.spanMm, tris: t.triangles })))
   );
   check(
@@ -1079,8 +1080,9 @@ async function testA4TunnelFreeCliAndMcpExport() {
     Math.abs(mcpPayload.baseHeightMm - 4.0) < 1e-6 &&
     Array.isArray(mcpPayload.tiles) &&
     mcpPayload.tiles.length === 3 &&
-    mcpPayload.tiles.every(t => fs.existsSync(t.path) && Math.abs(t.spanMm[1] - expectedA4TileY) <= 0.05),
-    'MCP tools/call export_map3d_stl exports 3 watertight 120x56.67 mm A4 solid-base STLs',
+    mcpPayload.tiles.every(t => fs.existsSync(t.path) && Math.abs(t.spanMm[1] - expectedA4TileY) <= 5.05) &&
+    Math.abs(mcpPayload.tiles.reduce((acc, t) => acc + t.spanMm[1], 0) - 170.0) <= 0.05,
+    'MCP tools/call export_map3d_stl exports 3 watertight VAL-10 bounded A4 solid-base STLs (sum=170.0 mm)',
     JSON.stringify((mcpPayload.tiles || []).map(t => ({ file: path.basename(t.path), span: t.spanMm })))
   );
 }

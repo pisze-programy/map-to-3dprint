@@ -229,7 +229,7 @@ def _extract_cap_segments(
         if n[a_idx] * out_sign <= 0.9998:
             continue
         centroid_a = (p0[a_idx] + p1[a_idx] + p2[a_idx]) / 3.0
-        if abs(centroid_a - seam_coord) >= 0.008:
+        if abs(centroid_a - seam_coord) >= 0.0025:
             continue
         for p in (p0, p1, p2):
             if p[2] >= 0.50:
@@ -451,6 +451,199 @@ def _scan_z_level_bounds(tris: List[Triangle], z_level: float) -> Optional[Tuple
     return (xmin, xmax, ymin, ymax) if found else None
 
 
+def _subtract_intervals(
+    base_ivs: List[Tuple[float, float]],
+    sub_ivs: List[Tuple[float, float]],
+) -> List[Tuple[float, float]]:
+    """Returns intervals in base_ivs not covered by sub_ivs."""
+    if not base_ivs:
+        return []
+    if not sub_ivs:
+        return list(base_ivs)
+    out: List[Tuple[float, float]] = []
+    for bs, be in base_ivs:
+        cur = bs
+        for ss, se in sub_ivs:
+            if se <= cur:
+                continue
+            if ss >= be:
+                break
+            if ss > cur:
+                out.append((cur, min(be, ss)))
+            cur = max(cur, se)
+            if cur >= be:
+                break
+        if cur < be - 1e-6:
+            out.append((cur, be))
+    return out
+
+
+def _audit_seam_dfm01_slivers(
+    tris_a: List[Triangle],
+    tris_b: List[Triangle],
+    axis: str,
+    seam_coord: float,
+    a_is_low_side: bool,
+    tile_a_id: str,
+    tile_b_id: str,
+) -> List[str]:
+    """
+    DFM-01 seam sliver guard: fails grounded < 0.40 mm facade slivers along a cut plane
+    that persist vertically for >= 0.75 mm (3 consecutive 0.25 mm Z slices).
+    """
+    sliver_failures: List[str] = []
+    sides = (
+        (tile_a_id, tris_a, -1.0 if a_is_low_side else 1.0),
+        (tile_b_id, tris_b, 1.0 if a_is_low_side else -1.0),
+    )
+    for side_id, tris_s, inward_sign in sides:
+        s_near = slice_plane_segments(tris_s, axis, seam_coord + inward_sign * 0.02)
+        if not s_near:
+            continue
+        s_deep = slice_plane_segments(tris_s, axis, seam_coord + inward_sign * 0.40)
+        z_max = max((max(seg[1], seg[3]) for seg in s_near), default=0.0)
+        if z_max < 1.30:
+            continue
+
+        # Track runs above the Z=0..1.50 mm underside-relief zone: (u0, u1, run_len, z_start)
+        prev_runs: List[Tuple[float, float, int, float]] = []
+        reported = False
+        z = 1.65
+        while z <= z_max and not reported:
+            iv_n = _merge_intervals(_scanline_intervals_at_z(s_near, z))
+            iv_d = _merge_intervals(_scanline_intervals_at_z(s_deep, z))
+            dilated_d = _merge_intervals([(s - 1.50, e + 1.50) for s, e in iv_d])
+            strict_d = _merge_intervals([(s - 0.15, e + 0.15) for s, e in iv_d])
+
+            unbacked: List[Tuple[float, float]] = []
+            for u0, u1 in _subtract_intervals(iv_n, dilated_d):
+                if u1 - u0 >= 2.50:
+                    unbacked.append((u0, u1))
+            for u0, u1 in iv_n:
+                if u1 - u0 >= 2.50 and not any(min(u1, v1) - max(u0, v0) > 0.0 for v0, v1 in strict_d):
+                    unbacked.append((u0, u1))
+            unbacked = _merge_intervals(unbacked)
+
+            cur_runs: List[Tuple[float, float, int, float]] = []
+            for u0, u1 in unbacked:
+                best_len = 1
+                best_z0 = z
+                for pu0, pu1, prun, pz0 in prev_runs:
+                    if min(u1, pu1) - max(u0, pu0) > 1.50 and prun + 1 > best_len:
+                        best_len = prun + 1
+                        best_z0 = pz0
+                cur_runs.append((u0, u1, best_len, best_z0))
+                if best_len >= 6:
+                    # Verify groundedness below z_start
+                    z_chk = max(0.30, best_z0 - 0.30)
+                    iv_below_n = _merge_intervals(_scanline_intervals_at_z(s_near, z_chk))
+                    iv_below_d = _merge_intervals(_scanline_intervals_at_z(s_deep, z_chk))
+                    grounded = any(
+                        min(u1 + 0.20, v1) - max(u0 - 0.20, v0) > 0.0
+                        for v0, v1 in (iv_below_n + iv_below_d)
+                    )
+                    if grounded:
+                        sliver_failures.append(
+                            f"DFM-01: Tile {side_id} has grounded <0.40 mm facade sliver along "
+                            f"{axis}={seam_coord:.3f} mm at u=[{u0:.2f}..{u1:.2f}] mm, "
+                            f"Z=[{best_z0:.2f}..{z:.2f}] mm."
+                        )
+                        reported = True
+                        break
+            prev_runs = cur_runs
+            z += 0.25
+    return sliver_failures
+
+
+def _sample_seam_z_bins(
+    tris: List[Triangle],
+    axis: str,
+    seam_coord: float,
+    is_low_side: bool,
+    z_level: float,
+    max_dist: float = 0.80,
+) -> Dict[int, float]:
+    """Returns {u_bin_1mm: min_inset_mm} for edges at Z=z_level near seam_coord."""
+    a_idx = 0 if axis == "x" else 1
+    u_idx = 1 if axis == "x" else 0
+    bin_min: Dict[int, float] = {}
+    for p0, p1, p2, _ in tris:
+        z0, z1, z2 = p0[2], p1[2], p2[2]
+        if not (min(z0, z1, z2) <= z_level < max(z0, z1, z2)):
+            continue
+        pts: List[Tuple[float, float]] = []
+        for pa, pb in ((p0, p1), (p1, p2), (p2, p0)):
+            if (pa[2] <= z_level < pb[2]) or (pb[2] <= z_level < pa[2]):
+                tt = (z_level - pa[2]) / (pb[2] - pa[2])
+                av = pa[a_idx] + tt * (pb[a_idx] - pa[a_idx])
+                uv = pa[u_idx] + tt * (pb[u_idx] - pa[u_idx])
+                pts.append((av, uv))
+        if len(pts) != 2:
+            continue
+        ins0 = (seam_coord - pts[0][0]) if is_low_side else (pts[0][0] - seam_coord)
+        ins1 = (seam_coord - pts[1][0]) if is_low_side else (pts[1][0] - seam_coord)
+        if max(ins0, ins1) < -0.05 or min(ins0, ins1) > max_dist:
+            continue
+        u0, u1 = pts[0][1], pts[1][1]
+        if u1 < u0:
+            u0, u1 = u1, u0
+            ins0, ins1 = ins1, ins0
+        b0 = int(math.floor(u0 + 1e-6))
+        b1 = int(math.floor(u1 - 1e-6))
+        if b1 < b0:
+            b1 = b0
+        du = u1 - u0
+        for b in range(b0, b1 + 1):
+            if du <= 1e-7:
+                ins_b = min(ins0, ins1)
+            else:
+                uc = 0.5 * (max(float(b), u0) + min(float(b + 1), u1))
+                ins_b = ins0 + ((uc - u0) / du) * (ins1 - ins0)
+            if -0.05 <= ins_b <= max_dist:
+                if b not in bin_min or ins_b < bin_min[b]:
+                    bin_min[b] = ins_b
+    return bin_min
+
+
+def _audit_seam_chamfer_symmetry(
+    tris_a: List[Triangle],
+    tris_b: List[Triangle],
+    axis: str,
+    seam_coord: float,
+    a_is_low_side: bool,
+    tile_a_id: str,
+    tile_b_id: str,
+) -> Optional[str]:
+    """
+    Verifies DFM-06 bottom chamfer inset (>= 0.18 mm) and symmetry (|d_A - d_B| <= 0.08 mm)
+    at Z = 0.15 mm across solid mating seams (checked at Z = 0.60 mm).
+    """
+    bins_mating_a = _sample_seam_z_bins(tris_a, axis, seam_coord, a_is_low_side, 0.60, max_dist=0.06)
+    bins_mating_b = _sample_seam_z_bins(tris_b, axis, seam_coord, not a_is_low_side, 0.60, max_dist=0.06)
+    shared_mating_bins = set(bins_mating_a.keys()) & set(bins_mating_b.keys())
+    if not shared_mating_bins:
+        return None
+
+    min_bin_a = _sample_seam_z_bins(tris_a, axis, seam_coord, a_is_low_side, 0.15, max_dist=0.60)
+    min_bin_b = _sample_seam_z_bins(tris_b, axis, seam_coord, not a_is_low_side, 0.15, max_dist=0.60)
+    paired_bins = sorted(shared_mating_bins & set(min_bin_a.keys()) & set(min_bin_b.keys()))
+    if not paired_bins:
+        return (
+            f"DFM-06: Seam {tile_a_id}<->{tile_b_id} ({axis}={seam_coord:.3f} mm) missing chamfered "
+            f"Z=0.15 mm edges across solid mating bins."
+        )
+
+    min_a = min(min_bin_a[b] for b in paired_bins)
+    min_b = min(min_bin_b[b] for b in paired_bins)
+    max_asym = max(abs(min_bin_a[b] - min_bin_b[b]) for b in paired_bins)
+    if min_a < 0.18 or min_b < 0.18 or max_asym > 0.08:
+        return (
+            f"DFM-06: Seam {tile_a_id}<->{tile_b_id} ({axis}={seam_coord:.3f} mm) asymmetric or missing "
+            f"Z=0.15 mm chamfer (min_A={min_a:.3f} mm, min_B={min_b:.3f} mm, max_asym={max_asym:.3f} mm)."
+        )
+    return None
+
+
 def validate_assembly(
     manifest_path: str,
     qa_dir: Optional[str] = None,
@@ -475,12 +668,45 @@ def validate_assembly(
     src_params = manifest.get("source_params", {})
     inter_frame_gap = float(src_params.get("inter_frame_gap_mm", 0.0))
     water_cutout = bool(src_params.get("water_cutout", False))
+    solid_base = bool(src_params.get("solid_base_no_tunnels", False))
     chamfer_inset_cfg = float(src_params.get("dfm06_chamfer_inset_mm", 0.0))
     relief_enabled = bool(src_params.get("underside_relief_enabled", False))
     safe_margin_mm = float(src_params.get("bed_safe_margin_mm", 4.0))
     safe_bed_x = 153.45 - 2.0 * safe_margin_mm
     safe_bed_y = 87.05 - 2.0 * safe_margin_mm
     safe_bed_z = 163.0
+
+    grid_raw = src_params.get("grid")
+    if isinstance(grid_raw, list) and len(grid_raw) == 2:
+        tile_cols = max(1, int(grid_raw[0]))
+        tile_rows = max(1, int(grid_raw[1]))
+    else:
+        tile_cols = max((int(t.get("col", 0)) for t in tile_entries), default=0) + 1
+        tile_rows = max((int(t.get("row", 0)) for t in tile_entries), default=0) + 1
+        if len(tile_entries) > 1:
+            failures.append("VAL-10: source_params.grid missing or invalid on multi-tile assembly.")
+
+    is_multi_tile = (tile_cols * tile_rows > 1) or (len(tile_entries) > 1)
+    fmt_id_l = str(manifest.get("format_id") or "").lower()
+    sku_id_l = str(manifest.get("sku_id") or "").lower()
+    is_a4_sku = ("a4" in fmt_id_l) or ("a4" in sku_id_l)
+    require_dfm06_chamfer = solid_base or is_a4_sku or is_multi_tile
+    require_underside_relief = solid_base or is_a4_sku
+
+    if require_dfm06_chamfer and chamfer_inset_cfg < 0.20:
+        failures.append(
+            f"VAL-13: Tampered or missing dfm06_chamfer_inset_mm={chamfer_inset_cfg:.3f} mm "
+            f"(< 0.20 mm required for solid_base_no_tunnels / A4 / multi-tile SKU)."
+        )
+    if require_underside_relief and not relief_enabled:
+        failures.append(
+            f"VAL-13: underside_relief_enabled=False is forbidden on solid_base_no_tunnels or A4 catalog SKU "
+            f"({manifest.get('format_id')})."
+        )
+    if is_multi_tile and len(tile_entries) != tile_cols * tile_rows:
+        failures.append(
+            f"VAL-10: Tile count {len(tile_entries)} does not match grid {tile_cols}x{tile_rows}."
+        )
 
     # Load and validate every tile
     tile_reports: Dict[str, Dict[str, Any]] = {}
@@ -539,28 +765,39 @@ def validate_assembly(
 
         # VAL-13: DFM-06 bottom chamfer + Z=0 contact balance
         _, raw_tris, _ = vmsla.read_binary_stl(stl_path, allow_elevated=False)
-        if chamfer_inset_cfg >= 0.15:
+        if require_dfm06_chamfer or chamfer_inset_cfg >= 0.15:
             b010 = _scan_z_level_bounds(raw_tris, 0.10)
             b070 = _scan_z_level_bounds(raw_tris, 0.70)
             if b010 and b070:
+                nr_t = t["nominal_rect_mm"]
+                nom_w = float(nr_t["x_max"]) - float(nr_t["x_min"])
+                nom_h = float(nr_t["y_max"]) - float(nr_t["y_min"])
+                rot90_t = (int(t.get("stl_rotation_deg", 0)) % 360) == 90
+                stl_nom_x = nom_h if rot90_t else nom_w
+                stl_nom_y = nom_w if rot90_t else nom_h
                 inset_x = min(b010[0] - b070[0], b070[1] - b010[1])
                 inset_y = min(b010[2] - b070[2], b070[3] - b010[3])
-                # Note: if water cuts an outer edge, only require inset on edges where geometry reaches tile edge
+                # Only require chamfer inset on edges where geometry reaches the flush nominal tile perimeter at Z=0.70
                 eff_insets: List[float] = []
-                if abs(b070[0] - rep["bbox_mm"][0]) < 0.2:
+                if abs(b070[0] - 0.0) < 0.05:
                     eff_insets.append(b010[0] - b070[0])
-                if abs(b070[1] - rep["bbox_mm"][1]) < 0.2:
+                if abs(b070[1] - stl_nom_x) < 0.05:
                     eff_insets.append(b070[1] - b010[1])
-                if abs(b070[2] - rep["bbox_mm"][2]) < 0.2:
+                if abs(b070[2] - 0.0) < 0.05:
                     eff_insets.append(b010[2] - b070[2])
-                if abs(b070[3] - rep["bbox_mm"][3]) < 0.2:
+                if abs(b070[3] - stl_nom_y) < 0.05:
                     eff_insets.append(b070[3] - b010[3])
-                min_edge_inset = min(eff_insets) if eff_insets else min(inset_x, inset_y)
-                if min_edge_inset < 0.20:
+                if eff_insets:
+                    min_edge_inset = min(eff_insets)
+                    if min_edge_inset < 0.20:
+                        failures.append(
+                            f"VAL-13: Tile {tid} DFM-06 bottom chamfer inset={min_edge_inset:.3f} mm (< 0.20 mm at Z=0.10 vs Z=0.70)."
+                        )
+                elif not water_cutout and min(inset_x, inset_y) < 0.20:
                     failures.append(
-                        f"VAL-13: Tile {tid} DFM-06 bottom chamfer inset={min_edge_inset:.3f} mm (< 0.20 mm at Z=0.10 vs Z=0.70)."
+                        f"VAL-13: Tile {tid} DFM-06 bottom chamfer inset={min(inset_x, inset_y):.3f} mm (< 0.20 mm at Z=0.10 vs Z=0.70)."
                     )
-        if relief_enabled and rep["z0_area_mm2"] > 4500.0:
+        if (require_underside_relief or relief_enabled) and rep["z0_area_mm2"] > 4500.0:
             failures.append(
                 f"VAL-13: Tile {tid} Z=0 contact area={rep['z0_area_mm2']:.1f} mm2 exceeds 4500.0 mm2 underside relief cap."
             )
@@ -569,13 +806,49 @@ def validate_assembly(
             raw_tris, t["nominal_rect_mm"], int(t.get("stl_rotation_deg", 0))
         )
 
-    # VAL-09: All mating seam pairs (north/south, east/west) with gap <= 0.05 mm
+    # Mandatory multi-tile neighbor topology verification (closes empty/missing neighbors bypass)
+    if is_multi_tile:
+        rc_map: Dict[Tuple[int, int], str] = {}
+        for t in tile_entries:
+            tid = t["tile_id"]
+            nb = t.get("neighbors")
+            if not isinstance(nb, dict) or not any(nb.get(d) for d in ("north", "south", "east", "west")):
+                failures.append(
+                    f"VAL-09: Tile {tid} has missing or empty neighbors on multi-tile assembly ({tile_cols}x{tile_rows})."
+                )
+            tr_val = t.get("row")
+            tc_val = t.get("col")
+            if not isinstance(tr_val, int) or not isinstance(tc_val, int):
+                failures.append(f"VAL-10: Tile {tid} missing integer row/col on multi-tile assembly.")
+            elif not (0 <= tr_val < tile_rows and 0 <= tc_val < tile_cols):
+                failures.append(f"VAL-10: Tile {tid} row={tr_val}, col={tc_val} out of bounds for {tile_cols}x{tile_rows}.")
+            else:
+                rc_map[(tr_val, tc_val)] = tid
+        for (tr_val, tc_val), tid in rc_map.items():
+            nb = tile_by_id[tid].get("neighbors")
+            if not isinstance(nb, dict):
+                continue
+            expected_nb = {
+                "north": rc_map.get((tr_val + 1, tc_val)),
+                "south": rc_map.get((tr_val - 1, tc_val)),
+                "east": rc_map.get((tr_val, tc_val + 1)),
+                "west": rc_map.get((tr_val, tc_val - 1)),
+            }
+            for d_key, exp_oid in expected_nb.items():
+                if exp_oid and nb.get(d_key) != exp_oid:
+                    failures.append(
+                        f"VAL-09: Tile {tid} neighbors.{d_key}={nb.get(d_key)!r} does not match expected {exp_oid!r}."
+                    )
+
+    # VAL-09: All mating seam pairs (north/south, east/west)
     seam_audits: List[Dict[str, Any]] = []
     seen_pairs = set()
     for tid, t in tile_by_id.items():
         if tid not in placed_tris:
             continue
-        nb = t.get("neighbors", {})
+        nb = t.get("neighbors")
+        if not isinstance(nb, dict):
+            continue
         rect_a = t["nominal_rect_mm"]
         for dir_key, axis, a_is_low in (
             ("north", "y", True),
@@ -593,14 +866,29 @@ def validate_assembly(
             tb = tile_by_id[other_id]
             rect_b = tb["nominal_rect_mm"]
             if axis == "y":
-                c_a = rect_a["y_max"] if a_is_low else rect_a["y_min"]
-                c_b = rect_b["y_min"] if a_is_low else rect_b["y_max"]
+                c_a = float(rect_a["y_max"] if a_is_low else rect_a["y_min"])
+                c_b = float(rect_b["y_min"] if a_is_low else rect_b["y_max"])
             else:
-                c_a = rect_a["x_max"] if a_is_low else rect_a["x_min"]
-                c_b = rect_b["x_min"] if a_is_low else rect_b["x_max"]
+                c_a = float(rect_a["x_max"] if a_is_low else rect_a["x_min"])
+                c_b = float(rect_b["x_min"] if a_is_low else rect_b["x_max"])
             gap = abs(c_b - c_a)
+            is_inter_frame = (
+                t.get("frame_id") is not None
+                and tb.get("frame_id") is not None
+                and t.get("frame_id") != tb.get("frame_id")
+            )
+            if is_inter_frame and inter_frame_gap > 0.0:
+                if abs(gap - inter_frame_gap) > 0.05:
+                    failures.append(
+                        f"VAL-09: Inter-frame seam {tid}<->{other_id} ({axis}) gap={gap:.4f} mm "
+                        f"deviates from inter_frame_gap_mm={inter_frame_gap:.3f} mm."
+                    )
+                continue
             if gap > 0.05:
-                # Non-zero intentional inter-frame gap: skip flush-mating check
+                failures.append(
+                    f"VAL-09: Flush-mating seam {tid}<->{other_id} ({axis}) has gap={gap:.4f} mm "
+                    f"(> 0.05 mm; inter_frame_gap_mm={inter_frame_gap:.3f} mm)."
+                )
                 continue
             seam_coord = 0.5 * (c_a + c_b)
             sa = audit_seam_pair(
@@ -614,6 +902,16 @@ def validate_assembly(
                     f"true_diff={sa['true_diff_mm2']:.4f}mm2 (<=0.15), max_step={sa['max_step_mm']:.4f}mm (<=0.20), "
                     f"area_delta={sa['area_delta_mm2']:.4f}mm2 (<=0.25), flatness={sa['max_flatness_dev_mm']:.5f}mm (<=0.005)."
                 )
+            sliver_errs = _audit_seam_dfm01_slivers(
+                placed_tris[tid], placed_tris[other_id], axis, seam_coord, a_is_low, tid, other_id
+            )
+            failures.extend(sliver_errs)
+            if require_dfm06_chamfer or chamfer_inset_cfg >= 0.15:
+                cham_err = _audit_seam_chamfer_symmetry(
+                    placed_tris[tid], placed_tris[other_id], axis, seam_coord, a_is_low, tid, other_id
+                )
+                if cham_err:
+                    failures.append(cham_err)
 
     # VAL-10: Global footprint, zero overlap, uniform Z_base, 4-way + corners, multi-frame datum
     g_xmin, g_xmax = float("inf"), float("-inf")
@@ -663,15 +961,117 @@ def validate_assembly(
 
     win_mm = src_params.get("window_mm")
     frames = manifest.get("frames", [])
+    n_fc = max((int(f.get("frame_col", 0)) for f in frames), default=0) + 1
+    n_fr = max((int(f.get("frame_row", 0)) for f in frames), default=0) + 1
+
+    # Equal-split + bounded nudged_seams check (VAL-10)
+    nudged_raw = manifest.get("nudged_seams", [])
+    nudge_map: Dict[Tuple[str, int], float] = {}
+    if not isinstance(nudged_raw, list):
+        failures.append("VAL-10: nudged_seams must be a list.")
+    else:
+        use_fg_x = n_fc > 1 and tile_cols % n_fc == 0
+        use_fg_y = n_fr > 1 and tile_rows % n_fr == 0
+        tpf_c = (tile_cols // n_fc) if use_fg_x else tile_cols
+        tpf_r = (tile_rows // n_fr) if use_fg_y else tile_rows
+        for item in nudged_raw:
+            if not isinstance(item, dict):
+                failures.append(f"VAL-10: Invalid nudged_seams entry: {item!r}.")
+                continue
+            ax = item.get("axis")
+            idx = item.get("index")
+            delta_raw = item.get("delta_mm")
+            if ax not in ("x", "y") or not isinstance(idx, int) or isinstance(idx, bool):
+                failures.append(f"VAL-10: Invalid nudged_seams axis/index: {item!r}.")
+                continue
+            max_idx = (tile_cols - 1) if ax == "x" else (tile_rows - 1)
+            if not (0 <= idx < max_idx):
+                failures.append(f"VAL-10: nudged_seams index out of bounds: {item!r}.")
+                continue
+            try:
+                delta_val = float(delta_raw)
+            except (TypeError, ValueError):
+                failures.append(f"VAL-10: nudged_seams non-numeric delta_mm: {item!r}.")
+                continue
+            if abs(delta_val) > 5.0 + 1e-6:
+                failures.append(f"VAL-10: nudged_seams {ax}[{idx}] delta_mm={delta_val:.3f} exceeds +/-5.0 mm bound.")
+                continue
+            is_inter_seam = (
+                (ax == "x" and use_fg_x and (idx + 1) % tpf_c == 0)
+                or (ax == "y" and use_fg_y and (idx + 1) % tpf_r == 0)
+            )
+            if is_inter_seam:
+                failures.append(f"VAL-10: nudged_seams {ax}[{idx}] illegally nudges an inter-frame seam.")
+                continue
+            if (ax, idx) in nudge_map:
+                failures.append(f"VAL-10: Duplicate nudged_seams entry for {ax}[{idx}].")
+                continue
+            nudge_map[(ax, idx)] = delta_val
+
+    if win_mm and len(win_mm) == 2 and is_multi_tile:
+        total_w = float(win_mm[0])
+        total_h = float(win_mm[1])
+        use_fg_x = n_fc > 1 and tile_cols % n_fc == 0
+        use_fg_y = n_fr > 1 and tile_rows % n_fr == 0
+        eff_fc = n_fc if use_fg_x else 1
+        eff_fr = n_fr if use_fg_y else 1
+        tpf_c = tile_cols // eff_fc
+        tpf_r = tile_rows // eff_fr
+        tile_w = total_w / float(tile_cols)
+        tile_h = total_h / float(tile_rows)
+        for t in tile_entries:
+            tr_val = t.get("row")
+            tc_val = t.get("col")
+            if not isinstance(tr_val, int) or not isinstance(tc_val, int):
+                continue
+            fc = tc_val // tpf_c
+            fr = tr_val // tpf_r
+            base_x0 = -total_w / 2.0 + tc_val * tile_w + fc * inter_frame_gap - ((eff_fc - 1) * inter_frame_gap) / 2.0
+            base_x1 = base_x0 + tile_w
+            base_y0 = -total_h / 2.0 + tr_val * tile_h + fr * inter_frame_gap - ((eff_fr - 1) * inter_frame_gap) / 2.0
+            base_y1 = base_y0 + tile_h
+            exp_x0 = base_x0 + (nudge_map.get(("x", tc_val - 1), 0.0) if tc_val > 0 else 0.0)
+            exp_x1 = base_x1 + (nudge_map.get(("x", tc_val), 0.0) if tc_val < tile_cols - 1 else 0.0)
+            exp_y0 = base_y0 + (nudge_map.get(("y", tr_val - 1), 0.0) if tr_val > 0 else 0.0)
+            exp_y1 = base_y1 + (nudge_map.get(("y", tr_val), 0.0) if tr_val < tile_rows - 1 else 0.0)
+            nr = t["nominal_rect_mm"]
+            if (
+                abs(float(nr["x_min"]) - exp_x0) > 0.05
+                or abs(float(nr["x_max"]) - exp_x1) > 0.05
+                or abs(float(nr["y_min"]) - exp_y0) > 0.05
+                or abs(float(nr["y_max"]) - exp_y1) > 0.05
+            ):
+                failures.append(
+                    f"VAL-10: Tile {t['tile_id']} nominal_rect_mm [{nr['x_min']:.2f}..{nr['x_max']:.2f}, "
+                    f"{nr['y_min']:.2f}..{nr['y_max']:.2f}] deviates from equal-split + bounded nudged_seams "
+                    f"[{exp_x0:.2f}..{exp_x1:.2f}, {exp_y0:.2f}..{exp_y1:.2f}]."
+                )
+
     if win_mm and len(win_mm) == 2 and placed_tris:
         # Compute expected span including inter-frame gaps if any
-        n_fc = max((int(f.get("frame_col", 0)) for f in frames), default=0) + 1
-        n_fr = max((int(f.get("frame_row", 0)) for f in frames), default=0) + 1
         exp_w = float(win_mm[0]) + max(0, n_fc - 1) * inter_frame_gap
         exp_h = float(win_mm[1]) + max(0, n_fr - 1) * inter_frame_gap
         act_w = g_xmax - g_xmin
         act_h = g_ymax - g_ymin
-        if abs(act_w - exp_w) > 0.08 or abs(act_h - exp_h) > 0.08:
+        if water_cutout:
+            # Coastal water cutouts may trim open ocean at outer borders; assert nominal union == exp and zero protrusion
+            nom_w_span = max(float(t["nominal_rect_mm"]["x_max"]) for t in tile_entries) - min(
+                float(t["nominal_rect_mm"]["x_min"]) for t in tile_entries
+            )
+            nom_h_span = max(float(t["nominal_rect_mm"]["y_max"]) for t in tile_entries) - min(
+                float(t["nominal_rect_mm"]["y_min"]) for t in tile_entries
+            )
+            if abs(nom_w_span - exp_w) > 0.08 or abs(nom_h_span - exp_h) > 0.08:
+                failures.append(
+                    f"VAL-10: Nominal tile footprint {nom_w_span:.2f}x{nom_h_span:.2f} mm deviates from expected "
+                    f"{exp_w:.2f}x{exp_h:.2f} mm (>0.08 mm)."
+                )
+            if act_w > exp_w + 0.08 or act_h > exp_h + 0.08:
+                failures.append(
+                    f"VAL-10: Placed mesh footprint {act_w:.2f}x{act_h:.2f} mm exceeds expected "
+                    f"{exp_w:.2f}x{exp_h:.2f} mm (>0.08 mm)."
+                )
+        elif abs(act_w - exp_w) > 0.08 or abs(act_h - exp_h) > 0.08:
             failures.append(
                 f"VAL-10: Global footprint {act_w:.2f}x{act_h:.2f} mm deviates from expected {exp_w:.2f}x{exp_h:.2f} mm (>0.08 mm)."
             )

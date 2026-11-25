@@ -50,7 +50,7 @@ def read_binary_stl(path: str, allow_elevated: bool = False) -> Tuple[bytes, Lis
     return header, tris, round(z_floor, 4)
 
 
-def check_val01_topology_and_shells(tris):
+def check_val01_topology_and_shells(tris: List[Triangle]) -> Dict[str, Any]:
     undir = collections.Counter()
     dir_e = collections.Counter()
     v_tris = collections.defaultdict(list)
@@ -153,8 +153,18 @@ def check_val01_topology_and_shells(tris):
     }
 
 
-def slice_grid_2d(tris, z_level, xmin, xmax, ymin, ymax, step=0.40, vent_seed=None, return_masks=False,
-                  vent_seed_z=None):
+def slice_grid_2d(
+    tris: List[Triangle],
+    z_level: float,
+    xmin: float,
+    xmax: float,
+    ymin: float,
+    ymax: float,
+    step: float = 0.40,
+    vent_seed: Optional[List[List[bool]]] = None,
+    return_masks: bool = False,
+    vent_seed_z: Optional[float] = None,
+) -> Any:
     """
     Rasterize 2D solid occupancy at z_level on a regular grid with 1-cell exterior border.
 
@@ -295,7 +305,13 @@ def slice_grid_2d(tris, z_level, xmin, xmax, ymin, ymax, step=0.40, vent_seed=No
     return solid_cells * cell_area, sorted(cavities, reverse=True)
 
 
-def check_overhangs_val04(tris, xmin, xmax, ymin, ymax):
+def check_overhangs_val04(
+    tris: List[Triangle],
+    xmin: float,
+    xmax: float,
+    ymin: float,
+    ymax: float,
+) -> List[Dict[str, Any]]:
     """
     Find downward-facing flat/shallow overhang clusters (nz < -0.80 above Z=0.25 mm)
     and measure actual 2D distance from solid support on the layer 0.15 mm below.
@@ -357,7 +373,7 @@ def check_overhangs_val04(tris, xmin, xmax, ymin, ymax):
     ox = xmin - 2 * step
     oy = ymin - 2 * step
 
-    def get_support_dist_grid(z_sup):
+    def get_support_dist_grid(z_sup: float) -> List[List[int]]:
         zq = round(max(0.05, z_sup), 2)
         if zq in slice_cache:
             return slice_cache[zq]
