@@ -17,6 +17,7 @@ from .common import (
     make_box_bm,
 )
 from .frame_a4 import build_a4_passepartout_frame
+from .frame_gallery import build_gallery_frame
 
 # Default dimensions by frame style (mm -> meters inside build_frame_assembly)
 _STYLE_DEFAULTS: Dict[str, Dict[str, float]] = {
@@ -176,6 +177,20 @@ def build_frame_assembly(
             height_m=height_m,
             center_xy=center_xy,
             offset_x=offset_x,
+            mount=mount,
+        )
+    if style_key in (
+        "heavy_a4", "heavy_a4_landscape", "heavy_a4_triptych", "heavy_a4_quartet",
+        "square_150", "square_240", "flagship_50x70",
+        "single_a4_1x3", "single_a4_landscape_3x1", "triptych_a4_3x1",
+        "quartet_a4_2x2", "square_150_2x2", "square_240_2x4", "flagship_50x70_3x9",
+    ):
+        cx_eff = float(offset_x) if offset_x is not None else float(center_xy[0])
+        return build_gallery_frame(
+            opening_w_m=width_m,
+            opening_h_m=height_m,
+            format_id=style_key if ("_" in style_key and not style_key.startswith("heavy_")) else None,
+            center_xy=(cx_eff, float(center_xy[1])),
             mount=mount,
         )
     if style_key == "cube_cover":

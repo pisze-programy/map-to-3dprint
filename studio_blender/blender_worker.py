@@ -91,7 +91,9 @@ def _clear_scene(scene: Any) -> None:
 
 def _parse_args(argv: List[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Headless Blender Cycles Studio Worker")
-    p.add_argument("--stl", action="append", required=True, help="Path to STL (repeatable)")
+    p.add_argument("--stl", action="append", default=None, help="Path to STL (repeatable)")
+    p.add_argument("--assembly-manifest", default=None, help="Path to validated assembly_manifest.json")
+    p.add_argument("--draft-unvalidated", action="store_true", default=False, help="Allow unvalidated renders with DRAFT_UNVALIDATED_ prefix")
     p.add_argument("--env", default="01_architect_window_desk", choices=ALL_ENV_CHOICES)
     p.add_argument(
         "--frame",
@@ -138,7 +140,14 @@ def main() -> int:
     width, height = _parse_resolution(args.resolution, args.mode, aspect)
     aspect_ratio = float(width) / float(height)
     samples = args.samples if args.samples is not None else (32 if args.mode == "video" else 96)
-    city_title = args.title.strip() if args.title else stl_loader.infer_city_title(args.stl)
+    if not args.assembly_manifest and not args.stl:
+        raise ValueError("Either --assembly-manifest or --stl must be provided.")
+    if args.assembly_manifest:
+        m_data = json.loads(Path(args.assembly_manifest).read_text(encoding="utf-8"))
+        default_title = str(m_data.get("source_params", {}).get("title") or m_data.get("city_slug") or "CITY MAP")
+    else:
+        default_title = stl_loader.infer_city_title(args.stl)
+    city_title = args.title.strip() if args.title else default_title
 
     t0 = time.time()
     scene = bpy.context.scene
@@ -154,13 +163,23 @@ def main() -> int:
         plaster_mat = materials_detail.make_chalk_plaster_material()
     else:
         plaster_mat = materials.make_plaster_cement_material()
-    load_result = stl_loader.load_city_stls(
-        stl_paths=args.stl,
-        frame_style=args.frame,
-        rim_width_mm=args.frame_width_mm,
-        frame_mm=args.frame_mm,
-        material=plaster_mat,
-    )
+    is_qa_run = bool(args.preset and any(p.startswith("qa_") for p in args.preset))
+    if args.assembly_manifest:
+        load_result = stl_loader.load_from_manifest(
+            manifest_path=args.assembly_manifest,
+            frame_style=args.frame,
+            material=plaster_mat,
+            continuous_flush=is_qa_run,
+            allow_draft=bool(args.draft_unvalidated),
+        )
+    else:
+        load_result = stl_loader.load_city_stls(
+            stl_paths=args.stl,
+            frame_style=args.frame,
+            rim_width_mm=args.frame_width_mm,
+            frame_mm=args.frame_mm,
+            material=plaster_mat,
+        )
 
     frame_info, analysis = build_product_assembly(
         scene=scene,
@@ -222,6 +241,8 @@ def main() -> int:
         rendered_stills = render_stills_mode(
             scene, out_dir, canonical_env, city_title, args.preset,
             args.filename, analysis, model_bounds, aspect_ratio, mount=mount,
+            load_result=load_result,
+            draft_unvalidated=bool(load_result.get("draft_unvalidated", False)),
         )
     elif args.mode == "keyframes":
         rendered_stills, rendered_keyframes, flow_prompts_path = render_keyframes_mode(
@@ -245,7 +266,9 @@ def main() -> int:
         "backing_finish": args.backing_finish,
         "show_nameplate": bool(args.show_nameplate),
         "city_title": city_title,
-        "stl_paths": [str(Path(p).resolve()) for p in args.stl],
+        "assembly_manifest": load_result.get("manifest_path"),
+        "draft_unvalidated": bool(load_result.get("draft_unvalidated", False)),
+        "stl_paths": [str(Path(p).resolve()) for p in (args.stl or [])] or [t["stl_path"] for t in load_result.get("tiles", [])],
         "cycles": cycles_info,
         "analysis": analysis,
         "model_bounds": {

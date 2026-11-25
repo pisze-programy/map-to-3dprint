@@ -215,6 +215,9 @@ STILL_PRESETS: Dict[str, str] = {
     "detail_canyon": "120mm f/10.0 low avenue-canyon telephoto with dense foreground blocks and crisp raking sunlight shadows.",
     "detail_oblique_grid": "130mm f/14.0 full-bleed 44-deg oblique architectural grid packed edge-to-edge with zero outer borders.",
     "detail_waterfront": "125mm f/11.0 tight 30-deg interior macro highlighting waterfront bridges or dense downtown canyon tiers.",
+    "qa_seam_raking": "QA seam truth: low 12-deg raking side-light with alternating tile tints exposing every seam step.",
+    "qa_top_down_grid": "QA orthographic plan view across full tile assembly grid with alternating tile tints.",
+    "qa_underside": "QA underside view showing continuous 45-deg gabled relief grooves, 8 mm skirt, and DFM-06 chamfer.",
 }
 
 VIDEO_SHOTS: List[Dict[str, Any]] = [

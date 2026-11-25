@@ -205,40 +205,79 @@ def build_product_assembly(
         wall_y = -desk_z + 0.0015
         tile_outer_w, tile_outer_h = tile_w, tile_h
     else:
-        for idx, (cx, cy) in enumerate(centers_xy):
-            plate_text = title if (show_nameplate and idx == mid_idx) else None
-            per_style = "single_thin" if (frame_style in ("triptych_3x1", "quartet_2x2") and n_frames > 1) else frame_style
-            raw_kwargs: Dict[str, Any] = {
-                "width_m": tile_w,
-                "height_m": tile_h,
-                "style": per_style,
-                "rim_width_mm": rim_width_mm,
-                "rim_height_mm": frame_height_mm,
-                "frame_height_mm": frame_height_mm,
-                "backing_finish": backing_finish,
-                "show_nameplate": show_nameplate and (idx == mid_idx),
-                "add_nameplate_text": plate_text,
-                "add_cover": add_cover,
-                "center_xy": (cx, cy),
-                "max_z_m": max_z,
-                "mount": mount,
-            }
-            res = environments.build_frame_assembly(**_filter_kwargs(environments.build_frame_assembly, raw_kwargs))
-            frame_objs.extend(res.get("objects", []))
+        frame_specs = load_result.get("frame_specs")
+        if frame_specs and frame_style != "none":
+            for idx, fs in enumerate(frame_specs):
+                plate_text = title if (show_nameplate and idx == mid_idx) else None
+                per_style = fs.get("format_id") or frame_style
+                if per_style == "custom_grid":
+                    per_style = "a4_passepartout" if (abs(fs["opening_w_m"] - 0.120) < 0.005 and abs(fs["opening_h_m"] - 0.170) < 0.005) else frame_style
+                raw_kwargs: Dict[str, Any] = {
+                    "width_m": fs["opening_w_m"],
+                    "height_m": fs["opening_h_m"],
+                    "style": per_style,
+                    "rim_width_mm": rim_width_mm,
+                    "rim_height_mm": frame_height_mm,
+                    "frame_height_mm": frame_height_mm,
+                    "backing_finish": backing_finish,
+                    "show_nameplate": show_nameplate and (idx == mid_idx),
+                    "add_nameplate_text": plate_text,
+                    "add_cover": add_cover,
+                    "center_xy": fs["center_xy"],
+                    "max_z_m": max_z,
+                    "mount": mount,
+                }
+                res = environments.build_frame_assembly(**_filter_kwargs(environments.build_frame_assembly, raw_kwargs))
+                frame_objs.extend(res.get("objects", []))
+                res_desk_z = float(res.get("desk_z", -0.021))
+                desk_z = res_desk_z if desk_z is None else min(desk_z, res_desk_z)
+                res_bot_z = float(res.get("frame_bottom_z", res_desk_z))
+                frame_bottom_z = res_bot_z if frame_bottom_z is None else min(frame_bottom_z, res_bot_z)
+                res_top_z = float(res.get("frame_top_z", 0.009))
+                frame_top_z = res_top_z if frame_top_z is None else max(frame_top_z, res_top_z)
+                if res.get("wall_y") is not None:
+                    wy = float(res["wall_y"])
+                    wall_y = wy if wall_y is None else max(wall_y, wy)
+                if res.get("cover_top_z"):
+                    cover_top_z = max(cover_top_z, float(res["cover_top_z"]))
+                tile_outer_w = float(res.get("outer_width_m", tile_outer_w))
+                tile_outer_h = float(res.get("outer_height_m", tile_outer_h))
+        else:
+            for idx, (cx, cy) in enumerate(centers_xy):
+                plate_text = title if (show_nameplate and idx == mid_idx) else None
+                is_a4_pair = abs(tile_w - 0.120) < 0.005 and abs(tile_h - 0.170) < 0.005
+                per_style = "a4_passepartout" if (frame_style in ("triptych_3x1", "quartet_2x2") and is_a4_pair) else frame_style
+                raw_kwargs = {
+                    "width_m": tile_w,
+                    "height_m": tile_h,
+                    "style": per_style,
+                    "rim_width_mm": rim_width_mm,
+                    "rim_height_mm": frame_height_mm,
+                    "frame_height_mm": frame_height_mm,
+                    "backing_finish": backing_finish,
+                    "show_nameplate": show_nameplate and (idx == mid_idx),
+                    "add_nameplate_text": plate_text,
+                    "add_cover": add_cover,
+                    "center_xy": (cx, cy),
+                    "max_z_m": max_z,
+                    "mount": mount,
+                }
+                res = environments.build_frame_assembly(**_filter_kwargs(environments.build_frame_assembly, raw_kwargs))
+                frame_objs.extend(res.get("objects", []))
 
-            res_desk_z = float(res.get("desk_z", -0.006))
-            desk_z = res_desk_z if desk_z is None else min(desk_z, res_desk_z)
-            res_bot_z = float(res.get("frame_bottom_z", res_desk_z))
-            frame_bottom_z = res_bot_z if frame_bottom_z is None else min(frame_bottom_z, res_bot_z)
-            res_top_z = float(res.get("frame_top_z", 0.0035))
-            frame_top_z = res_top_z if frame_top_z is None else max(frame_top_z, res_top_z)
-            if res.get("wall_y") is not None:
-                wy = float(res["wall_y"])
-                wall_y = wy if wall_y is None else max(wall_y, wy)
-            if res.get("cover_top_z"):
-                cover_top_z = max(cover_top_z, float(res["cover_top_z"]))
-            tile_outer_w = float(res.get("outer_width_m", tile_outer_w))
-            tile_outer_h = float(res.get("outer_height_m", tile_outer_h))
+                res_desk_z = float(res.get("desk_z", -0.006))
+                desk_z = res_desk_z if desk_z is None else min(desk_z, res_desk_z)
+                res_bot_z = float(res.get("frame_bottom_z", res_desk_z))
+                frame_bottom_z = res_bot_z if frame_bottom_z is None else min(frame_bottom_z, res_bot_z)
+                res_top_z = float(res.get("frame_top_z", 0.0035))
+                frame_top_z = res_top_z if frame_top_z is None else max(frame_top_z, res_top_z)
+                if res.get("wall_y") is not None:
+                    wy = float(res["wall_y"])
+                    wall_y = wy if wall_y is None else max(wall_y, wy)
+                if res.get("cover_top_z"):
+                    cover_top_z = max(cover_top_z, float(res["cover_top_z"]))
+                tile_outer_w = float(res.get("outer_width_m", tile_outer_w))
+                tile_outer_h = float(res.get("outer_height_m", tile_outer_h))
 
     desk_z = -0.006 if desk_z is None else desk_z
     frame_bottom_z = desk_z if frame_bottom_z is None else frame_bottom_z
@@ -296,6 +335,8 @@ def render_stills_mode(
     model_bounds: Dict[str, Any],
     aspect_ratio: float,
     mount: str = "desk_flat",
+    load_result: Optional[Dict[str, Any]] = None,
+    draft_unvalidated: bool = False,
 ) -> List[Dict[str, Any]]:
     """Render one or more still camera presets to PNG files."""
     if not presets_arg:
@@ -307,21 +348,36 @@ def render_stills_mode(
 
     rendered: List[Dict[str, Any]] = []
     city_slug = city_title.lower().replace(" ", "_")
+    draft_prefix = "DRAFT_UNVALIDATED_" if draft_unvalidated else ""
     for preset in presets:
         t_shot = time.time()
-        cam_info = camera_rig.setup_still_camera(
-            scene=scene,
-            preset_name=preset,
-            analysis=analysis,
-            model_bounds=model_bounds,
-            env_name=env_name,
-            aspect=aspect_ratio,
-            mount=mount,
-        )
-        if filename_override and len(presets) == 1:
-            fname = filename_override if filename_override.lower().endswith(".png") else f"{filename_override}.png"
+        if preset.startswith("qa_"):
+            from studio_blender import camera_qa
+
+            if load_result and load_result.get("objects"):
+                camera_qa.apply_qa_alternating_tile_tints(load_result["objects"])
+            camera_qa.configure_qa_lighting(scene, preset, analysis)
+            cam_info = camera_qa.setup_qa_camera(
+                scene=scene,
+                preset_name=preset,
+                load_result=load_result or {"total_width_m": model_bounds.get("frame_width_m", 0.12), "total_height_m": model_bounds.get("frame_height_m", 0.17), "max_z_m": analysis.get("max_z", 0.02)},
+                aspect=aspect_ratio,
+            )
         else:
-            fname = f"{city_slug}_{env_name}_{preset}.png"
+            cam_info = camera_rig.setup_still_camera(
+                scene=scene,
+                preset_name=preset,
+                analysis=analysis,
+                model_bounds=model_bounds,
+                env_name=env_name,
+                aspect=aspect_ratio,
+                mount=mount,
+            )
+        if filename_override and len(presets) == 1:
+            base_fn = filename_override if filename_override.lower().endswith(".png") else f"{filename_override}.png"
+            fname = f"{draft_prefix}{base_fn}"
+        else:
+            fname = f"{draft_prefix}{city_slug}_{env_name}_{preset}.png"
         out_path = out_dir / fname
         scene.render.filepath = str(out_path)
         bpy.ops.render.render(write_still=True)
@@ -329,6 +385,7 @@ def render_stills_mode(
             "preset": preset, "mount": mount, "path": str(out_path),
             "elapsed_sec": round(time.time() - t_shot, 2),
             "lens_mm": cam_info["pose"]["lens_mm"], "fstop": cam_info["pose"]["fstop"],
+            "draft_unvalidated": draft_unvalidated,
         })
     return rendered
 

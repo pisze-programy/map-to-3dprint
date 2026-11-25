@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
 import os
 import re
 import struct
@@ -347,6 +350,221 @@ def _is_a4_strip_set(raw_stats: Sequence[RawStat], stl_paths: Sequence[str], fra
     return all(mn[0] >= -2.0 and mx[0] <= A4_OPENING_W_MM + 2.0 and mn[1] >= -2.0 and mx[1] <= nom_h + 2.0 for mn, mx, _ in raw_stats)
 
 
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def verify_manifest_for_render(manifest_path: str, allow_draft: bool = False) -> Tuple[Dict[str, Any], bool]:
+    """Verify assembly_manifest.json SHA-256 integrity and PASS verdict.
+
+    Returns (manifest_dict, is_draft_unvalidated). Raises RuntimeError on failure unless allow_draft=True.
+    """
+    m_path = Path(manifest_path).resolve()
+    if not m_path.is_file():
+        raise FileNotFoundError(f"assembly_manifest.json not found: {m_path}")
+    manifest: Dict[str, Any] = json.loads(m_path.read_text(encoding="utf-8"))
+    base_dir = m_path.parent
+    errors: List[str] = []
+
+    val = manifest.get("validation") or {}
+    if val.get("verdict") != "PASS":
+        errors.append(f"validation.verdict is '{val.get('verdict')}' (must be 'PASS')")
+
+    rep_file = val.get("report_file")
+    rep_sha = val.get("report_sha256")
+    if rep_file:
+        rp = base_dir / str(rep_file)
+        if not rp.is_file():
+            errors.append(f"validation report missing: {rp}")
+        elif rep_sha and _sha256_file(rp) != rep_sha:
+            errors.append(f"validation report SHA-256 mismatch: {rp}")
+
+    tiles = manifest.get("tiles") or []
+    if not tiles:
+        errors.append("manifest contains zero tiles")
+    for t in tiles:
+        if t.get("skipped_empty_water"):
+            continue
+        rel = t.get("file")
+        if not rel:
+            errors.append(f"tile {t.get('tile_id')} has no STL file")
+            continue
+        sp = base_dir / str(rel)
+        if not sp.is_file():
+            errors.append(f"tile {t.get('tile_id')} file missing: {sp}")
+            continue
+        exp_sha = t.get("sha256")
+        if not exp_sha:
+            errors.append(f"tile {t.get('tile_id')} missing sha256 in manifest")
+        else:
+            act_sha = _sha256_file(sp)
+            if act_sha != exp_sha:
+                errors.append(f"tile {t.get('tile_id')} SHA-256 mismatch (expected {exp_sha}, got {act_sha})")
+
+    if errors and not allow_draft:
+        raise RuntimeError(
+            "Refusing production Blender render for unvalidated or modified STL assembly "
+            "(pass --draft-unvalidated to render marked draft previews):\n  - " + "\n  - ".join(errors)
+        )
+    return manifest, bool(errors)
+
+
+def load_from_manifest(
+    manifest_path: str,
+    frame_style: Optional[str] = None,
+    material: Any = None,
+    gallery_frame_gap_m: float = 0.018,
+    continuous_flush: bool = False,
+    allow_draft: bool = False,
+    collection: Any = None,
+) -> Dict[str, Any]:
+    """Load tiles from assembly_manifest.json using exact nominal_rect_mm + un-rotation."""
+    if bpy is None:
+        raise RuntimeError("load_from_manifest must be run inside Blender.")
+    manifest, is_draft = verify_manifest_for_render(manifest_path, allow_draft=allow_draft)
+    m_path = Path(manifest_path).resolve()
+    base_dir = m_path.parent
+    fmt_id = str(manifest.get("format_id") or "custom_grid")
+    frames = list(manifest.get("frames") or [])
+    tiles = list(manifest.get("tiles") or [])
+    if collection is None:
+        collection = bpy.data.collections.new("CityModels")
+        bpy.context.scene.collection.children.link(collection)
+
+    # Compute per-frame display offsets when multi-frame lifestyle/gallery frame is shown
+    frame_shift_mm: Dict[str, Tuple[float, float]] = {}
+    frame_specs: List[Dict[str, Any]] = []
+    n_frames = len(frames)
+    if n_frames > 1 and not continuous_flush and frame_style != "none":
+        from studio_blender.envs.frame_gallery import resolve_gallery_frame_dims_m
+
+        outer_w_m, outer_h_m, _, _, _, _ = resolve_gallery_frame_dims_m(format_id=fmt_id)
+        f_cols = max(f.get("frame_col", 0) for f in frames) + 1
+        f_rows = max(f.get("frame_row", 0) for f in frames) + 1
+        pitch_x_m = outer_w_m + max(0.0, float(gallery_frame_gap_m))
+        pitch_y_m = outer_h_m + max(0.0, float(gallery_frame_gap_m))
+        for fr in frames:
+            fid = str(fr.get("frame_id", "F1"))
+            fc = int(fr.get("frame_col", 0))
+            fr_r = int(fr.get("frame_row", 0))
+            target_cx_m = (fc - 0.5 * (f_cols - 1)) * pitch_x_m
+            target_cy_m = (fr_r - 0.5 * (f_rows - 1)) * pitch_y_m
+            win = fr.get("window_mm") or [120.0, 170.0]
+            orig = fr.get("nominal_origin_mm") or [-0.5 * float(win[0]), -0.5 * float(win[1])]
+            src_cx_mm = float(orig[0]) + 0.5 * float(win[0])
+            src_cy_mm = float(orig[1]) + 0.5 * float(win[1])
+            frame_shift_mm[fid] = (target_cx_m / MM_TO_M - src_cx_mm, target_cy_m / MM_TO_M - src_cy_mm)
+            frame_specs.append({
+                "frame_id": fid,
+                "format_id": fmt_id,
+                "opening_w_m": float(win[0]) * MM_TO_M,
+                "opening_h_m": float(win[1]) * MM_TO_M,
+                "center_xy": (target_cx_m, target_cy_m),
+            })
+    else:
+        for fr in (frames or [{"frame_id": "F1", "window_mm": manifest.get("source_params", {}).get("window_mm", [120.0, 170.0]), "nominal_origin_mm": None}]):
+            fid = str(fr.get("frame_id", "F1"))
+            win = fr.get("window_mm") or [120.0, 170.0]
+            orig = fr.get("nominal_origin_mm")
+            cx_m = (float(orig[0]) + 0.5 * float(win[0])) * MM_TO_M if orig else 0.0
+            cy_m = (float(orig[1]) + 0.5 * float(win[1])) * MM_TO_M if orig else 0.0
+            frame_shift_mm[fid] = (0.0, 0.0)
+            frame_specs.append({
+                "frame_id": fid,
+                "format_id": fmt_id,
+                "opening_w_m": float(win[0]) * MM_TO_M,
+                "opening_h_m": float(win[1]) * MM_TO_M,
+                "center_xy": (cx_m, cy_m),
+            })
+
+    raw_objs: List[Any] = []
+    tile_metas: List[Dict[str, Any]] = []
+    for idx, t in enumerate(tiles):
+        if t.get("skipped_empty_water") or not t.get("file"):
+            continue
+        sp = base_dir / str(t["file"])
+        obj = _import_stl_raw(str(sp))
+        obj.name = f"CityTile_{idx + 1:02d}_{t.get('tile_id', idx)}"
+        for col in list(obj.users_collection):
+            col.objects.unlink(obj)
+        collection.objects.link(obj)
+        mn, mx, sc = _measure_raw_mm(obj)
+        rect = t["nominal_rect_mm"]
+        h_mm = float(rect["y_max"]) - float(rect["y_min"])
+        rot90 = (int(t.get("stl_rotation_deg", 0)) % 360) == 90
+        fid = str(t.get("frame_id", "F1"))
+        dx_mm, dy_mm = frame_shift_mm.get(fid, (0.0, 0.0))
+        x_dst_mm = float(rect["x_min"]) + dx_mm
+        y_dst_mm = float(rect["y_min"]) + dy_mm
+
+        if rot90:
+            # Inverse of stl_writer.js (outX = h_mm - yLocal, outY = xLocal) -> xLocal = outY, yLocal = h_mm - outX
+            mat = (
+                Matrix.Translation((x_dst_mm * MM_TO_M, (y_dst_mm + h_mm) * MM_TO_M, -mn[2] * MM_TO_M))
+                @ Matrix.Rotation(-math.pi * 0.5, 4, "Z")
+                @ Matrix.Scale(sc, 4)
+            )
+        else:
+            mat = (
+                Matrix.Translation((x_dst_mm * MM_TO_M, y_dst_mm * MM_TO_M, -mn[2] * MM_TO_M))
+                @ Matrix.Scale(sc, 4)
+            )
+        obj.data.transform(mat)
+        obj.matrix_world = Matrix.Identity(4)
+        mesh = obj.data
+        if len(mesh.polygons) > 0:
+            mesh.polygons.foreach_set("use_smooth", [False] * len(mesh.polygons))
+        mesh.update()
+        if material is not None:
+            if len(obj.data.materials) == 0:
+                obj.data.materials.append(material)
+            else:
+                obj.data.materials[0] = material
+        raw_objs.append(obj)
+        cx_m = 0.5 * (float(rect["x_min"]) + float(rect["x_max"]) + 2.0 * dx_mm) * MM_TO_M
+        cy_m = 0.5 * (float(rect["y_min"]) + float(rect["y_max"]) + 2.0 * dy_mm) * MM_TO_M
+        tile_metas.append(_tile_meta(obj, str(sp), mn, mx, cx_m, cy_m, fit=1.0))
+
+    if frame_specs:
+        xs_c = [fs["center_xy"][0] for fs in frame_specs]
+        ys_c = [fs["center_xy"][1] for fs in frame_specs]
+        fw0 = frame_specs[0]["opening_w_m"]
+        fh0 = frame_specs[0]["opening_h_m"]
+        total_w_m = (max(xs_c) - min(xs_c)) + fw0
+        total_h_m = (max(ys_c) - min(ys_c)) + fh0
+    else:
+        win = manifest.get("source_params", {}).get("window_mm", [120.0, 170.0])
+        fw0, fh0 = float(win[0]) * MM_TO_M, float(win[1]) * MM_TO_M
+        total_w_m, total_h_m = fw0, fh0
+
+    analysis = analyze_city_mesh(raw_objs, frame_width_m=total_w_m, frame_height_m=total_h_m)
+    return {
+        "objects": raw_objs,
+        "collection": collection,
+        "tiles": tile_metas,
+        "frame_centers_xy": [fs["center_xy"] for fs in frame_specs] or [(0.0, 0.0)],
+        "offsets_x": [fs["center_xy"][0] for fs in frame_specs] or [0.0],
+        "frame_specs": frame_specs,
+        "format_id": fmt_id,
+        "manifest": manifest,
+        "manifest_path": str(m_path),
+        "draft_unvalidated": is_draft,
+        "tile_width_m": fw0,
+        "tile_height_m": fh0,
+        "total_width_m": total_w_m,
+        "total_height_m": total_h_m,
+        "max_z_m": analysis["max_z"],
+        "analysis": analysis,
+    }
+
+
 def load_city_stls(
     stl_paths: Sequence[str], frame_style: str = "single_13x18", rim_width_mm: float = 4.0,
     frame_mm: Optional[str] = None, material: Any = None, tile_gap_m: float = 0.016, collection: Any = None,
@@ -405,5 +623,6 @@ __all__ = [
     "A4_OPENING_H_MM", "A4_OPENING_W_MM", "MM_TO_M",
     "VARIANT_C_OUTER_H_MM", "VARIANT_C_OUTER_W_MM",
     "analyze_city_mesh", "infer_city_title", "load_city_stls",
-    "parse_frame_mm", "transform_analysis_to_wall_mount",
+    "load_from_manifest", "parse_frame_mm", "transform_analysis_to_wall_mount",
+    "verify_manifest_for_render",
 ]

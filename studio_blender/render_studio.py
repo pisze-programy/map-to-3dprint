@@ -151,8 +151,8 @@ def _stitch_video_mp4(video_shots: Sequence[Dict[str, Any]], fps: int, out_mp4: 
 
 
 def run_studio_render(
-    stl_paths: Sequence[str],
-    out_dir: str,
+    stl_paths: Optional[Sequence[str]] = None,
+    out_dir: str = "./studio_renders",
     env: str = "01_architect_window_desk",
     frame: str = "single_13x18",
     mount: str = "auto",
@@ -182,11 +182,17 @@ def run_studio_render(
     blender_bin: Optional[str] = None,
     keep_frames: bool = False,
     verbose: bool = False,
+    assembly_manifest: Optional[str] = None,
+    draft_unvalidated: bool = False,
 ) -> Dict[str, Any]:
     """Programmatic entry point used by both CLI and MCP server."""
-    if not stl_paths:
-        raise ValueError("At least one STL path is required.")
-    for p in stl_paths:
+    if not assembly_manifest and not stl_paths:
+        raise ValueError("Either assembly_manifest (--manifest) or --stl path is required.")
+    if assembly_manifest:
+        from studio_blender.stl_loader import verify_manifest_for_render
+
+        verify_manifest_for_render(assembly_manifest, allow_draft=draft_unvalidated)
+    for p in (stl_paths or []):
         if not os.path.isfile(p):
             raise FileNotFoundError(f"STL file not found: {p}")
 
@@ -194,20 +200,24 @@ def run_studio_render(
     blender = find_blender_binary(blender_bin)
     out_path = Path(out_dir).resolve()
     out_path.mkdir(parents=True, exist_ok=True)
-    manifest_path = out_path / "render_manifest.json"
+    render_manifest_path = out_path / "render_manifest.json"
 
     cmd: List[str] = [
         blender, "--background", "--factory-startup", "--python-exit-code", "1",
         "--python", str(WORKER_SCRIPT), "--",
     ]
-    for p in stl_paths:
+    if assembly_manifest:
+        cmd.extend(["--assembly-manifest", str(Path(assembly_manifest).resolve())])
+    if draft_unvalidated:
+        cmd.append("--draft-unvalidated")
+    for p in (stl_paths or []):
         cmd.extend(["--stl", str(Path(p).resolve())])
     cmd.extend([
         "--env", canonical_env, "--frame", frame, "--mount", mount, "--mode", mode,
         "--frame-width-mm", str(float(frame_width_mm)),
         "--frame-height-mm", str(float(frame_height_mm)),
         "--backing-finish", backing_finish,
-        "--out", str(out_path), "--manifest", str(manifest_path),
+        "--out", str(out_path), "--manifest", str(render_manifest_path),
     ])
 
     if show_nameplate:
@@ -269,15 +279,15 @@ def run_studio_render(
             f"--- STDOUT (tail) ---\n{stdout_tail}\n--- STDERR (tail) ---\n{stderr_tail}"
         )
 
-    if not manifest_path.is_file():
-        raise RuntimeError(f"Blender worker succeeded but did not write manifest: {manifest_path}")
+    if not render_manifest_path.is_file():
+        raise RuntimeError(f"Blender worker succeeded but did not write manifest: {render_manifest_path}")
 
-    manifest: Dict[str, Any] = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest: Dict[str, Any] = json.loads(render_manifest_path.read_text(encoding="utf-8"))
 
     if mode == "keyframes":
         sb_path = out_path / "blender_flow_storyboard.png"
         manifest["storyboard_path"] = _build_keyframes_storyboard(manifest.get("keyframes", {}), sb_path)
-        manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+        render_manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
     if mode == "video":
         city_slug = manifest.get("city_title", "city").lower().replace(" ", "_")
@@ -289,7 +299,7 @@ def run_studio_render(
             frames_dir = out_path / "_frames"
             if frames_dir.is_dir():
                 shutil.rmtree(frames_dir, ignore_errors=True)
-        manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+        render_manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
     return manifest
 
@@ -297,6 +307,8 @@ def run_studio_render(
 def _build_cli_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Photorealistic Blender Cycles Studio CLI for 3D City STLs")
     p.add_argument("--stl", action="append", help="Path to city STL file (repeatable for 2-tile 13x18 / 3x1 / 2x2)")
+    p.add_argument("--manifest", default=None, help="Path to validated assembly_manifest.json")
+    p.add_argument("--draft-unvalidated", action="store_true", default=False, help="Allow unvalidated renders with DRAFT_UNVALIDATED_ prefix")
     p.add_argument("--env", default="01_architect_window_desk", choices=ALL_ENV_CHOICES, help="3D studio environment")
     p.add_argument(
         "--frame", default="single_13x18",
@@ -346,8 +358,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.list_props:
         print(json.dumps(get_studio_props(), indent=2, ensure_ascii=False))
         return 0
-    if not args.stl:
-        parser.error("--stl is required unless --list-presets or --list-props is specified.")
+    if not args.stl and not args.manifest:
+        parser.error("--manifest or --stl is required unless --list-presets or --list-props is specified.")
 
     try:
         manifest = run_studio_render(
@@ -361,6 +373,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             remove_props=args.remove_prop, clear_props=args.clear_props, filename=args.filename,
             video_name=args.video_name, shots=args.shots, blender_bin=args.blender_bin,
             keep_frames=args.keep_frames, verbose=args.verbose,
+            assembly_manifest=args.manifest, draft_unvalidated=bool(args.draft_unvalidated),
         )
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

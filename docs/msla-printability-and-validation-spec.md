@@ -59,6 +59,7 @@ Every rule in Section 4 traces directly to a physical failure observed during ca
 | **F-09** | ABS White Dripper v1 | Socket mouth corner lifted off the Flex Plate | A vent notch `13 mm` from the corner left a `3 mm` L-shaped strip that carried the corner | `DFM-06` |
 | **F-10** | ABS White Dripper v1 | Build plate bracket did not go onto the socket (about `5 mm` too wide) | The socket is a MALE part, but its outer profile was enlarged like a FEMALE opening. Rule: classify every mating feature as male or female first. Enlarge female openings, reduce male outer profiles | Design review |
 | **F-11** | ABS White Dripper v2 | Slight side peel at the socket end; print complete and usable | Large solid `Z = 0` pad on the socket side with no base drain channel, while the sleeve side has an open slot at the base | `DFM-03` (keep base drain channels on both sides of large pads) |
+| **F-12** | Paris `1x3` Solid A4 Print | Bow-warp curling across `120 x 56.7 mm` strip, bottom seam lip collision, and `~1 mm` building step across tile cut | Ungrooved `6,800 mm2` `Z=0` contact warped thin Flex Plate; missing `DFM-06` `0.25 mm` bottom chamfer; per-tile CSG cut buildings before final union and shifted seams | Compose-first/cut-last `tile_seam_cutter.js`, `Z = 0..1.50 mm` underside relief, `DFM-06` `0.25 mm` chamfer, `VAL-09..14` |
 
 ---
 
@@ -79,9 +80,10 @@ When Resin Mode (`state.isResin` or `printerPreset === 'photon_mono_4'`) is acti
   - Replace the legacy `25.0 mm` underside rib spacing in `terrain_base_water.js` with a **`<= 6.00 mm` rib grid** (`>= 1.40 mm` rib width, `<= 4.60 mm` pocket span) connected by `>= 1.25 mm` air notches and `<= 45-deg` vault slopes (`|dz/ds| <= 1.0`).
 - **`DFM-05` (Open-Bottom `45-deg` Building Relief Vaults)**:
   - Any solid building or structural block with inscribed horizontal width **`>= 5.50 mm`** and height **`>= 5.00 mm`** must be cored from `Z = 0.00 mm` upward using a `<= 45-deg` self-supporting vault while preserving **`>= 1.85 mm`** minimum wall/roof thickness.
-- **`DFM-06` (Corner Anchor Integrity and Anti-Elephant-Foot Chamfer)**:
+- **`DFM-06` (Corner Anchor Integrity, Underside Relief, and Anti-Elephant-Foot Chamfer)**:
   - Perimeter vents must stay **`>= 15.0 mm` away from all `90-deg` tile corners** so corners retain uninterrupted `Z = 0` L-shaped anchor pads.
-  - Apply a `0.30 - 0.38 mm` horizontal inset step on `Z = 0.00 .. 0.40 mm` along outer perimeters to compensate bottom-layer UV bloom.
+  - Keep an unbroken `>= 8.0 mm` outer perimeter skirt on multi-tile `4.0 mm` solid frames, and carve `Z = 0..1.50 mm` seam-aligned `45 deg` gabled underside stress-relief channels (`2.6 mm` wide) so `Z = 0` contact stays `<= 4,500 mm2`.
+  - Apply a `0.25 mm` `45 deg` bottom chamfer (`Z = 0.00..0.50 mm`) along tile cut and perimeter edges (`0.00 mm` upper flush kerf at `Z >= 0.50 mm`).
   - Do not split small footprints (`< 20 mm` width) at `Z = 0` with through-slots that leave narrow island strips (`< 7.5 mm` wide).
 - **`DFM-07` (Self-Supporting Bridges, Archways, and Horizontal Holes)**:
   - Flat horizontal downward-facing ceilings (`angle_from_horizontal < 35 deg`) are forbidden when unsupported horizontal distance to the nearest solid support (half-span) exceeds **`2.25 mm`** (i.e., **`<= 4.50 mm`** full two-sided bridge span or **`<= 2.25 mm`** one-sided cantilever).
@@ -114,6 +116,12 @@ Every STL candidate must run through `calibration/validate_msla_stl.py` before s
 | **`VAL-06`** | Multi-shell XY gap check vs classic FEP tenting radius | Gap between two shells with `Z = 0` area `> 180 mm2` is `>= 12.0 mm` | `WARN` |
 | **`VAL-07`** | Layer-by-layer cross-section area (`A(z)`) and peel-spike (`A(z+dz) / A(z)`) scanner | Max slice area `<= 2600 mm2`; step increase `<= 150 mm2` when `A(z) > 100 mm2` | `WARN` |
 | **`VAL-08`** | Build-volume envelope and VAT resin depletion check | `X <= 153.4 mm`, `Y <= 87.0 mm`, `Z <= 163.0 mm`; warns when `volume > 30 ml` to verify VAT fill level | `FAIL` / `INFO` |
+| **`VAL-09`** | Inward seam cross-section continuity (`seam +/- 0.010 mm`) and cut-plane flatness (`Z >= 0.50 mm`) | `true_diff <= 0.15 mm2`, `max_step <= 0.20 mm`, `|area_A - area_B| <= 0.25 mm2`, flatness `<= 0.005 mm` | `FAIL` |
+| **`VAL-10`** | Global assembly footprint, gap/overlap, uniform `Z_base`, 4-way `+` corners, multi-frame datum | Footprint `<= 0.08 mm`, zero overlap, `dZ_base <= 0.05 mm`, `+` corner Z step `<= 0.20 mm` | `FAIL` |
+| **`VAL-11`** | Uncut master solid vs summed exported tiles volume conservation | `|sum_tiles - master| / master <= 0.5%` | `FAIL` |
+| **`VAL-12`** | Zero unapproved shell crumbs or floating components across assembly | No `minZ > 0.04 mm`, no `z0_area < 35.0 mm2`, no `min_width < 4.0 mm`; secondary shells `>= 60 mm2` & `>= 5.0 mm` allowlisted | `FAIL` |
+| **`VAL-13`** | `DFM-06` bottom chamfer inset (`Z = 0.10` vs `Z = 0.70 mm`) and `Z = 0` contact relief balance | Edge inset `>= 0.20 mm`; `z0_area <= 4,500 mm2` when underside relief is active | `FAIL` |
+| **`VAL-14`** | Photon Mono 4 safe bed fit (`4.0 mm` margin) and `VAL-01..08` zero failures | All tiles fit `145.45 x 79.05 x 163.0 mm` with `0` blocking issues | `FAIL` |
 
 ---
 

@@ -7,35 +7,44 @@ Read and execute all four gates before you approve any city STL, tile, or packsh
 - Pick `spanMeters` first so hero landmarks keep natural width-to-height proportions.
 - Keep `zScale` inside `1.0x..1.4x`. Prefer `1.0x..1.25x` for spires, arches, cantilevers, and supertalls.
 - Never raise `zScale` above `1.5x` to fix a wide `span`. High `zScale` distorts towers into thin needles.
-- Use the A4 `120x170 mm` `1x3` grid (`3x 120x56.7 mm`, `4.0 mm` solid base, `4.0 mm` bed safe margin).
+- Use the A4 `120x170 mm` `1x3` grid (`3x 120x56.7 mm`, `4.0 mm` solid base, `4.0 mm` safe margin).
 - Keep the `Y = +/-28.3 mm` seams clear of fragile landmarks so the `56.7 mm` center band stays unbroken.
 
-## Gate 2: Per-Tile MSLA Validation (`calibration/validate_msla_stl.py`)
+## Gate 2: Whole-Project Assembly Validation (`calibration/validate_assembly.py`)
 
-- Run `python3 calibration/validate_msla_stl.py <tile.stl>` on every exported tile (`Top`, `Middle`, and `Bottom`).
-- Require `FINAL VERDICT: PASS`, `0` blocking issues, `open_edges=0`, and `non_manifold_edges=0`.
-- Require `VAL-04=[]`, zero `VAL-02` sealed cavities `>= 100 mm2`, and `Mono 4 normal=True`.
-- Inspect every extra shell whenever `shells > 1`. Verify it sits grounded at `Z = 0.00` as a real island or quay.
-- Reject floating boats, barges, or clipped border stubs immediately.
+- Run `python3 calibration/validate_assembly.py <export_dir>/assembly_manifest.json` on every exported assembly.
+- Require `FINAL ASSEMBLY VERDICT: PASS` across `VAL-01` through `VAL-14`.
+- Check single plates with `python3 calibration/validate_msla_stl.py <tile.stl>` when debugging.
+- Require zero `VAL-09` seam mismatches (`true_diff <= 0.15 mm2`, `max_step <= 0.20 mm`, flatness `<= 0.005 mm`).
+- Inspect `_qa/seam_<tileA>_<tileB>_diff.png` for every mating seam before you approve any multi-tile SKU.
+- Verify `VAL-10` global footprint (`<= 0.08 mm`), `VAL-11` volume (`<= 0.5%`), and zero `VAL-12` crumbs.
+- Verify `VAL-13` `DFM-06` bottom chamfer (`>= 0.20 mm` at `Z = 0.10 mm`) and `Z = 0` contact `<= 4,500 mm2`.
+- Verify `VAL-14` Mono 4 safe bed fit (`145.45 x 79.05 x 163.0 mm`).
 
-## Gate 3: Direct-STL Four-Angle Critical Element Inspection
+## Gate 3: Direct-STL Four-Angle and Seam-Truth Inspection
 
 - Never approve a city STL from validator metrics or browser preview alone.
-- Inspect every landmark and every strip (`Top`, `Middle`, `Bottom`) individually inside `/swarm` with zero unreviewed elements.
-- Render and inspect the exported `.stl` files from four close-up angles on every critical zone:
+- Render seam-truth QA views using `--manifest assembly_manifest.json` (`qa_seam_raking`, `qa_top_down_grid`, `qa_underside`).
+- Inspect `qa_seam_raking` under `12 deg` side light with alternating tile tints for flush seam mating.
+- Inspect `qa_underside` to verify `45 deg` gabled relief channels, `>= 8.0 mm` outer perimeter skirt, and `DFM-06` bottom chamfers.
+- Inspect every landmark and strip individually inside `/swarm` with zero unreviewed elements.
+- Render and inspect exported `.stl` files from four close-up angles on every critical zone:
   - **Hero monument likeness**: Compare each flagship monument against real reference photos before you ship a SKU.
   - **Eye-level arch and cavity clearance**: Inspect through-arch and under-bridge openings at eye level. Reject overhang support pipes blocking open spans.
   - **Summit-crown macro**: Verify `roof:shape=dome` caps stay inscribed inside parapets with crisp balcony cornices.
-  - **Bridges and overpasses**: Verify `0.00 mm` bank abutment seals on both shores, aligned arch piers, and zero floating stubs.
-  - **Outer perimeter sliver check**: Inspect all four `120x170` or `170x120` borders. Reject razor-sliced perimeter walls or orphaned sidewalk annexes.
+  - **Bridges and overpasses**: Verify `0.00 mm` bank seals on both shores. Check aligned arch piers and zero floating stubs.
+  - **Outer perimeter sliver check**: Inspect all frame borders. Reject razor-sliced perimeter walls or orphaned sidewalk annexes.
   - **Waterfronts and streets**: Verify zero floating vessels in `waterCutout`, zero streetlamp mast spikes, and zero collapsed walls.
 - Fix procedural defects systemically in core `src/`. Put curated flagship monuments in `src/landmarks/` with `replaceOsmIds` suppression.
 - Rebuild `python3 build_app.py`, pass `npm run test:headless` (`100%`), re-export STLs, and re-run Gates 2 and 3.
 
-## Gate 4: Packshot and Detail Render QA
+## Gate 4: Honest Manifest-Driven Packshot and Detail Render QA
 
-- Render A4 white passe-partout packshots (`11_packshot_white --frame a4_passepartout`, `64 spp`) across `packshot_iso`, `profile_low`, `top_down`, and `macro_skyline`.
+- Pass `--manifest <export_dir>/assembly_manifest.json` to `studio_blender/render_studio.py` for all production renders.
+- Require `validation.verdict == "PASS"` with matching tile `sha256` digests before production rendering starts.
+- Render A4 white passe-partout packshots (`11_packshot_white --manifest ... --frame a4_passepartout`, `64 spp`).
+- Use real Heavy A4 passe-partout gallery frames on `triptych_a4_3x1` and `quartet_a4_2x2`, never `single_thin`.
 - Verify natural landmark silhouettes on `profile_low` with zero needle stretching or spire clipping.
-- Verify flush `120x170 mm` white passe-partout seating with `0.0 mm` N/S/E gaps and zero exposed base grooves.
+- Verify flush passe-partout seating with `0.0 mm` N/S/E gaps and zero exposed outer base grooves.
 - Verify sealed riverbanks and intact bridge spans on `top_down`.
 - On `18_detail_chalk_gallery --frame none`, verify zero outer black card borders and zero empty white bottom corners.

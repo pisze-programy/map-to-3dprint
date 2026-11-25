@@ -8,7 +8,7 @@ Read this map first. Open only the focused guide that matches your task.
 - Split large monolithic files into small focused modules.
 - Add strict types: JSDoc or TypeScript types in JS, full type hints in Python.
 - Never treat unit tests alone as proof. Collect real E2E, visual, or validator proof.
-- Run `docs/city-model-and-packshot-qa-checklist.md` before you generate or approve any city STL, tile, or packshot render.
+- Run `docs/city-model-and-packshot-qa-checklist.md` and `calibration/validate_assembly.py` (`VAL-01..14`) before you approve any exported STL assembly or production render.
 - Keep `SLA_PRINT_LAWS`, `roadHeightMm`, and pure ASCII in `src/` and `tests/`.
 - Keep core procedural builders in `src/Water/`, `src/mesh/`, and `src/buildings/` city-agnostic.
 - Put curated flagship monument geometry in `src/landmarks/` using geo-anchored footprints, `replaceOsmIds` suppression, and `VAL-01..08` proof.
@@ -42,5 +42,6 @@ Read this map first. Open only the focused guide that matches your task.
 
 - Rebuild browser bundle after `src/` edits: `python3 build_app.py`
 - Run headless invariant suite: `npm run test:headless`
-- Validate an exported STL for MSLA printability: `python3 calibration/validate_msla_stl.py <file.stl>`
+- Validate an exported single STL: `python3 calibration/validate_msla_stl.py <file.stl>`
+- Validate a whole exported tile assembly (`VAL-01..VAL-14`): `python3 calibration/validate_assembly.py <export_dir>/assembly_manifest.json`
 - Run Playwright E2E suite: `npm run test:e2e`
