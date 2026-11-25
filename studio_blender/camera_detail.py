@@ -1,12 +1,12 @@
 """Dedicated frameless chalk-plaster architectural detail gallery camera presets.
 
-Implements 4 universal full-bleed telephoto macro presets calibrated for crisp
-architectural clarity (f/8.0-f/14.0) with strict interior frustum clamping so zero
-outer tile borders or cut backing-card edges ever enter the frame:
-  - `detail_spire`: Low 135mm f/8.0 eye-level spire soaring into pure #FFFFFF sky.
-  - `detail_canyon`: Low 120mm f/10.0 avenue/park canyon receding into #FFFFFF horizon.
-  - `detail_oblique_grid`: Full-bleed 130mm f/14.0 44-deg oblique urban grid wall-to-wall.
-  - `detail_waterfront`: Tight 125mm f/11.0 30-deg interior waterfront/canyon tier macro.
+Implements 4 universal full-bleed telephoto macro presets calibrated for minimal-blur
+architectural sharpness (f/22-f/28 so 80-90% of the miniature stays tack-sharp) with
+strict interior frustum clamping so zero outer tile borders or backing edges enter:
+  - `detail_spire`: Low 135mm f/22.0 eye-level spire soaring into pure #FFFFFF sky.
+  - `detail_canyon`: Low 120mm f/24.0 avenue/park canyon receding into #FFFFFF horizon.
+  - `detail_oblique_grid`: Full-bleed 130mm f/28.0 44-deg oblique urban grid wall-to-wall.
+  - `detail_waterfront`: Tight 125mm f/24.0 30-deg interior waterfront/canyon tier macro.
 """
 
 from __future__ import annotations
@@ -197,7 +197,7 @@ def compute_detail_still_pose(
 
     if canonical == "detail_spire":
         # Low eye-level telephoto: dense buildings fill bottom/sides, hero spire into #FFFFFF sky
-        lens, fstop, elev, shift_y = 135.0, 8.0, 10.0, -0.05
+        lens, fstop, elev, shift_y = 135.0, 22.0, 10.0, -0.05
         tan_h, tan_v = camera_rig.sensor_half_tangents(lens, aspect)
         if water_side == "-X":
             yaw = -8.0
@@ -228,7 +228,7 @@ def compute_detail_still_pose(
 
     elif canonical == "detail_canyon":
         # Low telephoto looking down a major avenue/park canyon into #FFFFFF horizon
-        lens, fstop, elev, shift_y = 120.0, 10.0, 14.0, -0.02
+        lens, fstop, elev, shift_y = 120.0, 24.0, 14.0, -0.02
         base_yaw = _portal_yaw_deg(analysis, rec_yaw * 0.40, limit_deg=12.0)
         if water_side == "-X":
             yaw = _clamp(base_yaw, -8.0, -2.0)
@@ -256,7 +256,7 @@ def compute_detail_still_pose(
 
     elif canonical == "detail_waterfront":
         # Tight 30-deg interior macro highlighting waterfront bridges or dense downtown canyon tiers
-        lens, fstop, elev, shift_y = 125.0, 11.0, 30.0, 0.0
+        lens, fstop, elev, shift_y = 125.0, 24.0, 30.0, 0.0
         if water_side == "-X":
             yaw = -20.0
         elif water_side == "+X":
@@ -279,7 +279,7 @@ def compute_detail_still_pose(
 
     else:  # detail_oblique_grid
         # Full-bleed 44-deg oblique architectural grid wall-to-wall across all 4 corners
-        lens, fstop, elev, shift_y = 130.0, 14.0, 44.0, 0.0
+        lens, fstop, elev, shift_y = 130.0, 28.0, 44.0, 0.0
         yaw = -36.0 if rec_yaw <= 0.0 else 36.0
         tx = _clamp(0.58 * sx + 0.42 * htx, ix0, ix1)
         ty = _clamp(0.58 * sy + 0.42 * hty, iy0, iy1)

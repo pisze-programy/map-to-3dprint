@@ -161,13 +161,8 @@ def _apply_mesh_transform(obj: Any, shift_mm: Tuple[float, float, float], scale_
 
 
 def _tile_meta(
-    obj: Any,
-    stl_path: str,
-    mn: Tuple[float, float, float],
-    mx: Tuple[float, float, float],
-    offset_x_m: float,
-    offset_y_m: float,
-    fit: Optional[float] = None,
+    obj: Any, stl_path: str, mn: Tuple[float, float, float], mx: Tuple[float, float, float],
+    offset_x_m: float, offset_y_m: float, fit: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Build normalized tile metadata dict for a transformed city STL object."""
     f = 1.0 if fit is None else fit
@@ -184,18 +179,13 @@ def _tile_meta(
 def _align_single_13x18(
     raw_objs: List[Any],
     raw_stats: List[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]],
-    stl_paths: Sequence[str],
-    rim_width_mm: float,
-    frame_mm_override: Optional[Tuple[float, float]],
-    tight_frameless: bool = False,
+    stl_paths: Sequence[str], rim_width_mm: float,
+    frame_mm_override: Optional[Tuple[float, float]], tight_frameless: bool = False,
 ) -> Tuple[float, float, List[Dict[str, Any]]]:
     """Assemble 1-3 tiles inside a Variant C 130x180mm opening or tight frameless bbox."""
-    inner_w_portrait = VARIANT_C_OUTER_W_MM - 2.0 * rim_width_mm
-    inner_h_portrait = VARIANT_C_OUTER_H_MM - 2.0 * rim_width_mm
-    n_tiles = len(raw_objs)
+    inner_w_portrait, inner_h_portrait = VARIANT_C_OUTER_W_MM - 2.0 * rim_width_mm, VARIANT_C_OUTER_H_MM - 2.0 * rim_width_mm
     tile_metas: List[Dict[str, Any]] = []
-
-    if n_tiles >= 2:
+    if len(raw_objs) >= 2:
         y_spans = [max(1.0, st[1][1] - st[0][1]) for st in raw_stats]
         min_x_all, max_x_all = min(st[0][0] for st in raw_stats), max(st[1][0] for st in raw_stats)
         span_x, total_y = max_x_all - min_x_all, sum(y_spans)
@@ -205,10 +195,8 @@ def _align_single_13x18(
             inner_w_mm, inner_h_mm = span_x, total_y
         else:
             inner_w_mm, inner_h_mm = max(inner_w_portrait, span_x), total_y
-
         in_nom_x = (not tight_frameless) and (min_x_all >= -2.0) and (max_x_all <= inner_w_mm + 2.0)
-        shift_x_mm = (-0.5 * inner_w_mm) if in_nom_x else (-0.5 * (min_x_all + max_x_all))
-        y_cursor = 0.5 * total_y
+        shift_x_mm, y_cursor = (-0.5 * inner_w_mm) if in_nom_x else (-0.5 * (min_x_all + max_x_all)), 0.5 * total_y
         for idx, (obj, (mn, mx, sc), sp) in enumerate(zip(raw_objs, raw_stats, stl_paths)):
             tile_h = y_spans[idx]
             y_bot = y_cursor - tile_h
@@ -220,8 +208,7 @@ def _align_single_13x18(
     mn, mx, sc = raw_stats[0]
     size_x, size_y = mx[0] - mn[0], mx[1] - mn[1]
     nom_mm = _infer_frame_mm_from_filename(stl_paths[0])
-    nom_w = nom_mm[0] if nom_mm else max(mx[0], size_x)
-    nom_h = nom_mm[1] if nom_mm else max(mx[1], size_y)
+    nom_w, nom_h = (nom_mm[0], nom_mm[1]) if nom_mm else (max(mx[0], size_x), max(mx[1], size_y))
     if frame_mm_override is not None:
         inner_w_mm, inner_h_mm = frame_mm_override
     elif tight_frameless:
@@ -341,6 +328,25 @@ def _align_multi_or_tight(
     return tile_w_m, tile_h_m, centers_xy, tile_metas
 
 
+def _is_a4_strip_set(
+    raw_stats: Sequence[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]],
+    stl_paths: Sequence[str],
+    frame_mm_override: Optional[Tuple[float, float]],
+) -> bool:
+    """Return True when multi-tile frameless inputs are A4 1x3 (120x56.7mm) or 1x2 (120x85mm) strips."""
+    n = len(raw_stats)
+    if n < 2:
+        return False
+    if frame_mm_override is not None:
+        return True
+    for sp in stl_paths:
+        fm = _infer_frame_mm_from_filename(sp)
+        if fm and abs(fm[0] - A4_OPENING_W_MM) <= 1.5 and (abs(fm[1] - 56.7) <= 1.2 or abs(fm[1] - 85.0) <= 1.2):
+            return True
+    nom_h = A4_OPENING_H_MM / float(n)
+    return all(mn[0] >= -2.0 and mx[0] <= A4_OPENING_W_MM + 2.0 and mn[1] >= -2.0 and mx[1] <= nom_h + 2.0 for mn, mx, _ in raw_stats)
+
+
 def load_city_stls(
     stl_paths: Sequence[str],
     frame_style: str = "single_13x18",
@@ -372,14 +378,14 @@ def load_city_stls(
         raw_objs.append(obj)
         raw_stats.append(_measure_raw_mm(obj))
 
-    if frame_style in ("single_13x18", "none"):
+    if frame_style == "a4_passepartout" or (frame_style == "none" and _is_a4_strip_set(raw_stats, stl_paths, frame_mm_override)):
+        frame_w_m, frame_h_m, tile_metas = _align_a4_passepartout(raw_objs, raw_stats, stl_paths, frame_mm_override)
+        frame_centers_xy, total_w_m, total_h_m = [(0.0, 0.0)], frame_w_m, frame_h_m
+    elif frame_style in ("single_13x18", "none"):
         is_none = frame_style == "none"
         frame_w_m, frame_h_m, tile_metas = _align_single_13x18(
             raw_objs, raw_stats, stl_paths, 0.0 if is_none else rim_width_mm, frame_mm_override, tight_frameless=is_none
         )
-        frame_centers_xy, total_w_m, total_h_m = [(0.0, 0.0)], frame_w_m, frame_h_m
-    elif frame_style == "a4_passepartout":
-        frame_w_m, frame_h_m, tile_metas = _align_a4_passepartout(raw_objs, raw_stats, stl_paths, frame_mm_override)
         frame_centers_xy, total_w_m, total_h_m = [(0.0, 0.0)], frame_w_m, frame_h_m
     else:
         frame_w_m, frame_h_m, frame_centers_xy, tile_metas = _align_multi_or_tight(
