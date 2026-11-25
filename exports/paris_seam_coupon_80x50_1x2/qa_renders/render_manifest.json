@@ -1,0 +1,148 @@
+{
+  "status": "ok",
+  "mode": "stills",
+  "env": "11_packshot_white",
+  "mount": "desk_flat",
+  "frame": "none",
+  "frame_width_mm": 4.0,
+  "frame_height_mm": 7.5,
+  "backing_finish": "matte_black",
+  "show_nameplate": false,
+  "city_title": "PARIS_COUPON",
+  "assembly_manifest": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_seam_coupon_80x50_1x2/assembly_manifest.json",
+  "draft_unvalidated": false,
+  "stl_paths": [
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_seam_coupon_80x50_1x2/Map3D_PARIS_COUPON_Bottom_80x25mm.stl",
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_seam_coupon_80x50_1x2/Map3D_PARIS_COUPON_Top_80x25mm.stl"
+  ],
+  "cycles": {
+    "blender_version": "5.3.0",
+    "backend": "METAL",
+    "devices": [
+      "METAL:Apple M1 Pro (GPU - 14 cores)"
+    ],
+    "samples": 48,
+    "resolution": [
+      1000,
+      1000
+    ],
+    "motion_blur": false,
+    "color_management": {
+      "view_transform": "AgX",
+      "look": "AgX - Medium High Contrast"
+    }
+  },
+  "analysis": {
+    "bbox_min": [
+      -0.04,
+      -0.025,
+      0.0
+    ],
+    "bbox_max": [
+      0.04,
+      0.025,
+      0.00988
+    ],
+    "size": [
+      0.08,
+      0.05,
+      0.00988
+    ],
+    "frame_width_m": 0.08,
+    "frame_height_m": 0.05,
+    "max_z": 0.00988,
+    "hero_peak": [
+      0.03451,
+      0.0064,
+      0.00988
+    ],
+    "hero_tower_xy": [
+      0.03362,
+      0.00539
+    ],
+    "skyline_centroid": [
+      0.01856,
+      -0.00883,
+      0.00865
+    ],
+    "water_side": "-X",
+    "water_scores": {
+      "-X": 0.4117,
+      "+X": 0.0794,
+      "-Y": 0.149,
+      "+Y": 0.2167
+    },
+    "water_centroid": [
+      -0.01345,
+      0.00244,
+      0.0
+    ],
+    "canyon_portal": {
+      "entry": [
+        0.04873,
+        0.01998,
+        0.01459
+      ],
+      "portal_mid": [
+        0.03375,
+        0.01,
+        0.00659
+      ],
+      "target": [
+        0.03451,
+        0.0064,
+        0.00543
+      ],
+      "tower_a": [
+        0.03125,
+        0.01375,
+        0.00988
+      ],
+      "tower_b": [
+        0.03625,
+        0.00625,
+        0.00988
+      ],
+      "direction": [
+        -0.8321,
+        -0.5547
+      ],
+      "score": 4.0751
+    },
+    "recommended_yaw_deg": -26.0,
+    "vertex_count": 14868
+  },
+  "model_bounds": {
+    "outer_width_m": 0.08,
+    "outer_height_m": 0.05,
+    "desk_z": -0.00315,
+    "wall_y": 0.00465,
+    "max_z": 0.00988
+  },
+  "placed_props": [],
+  "stills": [
+    {
+      "preset": "qa_seam_raking",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_seam_coupon_80x50_1x2/qa_renders/paris_coupon_11_packshot_white_qa_seam_raking.png",
+      "elapsed_sec": 9.88,
+      "lens_mm": 68.0,
+      "fstop": 16.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "qa_underside",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_seam_coupon_80x50_1x2/qa_renders/paris_coupon_11_packshot_white_qa_underside.png",
+      "elapsed_sec": 3.1,
+      "lens_mm": 70.0,
+      "fstop": 16.0,
+      "draft_unvalidated": false
+    }
+  ],
+  "keyframes": {},
+  "flow_prompts_path": null,
+  "video_shots": [],
+  "fps": 24,
+  "total_elapsed_sec": 13.06
+}

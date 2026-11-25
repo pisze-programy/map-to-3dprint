@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "manifest": "assembly_manifest.json",
+  "sku_id": "custom_grid",
+  "format_id": "custom_grid",
+  "city_slug": "paris_coupon",
+  "validated_at": "2026-11-25T18:09:08.398092+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "tiles_checked": 2,
+    "seam_pairs_checked": 1,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 14706.4709,
+    "sum_tile_volume_mm3": 14676.202,
+    "volume_diff_pct": 0.2058,
+    "blocking_failures": 0,
+    "warnings": 4
+  },
+  "failures": [],
+  "warnings": [
+    "[R2C1] VAL-02: Small sealed upper-story cavities (max 24.8 mm2 < 100 mm2) from Z=4.15 to Z=6.65 mm; add a vent if the part is thin.",
+    "[R2C1] VAL-07: Sudden cross-section peel jump (+312 mm2 at Z=1.25 mm).",
+    "[R1C1] VAL-02: Small sealed upper-story cavities (max 28.9 mm2 < 100 mm2) from Z=4.15 to Z=5.65 mm; add a vent if the part is thin.",
+    "[R1C1] VAL-07: Sudden cross-section peel jump (+236 mm2 at Z=1.25 mm)."
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 0.0,
+      "area_a_mm2": 300.002,
+      "area_b_mm2": 300.002,
+      "area_delta_mm2": 0.0,
+      "true_diff_mm2": 0.0,
+      "max_step_mm": 0.0,
+      "max_flatness_dev_mm": 0.0,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "tiles": {
+    "R2C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_seam_coupon_80x50_1x2/Map3D_PARIS_COUPON_Bottom_80x25mm.stl",
+      "verdict": "PASS",
+      "triangles": 16338,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        80.0,
+        0.0,
+        25.0,
+        0.0,
+        9.3561
+      ],
+      "span_mm": [
+        80.0,
+        25.0,
+        9.3561
+      ],
+      "volume_ml": 7.5419,
+      "volume_mm3": 7541.881,
+      "z0_area_mm2": 1081.781,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            80.0,
+            0.0,
+            25.0,
+            0.0,
+            9.3561
+          ],
+          "z0_area_mm2": 1081.781,
+          "min_width_mm": 25.0
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 1093.44,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 1134.06,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 1218.0,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 1305.81,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 24.8 mm2 < 100 mm2) from Z=4.15 to Z=6.65 mm; add a vent if the part is thin.",
+        "VAL-07: Sudden cross-section peel jump (+312 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_seam_coupon_80x50_1x2/Map3D_PARIS_COUPON_Top_80x25mm.stl",
+      "verdict": "PASS",
+      "triangles": 13610,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        80.0,
+        0.0,
+        25.0,
+        0.0,
+        9.8791
+      ],
+      "span_mm": [
+        80.0,
+        25.0,
+        9.8791
+      ],
+      "volume_ml": 7.1343,
+      "volume_mm3": 7134.321,
+      "z0_area_mm2": 1104.055,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            11.4431,
+            0.0,
+            25.0,
+            0.0,
+            8.1151
+          ],
+          "z0_area_mm2": 211.073,
+          "min_width_mm": 11.443
+        },
+        {
+          "shell_index": 1,
+          "bbox": [
+            23.9188,
+            80.0,
+            0.0,
+            25.0,
+            0.0,
+            9.8791
+          ],
+          "z0_area_mm2": 892.982,
+          "min_width_mm": 25.0
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 1114.19,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 1154.25,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 1229.81,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 1308.62,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 28.9 mm2 < 100 mm2) from Z=4.15 to Z=5.65 mm; add a vent if the part is thin.",
+        "VAL-07: Sudden cross-section peel jump (+236 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    }
+  }
+}

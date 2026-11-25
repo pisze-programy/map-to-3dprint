@@ -1,0 +1,158 @@
+{
+  "status": "ok",
+  "mode": "stills",
+  "env": "11_packshot_white",
+  "mount": "desk_flat",
+  "frame": "none",
+  "frame_width_mm": 4.0,
+  "frame_height_mm": 7.5,
+  "backing_finish": "matte_black",
+  "show_nameplate": false,
+  "city_title": "Map3D_PARIS_A4",
+  "assembly_manifest": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_true_scale_a4_120x170_1x3/assembly_manifest.json",
+  "draft_unvalidated": false,
+  "stl_paths": [
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_true_scale_a4_120x170_1x3/Map3D_PARIS_A4_Bottom_120x57mm.stl",
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_true_scale_a4_120x170_1x3/Map3D_PARIS_A4_Middle_120x57mm.stl",
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_true_scale_a4_120x170_1x3/Map3D_PARIS_A4_Top_120x57mm.stl"
+  ],
+  "cycles": {
+    "blender_version": "5.3.0",
+    "backend": "METAL",
+    "devices": [
+      "METAL:Apple M1 Pro (GPU - 14 cores)"
+    ],
+    "samples": 48,
+    "resolution": [
+      1000,
+      1000
+    ],
+    "motion_blur": false,
+    "color_management": {
+      "view_transform": "AgX",
+      "look": "AgX - Medium High Contrast"
+    }
+  },
+  "analysis": {
+    "bbox_min": [
+      -0.06,
+      -0.085,
+      0.0
+    ],
+    "bbox_max": [
+      0.06,
+      0.085,
+      0.08013
+    ],
+    "size": [
+      0.12,
+      0.17,
+      0.08013
+    ],
+    "frame_width_m": 0.12,
+    "frame_height_m": 0.17,
+    "max_z": 0.08013,
+    "hero_peak": [
+      -0.00268,
+      -0.00925,
+      0.08013
+    ],
+    "hero_tower_xy": [
+      -0.00266,
+      -0.00925
+    ],
+    "skyline_centroid": [
+      -0.00263,
+      -0.00908,
+      0.05787
+    ],
+    "water_side": "+Y",
+    "water_scores": {
+      "-X": 0.0738,
+      "+X": 0.0947,
+      "-Y": 0.0063,
+      "+Y": 0.2594
+    },
+    "water_centroid": [
+      0.0037,
+      0.04494,
+      0.0
+    ],
+    "canyon_portal": {
+      "entry": [
+        -0.01753,
+        -0.06687,
+        0.02003
+      ],
+      "portal_mid": [
+        -0.01011,
+        -0.03806,
+        0.01603
+      ],
+      "target": [
+        -0.00268,
+        -0.00925,
+        0.03606
+      ],
+      "tower_a": [
+        -0.00268,
+        -0.00925,
+        0.08013
+      ],
+      "tower_b": [
+        -0.00263,
+        -0.00908,
+        0.05787
+      ],
+      "direction": [
+        0.2496,
+        0.9684
+      ],
+      "score": 0.0
+    },
+    "recommended_yaw_deg": -24.0,
+    "vertex_count": 103112
+  },
+  "model_bounds": {
+    "outer_width_m": 0.12,
+    "outer_height_m": 0.17,
+    "desk_z": -0.00315,
+    "wall_y": 0.00465,
+    "max_z": 0.08013
+  },
+  "placed_props": [],
+  "stills": [
+    {
+      "preset": "qa_seam_raking",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_true_scale_a4_120x170_1x3/qa_renders/map3d_paris_a4_11_packshot_white_qa_seam_raking.png",
+      "elapsed_sec": 11.5,
+      "lens_mm": 68.0,
+      "fstop": 16.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "qa_top_down_grid",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_true_scale_a4_120x170_1x3/qa_renders/map3d_paris_a4_11_packshot_white_qa_top_down_grid.png",
+      "elapsed_sec": 11.24,
+      "lens_mm": 95.0,
+      "fstop": 16.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "qa_underside",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/paris_true_scale_a4_120x170_1x3/qa_renders/map3d_paris_a4_11_packshot_white_qa_underside.png",
+      "elapsed_sec": 4.78,
+      "lens_mm": 70.0,
+      "fstop": 16.0,
+      "draft_unvalidated": false
+    }
+  ],
+  "keyframes": {},
+  "flow_prompts_path": null,
+  "video_shots": [],
+  "fps": 24,
+  "total_elapsed_sec": 27.85
+}

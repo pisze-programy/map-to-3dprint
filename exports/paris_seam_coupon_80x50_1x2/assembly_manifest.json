@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "sku_id": "custom_grid",
+  "format_id": "custom_grid",
+  "city_slug": "paris_coupon",
+  "generated_at": "2026-11-25T18:04:16.061Z",
+  "source_params": {
+    "title": "PARIS_COUPON",
+    "lat": 48.8619,
+    "lon": 2.2995,
+    "span_m": 500,
+    "rotation_deg": 65,
+    "z_scale": 1.05,
+    "terrain_scale": 1,
+    "window_mm": [
+      80,
+      50
+    ],
+    "grid": [
+      1,
+      2
+    ],
+    "inter_frame_gap_mm": 0,
+    "water_cutout": true,
+    "solid_base_no_tunnels": true,
+    "hollow_base": false,
+    "base_height_mm": 4,
+    "kerf_mm": 0,
+    "bed_safe_margin_mm": 4,
+    "dfm06_chamfer_inset_mm": 0.25,
+    "dfm06_chamfer_height_mm": 0.5,
+    "underside_relief_enabled": true
+  },
+  "master_volume_mm3": 14706.4709,
+  "nudged_seams": [],
+  "frames": [
+    {
+      "frame_id": "F1",
+      "frame_index": 0,
+      "frame_col": 0,
+      "frame_row": 0,
+      "north_frame_row": 1,
+      "frame_style": "custom_grid",
+      "frame_outer_mm": [
+        500,
+        500
+      ],
+      "window_mm": [
+        80,
+        50
+      ],
+      "nominal_origin_mm": [
+        -40,
+        -25
+      ],
+      "tile_ids": [
+        0,
+        1
+      ]
+    }
+  ],
+  "tiles": [
+    {
+      "tile_idx": 0,
+      "tile_id": "R2C1",
+      "frame_id": "F1",
+      "row": 0,
+      "north_row": 2,
+      "col": 0,
+      "local_row": 0,
+      "local_col": 0,
+      "file": "Map3D_PARIS_COUPON_Bottom_80x25mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 816984,
+      "sha256": "ffc22c3de41f02ac798fab7186d89a79d341bd5b251afa30321fbd94607e2acb",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -40,
+        "x_max": 40,
+        "y_min": -25,
+        "y_max": 0
+      },
+      "neighbors": {
+        "north": "R1C1",
+        "south": null,
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": []
+    },
+    {
+      "tile_idx": 1,
+      "tile_id": "R1C1",
+      "frame_id": "F1",
+      "row": 1,
+      "north_row": 1,
+      "col": 0,
+      "local_row": 1,
+      "local_col": 0,
+      "file": "Map3D_PARIS_COUPON_Top_80x25mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 680584,
+      "sha256": "419a53cf03c9f949cce8216746475d0d9264743cb2968e6507ff3a2a42b88347",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -40,
+        "x_max": 40,
+        "y_min": 0,
+        "y_max": 25
+      },
+      "neighbors": {
+        "north": null,
+        "south": "R2C1",
+        "west": null,
+        "east": null
+      },
+      "allow_landmasses": [
+        {
+          "bbox_xy": [
+            0,
+            11.44,
+            0,
+            25
+          ],
+          "z0_area_mm2": 211.07,
+          "min_width_mm": 11.44,
+          "reason": "water_cutout_split_landmass"
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "status": "PASS",
+    "verdict": "PASS",
+    "validated_at": "2026-11-25T18:09:08.398092+00:00",
+    "validator": "calibration/validate_assembly.py",
+    "report_file": "validation_report.json",
+    "report_sha256": "1806e99fde04594fecae9602cb647830689547991a2ed15f05e8e88b0623d60c"
+  }
+}
