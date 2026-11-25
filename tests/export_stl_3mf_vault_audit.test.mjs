@@ -819,16 +819,16 @@ async function runAudit() {
     assert.ok(tAudit.spanX <= 120.02, `A4 T${tid} expected spanX<=120.02 mm, got ${tAudit.spanX.toFixed(3)}`);
     sumSpanYMm += tAudit.spanY;
 
-    // Verify 100% solid 4.0 mm base: zero underside tunnels and zero sealed cavities at all base slices
+    // Verify solid upper slab Z=2.00..3.85 mm AND underside Z=0..1.50 mm stress-relief + DFM-06 chamfer
     const baseSlices = auditRawStlSliceRasterCavities(tBytes, [0.15, 0.55, 0.95, 1.15, 2.00, 3.85], 0.30);
     for (const sl of baseSlices) {
       assert.equal(sl.sealedCavitiesGe2Mm2, 0, `A4 T${tid} Z=${sl.zMm}mm must have 0 sealed cavities, got ${sl.sealedCavitiesGe2Mm2}`);
     }
-    const areaRatio = baseSlices[0].areaMm2 / Math.max(1, baseSlices[5].areaMm2);
-    assert.ok(Math.abs(areaRatio - 1.0) < 0.02, `A4 T${tid} expected constant solid base cross-section Z=0.15 vs Z=3.85 (ratio=${areaRatio.toFixed(4)})`);
+    assert.ok(baseSlices[5].areaMm2 >= 5000.0 && Math.abs(baseSlices[5].areaMm2 - baseSlices[4].areaMm2) / Math.max(1, baseSlices[5].areaMm2) < 0.03, `A4 T${tid} expected constant solid upper slab Z=2.00 vs Z=3.85mm, got ${baseSlices[4].areaMm2.toFixed(1)} vs ${baseSlices[5].areaMm2.toFixed(1)}`);
+    assert.ok(baseSlices[0].areaMm2 <= 4500.0 && baseSlices[0].areaMm2 < baseSlices[5].areaMm2 * 0.85, `A4 T${tid} expected underside stress-relief Z=0.15mm <= 4500 mm2 and <85% of Z=3.85mm, got ${baseSlices[0].areaMm2.toFixed(1)} vs ${baseSlices[5].areaMm2.toFixed(1)}`);
   }
   assert.ok(Math.abs(sumSpanYMm - 170.0) <= 0.05, `A4 1x3 sum spanY expected 170.00 mm, got ${sumSpanYMm.toFixed(3)}`);
-  console.log('  PASS: A4 120x170 (3x 120x56.67 mm) 4.0 mm solid tunnel-free STLs verified 0-open/0-nm/0-degen/0-cavities/0-tunnels');
+  console.log('  PASS: A4 120x170 (3x 120x56.67 mm) 4.0 mm solid+underside-relief STLs verified 0-open/0-nm/0-degen/0-cavities/Z0<=4500mm2');
 
   // 8. Systemic MSLA fixes: ornamental park pools, hidden underside basin vents, tall courtyard archways & narrow coastal strip guard
   console.log('[8/8] Systemic MSLA Fixes: Ornamental Pool + Hero Basin Vent + Tall Courtyard Archway + Narrow Coastal Strip');

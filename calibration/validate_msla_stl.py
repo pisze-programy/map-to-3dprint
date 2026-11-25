@@ -9,33 +9,40 @@ Usage:
   python3 calibration/validate_msla_stl.py <path-to-model.stl>
 """
 
+import argparse
 import collections
+import json
 import math
 import struct
 import sys
+from typing import Any, Dict, List, Optional, Tuple
+
+Vec3 = Tuple[float, float, float]
+Triangle = Tuple[Vec3, Vec3, Vec3, Vec3]
 
 
-def read_binary_stl(path):
+def read_binary_stl(path: str, allow_elevated: bool = False) -> Tuple[bytes, List[Triangle], float]:
     with open(path, "rb") as f:
         header = f.read(80)
         raw_count = f.read(4)
         if len(raw_count) < 4:
             raise ValueError("File is too short to be a binary STL.")
         (n_tris,) = struct.unpack("<I", raw_count)
-        raw_tris = []
+        raw_tris: List[Triangle] = []
         for _ in range(n_tris):
             rec = struct.unpack("<12fH", f.read(50))
-            n = (rec[0], rec[1], rec[2])
-            p0 = (rec[3], rec[4], rec[5])
-            p1 = (rec[6], rec[7], rec[8])
-            p2 = (rec[9], rec[10], rec[11])
+            n: Vec3 = (rec[0], rec[1], rec[2])
+            p0: Vec3 = (rec[3], rec[4], rec[5])
+            p1: Vec3 = (rec[6], rec[7], rec[8])
+            p2: Vec3 = (rec[9], rec[10], rec[11])
             raw_tris.append((p0, p1, p2, n))
     z_floor = min((p[2] for t in raw_tris for p in t[:3]), default=0.0)
-    tris = [
+    z_shift = z_floor if allow_elevated else 0.0
+    tris: List[Triangle] = [
         (
-            (round(p0[0], 4), round(p0[1], 4), round(p0[2] - z_floor, 4)),
-            (round(p1[0], 4), round(p1[1], 4), round(p1[2] - z_floor, 4)),
-            (round(p2[0], 4), round(p2[1], 4), round(p2[2] - z_floor, 4)),
+            (round(p0[0], 4), round(p0[1], 4), round(p0[2] - z_shift, 4)),
+            (round(p1[0], 4), round(p1[1], 4), round(p1[2] - z_shift, 4)),
+            (round(p2[0], 4), round(p2[1], 4), round(p2[2] - z_shift, 4)),
             n,
         )
         for p0, p1, p2, n in raw_tris
@@ -430,17 +437,54 @@ def check_overhangs_val04(tris, xmin, xmax, ymin, ymax):
     return sorted(clusters, key=lambda d: d["unsupported_half_span_mm"], reverse=True)
 
 
-def check_z0_islands_and_spacing(tris, shells):
-    """Detect split narrow Z=0 base pads inside a tall shell (VAL-05) and close shell spacing (VAL-06)."""
-    narrow_pads = []
-    for si, sh in enumerate(shells):
-        z_height = sh["bbox"][5] - sh["bbox"][4]
-        z0_t = sh["z0_tris"]
-        if not z0_t:
-            narrow_pads.append((si, "FLOATING_SHELL_NO_Z0_CONTACT", sh["bbox"]))
+def _shell_matches_allowlist(sh_bbox: Tuple[float, ...], allow_list: List[Dict[str, Any]]) -> bool:
+    sx0, sx1, sy0, sy1 = sh_bbox[0], sh_bbox[1], sh_bbox[2], sh_bbox[3]
+    for entry in allow_list:
+        bx = entry.get("bbox_xy") or entry.get("bbox_mm")
+        if not bx or len(bx) < 4:
             continue
+        ax0, ax1, ay0, ay1 = float(bx[0]), float(bx[1]), float(bx[2]), float(bx[3])
+        if sx0 <= ax1 + 1.5 and sx1 >= ax0 - 1.5 and sy0 <= ay1 + 1.5 and sy1 >= ay0 - 1.5:
+            return True
+    return False
+
+
+def check_z0_islands_and_spacing(
+    tris: List[Triangle],
+    shells: List[Dict[str, Any]],
+    allow_landmasses: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[List[Tuple[int, str, Tuple[float, ...], str]], List[Tuple[int, int, float]]]:
+    """Detect floating/crumb/narrow Z=0 shells (VAL-05) and close shell spacing (VAL-06)."""
+    allow_list = allow_landmasses or []
+    # Sort shells largest z0_area first so shell 0 is primary landmass
+    indexed_shells = sorted(enumerate(shells), key=lambda kv: kv[1]["z0_area"], reverse=True)
+    narrow_pads: List[Tuple[int, str, Tuple[float, ...], str]] = []
+    for rank, (si, sh) in enumerate(indexed_shells):
+        bbox = sh["bbox"]
+        z_min_sh = bbox[4]
+        z_height = bbox[5] - bbox[4]
+        z0_t = sh["z0_tris"]
+        w_minor_bb = min(bbox[1] - bbox[0], bbox[3] - bbox[2])
+        if z_min_sh > 0.04 or not z0_t:
+            narrow_pads.append((si, f"FLOATING_SHELL minZ={z_min_sh:.3f}mm", bbox, "FAIL"))
+            continue
+        if sh["z0_area"] < 35.0 or w_minor_bb < 4.0:
+            narrow_pads.append(
+                (si, f"CRUMB_SHELL z0_area={sh['z0_area']:.2f}mm2 min_width={w_minor_bb:.2f}mm", bbox, "FAIL")
+            )
+            continue
+        if rank > 0:
+            if sh["z0_area"] < 60.0 or w_minor_bb < 5.0:
+                narrow_pads.append(
+                    (si, f"SECONDARY_BELOW_LANDMASS_FLOOR z0_area={sh['z0_area']:.2f}mm2 min_width={w_minor_bb:.2f}mm", bbox, "FAIL")
+                )
+            elif not _shell_matches_allowlist(bbox, allow_list):
+                narrow_pads.append(
+                    (si, f"UNAPPROVED_SPLIT_LANDMASS z0_area={sh['z0_area']:.2f}mm2 min_width={w_minor_bb:.2f}mm", bbox, "FAIL")
+                )
+
         # Connected components of Z=0 contact triangles within this shell
-        v_z0 = collections.defaultdict(list)
+        v_z0: Dict[Vec3, List[int]] = collections.defaultdict(list)
         for idx in z0_t:
             for p in tris[idx][:3]:
                 v_z0[p].append(idx)
@@ -471,9 +515,9 @@ def check_z0_islands_and_spacing(tris, shells):
         max_w_minor = max(p[0] for p in pads)
         if len(pads) >= 2 and z_height >= 8.0 and max_w_minor < 7.5:
             for w_minor, p_area, p_box in pads:
-                narrow_pads.append((si, f"SPLIT_NARROW_Z0_PAD width={w_minor:.2f}mm area={p_area:.1f}mm2 H={z_height:.1f}mm", p_box))
+                narrow_pads.append((si, f"SPLIT_NARROW_Z0_PAD width={w_minor:.2f}mm area={p_area:.1f}mm2 H={z_height:.1f}mm", p_box, "WARN"))
 
-    close_pairs = []
+    close_pairs: List[Tuple[int, int, float]] = []
     for i in range(len(shells)):
         if shells[i]["z0_area"] < 180.0:
             continue
@@ -491,13 +535,17 @@ def check_z0_islands_and_spacing(tris, shells):
     return narrow_pads, close_pairs
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 calibration/validate_msla_stl.py <path-to-model.stl>")
-        sys.exit(2)
+def validate_stl_file(
+    path: str,
+    allow_elevated: bool = False,
+    allow_landmasses: Optional[List[Dict[str, Any]]] = None,
+    quiet: bool = False,
+) -> Dict[str, Any]:
+    def log(msg: str) -> None:
+        if not quiet:
+            print(msg)
 
-    path = sys.argv[1]
-    _, tris, orig_zmin = read_binary_stl(path)
+    _, tris, orig_zmin = read_binary_stl(path, allow_elevated=allow_elevated)
     xs_all = [p[0] for t in tris for p in t[:3]]
     ys_all = [p[1] for t in tris for p in t[:3]]
     zs_all = [p[2] for t in tris for p in t[:3]]
@@ -506,15 +554,18 @@ def main():
     zmin, zmax = min(zs_all), max(zs_all)
     sx, sy, sz = xmax - xmin, ymax - ymin, zmax - zmin
 
-    failures = []
-    warnings = []
+    failures: List[str] = []
+    warnings: List[str] = []
 
-    print(f"=== MSLA PRE-PRINT VALIDATION REPORT: {path} ===")
-    print(f"Triangles: {len(tris)} | BBox: {sx:.2f} x {sy:.2f} x {sz:.2f} mm (orig Z_min={orig_zmin:.2f} mm -> shifted Z: 0.00..{zmax:.2f} mm)")
+    log(f"=== MSLA PRE-PRINT VALIDATION REPORT: {path} ===")
+    log(f"Triangles: {len(tris)} | BBox: {sx:.2f} x {sy:.2f} x {sz:.2f} mm (orig Z_min={orig_zmin:.4f} mm -> Z: {zmin:.4f}..{zmax:.4f} mm)")
+
+    if not allow_elevated and abs(orig_zmin) > 0.02:
+        failures.append(f"VAL-01: Non-zero base datum orig_zmin={orig_zmin:.4f} mm (exceeds +/-0.02 mm).")
 
     # VAL-01: Global float32 2-manifold topology
     topo = check_val01_topology_and_shells(tris)
-    print(
+    log(
         f"[VAL-01] Topology: degen={topo['degen']}, open_edges={topo['open_edges']}, "
         f"non_manifold_edges={topo['non_manifold_edges']}, non_manifold_verts={topo['non_manifold_verts']}, "
         f"shells={len(topo['shells'])}, volume={topo['volume_ml']:.2f} ml"
@@ -523,20 +574,19 @@ def main():
         failures.append("VAL-01: Mesh is not a clean 2-manifold (will trigger slicer repair warnings).")
 
     # VAL-02 & VAL-03: Suction-cup cavities.
-    # Base and transition zone (Z <= 1.15 mm): strict in-slice check (a vent must be open in the slice).
+    base_cavities: List[Dict[str, Any]] = []
     for zv in (0.15, 0.55, 0.95, 1.15):
         if zv >= zmax:
             continue
         s_area, cavs = slice_grid_2d(tris, zv, xmin, xmax, ymin, ymax, step=0.25)
-        print(f"[VAL-02/03] Slice Z={zv:.2f} mm: solid_area={s_area:.0f} mm2, sealed_cavities={cavs[:4]}")
+        log(f"[VAL-02/03] Slice Z={zv:.2f} mm: solid_area={s_area:.0f} mm2, sealed_cavities={cavs[:4]}")
+        base_cavities.append({"z_mm": zv, "solid_area_mm2": round(s_area, 2), "sealed_cavities": cavs[:6]})
         if cavs:
             label = "VAL-02" if zv <= 0.60 else "VAL-03"
             failures.append(f"{label}: Sealed suction-cup cavity at Z={zv:.2f} mm: {cavs[:3]}")
 
-    # Upper stories (Z > 1.15 mm): a cavity is vented when it is open in its own slice OR when its
-    # resin column connects downward to vented air. Seeding starts at Z = 1.15 mm with in-slice
-    # openings only, so vents that close inside the transition zone do not count.
-    upper_levels = []
+    # Upper stories (Z > 1.15 mm)
+    upper_levels: List[float] = []
     zu = 1.40
     while zu < zmax - 0.05:
         upper_levels.append(round(zu, 2))
@@ -553,10 +603,10 @@ def main():
             z_prev = zv
             if cavs:
                 upper_cav_hits.append((zv, cavs[:3]))
-    print(f"[VAL-02] Upper-story sealed cavity scan with 3D column venting (Z=1.40..{max(1.40, zmax):.2f} mm): "
-          f"{len(upper_cav_hits)} slices with sealed cavities {upper_cav_hits[:3]}")
-    # Empirical thresholds: closed courtyards up to 75.7 mm2 printed without defects (ABS White Stage 2, Krakow),
-    # a 714 mm2 unvented cavity tore the part off the plate (ABS White Stage 1, E2). FAIL at >= 100 mm2.
+    log(
+        f"[VAL-02] Upper-story sealed cavity scan with 3D column venting (Z=1.40..{max(1.40, zmax):.2f} mm): "
+        f"{len(upper_cav_hits)} slices with sealed cavities {upper_cav_hits[:3]}"
+    )
     upper_fail = [(zv, [cv for cv in cavs if cv[0] >= 100.0]) for zv, cavs in upper_cav_hits]
     upper_fail = [(zv, cavs) for zv, cavs in upper_fail if cavs]
     if upper_fail:
@@ -573,7 +623,7 @@ def main():
 
     # VAL-04: Unsupported shallow overhangs
     overhangs = check_overhangs_val04(tris, xmin, xmax, ymin, ymax)
-    print(f"[VAL-04] Unsupported overhangs (<36.8 deg, half-span>2.45 mm): {overhangs[:4]}")
+    log(f"[VAL-04] Unsupported overhangs (<36.8 deg, half-span>2.45 mm): {overhangs[:4]}")
     for oh in overhangs:
         if oh["min_angle_deg"] < 20.0 and oh["unsupported_half_span_mm"] > 3.0:
             failures.append(
@@ -586,15 +636,15 @@ def main():
                 f"(half_span={oh['unsupported_half_span_mm']} mm, min_ang={oh['min_angle_deg']} deg)."
             )
 
-    # VAL-05 & VAL-06: Narrow split Z=0 pads and multi-part FEP-tenting gap
-    narrow_pads, close_pairs = check_z0_islands_and_spacing(tris, topo["shells"])
-    print(f"[VAL-05] Narrow/floating Z=0 base pads: {narrow_pads}")
-    print(f"[VAL-06] High-area shell pairs closer than 12.0 mm (FEP tenting risk): {close_pairs}")
+    # VAL-05 & VAL-06: Narrow/crumb/floating Z=0 shells and multi-part FEP-tenting gap
+    narrow_pads, close_pairs = check_z0_islands_and_spacing(tris, topo["shells"], allow_landmasses=allow_landmasses)
+    log(f"[VAL-05] Narrow/floating/crumb Z=0 shells: {narrow_pads}")
+    log(f"[VAL-06] High-area shell pairs closer than 12.0 mm (FEP tenting risk): {close_pairs}")
     for item in narrow_pads:
-        if "FLOATING" in item[1]:
-            failures.append(f"VAL-05: {item}")
+        if item[3] == "FAIL":
+            failures.append(f"VAL-05: Shell #{item[0]} {item[1]} bbox={item[2]}")
         else:
-            warnings.append(f"VAL-05: {item}")
+            warnings.append(f"VAL-05: Shell #{item[0]} {item[1]} bbox={item[2]}")
     for i, j, gap in close_pairs:
         warnings.append(f"VAL-06: Shells #{i} and #{j} are {gap} mm apart (<12.0 mm classic FEP tenting margin).")
 
@@ -612,7 +662,7 @@ def main():
         if prev_area is not None and prev_area > 80.0 and (s_area - prev_area) > max_jump[0]:
             max_jump = (s_area - prev_area, zv)
         prev_area = s_area
-    print(f"[VAL-07] Max slice area: {max_slice_area:.0f} mm2 | Max upward area jump: +{max_jump[0]:.0f} mm2 at Z={max_jump[1]:.2f} mm")
+    log(f"[VAL-07] Max slice area: {max_slice_area:.0f} mm2 | Max upward area jump: +{max_jump[0]:.0f} mm2 at Z={max_jump[1]:.2f} mm")
     if max_slice_area > 2600.0:
         warnings.append(f"VAL-07: High Z-slice peel area ({max_slice_area:.0f} mm2 > 2600 mm2); core base or lower bottom exposure.")
     if max_jump[0] > 150.0:
@@ -621,22 +671,78 @@ def main():
     # VAL-08: Build envelope & VAT volume
     fits_normal = sx <= 153.4 and sy <= 87.0 and sz <= 163.0
     fits_rot90 = sy <= 153.4 and sx <= 87.0 and sz <= 163.0
-    print(f"[VAL-08] Mono 4 envelope fit: normal={fits_normal}, rot90={fits_rot90} | Resin={topo['volume_ml']:.1f} ml")
+    log(f"[VAL-08] Mono 4 envelope fit: normal={fits_normal}, rot90={fits_rot90} | Resin={topo['volume_ml']:.1f} ml")
     if not fits_normal:
         failures.append(f"VAL-08: Bounding box {sx:.2f} x {sy:.2f} x {sz:.2f} mm exceeds Mono 4 unrotated envelope (153.4 x 87.0 x 163.0 mm).")
     if topo["volume_ml"] > 30.0:
         warnings.append(f"VAL-08: Print consumes {topo['volume_ml']:.1f} ml resin; verify VAT fill level before starting.")
 
-    print("--- SUMMARY ---")
+    log("--- SUMMARY ---")
     for w in warnings:
-        print(f"  WARN: {w}")
+        log(f"  WARN: {w}")
     for f_msg in failures:
-        print(f"  FAIL: {f_msg}")
+        log(f"  FAIL: {f_msg}")
 
-    if failures:
-        print(f"FINAL VERDICT: FAIL ({len(failures)} blocking issues, {len(warnings)} warnings)")
+    verdict = "FAIL" if failures else "PASS"
+    log(f"FINAL VERDICT: {verdict} ({len(failures)} blocking issues, {len(warnings)} warnings)")
+
+    shells_meta = [
+        {
+            "shell_index": idx,
+            "bbox": [round(float(v), 4) for v in sh["bbox"]],
+            "z0_area_mm2": round(float(sh["z0_area"]), 3),
+            "min_width_mm": round(float(min(sh["bbox"][1] - sh["bbox"][0], sh["bbox"][3] - sh["bbox"][2])), 3),
+        }
+        for idx, sh in enumerate(topo["shells"])
+    ]
+    return {
+        "path": path,
+        "verdict": verdict,
+        "triangles": len(tris),
+        "orig_zmin_mm": float(orig_zmin),
+        "bbox_mm": [round(xmin, 4), round(xmax, 4), round(ymin, 4), round(ymax, 4), round(zmin, 4), round(zmax, 4)],
+        "span_mm": [round(sx, 4), round(sy, 4), round(sz, 4)],
+        "volume_ml": round(float(topo["volume_ml"]), 4),
+        "volume_mm3": round(float(topo["volume_ml"] * 1000.0), 3),
+        "z0_area_mm2": round(sum(float(sh["z0_area"]) for sh in topo["shells"]), 3),
+        "shells": shells_meta,
+        "base_cavities": base_cavities,
+        "overhangs": overhangs,
+        "failures": failures,
+        "warnings": warnings,
+        "topo": {k: topo[k] for k in ("nan_inf", "degen", "open_edges", "non_manifold_edges", "bad_half_edges", "non_manifold_verts")},
+    }
+
+
+def _parse_allow_landmass_arg(raw: str) -> Dict[str, Any]:
+    parts = [float(p.strip()) for p in raw.split(",")]
+    if len(parts) != 4:
+        raise ValueError(f"--allow-landmass requires x0,y0,x1,y1, got: {raw}")
+    x0, y0, x1, y1 = parts
+    return {"bbox_xy": [min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1)]}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="MSLA Pre-Print Validator (VAL-01..VAL-08)")
+    parser.add_argument("stl_path", help="Path to binary STL file")
+    parser.add_argument("--allow-elevated", action="store_true", help="Allow shifting non-zero Z_min floor to 0")
+    parser.add_argument("--json-out", help="Write structured validation JSON report to path")
+    parser.add_argument("--allow-landmass", action="append", default=[], help="Allowlisted secondary landmass bbox x0,y0,x1,y1")
+    parser.add_argument("--quiet", action="store_true", help="Suppress stdout text report")
+    args = parser.parse_args()
+
+    allow_list = [_parse_allow_landmass_arg(item) for item in args.allow_landmass]
+    result = validate_stl_file(
+        args.stl_path,
+        allow_elevated=args.allow_elevated,
+        allow_landmasses=allow_list,
+        quiet=args.quiet,
+    )
+    if args.json_out:
+        with open(args.json_out, "w", encoding="utf-8") as jf:
+            json.dump(result, jf, indent=2)
+    if result["verdict"] != "PASS":
         sys.exit(1)
-    print(f"FINAL VERDICT: PASS (0 blocking issues, {len(warnings)} warnings)")
 
 
 if __name__ == "__main__":

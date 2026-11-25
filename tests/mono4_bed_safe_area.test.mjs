@@ -40,14 +40,25 @@ test('13 x 18 cm frame needs 3 tiles at the default margin', () => {
   assert.equal(g.cols * g.rows, 3);
 });
 
-test('fixed presets are re-gridded only when their tiles leave the safe area', () => {
+test('fixed presets fit the Mono 4 safe area cleanly', () => {
   const st = { bedSafeMarginMm: 4 };
   assert.deepEqual(ui.resolveMono4ProfileGrid(ui.PRINT_PROFILES.mono4_75x84_1x1, st), { cols: 1, rows: 1 });
-  assert.deepEqual(ui.resolveMono4ProfileGrid(ui.PRINT_PROFILES.mono4_150x168_2x2, st), { cols: 2, rows: 2 });
-  const g150 = ui.resolveMono4ProfileGrid(ui.PRINT_PROFILES.mono4_150_1x2, st);
-  assert.ok(ui.checkTileFitsMono4(150 / g150.cols, 150 / g150.rows, 22, st));
-  const g296 = ui.resolveMono4ProfileGrid(ui.PRINT_PROFILES.mono4_296_2x4, st);
-  assert.ok(ui.checkTileFitsMono4(296 / g296.cols, 296 / g296.rows, 22, st));
+  for (const id of [
+    'mono4_a4_passepartout_12x17_1x3',
+    'single_a4_landscape_3x1',
+    'triptych_a4_3x1',
+    'quartet_a4_2x2',
+    'square_150_2x2',
+    'square_240_2x4',
+    'flagship_50x70_3x9',
+  ]) {
+    const prof = ui.PRINT_PROFILES[id];
+    assert.ok(prof, `Missing catalog profile ${id}`);
+    const g = ui.resolveMono4ProfileGrid(prof, st);
+    assert.equal(g.cols, prof.cols, `${id} cols preserved`);
+    assert.equal(g.rows, prof.rows, `${id} rows preserved`);
+    assert.ok(ui.checkTileFitsMono4(prof.totalWidthMm / g.cols, prof.totalHeightMm / g.rows, 22, st), `${id} tile must fit Mono 4 safe bed`);
+  }
 });
 
 test('dual packing keeps the 8 mm FEP gap inside the safe area', () => {
