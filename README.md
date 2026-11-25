@@ -1,54 +1,51 @@
 # map-to-3dprint
 
-`map-to-3dprint` turns live OpenStreetMap vectors (`S3DB` buildings, bridges, piers, lattice landmarks) and AWS Terrarium DEM elevation into watertight, zero-defect 2-manifold `.STL`, multi-tile `.ZIP`, and multicolor `.3MF` architectural dioramas with 98% OSM Wiki fidelity. Engineered exclusively for the **Anycubic Photon Mono 4** (`153.45 × 87.05 × 165.0 mm`, `17 µm` XY / `50 µm` Z MSLA resin), every tile enforces cure-safe wall/strut/pin physics, `±45°` anti-suction cross-ribs, dry drainage, and Manifold CSG segmentation.
+Convert live OpenStreetMap vectors and AWS Terrarium DEM elevation into watertight `10K` MSLA resin city reliefs.
 
-![Porto Ponte Dom Luís I — 360° Studio Orbit](docs/screenshots/hero-orbit-showcase.gif)
+**Photon Mono 4 (`17 um` XY, `0.100 mm` ABS White) | A4 White Passe-Partout (`120x170 mm`, `1x3` Strips) | Zero Supports**
 
----
+![A4 Resin City Relief Packshot](docs/screenshots/hero-packshot-a4.jpg)
 
-## Visual Showcase
+## 10K Resin Detail
 
-### Architectural S3DB, Bridges & Parametric Lattice (Porto, Paris, Millau, New York)
-![World Flagship Close-Ups](docs/screenshots/details-world-4up.png)
+![2x2 MSLA Resin Macro Details](docs/screenshots/details-2x2.jpg)
 
-### `waterCutout` Exposed Matte-Black Backing in Manifold CSG Wall-Art Frame (Venice)
-![Water Cutout Black Frame](docs/screenshots/water-cutout-black-frame.png)
+## Top 10 A4 Cities
 
-### Photon Mono 4 `2×2` Exploded Tiles + 8 CSG Frame Bars & Hollow Vault (`±45°` Ribs, Drains, `R1C1^`)
-![Photon Mono 4 Exploded Tiles and Hollow Vault](docs/screenshots/mono4-exploded-tiles-vault.png)
+![Top 10 A4 Single Cities Catalog](docs/screenshots/top10-a4-catalog.jpg)
 
-### Studio Packshot — Disjoint Layer Separation Over `waterCutout` Backing
-![Video Studio Packshot Animation](docs/screenshots/video-studio-packshot.gif)
+## Close-Up Detail: Every City
 
----
+| | |
+| :---: | :---: |
+| ![Paris True Scale](docs/screenshots/detail-01-paris.jpg)<br>**#1 Paris** (`76.75 mm` Z, `86.42 ml`) | ![Dubai Downtown](docs/screenshots/detail-02-dubai.jpg)<br>**#2 Dubai** (`99.93 mm` Z, `122.47 ml`) |
+| ![London Tower Bridge](docs/screenshots/detail-03-london.jpg)<br>**#3 London** (`39.53 mm` Z, `114.63 ml`) | ![Chicago Loop](docs/screenshots/detail-04-chicago.jpg)<br>**#4 Chicago** (`62.36 mm` Z, `157.70 ml`) |
+| ![Sydney Harbour](docs/screenshots/detail-05-sydney.jpg)<br>**#5 Sydney** (`40.63 mm` Z, `105.97 ml`) | ![Hong Kong Central](docs/screenshots/detail-06-hong-kong.jpg)<br>**#6 Hong Kong** (`54.56 mm` Z, `152.10 ml`) |
+| ![Venice Grand Canal](docs/screenshots/detail-07-venice.jpg)<br>**#7 Venice** (`14.30 mm` Z, `91.49 ml`) | ![Amsterdam Canals](docs/screenshots/detail-08-amsterdam.jpg)<br>**#8 Amsterdam** (`10.30 mm` Z, `103.12 ml`) |
+| ![San Francisco Bay](docs/screenshots/detail-09-san-francisco.jpg)<br>**#9 San Francisco** (`41.12 mm` Z, `114.85 ml`) | ![Warsaw City Center](docs/screenshots/detail-10-warsaw.jpg)<br>**#10 Warsaw** (`51.97 mm` Z, `128.12 ml`) |
 
-## Geometry & Photon Mono 4 Print Architecture
+## MSLA Resin Spec
 
-| Subsystem | Key Engineering & MSLA Invariants |
-| :--- | :--- |
-| **S3DB 17 Roofs & Spires** | Full OSM Simple 3D Buildings parser supporting 17 roof shapes (`flat`, `gabled`, `hipped`, `half-hipped`, `pyramidal`, `dome`, `onion`, `round`, `skillion`, `mansard`, `gambrel`, `saltbox`, `butterfly`, `sawtooth`, `cone`, `quadruple_saltbox`/`side_hipped`, `stepped`), `StraightSkeleton` courtyards, shared `min(DEM)` group datum, and `tanh` spire cap (`capSpireProtrusionMm`) keeping tall needles within Mono 4 Z budgets. |
-| **Global OSM Bridge Graph & MSLA Reinforcement** | Continuous road/rail bridge stitching (`bridge_axis_helper.js`, `bridge_graph_solver.js`), parametric arch/cable-stayed/suspension/truss superstructures, MSLA `17 µm` wall/strut/pin rules (`minWallThicknessMm >= 0.45 mm`, `minStrutDiameterMm >= 0.48 mm`, `minPinDiameterMm >= 0.65 mm`), and anti-capillary resin-trap clearance (`resolveAntiCapillaryGapMm >= 0.48 mm`). |
-| **Delatin TIN, Waterfronts & Supportless Toggle** | Adaptive `Delatin` TIN terrain relief with monotonic mountain river carving, waterfront quay/pier walls, parametric lattice/wheel/turbine archetypes, and optional `>= 40°` self-supporting corbel/arch toggle (`#chkSupportlessMode`, off by default for 98% true-shape accuracy). |
-| **Hollow SLA Vault & CSG Export** | `>= 2.0 mm` hollow vault with `±45°` anti-suction cross-ribs (`10.5 mm` pitch), `>= 2` perimeter dry drain channels (`3.6 × 1.55 mm`) per chamber (automatic solid fallback for water-locked islands), unmirrored `R1C1^` underside emboss (`>= 0.72 mm` stroke, `0.68–0.82 mm` depth), per-tile Manifold CSG `.STL` + 4-strip frame splitter, and multicolor `.3MF` (`0` open / `0` non-manifold edges). |
+- **Printer**: Anycubic Photon Mono 4 (`10K`, `17 um` XY pixel pitch, `153.45 x 87.05 x 165.0 mm` bed).
+- **Resin profile**: Anycubic ABS-Like Pro 2 White at `0.100 mm` layer height (`Anti-alias Off`).
+- **Build orientation**: Print every strip flat at `Z = 0.00 mm` on Flex Plate with zero slicer supports.
+- **A4 `1x3` tiling**: Three flush `120 x 56.67 mm` horizontal strips (`Top`, `Middle`, `Bottom`) inside `4.0 mm` safe margins.
+- **Verified print gate**: `4.0 mm` solid tunnel-free base (`waterCutout=true`) passing `validate_msla_stl.py` (`30/30` tiles `PASS`).
 
----
-
-## Quick Start & Offline Verification
+## Quick Start
 
 ```bash
 npm install
-python3 build_app.py        # Rebuilds modular index.html (74 JS modules)
-npm run test:headless       # Runs all 9 pure-Node geometry, S3DB, bridge, vault & export suites
-npm run verify:15scenes     # Audits 15 cached world scenes (0 open / 0 non-manifold / 0 floating)
-npm run inspect:3d          # Runs offline 3D scene & headless renderer inspector
+python3 build_app.py
+npm run test:headless
+python3 calibration/validate_msla_stl.py <file.stl>
 ```
 
-> **Optional Supportless Print Mode:** Enable **Tryb bez podpór (`#chkSupportlessMode`)** in the UI (or pass `?supportless=1` / `supportlessMode: true`) to substitute `>= 40°` self-supporting corbels and arches for suspended horizontal overhangs.
+## Docs
 
-## Core Modules
-
-| Area | Modules |
-| :--- | :--- |
-| **Physics & Manifold Core** | `src/geometry/sla_print_laws.js`, `print_physics_config.js`, `polygon_2d.js`, `obb_medial_2d.js`, `manifold_core.js` |
-| **3-Layer Mesh Pipeline** | `src/mesh/layer1_*`, `layer2_archetypes.js`, `layer3_invariants_tiles.js`, `s3db_*`, `bridge_*`, `terrain_*`, `tile_sla_vault_solver.js`, `tile_id_emboss.js`, `frame_csg_solver.js` |
-| **Exporters & Headless QA** | `src/export/stl_writer.js`, `zip_packager.js`, `export_3mf.js`, `tools/headless_scene_harness.js`, `tools/headless_3d_renderer.js`, `tools/mcp_map3d_inspector.mjs` |
+- [Top 10 Single A4 Catalog and Explorations](docs/single-a4-top10-catalog.md)
+- [Photon Mono 4 Slicer Profile (`0.100 mm` ABS White)](docs/mono4-slicer-profile.md)
+- [MSLA Printability and Validation Specification](docs/msla-printability-and-validation-spec.md)
+- [A4 `1x3` Tile Grid Audit](docs/a4-tile-grid-audit.md)
+- [Frameless Chalk-Plaster Detail Gallery Mode](docs/detail-chalk-gallery-mode.md)
+- [Blender Cycles Studio and MCP Workflow](docs/blender-studio-workflow.md)
