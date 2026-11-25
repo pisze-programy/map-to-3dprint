@@ -11,7 +11,7 @@ Assemble all three strips North to South inside the `21 x 29.7 cm` white beveled
 
 | Rank | City Slug (`exports/<slug>_a4_120x170_1x3/`) | Coordinates (`lat, lon`) | `span` / `rot` / `zScale` | `Zmax` (`mm`) | Total Resin (`ml`) | Total Tris | MSLA Gate |
 | :---: | :--- | :--- | :--- | ---: | ---: | ---: | :--- |
-| `#1` | `paris_true_scale` | `48.8586, 2.2942` | `780 m` / `-46` / `1.05` | `76.75` | `85.41` | `160,318` | `3/3 PASS` |
+| `#1` | `paris_true_scale` | `48.8586, 2.2942` | `780 m` / `-46` / `1.05` | `77.54` | `85.42` | `160,410` | `3/3 PASS` |
 | `#2` | `dubai_downtown` | `25.1979, 55.2756` | `1480 m` / `0` / `1.05` | `99.93` | `122.47` | `172,426` | `3/3 PASS` |
 | `#3` | `london_tower_bridge` | `51.5092, -0.0784` | `1880 m` / `-8` / `1.25` | `39.53` | `114.63` | `374,818` | `3/3 PASS` |
 | `#4` | `chicago_loop` | `41.8834, -87.6320` | `1780 m` / `0` / `1.15` | `62.36` | `157.70` | `330,918` | `3/3 PASS` |
@@ -20,7 +20,7 @@ Assemble all three strips North to South inside the `21 x 29.7 cm` white beveled
 | `#7` | `venice_grand_canal` | `45.4362, 12.3352` | `1680 m` / `-18` / `1.35` | `14.30` | `91.49` | `611,530` | `3/3 PASS` |
 | `#8` | `amsterdam_canals` | `52.3704, 4.8938` | `2100 m` / `-12` / `1.35` | `10.30` | `103.12` | `523,328` | `3/3 PASS` |
 | `#9` | `san_francisco_bay` | `37.7932, -122.3960` | `1820 m` / `-15` / `1.20` | `41.12` | `114.85` | `185,350` | `3/3 PASS` |
-| `#10` | `warsaw_city_center` | `52.2324, 21.0045` | `1380 m` / `+10` / `1.25` | `51.97` | `128.12` | `415,176` | `3/3 PASS` |
+| `#10` | `warsaw_city_center` | `52.2324, 21.0045` | `1380 m` / `+10` / `1.25` | `52.23` | `127.62` | `427,864` | `3/3 PASS` |
 
 ### Draft Screening Summary (`12 -> 10`)
 
