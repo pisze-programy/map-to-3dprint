@@ -11,7 +11,7 @@ Assemble all three strips North to South inside the `21 x 29.7 cm` white beveled
 
 | Rank | City Slug (`exports/<slug>_a4_120x170_1x3/`) | Coordinates (`lat, lon`) | `span` / `rot` / `zScale` | `Zmax` (`mm`) | Total Resin (`ml`) | Total Tris | MSLA Gate |
 | :---: | :--- | :--- | :--- | ---: | ---: | ---: | :--- |
-| `#1` | `paris_true_scale` | `48.8586, 2.2942` | `780 m` / `-46` / `1.05` | `76.75` | `86.42` | `156,098` | `3/3 PASS` |
+| `#1` | `paris_true_scale` | `48.8586, 2.2942` | `780 m` / `-46` / `1.05` | `76.75` | `85.41` | `160,318` | `3/3 PASS` |
 | `#2` | `dubai_downtown` | `25.1979, 55.2756` | `1480 m` / `0` / `1.05` | `99.93` | `122.47` | `172,426` | `3/3 PASS` |
 | `#3` | `london_tower_bridge` | `51.5092, -0.0784` | `1880 m` / `-8` / `1.25` | `39.53` | `114.63` | `374,818` | `3/3 PASS` |
 | `#4` | `chicago_loop` | `41.8834, -87.6320` | `1780 m` / `0` / `1.15` | `62.36` | `157.70` | `330,918` | `3/3 PASS` |

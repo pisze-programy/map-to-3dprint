@@ -18,7 +18,7 @@ Convert live OpenStreetMap vectors and AWS Terrarium DEM elevation into watertig
 
 | | |
 | :---: | :---: |
-| ![Paris True Scale](docs/screenshots/detail-01-paris.jpg)<br>**#1 Paris** (`76.75 mm` Z, `86.42 ml`) | ![Dubai Downtown](docs/screenshots/detail-02-dubai.jpg)<br>**#2 Dubai** (`99.93 mm` Z, `122.47 ml`) |
+| ![Paris True Scale](docs/screenshots/detail-01-paris.jpg)<br>**#1 Paris** (`76.75 mm` Z, `85.41 ml`) | ![Dubai Downtown](docs/screenshots/detail-02-dubai.jpg)<br>**#2 Dubai** (`99.93 mm` Z, `122.47 ml`) |
 | ![London Tower Bridge](docs/screenshots/detail-03-london.jpg)<br>**#3 London** (`39.53 mm` Z, `114.63 ml`) | ![Chicago Loop](docs/screenshots/detail-04-chicago.jpg)<br>**#4 Chicago** (`62.36 mm` Z, `157.70 ml`) |
 | ![Sydney Harbour](docs/screenshots/detail-05-sydney.jpg)<br>**#5 Sydney** (`40.63 mm` Z, `105.97 ml`) | ![Hong Kong Central](docs/screenshots/detail-06-hong-kong.jpg)<br>**#6 Hong Kong** (`54.56 mm` Z, `152.10 ml`) |
 | ![Venice Grand Canal](docs/screenshots/detail-07-venice.jpg)<br>**#7 Venice** (`14.30 mm` Z, `91.49 ml`) | ![Amsterdam Canals](docs/screenshots/detail-08-amsterdam.jpg)<br>**#8 Amsterdam** (`10.30 mm` Z, `103.12 ml`) |

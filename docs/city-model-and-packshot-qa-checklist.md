@@ -22,8 +22,11 @@ Read and execute all four gates before you approve any city STL, tile, or packsh
 
 - Never approve a city STL from validator metrics or browser preview alone.
 - Render and inspect the exported `.stl` files from four close-up angles on every critical zone:
-  - **Hero and unusual landmarks**: Inspect cantilevers, skybridges, curved shells, domes, wheels, lattice towers, and thin supertalls.
+  - **Hero monument likeness**: Compare each flagship monument against real reference photos before you ship a SKU.
+  - **Eye-level arch and cavity clearance**: Inspect through-arch and under-bridge openings at eye level. Reject overhang support pipes blocking open spans.
+  - **Summit-crown macro**: Verify `roof:shape=dome` caps stay inscribed inside parapets with crisp balcony cornices.
   - **Bridges and overpasses**: Verify `0.00 mm` bank abutment seals on both shores, aligned arch piers, and zero floating stubs.
+  - **Outer perimeter sliver check**: Inspect all four `120x170` or `170x120` borders. Reject razor-sliced perimeter walls or orphaned sidewalk annexes.
   - **Waterfronts and streets**: Verify zero floating vessels in `waterCutout`, zero streetlamp mast spikes, and zero collapsed walls.
 - Fix every geometry failure systemically in `src/` with zero city hacks.
 - Rebuild `python3 build_app.py`, pass `npm run test:headless` (`100%`), re-export STLs, and re-run Gates 2 and 3.

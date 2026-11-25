@@ -31,6 +31,7 @@ Read this map first. Open only the focused guide that matches your task.
 | [a4-vs-13x18-ads-audit.md](docs/a4-vs-13x18-ads-audit.md) | Blind 3-model CRO and paid-ads audit locking heavy A4 over `13 x 18 cm`. |
 | [a4-tile-grid-audit.md](docs/a4-tile-grid-audit.md) | Blind 3-model Mono 4 tile grid audit locking `1x3` (`120 x 56.67 mm`) over `1x2` and `2x2`. |
 | [single-a4-top10-catalog.md](docs/single-a4-top10-catalog.md) | Verified Top 10 Single A4 `1x3` city STL catalog, 4 Continents, and 3 Wildcard reliefs. |
+| [hero-landmark-strategy-audit.md](docs/hero-landmark-strategy-audit.md) | Blind 3-model audit backing Option C hybrid geo-anchored hero landmark library. |
 | [lichtbild-vs-map3d-analysis.md](docs/lichtbild-vs-map3d-analysis.md) | Architecture, data, or render comparison against the Lichtbild benchmark. |
 | [lichtbild-buildings-diagnosis.md](docs/lichtbild-buildings-diagnosis.md) | Tall spire geometry or OSM building-part extrusion debugging. |
 
