@@ -186,12 +186,9 @@ def run_studio_render(
     draft_unvalidated: bool = False,
 ) -> Dict[str, Any]:
     """Programmatic entry point used by both CLI and MCP server."""
-    if not assembly_manifest and not stl_paths:
-        raise ValueError("Either assembly_manifest (--manifest) or --stl path is required.")
-    if assembly_manifest:
-        from studio_blender.stl_loader import verify_manifest_for_render
+    from studio_blender.stl_loader import apply_draft_prefix, validate_render_source
 
-        verify_manifest_for_render(assembly_manifest, allow_draft=draft_unvalidated)
+    _, is_draft = validate_render_source(assembly_manifest, stl_paths, draft_unvalidated=bool(draft_unvalidated))
     for p in (stl_paths or []):
         if not os.path.isfile(p):
             raise FileNotFoundError(f"STL file not found: {p}")
@@ -208,7 +205,7 @@ def run_studio_render(
     ]
     if assembly_manifest:
         cmd.extend(["--assembly-manifest", str(Path(assembly_manifest).resolve())])
-    if draft_unvalidated:
+    if is_draft:
         cmd.append("--draft-unvalidated")
     for p in (stl_paths or []):
         cmd.extend(["--stl", str(Path(p).resolve())])
@@ -283,9 +280,11 @@ def run_studio_render(
         raise RuntimeError(f"Blender worker succeeded but did not write manifest: {render_manifest_path}")
 
     manifest: Dict[str, Any] = json.loads(render_manifest_path.read_text(encoding="utf-8"))
+    is_draft_out = bool(is_draft or manifest.get("draft_unvalidated", False))
+    manifest["draft_unvalidated"] = is_draft_out
 
     if mode == "keyframes":
-        sb_path = out_path / "blender_flow_storyboard.png"
+        sb_path = out_path / apply_draft_prefix("blender_flow_storyboard.png", is_draft_out)
         manifest["storyboard_path"] = _build_keyframes_storyboard(manifest.get("keyframes", {}), sb_path)
         render_manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -294,6 +293,7 @@ def run_studio_render(
         mp4_fname = video_name or f"{city_slug}_{canonical_env}_commercial.mp4"
         if not mp4_fname.lower().endswith(".mp4"):
             mp4_fname += ".mp4"
+        mp4_fname = apply_draft_prefix(mp4_fname, is_draft_out)
         manifest["video_path"] = _stitch_video_mp4(manifest.get("video_shots", []), fps=fps, out_mp4=out_path / mp4_fname)
         if not keep_frames:
             frames_dir = out_path / "_frames"

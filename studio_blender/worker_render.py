@@ -375,9 +375,9 @@ def render_stills_mode(
             )
         if filename_override and len(presets) == 1:
             base_fn = filename_override if filename_override.lower().endswith(".png") else f"{filename_override}.png"
-            fname = f"{draft_prefix}{base_fn}"
+            fname = stl_loader.apply_draft_prefix(base_fn, draft_unvalidated)
         else:
-            fname = f"{draft_prefix}{city_slug}_{env_name}_{preset}.png"
+            fname = stl_loader.apply_draft_prefix(f"{city_slug}_{env_name}_{preset}.png", draft_unvalidated)
         out_path = out_dir / fname
         scene.render.filepath = str(out_path)
         bpy.ops.render.render(write_still=True)
@@ -394,6 +394,7 @@ def render_keyframes_mode(
     scene: Any, out_dir: Path, env_name: str, city_title: str, shots_spec: str,
     analysis: Dict[str, Any], model_bounds: Dict[str, Any], env_refs: Dict[str, Any],
     aspect_ratio: float, base_sun_az: float, desk_z: float, mount: str = "desk_flat",
+    draft_unvalidated: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[int, Dict[str, str]], str]:
     """Render Start -> End 9:16 keyframe pairs and write flow_prompts.json."""
     wanted = {int(s.strip()) for s in shots_spec.split(",") if s.strip()}
@@ -417,17 +418,19 @@ def render_keyframes_mode(
                 state["lens_mm"], state["fstop"], state["shift_x"], state["shift_y"], frame=None,
             )
             environments.update_key_light_azimuth(env_refs, state["sun_az"], elevation_deg=state["sun_el"])
-            out_path = out_dir / f"{shot['id']}_{label}.png"
+            kf_name = stl_loader.apply_draft_prefix(f"{shot['id']}_{label}.png", draft_unvalidated)
+            out_path = out_dir / kf_name
             scene.render.filepath = str(out_path)
             bpy.ops.render.render(write_still=True)
             rendered_keyframes[idx][label] = str(out_path)
             rendered_stills.append({
                 "shot_index": idx, "shot_id": shot["id"], "keyframe": label,
                 "path": str(out_path), "elapsed_sec": round(time.time() - t_shot, 2),
+                "draft_unvalidated": draft_unvalidated,
             })
 
     prompts_doc = camera_rig.build_flow_prompts(city_title, env_name, selected_shots, rendered_keyframes)
-    prompts_file = out_dir / "flow_prompts.json"
+    prompts_file = out_dir / stl_loader.apply_draft_prefix("flow_prompts.json", draft_unvalidated)
     prompts_file.write_text(json.dumps(prompts_doc, indent=2, ensure_ascii=False), encoding="utf-8")
     return rendered_stills, rendered_keyframes, str(prompts_file)
 
@@ -436,6 +439,7 @@ def render_video_mode(
     scene: Any, out_dir: Path, env_name: str, shots_spec: str, fps: int,
     analysis: Dict[str, Any], model_bounds: Dict[str, Any], env_refs: Dict[str, Any],
     aspect_ratio: float, base_sun_az: float, desk_z: float, mount: str = "desk_flat",
+    draft_unvalidated: bool = False,
 ) -> List[Dict[str, Any]]:
     """Render Cycles video frames per shot with clean pre/post-roll motion blur."""
     wanted = {int(s.strip()) for s in shots_spec.split(",") if s.strip()}
@@ -450,7 +454,7 @@ def render_video_mode(
     video_shot_frames: List[Dict[str, Any]] = []
     for shot in selected_shots:
         t_shot = time.time()
-        shot_dir = frames_root / shot["id"]
+        shot_dir = frames_root / stl_loader.apply_draft_prefix(str(shot["id"]), draft_unvalidated)
         shot_dir.mkdir(parents=True, exist_ok=True)
         seq_info = camera_rig.setup_commercial_sequence(
             scene, shot, fps=fps, desk_z=desk_z, env_refs=env_refs,
@@ -459,7 +463,7 @@ def render_video_mode(
         shot_frame_paths: List[str] = []
         for f in range(seq_info["frame_start"], seq_info["frame_end"] + 1):
             scene.frame_set(f)
-            fpath = shot_dir / f"frame_{f:04d}.png"
+            fpath = shot_dir / stl_loader.apply_draft_prefix(f"frame_{f:04d}.png", draft_unvalidated)
             scene.render.filepath = str(fpath)
             bpy.ops.render.render(write_still=True)
             shot_frame_paths.append(str(fpath))
@@ -468,5 +472,6 @@ def render_video_mode(
             "shot_index": shot["index"], "shot_id": shot["id"], "title": shot["title"],
             "duration_sec": shot["duration_sec"], "frame_count": len(shot_frame_paths),
             "frames": shot_frame_paths, "elapsed_sec": round(time.time() - t_shot, 2),
+            "draft_unvalidated": draft_unvalidated,
         })
     return video_shot_frames

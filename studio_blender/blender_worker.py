@@ -140,8 +140,9 @@ def main() -> int:
     width, height = _parse_resolution(args.resolution, args.mode, aspect)
     aspect_ratio = float(width) / float(height)
     samples = args.samples if args.samples is not None else (32 if args.mode == "video" else 96)
-    if not args.assembly_manifest and not args.stl:
-        raise ValueError("Either --assembly-manifest or --stl must be provided.")
+    _, is_draft = stl_loader.validate_render_source(
+        args.assembly_manifest, args.stl, draft_unvalidated=bool(args.draft_unvalidated)
+    )
     if args.assembly_manifest:
         m_data = json.loads(Path(args.assembly_manifest).read_text(encoding="utf-8"))
         default_title = str(m_data.get("source_params", {}).get("title") or m_data.get("city_slug") or "CITY MAP")
@@ -180,6 +181,8 @@ def main() -> int:
             frame_mm=args.frame_mm,
             material=plaster_mat,
         )
+        load_result["draft_unvalidated"] = True
+    is_draft = bool(is_draft or load_result.get("draft_unvalidated", False))
 
     frame_info, analysis = build_product_assembly(
         scene=scene,
@@ -242,17 +245,19 @@ def main() -> int:
             scene, out_dir, canonical_env, city_title, args.preset,
             args.filename, analysis, model_bounds, aspect_ratio, mount=mount,
             load_result=load_result,
-            draft_unvalidated=bool(load_result.get("draft_unvalidated", False)),
+            draft_unvalidated=is_draft,
         )
     elif args.mode == "keyframes":
         rendered_stills, rendered_keyframes, flow_prompts_path = render_keyframes_mode(
             scene, out_dir, canonical_env, city_title, args.shots,
-            analysis, model_bounds, env_refs, aspect_ratio, base_sun_az, frame_info["desk_z"], mount=mount,
+            analysis, model_bounds, env_refs, aspect_ratio, base_sun_az, frame_info["desk_z"],
+            mount=mount, draft_unvalidated=is_draft,
         )
     elif args.mode == "video":
         video_shot_frames = render_video_mode(
             scene, out_dir, canonical_env, args.shots, args.fps,
-            analysis, model_bounds, env_refs, aspect_ratio, base_sun_az, frame_info["desk_z"], mount=mount,
+            analysis, model_bounds, env_refs, aspect_ratio, base_sun_az, frame_info["desk_z"],
+            mount=mount, draft_unvalidated=is_draft,
         )
 
     manifest = {
@@ -267,7 +272,7 @@ def main() -> int:
         "show_nameplate": bool(args.show_nameplate),
         "city_title": city_title,
         "assembly_manifest": load_result.get("manifest_path"),
-        "draft_unvalidated": bool(load_result.get("draft_unvalidated", False)),
+        "draft_unvalidated": is_draft,
         "stl_paths": [str(Path(p).resolve()) for p in (args.stl or [])] or [t["stl_path"] for t in load_result.get("tiles", [])],
         "cycles": cycles_info,
         "analysis": analysis,

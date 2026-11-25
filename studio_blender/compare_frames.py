@@ -24,7 +24,11 @@ if str(_REPO_ROOT) not in sys.path:
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="True-scale side-by-side packshot: 13x18 thin vs A4 white passe-partout")
-    p.add_argument("--stl", action="append", default=None, help="Shared fallback STL path(s)")
+    p.add_argument("--manifest", default=None, help="Shared fallback validated assembly_manifest.json")
+    p.add_argument("--old-manifest", default=None, help="Validated assembly_manifest.json for LEFT 13x18 frame")
+    p.add_argument("--a4-manifest", default=None, help="Validated assembly_manifest.json for RIGHT A4 frame")
+    p.add_argument("--draft-unvalidated", action="store_true", default=False, help="Allow unvalidated/raw-STL draft renders with DRAFT_UNVALIDATED_ prefix")
+    p.add_argument("--stl", action="append", default=None, help="Shared fallback STL path(s) (requires --draft-unvalidated)")
     p.add_argument("--old-stl", action="append", default=None, help="STL path(s) for LEFT OLD 13x18 thin frame")
     p.add_argument("--a4-stl", action="append", default=None, help="STL path(s) for RIGHT NEW A4 120x170 frame")
     p.add_argument("--samples", type=int, default=64, help="Cycles samples (default 64)")
@@ -37,12 +41,20 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def _resolve_side_stls(args: argparse.Namespace) -> Tuple[List[str], List[str]]:
-    old_stls = list(args.old_stl or args.stl or [])
-    a4_stls = list(args.a4_stl or args.stl or [])
-    if not old_stls or not a4_stls:
-        raise ValueError("Provide --stl (for both) or both --old-stl and --a4-stl.")
-    return old_stls, a4_stls
+def _resolve_sides(
+    args: argparse.Namespace,
+) -> Tuple[Optional[str], List[str], Optional[str], List[str], bool]:
+    """Validate both sides against assembly_manifest.json or explicit --draft-unvalidated."""
+    from studio_blender.stl_loader import validate_render_source
+
+    old_manifest = args.old_manifest or args.manifest
+    a4_manifest = args.a4_manifest or args.manifest
+    old_stls = list(args.old_stl or ([] if args.old_manifest else (args.stl or [])))
+    a4_stls = list(args.a4_stl or ([] if args.a4_manifest else (args.stl or [])))
+    draft_flag = bool(args.draft_unvalidated)
+    _, draft_l = validate_render_source(old_manifest, old_stls, draft_unvalidated=draft_flag)
+    _, draft_r = validate_render_source(a4_manifest, a4_stls, draft_unvalidated=draft_flag)
+    return old_manifest, old_stls, a4_manifest, a4_stls, bool(draft_l or draft_r or draft_flag)
 
 
 def _run_blender_worker(args: argparse.Namespace) -> int:
@@ -53,7 +65,7 @@ def _run_blender_worker(args: argparse.Namespace) -> int:
     from studio_blender.blender_worker import _clear_scene
     from studio_blender.worker_render import build_product_assembly, configure_cycles_metal
 
-    old_stls, a4_stls = _resolve_side_stls(args)
+    old_manifest, old_stls, a4_manifest, a4_stls, is_draft = _resolve_sides(args)
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -68,9 +80,14 @@ def _run_blender_worker(args: argparse.Namespace) -> int:
     # LEFT: OLD 13x18 cm thin matte-black frame (4mm rim, 7.5mm tall)
     col_l = bpy.data.collections.new("CityLeft_13x18")
     scene.collection.children.link(col_l)
-    load_l = stl_loader.load_city_stls(
-        old_stls, frame_style="single_13x18", rim_width_mm=4.0, material=plaster_mat, collection=col_l,
-    )
+    if old_manifest:
+        load_l = stl_loader.load_from_manifest(
+            old_manifest, frame_style="single_13x18", material=plaster_mat, allow_draft=is_draft, collection=col_l,
+        )
+    else:
+        load_l = stl_loader.load_city_stls(
+            old_stls, frame_style="single_13x18", rim_width_mm=4.0, material=plaster_mat, collection=col_l,
+        )
     frame_l, _ = build_product_assembly(
         scene, load_l, frame_style="single_13x18", title="", mount="desk_flat",
         rim_width_mm=4.0, frame_height_mm=7.5, backing_finish="matte_black", show_nameplate=False,
@@ -80,9 +97,14 @@ def _run_blender_worker(args: argparse.Namespace) -> int:
     # RIGHT: NEW A4 210x297x30 mm heavy gallery white passe-partout frame (120x170mm opening)
     col_r = bpy.data.collections.new("CityRight_A4")
     scene.collection.children.link(col_r)
-    load_r = stl_loader.load_city_stls(
-        a4_stls, frame_style="a4_passepartout", rim_width_mm=15.0, material=plaster_mat, collection=col_r,
-    )
+    if a4_manifest:
+        load_r = stl_loader.load_from_manifest(
+            a4_manifest, frame_style="a4_passepartout", material=plaster_mat, allow_draft=is_draft, collection=col_r,
+        )
+    else:
+        load_r = stl_loader.load_city_stls(
+            a4_stls, frame_style="a4_passepartout", rim_width_mm=15.0, material=plaster_mat, collection=col_r,
+        )
     frame_r, _ = build_product_assembly(
         scene, load_r, frame_style="a4_passepartout", title="", mount="desk_flat",
         rim_width_mm=15.0, frame_height_mm=30.0, backing_finish="matte_black", show_nameplate=False,
@@ -129,15 +151,17 @@ def _run_blender_worker(args: argparse.Namespace) -> int:
         off = camera_rig.spherical_offset(yaw, elev, dist)
         eye = (target[0] + off[0], target[1] + off[1], max(shared_desk_z + 0.012, target[2] + off[2]))
         camera_rig.apply_camera_pose(cam_obj, focus_obj, eye, target, (0.0, 0.0, 0.015), lens, fstop=8.0)
-        out_png = out_dir / fname
+        out_png = out_dir / stl_loader.apply_draft_prefix(fname, is_draft)
         scene.render.filepath = str(out_png)
         bpy.ops.render.render(write_still=True)
         rendered_paths[fname] = str(out_png)
 
     manifest = {
-        "status": "ok", "cycles": cycles_info,
+        "status": "ok", "cycles": cycles_info, "draft_unvalidated": is_draft,
         "left_13x18_mm": [round(w_l * 1000, 1), round(h_l * 1000, 1), 7.5],
         "right_a4_mm": [round(w_r * 1000, 1), round(h_r * 1000, 1), 30.0],
+        "old_manifest": str(Path(old_manifest).resolve()) if old_manifest else None,
+        "a4_manifest": str(Path(a4_manifest).resolve()) if a4_manifest else None,
         "old_stls": [str(Path(p).resolve()) for p in old_stls],
         "a4_stls": [str(Path(p).resolve()) for p in a4_stls],
         "views": rendered_paths, "elapsed_sec": round(time.time() - t0, 2),
@@ -173,9 +197,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _run_blender_worker(_parse_args(raw_argv))
 
     from studio_blender.render_studio import find_blender_binary
+    from studio_blender.stl_loader import apply_draft_prefix
 
     args = _parse_args(argv if argv is not None else sys.argv[1:])
-    old_stls, a4_stls = _resolve_side_stls(args)
+    try:
+        old_manifest, old_stls, a4_manifest, a4_stls, is_draft = _resolve_sides(args)
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     for p in old_stls + a4_stls:
         if not os.path.isfile(p):
             raise FileNotFoundError(f"STL file not found: {p}")
@@ -188,6 +217,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         blender, "--background", "--factory-startup", "--python-exit-code", "1",
         "--python", str(_THIS_FILE), "--",
     ]
+    if old_manifest:
+        cmd.extend(["--old-manifest", str(Path(old_manifest).resolve())])
+    if a4_manifest:
+        cmd.extend(["--a4-manifest", str(Path(a4_manifest).resolve())])
+    if is_draft:
+        cmd.append("--draft-unvalidated")
     for p in old_stls:
         cmd.extend(["--old-stl", str(Path(p).resolve())])
     for p in a4_stls:
@@ -205,7 +240,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     manifest_path = out_dir / "compare_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    stacked = _stack_views_ffmpeg(manifest["views"]["compare_35deg.png"], manifest["views"]["compare_14deg.png"], out_dir / args.filename)
+    out_fname = apply_draft_prefix(args.filename, is_draft)
+    stacked = _stack_views_ffmpeg(manifest["views"]["compare_35deg.png"], manifest["views"]["compare_14deg.png"], out_dir / out_fname)
     manifest["stacked_png"] = stacked
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"Comparison complete ({manifest['elapsed_sec']}s): {stacked or manifest['views']['compare_35deg.png']}")

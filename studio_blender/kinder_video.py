@@ -172,9 +172,19 @@ def _setup_scene_for_env(
                 for nm in ("Subsurface Weight", "Subsurface"):
                     if nm in nd.inputs:
                         nd.inputs[nm].default_value = 0.0
-    stls = list(job["stl_paths"])
-    lr = stl_loader.load_city_stls(stls, job["frame"], float(job["frame_width_mm"]), job.get("frame_mm"), plaster_mat)
-    title = (job.get("title") or "").strip() or stl_loader.infer_city_title(stls)
+    asm_manifest = job.get("assembly_manifest")
+    stls = list(job.get("stl_paths") or [])
+    is_draft_req = bool(job.get("draft_unvalidated", False))
+    stl_loader.validate_render_source(asm_manifest, stls, draft_unvalidated=is_draft_req)
+    if asm_manifest:
+        lr = stl_loader.load_from_manifest(asm_manifest, frame_style=job["frame"], material=plaster_mat, allow_draft=is_draft_req)
+        m_doc = lr.get("manifest") or {}
+        default_title = str(m_doc.get("source_params", {}).get("title") or m_doc.get("city_slug") or "CITY MAP")
+    else:
+        lr = stl_loader.load_city_stls(stls, job["frame"], float(job["frame_width_mm"]), job.get("frame_mm"), plaster_mat)
+        lr["draft_unvalidated"] = True
+        default_title = stl_loader.infer_city_title(stls)
+    title = (job.get("title") or "").strip() or default_title
     fi, analysis = build_product_assembly(
         scene, lr, job["frame"], title, "desk_flat",
         float(job["frame_width_mm"]), float(job["frame_height_mm"]), job["backing_finish"], bool(job["show_nameplate"]),
@@ -285,7 +295,8 @@ def _run_blender_worker(job_path: Path) -> int:
     manifest = {
         "status": "ok", "camera_mode": job["camera_mode"], "preview_only": preview,
         "env": canonical, "frame": job["frame"], "room_safe": room_safe,
-        "stl_paths": [str(Path(p).resolve()) for p in job["stl_paths"]], "resolution": [width, height],
+        "assembly_manifest": job.get("assembly_manifest"), "draft_unvalidated": bool(job.get("draft_unvalidated", False)),
+        "stl_paths": [str(Path(p).resolve()) for p in (job.get("stl_paths") or [])], "resolution": [width, height],
         "fps": fps, "duration_sec": dur, "n_frames": n_total_stitched,
         "shutter": float(job["shutter"]), "samples": int(job["samples"]), "use_packshot": use_packshot,
         "cycles": c_info, "validation": validation, "placed_props": env_refs.get("placed_props", []),
@@ -347,20 +358,34 @@ _DEFAULT_JOB_OPTS: Dict[str, Any] = {
     "backing_finish": "matte_black", "show_nameplate": False, "title": None, "surface": None,
     "window_gobo": None, "hdri": None, "light_temp": None, "sun_azimuth": None,
     "add_props": None, "remove_props": None, "clear_props": False, "video_name": None,
-    "filmstrip_name": None, "preview_only": False, "keep_frames": False, "blender_bin": None, "verbose": True,
+    "filmstrip_name": None, "preview_only": False, "keep_frames": False, "blender_bin": None,
+    "assembly_manifest": None, "draft_unvalidated": False, "verbose": True,
 }
 
 
-def run_kinder_video(stl_paths: Sequence[str], out_dir: str, **kwargs: Any) -> Dict[str, Any]:
+def run_kinder_video(stl_paths: Optional[Sequence[str]] = None, out_dir: str = "./studio_renders", **kwargs: Any) -> Dict[str, Any]:
     """Programmatic entry point used by both CLI and studio-blender MCP server."""
+    from studio_blender.stl_loader import apply_draft_prefix, validate_render_source
+
     cfg: Dict[str, Any] = {**_DEFAULT_JOB_OPTS, **kwargs}
+    asm_manifest = cfg.get("assembly_manifest") or cfg.get("manifest_path")
+    _, is_draft = validate_render_source(asm_manifest, stl_paths, draft_unvalidated=bool(cfg.get("draft_unvalidated", False)))
     out_path = Path(out_dir).resolve()
     out_path.mkdir(parents=True, exist_ok=True)
     vname = cfg["video_name"] or f"{cfg['env']}_kinder_9x16.mp4"
-    vname = vname if vname.lower().endswith(".mp4") else f"{vname}.mp4"
-    fname, mpath, jpath = cfg["filmstrip_name"] or f"{Path(vname).stem}_filmstrip.png", out_path / f"{Path(vname).stem}_manifest.json", out_path / f".{Path(vname).stem}_job.json"
+    vname = apply_draft_prefix(vname if vname.lower().endswith(".mp4") else f"{vname}.mp4", is_draft)
+    fname = apply_draft_prefix(cfg["filmstrip_name"] or f"{Path(vname).stem}_filmstrip.png", is_draft)
+    mpath, jpath = out_path / f"{Path(vname).stem}_manifest.json", out_path / f".{Path(vname).stem}_job.json"
     w, h = _parse_wh(cfg["resolution"], str(cfg["aspect"]))
-    job = {**cfg, "stl_paths": [str(Path(p).resolve()) for p in stl_paths], "out_dir": str(out_path), "manifest_path": str(mpath), "width": w, "height": h, "add_props": list(cfg["add_props"]) if cfg["add_props"] else None, "remove_props": list(cfg["remove_props"]) if cfg["remove_props"] else None}
+    job = {
+        **cfg,
+        "assembly_manifest": str(Path(asm_manifest).resolve()) if asm_manifest else None,
+        "draft_unvalidated": is_draft,
+        "stl_paths": [str(Path(p).resolve()) for p in (stl_paths or [])],
+        "out_dir": str(out_path), "manifest_path": str(mpath), "width": w, "height": h,
+        "add_props": list(cfg["add_props"]) if cfg["add_props"] else None,
+        "remove_props": list(cfg["remove_props"]) if cfg["remove_props"] else None,
+    }
     jpath.write_text(json.dumps(job, indent=2), encoding="utf-8")
     cmd = [find_blender_binary(cfg["blender_bin"]), "--background", "--factory-startup", "--python-exit-code", "1", "--python", str(_THIS_FILE), "--", "--blender-worker", "--job", str(jpath)]
     t0, verbose = time.time(), bool(cfg["verbose"])
@@ -371,8 +396,9 @@ def run_kinder_video(stl_paths: Sequence[str], out_dir: str, **kwargs: Any) -> D
     finally:
         jpath.unlink(missing_ok=True)
     manifest: Dict[str, Any] = json.loads(mpath.read_text(encoding="utf-8"))
+    manifest["draft_unvalidated"] = is_draft
     if cfg["preview_only"]:
-        manifest["preview_strip_path"] = _build_preview_strip(manifest, out_path / f"{Path(vname).stem}_preview.png")
+        manifest["preview_strip_path"] = _build_preview_strip(manifest, out_path / apply_draft_prefix(f"{Path(vname).stem}_preview.png", is_draft))
     else:
         mp4 = _encode_kinder_mp4(manifest, out_path, vname)
         manifest["video_path"], manifest["filmstrip_path"] = mp4, _build_filmstrip(Path(mp4), int(manifest["n_frames"]), out_path / fname)
@@ -385,11 +411,11 @@ def run_kinder_video(stl_paths: Sequence[str], out_dir: str, **kwargs: Any) -> D
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Universal Kinder-style Cycles Metal commercial renderer")
-    for flg in ("--out", "--resolution", "--frame-mm", "--title", "--surface", "--window-gobo", "--hdri", "--filmstrip-name", "--blender-bin"):
+    for flg in ("--out", "--manifest", "--resolution", "--frame-mm", "--title", "--surface", "--window-gobo", "--hdri", "--filmstrip-name", "--blender-bin"):
         p.add_argument(flg)
     for flg in ("--stl", "--add-prop", "--remove-prop"):
         p.add_argument(flg, action="append")
-    for flg in ("--show-nameplate", "--clear-props", "--preview-only", "--keep-frames"):
+    for flg in ("--draft-unvalidated", "--show-nameplate", "--clear-props", "--preview-only", "--keep-frames"):
         p.add_argument(flg, action="store_true")
     for flg, df in (("--env", "09_dark_cinematic"), ("--frame", "single_13x18"), ("--packshot-env", "11_packshot_white"), ("--aspect", "9:16"), ("--backing-finish", "matte_black"), ("--video-name", "nyc_wtc_kinder_commercial_9x16.mp4")):
         p.add_argument(flg, default=df)
@@ -407,11 +433,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.blender_worker:
         return _run_blender_worker(Path(args.job))
     if not args.out:
-        raise ValueError("--out is required.")
-    stls = args.stl or list(DEFAULT_NYC_STLS)
-    kw = {k: v for k, v in vars(args).items() if k not in ("stl", "out", "duration", "add_prop", "remove_prop", "job", "blender_worker")}
-    manifest = run_kinder_video(stls, args.out, duration_sec=args.duration, add_props=args.add_prop, remove_props=args.remove_prop, verbose=True, **kw)
-    print(json.dumps({k: manifest.get(k) for k in ("video_path", "filmstrip_path", "preview_strip_path", "total_wall_sec")}, indent=2))
+        print("ERROR: --out is required.", file=sys.stderr)
+        return 1
+    kw = {k: v for k, v in vars(args).items() if k not in ("stl", "manifest", "out", "duration", "add_prop", "remove_prop", "job", "blender_worker")}
+    try:
+        manifest = run_kinder_video(
+            args.stl, args.out, assembly_manifest=args.manifest, duration_sec=args.duration,
+            add_props=args.add_prop, remove_props=args.remove_prop, verbose=True, **kw,
+        )
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps({k: manifest.get(k) for k in ("video_path", "filmstrip_path", "preview_strip_path", "draft_unvalidated", "total_wall_sec")}, indent=2))
     return 0
 
 

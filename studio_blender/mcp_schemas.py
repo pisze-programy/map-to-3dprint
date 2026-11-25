@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from studio_blender.camera_qa import QA_PRESETS
 from studio_blender.studio_presets import ALL_ENV_CHOICES, STILL_PRESETS
 
 
@@ -14,19 +15,28 @@ FRAME_ENUM = [
 ]
 MOUNT_ENUM = ["auto", "desk_flat", "wall_mount"]
 BACKING_ENUM = ["matte_black", "satin_black"]
-PRESET_ENUM = list(STILL_PRESETS.keys()) + ["all"]
+PRESET_ENUM = list(dict.fromkeys(list(STILL_PRESETS.keys()) + list(QA_PRESETS) + ["all"]))
 ASPECT_ENUM = ["9:16", "4:5", "1:1", "16:9"]
 
 
 def _common_scene_properties() -> Dict[str, Any]:
     """Shared composable product, environment, lighting, and prop override fields."""
     return {
+        "manifest_path": {
+            "type": "string",
+            "description": "Path to validated assembly_manifest.json (required for production renders).",
+        },
+        "draft_unvalidated": {
+            "type": "boolean",
+            "default": False,
+            "description": "Explicitly allow unvalidated/raw-STL draft renders with DRAFT_UNVALIDATED_ filename prefix.",
+        },
         "stl_paths": {
             "type": "array",
             "items": {"type": "string"},
             "minItems": 1,
             "maxItems": 4,
-            "description": "1-2 STLs for Variant C 13x18 (2 tiles stack seamlessly), 3 for triptych_3x1, 4 for quartet_2x2.",
+            "description": "Raw STL paths (only permitted when draft_unvalidated=true; production renders require manifest_path).",
         },
         "out_dir": {
             "type": "string",
@@ -171,13 +181,13 @@ def build_tools_schema() -> List[Dict[str, Any]]:
         {
             "name": "render_city_stills",
             "description": (
-                "Render photorealistic Cycles (Metal GPU + AgX + real DoF) still photos for any "
-                "city STL (1-2 tiles for 13x18 Variant C, 3x1 triptych, or 2x2 quartet) in desk_flat or wall_mount."
+                "Render photorealistic Cycles (Metal GPU + AgX + real DoF) still photos from a validated "
+                "assembly_manifest.json (or raw stl_paths only with draft_unvalidated=true)."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": still_props,
-                "required": ["stl_paths", "out_dir"],
+                "required": ["out_dir"],
                 "additionalProperties": False,
             },
         },
@@ -185,25 +195,25 @@ def build_tools_schema() -> List[Dict[str, Any]]:
             "name": "render_flow_keyframes",
             "description": (
                 "Render 9:16 photorealistic Cycles Start->End keyframe pairs, storyboard sheet, "
-                "and tailored Google Flow (Frames to Video / Veo) prompts."
+                "and tailored Google Flow prompts from a validated assembly_manifest.json."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": kf_props,
-                "required": ["stl_paths", "out_dir"],
+                "required": ["out_dir"],
                 "additionalProperties": False,
             },
         },
         {
             "name": "render_commercial_video",
             "description": (
-                "Render a smooth 24fps Cycles Metal GPU commercial MP4 video with speed-ramp "
-                "transitions, raking light sweeps, real DoF bokeh, and Cycles motion blur."
+                "Render a smooth 24fps Cycles Metal GPU commercial MP4 video from a validated "
+                "assembly_manifest.json with speed-ramp transitions, raking light sweeps, and real DoF bokeh."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": vid_props,
-                "required": ["stl_paths", "out_dir"],
+                "required": ["out_dir"],
                 "additionalProperties": False,
             },
         },

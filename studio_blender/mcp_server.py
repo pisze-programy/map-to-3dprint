@@ -22,26 +22,37 @@ _REPO_ROOT = _THIS_FILE.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from studio_blender import kinder_video, render_studio
+from studio_blender import kinder_video, render_studio, stl_loader
 from studio_blender.mcp_schemas import TOOLS_SCHEMA
 
 
-SERVER_INFO = {"name": "studio-blender", "version": "2.0.0"}
+SERVER_INFO = {"name": "studio-blender", "version": "2.1.0"}
 DEFAULT_PROTOCOL_VERSION = "2024-11-05"
 
 
-def _normalize_stl_paths(args: Dict[str, Any]) -> List[str]:
+def _normalize_stl_paths(args: Dict[str, Any]) -> Optional[List[str]]:
     paths = args.get("stl_paths")
-    if isinstance(paths, str):
-        return [paths]
-    if isinstance(paths, list) and all(isinstance(p, str) for p in paths) and paths:
-        return paths
-    raise ValueError("Missing or invalid 'stl_paths' (expected non-empty list of STL file paths).")
+    if paths is None:
+        return None
+    if isinstance(paths, str) and paths.strip():
+        return [paths.strip()]
+    if isinstance(paths, list) and all(isinstance(p, str) and p.strip() for p in paths) and paths:
+        return [p.strip() for p in paths]
+    raise ValueError("Invalid 'stl_paths' (expected non-empty list of STL file paths).")
 
 
 def _common_render_kwargs(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    if "out_dir" not in arguments or not str(arguments.get("out_dir") or "").strip():
+        raise ValueError("Missing required 'out_dir'.")
+    manifest_raw = arguments.get("manifest_path") or arguments.get("assembly_manifest")
+    manifest_path = str(manifest_raw).strip() if isinstance(manifest_raw, str) and manifest_raw.strip() else None
+    draft_unvalidated = bool(arguments.get("draft_unvalidated", False))
+    stl_paths = _normalize_stl_paths(arguments)
+    stl_loader.validate_render_source(manifest_path, stl_paths, draft_unvalidated=draft_unvalidated)
     return {
-        "stl_paths": _normalize_stl_paths(arguments),
+        "stl_paths": stl_paths,
+        "assembly_manifest": manifest_path,
+        "draft_unvalidated": draft_unvalidated,
         "out_dir": str(arguments["out_dir"]),
         "env": arguments.get("env", "01_architect_window_desk"),
         "frame": arguments.get("frame", "single_13x18"),

@@ -361,8 +361,18 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def apply_draft_prefix(filename: str, is_draft: bool) -> str:
+    """Prefix DRAFT_UNVALIDATED_ onto a filename or path basename when rendering unvalidated drafts."""
+    if not is_draft:
+        return filename
+    p = Path(filename)
+    if p.name.startswith("DRAFT_UNVALIDATED_"):
+        return filename
+    return str(p.with_name(f"DRAFT_UNVALIDATED_{p.name}")) if str(p.parent) not in ("", ".") else f"DRAFT_UNVALIDATED_{p.name}"
+
+
 def verify_manifest_for_render(manifest_path: str, allow_draft: bool = False) -> Tuple[Dict[str, Any], bool]:
-    """Verify assembly_manifest.json SHA-256 integrity and PASS verdict.
+    """Verify assembly_manifest.json SHA-256 integrity, report digest, and PASS verdict.
 
     Returns (manifest_dict, is_draft_unvalidated). Raises RuntimeError on failure unless allow_draft=True.
     """
@@ -379,12 +389,25 @@ def verify_manifest_for_render(manifest_path: str, allow_draft: bool = False) ->
 
     rep_file = val.get("report_file")
     rep_sha = val.get("report_sha256")
-    if rep_file:
-        rp = base_dir / str(rep_file)
+    if not isinstance(rep_file, str) or not rep_file.strip():
+        errors.append("validation.report_file is missing or empty")
+    if not isinstance(rep_sha, str) or not rep_sha.strip():
+        errors.append("validation.report_sha256 is missing or empty")
+    if isinstance(rep_file, str) and rep_file.strip():
+        rp = base_dir / rep_file.strip()
         if not rp.is_file():
             errors.append(f"validation report missing: {rp}")
-        elif rep_sha and _sha256_file(rp) != rep_sha:
-            errors.append(f"validation report SHA-256 mismatch: {rp}")
+        else:
+            if isinstance(rep_sha, str) and rep_sha.strip():
+                act_rep_sha = _sha256_file(rp)
+                if act_rep_sha != rep_sha.strip():
+                    errors.append(f"validation report SHA-256 mismatch: {rp}")
+            try:
+                rep_doc = json.loads(rp.read_text(encoding="utf-8"))
+                if not isinstance(rep_doc, dict) or rep_doc.get("verdict") != "PASS":
+                    errors.append(f"validation report verdict is '{rep_doc.get('verdict') if isinstance(rep_doc, dict) else None}' (must be 'PASS')")
+            except Exception as exc:
+                errors.append(f"validation report unreadable JSON ({rp}): {exc}")
 
     tiles = manifest.get("tiles") or []
     if not tiles:
@@ -414,6 +437,25 @@ def verify_manifest_for_render(manifest_path: str, allow_draft: bool = False) ->
             "(pass --draft-unvalidated to render marked draft previews):\n  - " + "\n  - ".join(errors)
         )
     return manifest, bool(errors)
+
+
+def validate_render_source(
+    assembly_manifest: Optional[str],
+    stl_paths: Optional[Sequence[str]],
+    draft_unvalidated: bool = False,
+) -> Tuple[Optional[Dict[str, Any]], bool]:
+    """Enforce manifest-locked validation for production renders; return (manifest_or_None, is_draft)."""
+    if assembly_manifest:
+        manifest, manifest_errors = verify_manifest_for_render(assembly_manifest, allow_draft=draft_unvalidated)
+        return manifest, bool(manifest_errors or draft_unvalidated)
+    if not stl_paths:
+        raise ValueError("Either assembly_manifest (--manifest) or --stl path (with --draft-unvalidated) is required.")
+    if not draft_unvalidated:
+        raise RuntimeError(
+            "Refusing production Blender render from raw --stl without a validated assembly_manifest.json "
+            "(pass --manifest <path> for production or --draft-unvalidated for marked DRAFT_UNVALIDATED_ previews)."
+        )
+    return None, True
 
 
 def load_from_manifest(
@@ -622,7 +664,7 @@ def load_city_stls(
 __all__ = [
     "A4_OPENING_H_MM", "A4_OPENING_W_MM", "MM_TO_M",
     "VARIANT_C_OUTER_H_MM", "VARIANT_C_OUTER_W_MM",
-    "analyze_city_mesh", "infer_city_title", "load_city_stls",
+    "analyze_city_mesh", "apply_draft_prefix", "infer_city_title", "load_city_stls",
     "load_from_manifest", "parse_frame_mm", "transform_analysis_to_wall_mount",
-    "verify_manifest_for_render",
+    "validate_render_source", "verify_manifest_for_render",
 ]
