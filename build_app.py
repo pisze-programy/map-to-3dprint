@@ -17,6 +17,12 @@ def build():
         video_view_html = f.read()
     tpl = tpl.replace("<!--__VIDEO_STUDIO_VIEW__-->", video_view_html)
 
+    landmark_modules = sorted(
+        os.path.relpath(p, ROOT).replace(os.sep, "/")
+        for p in glob.glob(os.path.join(ROOT, "src/landmarks/landmark_*.js"))
+        if os.path.basename(p) != "landmark_registry.js"
+    )
+
     js_files = [
         # 1. Vendor Bundles (Clipper2, Delatin, fflate, Poly2Tri, Earcut, Manifold WASM)
         "src/vendor/vendor_bundle.js",
@@ -47,6 +53,8 @@ def build():
         "src/buildings/s3db_part_solid_builder.js",
         "src/mesh/s3db_part_builder.js",
         "src/buildings/s3db_skybridge_anchoring.js",
+        "src/landmarks/landmark_registry.js",
+        *landmark_modules,
         "src/buildings/layer1_s3db_solver.js",
         "src/mesh/layer1_s3db_buildings.js",
         "src/mesh/bridges/bridge_geom_2d.js",

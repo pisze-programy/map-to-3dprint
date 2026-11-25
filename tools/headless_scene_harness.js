@@ -19,6 +19,15 @@ const REPO_ROOT = path.resolve(__dirname, '..');
  * Exact headless-compatible module load order matching build_app.py (stages 1-5)
  * plus WebGL math/shaders and UI config/rotation modules.
  */
+function _discoverLandmarkScripts() {
+  const dir = path.join(REPO_ROOT, 'src/landmarks');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter(f => f.startsWith('landmark_') && f !== 'landmark_registry.js' && f.endsWith('.js'))
+    .sort()
+    .map(f => `src/landmarks/${f}`);
+}
+
 const PIPELINE_SCRIPTS = [
   'src/vendor/vendor_bundle.js',
   'src/vendor/manifold_vendor.js',
@@ -46,6 +55,8 @@ const PIPELINE_SCRIPTS = [
   'src/buildings/s3db_part_solid_builder.js',
   'src/mesh/s3db_part_builder.js',
   'src/buildings/s3db_skybridge_anchoring.js',
+  'src/landmarks/landmark_registry.js',
+  ..._discoverLandmarkScripts(),
   'src/buildings/layer1_s3db_solver.js',
   'src/mesh/layer1_s3db_buildings.js',
   'src/mesh/bridges/bridge_geom_2d.js',

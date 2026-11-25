@@ -210,6 +210,9 @@
     const { mf, halfW, halfH, toBed, latLonToScene } = ctx;
     const utils = { computeFootprintOBB: pierMod.computeFootprintOBB, resolveGroundZ: pierMod.resolveGroundZ };
     const buildingLayerManifolds = [], highlightedLayerManifolds = [], buildingBounds = [], roadLayerManifolds = [], handledOsmIds = new Set();
+    const suppressedLmOsm = (s3db && s3db.suppressedLandmarkOsmIds instanceof Set) ? s3db.suppressedLandmarkOsmIds : null;
+    const suppressedLmBIds = (s3db && s3db.suppressedLandmarkBuildingIds instanceof Set) ? s3db.suppressedLandmarkBuildingIds : null;
+    if (suppressedLmOsm) for (const oid of suppressedLmOsm) handledOsmIds.add(oid);
     const counts = { wheels: 0, windTurbines: 0, latticeTowers: 0, towers: 0, tanksAndSilos: 0, chimneys: 0, coolingTowers: 0, cranes: 0, marinePiers: 0, trees: 0 };
 
     const els = (scene && scene.osmElements) || [], bldOsmIds = new Set();
@@ -273,6 +276,8 @@
         buildingFootprints2D.push({ outer: oBed, holes: holesBed, bb: [minX, minY, maxX, maxY], minH: Math.max(0, Number(b.minH !== undefined ? b.minH : (tags.min_height || 0)) || 0) });
       }
       if (!cl.isL2) continue;
+      if (suppressedLmBIds && b.id != null && suppressedLmBIds.has(b.id)) continue;
+      if (suppressedLmOsm && b.osmId != null && suppressedLmOsm.has(Number(b.osmId))) continue;
 
       const hM = Number(b.h !== undefined ? b.h : (b.height || tags.height || 0)) || 0;
       let solid = null;

@@ -16,6 +16,9 @@
   if (typeof root.anchorAndMergeS3DBClusters !== 'function' && typeof require === 'function') {
     Object.assign(root, require('./s3db_skybridge_anchoring.js'));
   }
+  if (typeof root.findActiveLandmarksAndSuppression !== 'function' && typeof require === 'function') {
+    try { Object.assign(root, require('../landmarks/landmark_registry.js')); } catch (_) {}
+  }
 
   function _getCore() {
     if (typeof root.createBuildContext === 'function') {
@@ -50,6 +53,9 @@
     const platePoly = [[[-halfW - padClip, -halfH - padClip], [halfW + padClip, -halfH - padClip], [halfW + padClip, halfH + padClip], [-halfW - padClip, halfH + padClip]]];
     const normalGroups = new Map(), highlightGroups = new Map(), boundsOut = [];
     const consumedArchBuildingIds = new Set(), consumedArchGroups = new Set();
+    const landmarkPlan = (typeof root.findActiveLandmarksAndSuppression === 'function')
+      ? root.findActiveLandmarksAndSuppression(scene, ctx, rawTagById)
+      : { active: [], suppressedBuildingIndices: new Set(), suppressedBuildingIds: new Set(), suppressedOsmIds: new Set() };
 
     const elevatedBridgeRings = [];
     for (const bp of ((scene && scene.bridgePolys) || [])) {
@@ -77,6 +83,7 @@
       if ((idx & 255) === 0 && idx > 0) yield;
       const b = buildingsList[idx];
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) { _prepMeta[idx] = null; continue; }
+      if (landmarkPlan.suppressedBuildingIndices.has(idx)) { _prepMeta[idx] = null; continue; }
       const tags = Object.assign({}, rawTagById.get(b.osmId) || {}, b.tags || {});
       const tc = String(tags['tower:construction'] || b.towerConstruction || '').toLowerCase().trim();
       if ((tc === 'lattice' || tc === 'guyed_lattice') && b.groupId !== undefined && b.groupId !== null) {
@@ -280,6 +287,13 @@
       const zRawMm = (zDat + Math.max(0.4 / scaleMm, effH * mToU * hMult)) * scaleMm;
       if (zRawMm > maxRawZMm) maxRawZMm = zRawMm;
     }
+    for (let li = 0; li < landmarkPlan.active.length; li++) {
+      const lmEntry = landmarkPlan.active[li];
+      const lmH = Math.max(lmEntry.spec.maxHeightM || 0, lmEntry.maxMatchedH || 0);
+      if (lmH <= 0) continue;
+      const zRawMm = (ctx.zLandDatum + Math.max(0.4 / scaleMm, lmH * mToU * ctx.zScale * ctx.scaleToBed)) * scaleMm;
+      if (zRawMm > maxRawZMm) maxRawZMm = zRawMm;
+    }
     if (maxRawZMm > maxSafeZMm) {
       ctx.zCapApplied = true;
       const zKneeMm = Math.min(maxSafeZMm * 0.65, Math.max(maxSafeZMm * 0.35, maxSafeZMm - 35.0));
@@ -299,6 +313,18 @@
       if ((i & 127) === 0 && i > 0) yield;
       const b = buildingsList[i];
       if (!b || b.hidden || b.isOutline || !b.outer || b.outer.length < 3) continue;
+      if (landmarkPlan.suppressedBuildingIndices.has(i)) {
+        const hVal = Number((b.h !== undefined && b.h !== null) ? b.h : (b.height || 0)) || 0;
+        const minHVal = Math.max(0, Number(b.minH || 0) || 0);
+        ctx.audit.preparedList.push({
+          id: b.id ?? (i + 1), osmId: b.osmId || null, groupId: b.groupId ?? null, name: b.name || '',
+          btype: b.btype || 'yes', isPart: Boolean(b.part), part: Boolean(b.part),
+          skip: true, skipReason: 'hero_landmark_override',
+          preRoofShape: b.roof || 'flat', roofShape: b.roof || 'flat', roof: b.roof || 'flat',
+          h: hVal, minH: minHVal, zBase: minHVal, zTop: hVal, area: 0,
+        });
+        continue;
+      }
       const tags = Object.assign({}, rawTagById.get(b.osmId) || {}, b.tags || {});
       if (ctx.waterCutout && (b.isVessel || /^(boat|houseboat|ship|barge|floating_home)$/.test(String(tags.building || b.btype || '').toLowerCase()))) {
         continue;
@@ -335,6 +361,98 @@
       grp.minZ = Math.min(grp.minZ, bb.min[2]); grp.maxZ = Math.max(grp.maxZ, bb.max[2]);
     }
     yield;
+
+    // Emit active geo-anchored hero landmark solids into normalGroups so they flow
+    // cleanly through S3DB cluster merge, platePoly clipping, and tile_sla_vault_solver.
+    if (landmarkPlan.active.length > 0 && typeof root.computeLandmarkAnchor === 'function') {
+      for (let li = 0; li < landmarkPlan.active.length; li++) {
+        const entry = landmarkPlan.active[li];
+        const anchor = root.computeLandmarkAnchor(
+          entry.spec, scene, ctx, entry.matchedBuildings, terrainWater, groupDatumById
+        );
+        if (!anchor) continue;
+        let lmSolid = null;
+        try {
+          lmSolid = entry.spec.buildManifold(core, mf, ctx, anchor, entry.matchedBuildings, terrainWater);
+        } catch (_) {
+          lmSolid = null;
+        }
+        if (!lmSolid || lmSolid.numTri() === 0) {
+          core.safeDeleteManifold(lmSolid);
+          continue;
+        }
+        let bb = lmSolid.boundingBox();
+        const limX = halfW + padClip, limY = halfH + padClip;
+        if (bb.min[0] < -limX || bb.max[0] > limX || bb.min[1] < -limY || bb.max[1] > limY) {
+          let plateBox = null;
+          let clipped = null;
+          try {
+            plateBox = core.extrudeRingSolid(mf, platePoly[0], [], bb.min[2] - 0.5 / scaleMm, bb.max[2] + 0.5 / scaleMm);
+            if (plateBox) {
+              clipped = lmSolid.intersect(plateBox);
+              core.safeDeleteManifold(lmSolid);
+              lmSolid = (clipped && clipped.numTri() > 0) ? clipped : null;
+              if (!lmSolid) core.safeDeleteManifold(clipped);
+            }
+          } catch (_) {
+            core.safeDeleteManifold(clipped);
+          } finally {
+            core.safeDeleteManifold(plateBox);
+          }
+          if (!lmSolid || lmSolid.numTri() === 0) {
+            core.safeDeleteManifold(lmSolid);
+            continue;
+          }
+          bb = lmSolid.boundingBox();
+        }
+        const sharedGroupId = entry.groupIds.size === 1 ? Array.from(entry.groupIds)[0] : null;
+        const lmBId = `landmark:${entry.spec.id}`;
+        const grpKey = sharedGroupId !== null ? `ng:${sharedGroupId}` : `nb:${lmBId}`;
+        if (!normalGroups.has(grpKey)) {
+          normalGroups.set(grpKey, {
+            groupKey: grpKey, isHi: false, records: [], hasGrounded: false,
+            minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity,
+          });
+        }
+        const grp = normalGroups.get(grpKey);
+        const lmFootprintRing = [[bb.min[0], bb.min[1]], [bb.max[0], bb.min[1]], [bb.max[0], bb.max[1]], [bb.min[0], bb.max[1]]];
+        const lmMaxH = Math.max(entry.spec.maxHeightM || 0, entry.maxMatchedH || 0);
+        const lmMinH = (anchor.matchedBoundsM && Number.isFinite(anchor.matchedBoundsM.minH)) ? anchor.matchedBoundsM.minH : 0;
+        const isElevated = bb.min[2] > anchor.zDatumU + (0.45 / scaleMm);
+        const rec = {
+          b: { id: lmBId, name: entry.spec.name, groupId: sharedGroupId, isHeroLandmark: true, landmarkId: entry.spec.id },
+          bId: lmBId,
+          osmId: entry.spec.replaceOsmIds.length > 0 ? entry.spec.replaceOsmIds[0] : null,
+          groupId: sharedGroupId,
+          name: entry.spec.name,
+          btype: 'hero_landmark',
+          isHi: false,
+          structured: [{ outer: lmFootprintRing, holes: [] }],
+          zGroundSeat: Math.min(anchor.zDatumU, bb.min[2]),
+          zDatum: anchor.zDatumU,
+          zBase: bb.min[2],
+          zEaves: bb.max[2],
+          zTop: bb.max[2],
+          rawH_m: lmMaxH,
+          rawMinH_m: lmMinH,
+          preRoofShape: 'hero_landmark',
+          roofShape: 'hero_landmark',
+          flattenedUnderSuperstructure: false,
+          area: ((bb.max[0] - bb.min[0]) * (bb.max[1] - bb.min[1])) / Math.max(1e-8, mToU * mToU),
+          isPart: sharedGroupId !== null,
+          part: sharedGroupId !== null,
+          isElevated,
+          solid: lmSolid,
+          bb,
+        };
+        grp.records.push(rec);
+        if (!rec.isElevated) grp.hasGrounded = true;
+        grp.minX = Math.min(grp.minX, bb.min[0]); grp.maxX = Math.max(grp.maxX, bb.max[0]);
+        grp.minY = Math.min(grp.minY, bb.min[1]); grp.maxY = Math.max(grp.maxY, bb.max[1]);
+        grp.minZ = Math.min(grp.minZ, bb.min[2]); grp.maxZ = Math.max(grp.maxZ, bb.max[2]);
+      }
+      yield;
+    }
 
     const allClusters = [...normalGroups.values(), ...highlightGroups.values()];
     root.anchorAndMergeS3DBClusters(core, mf, ctx, allClusters, consumedArchGroups, platePoly);
@@ -377,7 +495,16 @@
 
     const buildingManifolds = yield* emitClusterGroupGen(false);
     const highlightedManifolds = yield* emitClusterGroupGen(true);
-    return { buildingManifolds, highlightedManifolds, buildingBounds: boundsOut, consumedArchBuildingIds, count: buildingManifolds.length + highlightedManifolds.length };
+    return {
+      buildingManifolds,
+      highlightedManifolds,
+      buildingBounds: boundsOut,
+      consumedArchBuildingIds,
+      suppressedLandmarkOsmIds: landmarkPlan.suppressedOsmIds,
+      suppressedLandmarkBuildingIds: landmarkPlan.suppressedBuildingIds,
+      activeLandmarkIds: landmarkPlan.active.map(a => a.spec.id),
+      count: buildingManifolds.length + highlightedManifolds.length,
+    };
   }
 
   function buildLayer1S3DBBuildings(ctx, scene, terrainWater) {
