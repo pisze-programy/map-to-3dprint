@@ -22,16 +22,17 @@ Never use stands or easels (podstawki) in product design or marketing renders.
 - **Outer frame**: `21 x 29.7 x 3.0 cm` matte jet-black box (`15 mm` rim, `7 mm` inner step).
 - **Passe-partout**: Classic white-only `2 mm` matboard with a 45-deg beveled `12 x 17 cm` (`120 x 170 mm`) window.
 - **Backing and open air**: Use matte black archival paper backing with zero glass, zero nameplate, and zero stands.
-- **Tile geometry**: Print two flush `120 x 85 mm` (`2x1`) tiles with a `4.0 mm` solid tunnel-free base (`solidBaseNoTunnels`).
-- **Seam finishing**: Align a building-safe split line, fill the seam with white resin, UV-cure, and apply matte clear coat.
+- **Tile geometry**: Print three flush `120 x 56.67 mm` (`1x3`) strips with a `4.0 mm` solid tunnel-free base (`docs/a4-tile-grid-audit.md`).
+- **Seam finishing**: Keep seams at `Y = +/-28.3 mm`, fill joints with white resin, UV-cure, and apply matte clear coat.
 - **Guardrail 1 (Lighting)**: Shoot all ads with raking side light so crisp shadows prove real 3D relief.
 - **Guardrail 2 (Angles)**: Lead ads and product cards with `30-45 deg` 3D angles, never `90 deg` flatlays.
 - **Guardrail 3 (Shipping and care)**: Ship in a recessed Paczkomat insert and publish a concise compressed-air dusting FAQ.
 
 ## 3. Wall Set Expansion Formats
 
-Scale single-city buyers into larger wall compositions with two collective frame sets:
+Scale single-city buyers into larger wall compositions with collective frame sets:
 
+- **Warsaw format split**: Sell **Warsaw Centrum** (`120x170 mm`, `1x3`) as Single A4 (`249 PLN`). Reserve **Warsaw West-East Panorama** (`Centrum -> Powisle -> Wisla + Bridges -> PGE Narodowy`) for **Triptych**.
 - **Triptych `3x1`**: Price at `599 PLN` inside one collective `23 x 50 cm` frame.
 - **Quartet `2x2`**: Price at `699 PLN` inside one collective `30 x 40 cm` or `40 x 50 cm` frame.
 

@@ -9,7 +9,9 @@ Read this map first. Open only the focused guide that matches your task.
 - Add strict types: JSDoc or TypeScript types in JS, full type hints in Python.
 - Never treat unit tests alone as proof. Collect real E2E, visual, or validator proof.
 - Run `docs/city-model-and-packshot-qa-checklist.md` before you generate or approve any city STL, tile, or packshot render.
-- Keep `SLA_PRINT_LAWS`, `roadHeightMm`, pure ASCII in `src/` and `tests/`, and zero city hacks.
+- Keep `SLA_PRINT_LAWS`, `roadHeightMm`, and pure ASCII in `src/` and `tests/`.
+- Keep core procedural builders in `src/Water/`, `src/mesh/`, and `src/buildings/` city-agnostic.
+- Put curated flagship monument geometry in `src/landmarks/` using geo-anchored footprints, `replaceOsmIds` suppression, and `VAL-01..08` proof.
 - Delegate multi-part tasks to subagents or a swarm with clear file ownership.
 - Check claims against Antigravity transcripts and real artifacts on disk before you act.
 - Commit every verified milestone locally with atomic Conventional Commits. Never push unless the user asks.
@@ -30,6 +32,7 @@ Read this map first. Open only the focused guide that matches your task.
 | [product-and-ads-decisions.md](docs/product-and-ads-decisions.md) | Frame formats, pricing, set layouts, seam finish, or 15 s social ads. |
 | [a4-vs-13x18-ads-audit.md](docs/a4-vs-13x18-ads-audit.md) | Blind 3-model CRO and paid-ads audit locking heavy A4 over `13 x 18 cm`. |
 | [a4-tile-grid-audit.md](docs/a4-tile-grid-audit.md) | Blind 3-model Mono 4 tile grid audit locking `1x3` (`120 x 56.67 mm`) over `1x2` and `2x2`. |
+| [multi-format-tiling-analysis.md](docs/multi-format-tiling-analysis.md) | Blind 3-model Mono 4 tiling and pricing matrix for Single, Triptych, Square, and `50x70`. |
 | [single-a4-top10-catalog.md](docs/single-a4-top10-catalog.md) | Verified Top 10 Single A4 `1x3` city STL catalog, 4 Continents, and 3 Wildcard reliefs. |
 | [hero-landmark-strategy-audit.md](docs/hero-landmark-strategy-audit.md) | Blind 3-model audit backing Option C hybrid geo-anchored hero landmark library. |
 | [lichtbild-vs-map3d-analysis.md](docs/lichtbild-vs-map3d-analysis.md) | Architecture, data, or render comparison against the Lichtbild benchmark. |

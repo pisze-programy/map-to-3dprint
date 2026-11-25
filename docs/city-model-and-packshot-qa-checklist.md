@@ -21,6 +21,7 @@ Read and execute all four gates before you approve any city STL, tile, or packsh
 ## Gate 3: Direct-STL Four-Angle Critical Element Inspection
 
 - Never approve a city STL from validator metrics or browser preview alone.
+- Inspect every landmark and every strip (`Top`, `Middle`, `Bottom`) individually inside `/swarm` with zero unreviewed elements.
 - Render and inspect the exported `.stl` files from four close-up angles on every critical zone:
   - **Hero monument likeness**: Compare each flagship monument against real reference photos before you ship a SKU.
   - **Eye-level arch and cavity clearance**: Inspect through-arch and under-bridge openings at eye level. Reject overhang support pipes blocking open spans.
@@ -28,7 +29,7 @@ Read and execute all four gates before you approve any city STL, tile, or packsh
   - **Bridges and overpasses**: Verify `0.00 mm` bank abutment seals on both shores, aligned arch piers, and zero floating stubs.
   - **Outer perimeter sliver check**: Inspect all four `120x170` or `170x120` borders. Reject razor-sliced perimeter walls or orphaned sidewalk annexes.
   - **Waterfronts and streets**: Verify zero floating vessels in `waterCutout`, zero streetlamp mast spikes, and zero collapsed walls.
-- Fix every geometry failure systemically in `src/` with zero city hacks.
+- Fix procedural defects systemically in core `src/`. Put curated flagship monuments in `src/landmarks/` with `replaceOsmIds` suppression.
 - Rebuild `python3 build_app.py`, pass `npm run test:headless` (`100%`), re-export STLs, and re-run Gates 2 and 3.
 
 ## Gate 4: Packshot and Detail Render QA

@@ -31,18 +31,18 @@ Collect real end-to-end proof for the exact layer you changed:
 ### Architectural Likeness and Landmark Visual QA Gate
 
 - Never report a city STL as print-ready from `calibration/validate_msla_stl.py` alone.
-- Inspect the hero landmark and top nearby landmarks from four close-up angles before sign-off.
+- Inspect every hero monument and frame element individually against real reference photos inside `/swarm` QA.
 - Use `inspect-landmark`, `audit-scene` (`tools/mcp_map3d_inspector.mjs`), and macro Cycles renders to check real-world form.
 - Reject overlapping archetype and S3DB parts, deformed towers, blocked arches, or wrong roofs before export approval.
-- Fix every geometry defect at the systemic builder level, never with city or landmark hacks.
+- Fix generic urban defects in core procedural solvers. Put bespoke flagship monuments only in `src/landmarks/`.
 
 ## 4. Mandatory Defect-Prevention Guards
 
 - Keep `SLA_PRINT_LAWS` (`src/geometry/sla_print_laws.js`) active in Resin Mode across all builders.
 - Keep `DFM-01` through `DFM-11` constraints intact during any geometry refactor.
 - Preserve `roadHeightMm` (`0.567` in `src/geometry/print_physics_config.js`) so roads stay crisp above terrain.
-- Never add hardcoded city hacks, coordinate special cases, or landmark name overrides.
-- Solve geometry or print defects at the systemic algorithm level so every city benefits.
+- Keep core solvers in `src/Water/`, `src/mesh/`, and `src/buildings/` city-agnostic with zero city-name conditionals.
+- Register curated monuments in `src/landmarks/` with geo-anchored footprints, `replaceOsmIds` suppression, and `VAL-01..08` proof.
 - Always run `python3 build_app.py` after `src/` edits so `index.html` stays in sync.
 
 ## 5. Agent Delegation and History Verification
