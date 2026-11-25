@@ -873,11 +873,6 @@
 
     let outTile = baseTile;
     let pluggedRings = [];
-    if (ctx.waterCutout === true && outTile && outTile.numTri() > 0) {
-      const plugRes = _plugInlandThroughHoles(core, poly, mf, outTile, terrainWater, tb, scaleMm, minDryZU, baseBottomMm);
-      outTile = plugRes.outTile;
-      pluggedRings = plugRes.pluggedRings;
-    }
 
     const pad = solidBaseNoTunnels
       ? null
@@ -1997,7 +1992,7 @@
             }
           }
 
-          for (let iter = 0; iter < 6 && unsup && !unsup.isEmpty(); iter++) {
+          for (let iter = 0; iter < 24 && unsup && !unsup.isEmpty(); iter++) {
             const uComps = unsup.decompose();
             uComps.sort((a, b) => b.area() - a.area());
             const iterDiskPolys = [];
@@ -2167,6 +2162,24 @@
   }
 
   function buildUnifiedTileTrianglesForStlCSG(state, layerFilter = 'all', tileIdFilter = -1) {
+    if (layerFilter === 'all' && !Array.isArray(state)) {
+      const cutterMod = (typeof buildMasterFrameUnifiedTilesForStl === 'function')
+        ? { buildMasterFrameUnifiedTilesForStl }
+        : (typeof require !== 'undefined' ? require('./tile_seam_cutter.js') : null);
+      if (cutterMod && typeof cutterMod.buildMasterFrameUnifiedTilesForStl === 'function') {
+        const selfDeps = {
+          _plugInlandThroughHoles,
+          _plugPostUnionBasePockets,
+          _ventUpperSealedCourtyards,
+          _groundFlatOverhangPiers,
+          _cleanupDetachedBorderSlivers,
+          _rasterizePolysToGrid,
+          _sliceCrossSectionPolys,
+          _applyPostUnionMslaPrintGuard,
+        };
+        return cutterMod.buildMasterFrameUnifiedTilesForStl(state, tileIdFilter, { vaultMod: selfDeps });
+      }
+    }
     const { core, poly, cfgMod, ventMod } = _getDeps();
     let filtered = [], scaleMm = 1, isCutout = false, baseBottomMm = 2.35, interiorSeams = null;
     if (Array.isArray(state)) {
@@ -2241,6 +2254,14 @@
   const exportsObj = {
     carveTileHollowVaultAndId, buildUnifiedTileTrianglesForStlCSG,
     unionTileTrianglesForStlCSG: buildUnifiedTileTrianglesForStlCSG,
+    _plugInlandThroughHoles,
+    _plugPostUnionBasePockets,
+    _ventUpperSealedCourtyards,
+    _groundFlatOverhangPiers,
+    _cleanupDetachedBorderSlivers,
+    _rasterizePolysToGrid,
+    _sliceCrossSectionPolys,
+    _applyPostUnionMslaPrintGuard,
   };
   Object.assign(root, exportsObj);
   if (typeof module !== 'undefined' && module.exports) {

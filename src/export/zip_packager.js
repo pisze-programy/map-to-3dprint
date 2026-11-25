@@ -23,7 +23,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   const { totalWidthMm: totalW, totalHeightMm: totalH, scaleMm } = resolveSceneScaleAndSpec(state, null);
   const cfg = (typeof PRINT_PHYSICS_CONFIG !== 'undefined') ? PRINT_PHYSICS_CONFIG : null;
   const mono4 = cfg ? cfg.photonMono4 : { bedXMm: 153.45, bedYMm: 87.05, frameSplitMaxMm: 148.0 };
-  const resinCfg = cfg ? cfg.resin : { defaultKerfMm: 0.08, densityGPerMl: 1.15 };
+  const resinCfg = cfg ? cfg.resin : { defaultKerfMm: 0.0, densityGPerMl: 1.15 };
 
   const targetW_cm = (totalW / 10).toFixed(1), targetH_cm = (totalH / 10).toFixed(1);
   const tileW = totalW / tileCols, tileH = totalH / tileRows;
@@ -40,7 +40,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
   const fitsSafeR = tileH <= saW + 1e-6 && tileW <= saH + 1e-6;
   const isAutoRotated = (!fitsSafeN && fitsSafeR) || (!fitsSafeN && !fitsSafeR && !fitsNormal && fitsRotated);
 
-  const zipFiles = [], tileEntries = [];
+  const zipFiles = [], tileEntries = [], manifestTileRecords = [];
   let fileIdx = 1;
   const waterCutout = Boolean(state && state.waterCutout);
 
@@ -57,6 +57,7 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
       const tZ = (pm.tileMaxZMm && pm.tileMaxZMm[tid] !== undefined) ? pm.tileMaxZMm[tid] : (isEmptyCutoutTile ? 0.0 : (pm.maxZMm || 20));
       const fileName = `Kafel_${String(fileIdx++).padStart(2, '0')}_R${northRow}C${tc + 1}_${Math.round(tileW)}x${Math.round(tileH)}mm.stl`;
       if (!isEmptyCutoutTile) zipFiles.push({ name: fileName, content: stlBytes });
+      manifestTileRecords.push({ tileId: tid, fileName, bytes: stlBytes, skippedEmptyWater: isEmptyCutoutTile });
       tileEntries.push({
         fileName, skippedEmptyWater: isEmptyCutoutTile, id: tid, r: northRow, c: tc + 1,
         name: `R${northRow}C${tc + 1}`, volMl: tVolMl, grams: tGrams, w: tileW.toFixed(1), h: tileH.toFixed(1),
@@ -156,6 +157,16 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
 
   const reportContent = reportLines.join('\n');
   zipFiles.push({ name: 'README.txt', content: reportContent }, { name: 'INSTRUKCJA_DRUKU_PHOTON_MONO_4.txt', content: reportContent });
+
+  try {
+    const manifestFn = (typeof buildAssemblyManifest === 'function')
+      ? buildAssemblyManifest
+      : (typeof require !== 'undefined' ? require('./assembly_manifest.js').buildAssemblyManifest : null);
+    if (typeof manifestFn === 'function') {
+      const manifestObj = manifestFn(state, manifestTileRecords, null);
+      zipFiles.push({ name: 'assembly_manifest.json', content: JSON.stringify(manifestObj, null, 2) });
+    }
+  } catch (_) {}
 
   if (waterCutout && zipFiles.filter(f => f.name.endsWith('.stl')).length === 0) {
     if (typeof document !== 'undefined') {

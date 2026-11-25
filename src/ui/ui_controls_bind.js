@@ -165,7 +165,7 @@ function bindStudioPanelControls(ctx) {
   const kerfMmInput = document.getElementById('kerfMmInput');
   if (kerfMmInput) kerfMmInput.addEventListener('change', e => {
     const parsed = parseFloat(e.target.value);
-    const defKerf = (typeof resolvePrintPhysicsSpec === 'function') ? resolvePrintPhysicsSpec(state, null).defaultKerfMm : 0.08;
+    const defKerf = (typeof resolvePrintPhysicsSpec === 'function') ? resolvePrintPhysicsSpec(state, null).defaultKerfMm : 0.0;
     state.kerfMm = (Number.isFinite(parsed) && parsed >= 0) ? Math.max(0, Math.min(1.0, parsed)) : defKerf;
     rebuildModel3D();
   });
@@ -282,6 +282,10 @@ function bindStudioPanelControls(ctx) {
       : (PRINT_PROFILES[profileId] ? profileId : 'mono4_custom');
     const prof = PRINT_PROFILES[resolvedId] || PRINT_PROFILES.mono4_custom;
     state.printerProfileId = prof.id;
+    state.formatId = prof.formatId || 'custom_grid';
+    state.frameCols = prof.frameCols || 1;
+    state.frameRows = prof.frameRows || 1;
+    state.interFrameGapMm = Number(prof.interFrameGapMm || 0.0);
     state.lastFetchBbox = null;
     state.lastFetchTitle = null;
     if (prof.isCustomMono4) {
@@ -491,9 +495,9 @@ function bindStudioPanelControls(ctx) {
         studio.camera.yaw = -0.42; studio.camera.pitch = 0.38; studio.camera.distance = 18; studio.camera.target = [0, 0, 3.2];
       } else if (mode === 'tiles') {
         if ((state.tileCols || 1) === 1 && (state.tileRows || 1) === 1) {
-          applyPrinterProfile('mono4_252_2x3');
+          applyPrinterProfile('square_150_2x2');
           const pSel = document.getElementById('printerSelect');
-          if (pSel) pSel.value = 'mono4_252_2x3';
+          if (pSel) pSel.value = 'square_150_2x2';
         }
         state.tileExplode = 0.62;
         if (tileExplodeSlider) tileExplodeSlider.value = 62;

@@ -34,8 +34,13 @@
       const res = man.intersect(clipCube);
       if (!res || res.numTri() === 0) { core.safeDeleteManifold(res); return null; }
       return res;
-    } catch (_) {
-      return null;
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      throw new Error(
+        `[layer3_invariants_tiles] Manifold intersect failed ` +
+        `box=[${box.minX.toFixed(3)}..${box.maxX.toFixed(3)}, ${box.minY.toFixed(3)}..${box.maxY.toFixed(3)}, ${box.minZ.toFixed(3)}..${box.maxZ.toFixed(3)}] ` +
+        `numTri=${man.numTri()}: ${msg}`
+      );
     } finally {
       core.safeDeleteManifold(clipCube);
     }

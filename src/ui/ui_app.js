@@ -115,7 +115,7 @@ function initMap3DApp(initialScene) {
     totalHeightMm: Math.round(initH * 10),
     targetWidthCm: initW,
     targetHeightCm: initH,
-    kerfMm: 0.08,
+    kerfMm: 0.0,
     bedSafeMarginMm: initBedSafeMarginMm,
     exportFrame: false,
     mapSpanMeters: initSpanM,

@@ -169,6 +169,77 @@ function _addBorderCrossingStationsJS(spec, ctx, scaleMm, pierStationsS) {
   }
 }
 
+function _collectSeamCrossingStationsJS(spec, ctx, scaleMm, terrainWater, existingS) {
+  const cutXs = Array.isArray(ctx && ctx.cutXs) ? ctx.cutXs : [];
+  const cutYs = Array.isArray(ctx && ctx.cutYs) ? ctx.cutYs : [];
+  if (cutXs.length === 0 && cutYs.length === 0) return [];
+  if (!ctx || !ctx.waterCutout) return [];
+  if (!Array.isArray(spec.pts) || spec.pts.length < 2 || !Array.isArray(spec.sArr) || spec.sArr.length !== spec.pts.length) return [];
+
+  const crossings = [];
+  for (let i = 0; i < spec.pts.length - 1; i++) {
+    const a = spec.pts[i], b = spec.pts[i + 1];
+    const s0 = spec.sArr[i], s1 = spec.sArr[i + 1];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    if (Math.abs(dx) > 1e-9) {
+      for (let ci = 0; ci < cutXs.length; ci++) {
+        const cx = cutXs[ci];
+        if ((a[0] <= cx && b[0] >= cx) || (a[0] >= cx && b[0] <= cx)) {
+          const t = Math.max(0, Math.min(1, (cx - a[0]) / dx));
+          crossings.push({ s: s0 + t * (s1 - s0), axis: 'x' });
+        }
+      }
+    }
+    if (Math.abs(dy) > 1e-9) {
+      for (let ci = 0; ci < cutYs.length; ci++) {
+        const cy = cutYs[ci];
+        if ((a[1] <= cy && b[1] >= cy) || (a[1] >= cy && b[1] <= cy)) {
+          const t = Math.max(0, Math.min(1, (cy - a[1]) / dy));
+          crossings.push({ s: s0 + t * (s1 - s0), axis: 'y' });
+        }
+      }
+    }
+  }
+  if (crossings.length === 0) return [];
+
+  const clampMin = 0.20 / scaleMm;
+  const clampMax = spec.spanU - 0.20 / scaleMm;
+  const minSepU = 0.70 / scaleMm;
+  const maxCheckU = 1.50 / scaleMm;
+  const out = [];
+  const hasSupportNear = (sVal, sideDir) => {
+    for (let i = 0; i < existingS.length; i++) {
+      const d = existingS[i] - sVal;
+      if (sideDir === 0 ? Math.abs(d) < minSepU : (d * sideDir >= 0 && d * sideDir <= maxCheckU)) return true;
+    }
+    for (let i = 0; i < spec.explicitSupports.length; i++) {
+      const d = spec.explicitSupports[i].sProj - sVal;
+      if (sideDir === 0 ? Math.abs(d) < minSepU : (d * sideDir >= 0 && d * sideDir <= maxCheckU)) return true;
+    }
+    for (let i = 0; i < out.length; i++) {
+      if (Math.abs(out[i] - sVal) < minSepU) return true;
+    }
+    return false;
+  };
+
+  for (let i = 0; i < crossings.length; i++) {
+    const cr = crossings[i];
+    const { pt, tx, ty } = _samplePtAtSJS(spec, cr.s);
+    if (Number.isFinite(ctx.halfW) && Math.abs(pt[0]) >= ctx.halfW - 0.1 / scaleMm) continue;
+    if (Number.isFinite(ctx.halfH) && Math.abs(pt[1]) >= ctx.halfH - 0.1 / scaleMm) continue;
+    if (!terrainWater.isPointInWater(pt[0], pt[1])) continue;
+    const perpCos = cr.axis === 'x' ? Math.abs(tx) : Math.abs(ty);
+    const twinOffU = Math.min(1.40 / scaleMm, 0.85 / (scaleMm * Math.max(0.35, perpCos)));
+    if (perpCos < 0.45 || cr.s - twinOffU < clampMin || cr.s + twinOffU > clampMax) {
+      if (!hasSupportNear(cr.s, 0)) out.push(Math.max(clampMin, Math.min(clampMax, cr.s)));
+    } else {
+      if (!hasSupportNear(cr.s, -1)) out.push(Math.max(clampMin, Math.min(clampMax, cr.s - twinOffU)));
+      if (!hasSupportNear(cr.s, 1)) out.push(Math.max(clampMin, Math.min(clampMax, cr.s + twinOffU)));
+    }
+  }
+  return out;
+}
+
 function _addBridgeSupportSolidsJS(spec, terrainWater, ctx, strutRU, parts, supportStationsS, pylonStations, metrics) {
   const mf = ctx.mf, halfW = spec.width * 0.5, scaleMm = ctx.scaleMm || 1.89;
   const minColR = Math.max(strutRU * 1.15, Math.min(halfW * 0.25, 0.45 / scaleMm));
@@ -277,6 +348,34 @@ function _addBridgeSupportSolidsJS(spec, terrainWater, ctx, strutRU, parts, supp
         const zFloor = _anchorFloorZJS(lp[0], lp[1], terrainWater, ctx);
         const inWater = terrainWater.isPointInWater(lp[0], lp[1]);
         const colR = Math.max(strutRU, Math.min(halfW * 0.88, (ctx.waterCutout && inWater) ? minColR * 1.25 : minColR));
+        const zCap = capAt(s, colR);
+        if (zCap <= zFloor + 0.04 / scaleMm) continue;
+        if (inWater) metrics.syntheticWaterPiers++;
+        metrics.pierMinZ = Math.min(metrics.pierMinZ, zFloor);
+        const col = beamManifoldBetween(mf, [lp[0], lp[1], zFloor], [lp[0], lp[1], zCap], colR);
+        if (col) {
+          parts.push(col);
+          placedAny = true;
+        }
+      }
+      if (placedAny) supportStationsS.push(s);
+    }
+  }
+
+  if (ctx.waterCutout && ((ctx.cutXs && ctx.cutXs.length) || (ctx.cutYs && ctx.cutYs.length))) {
+    const seamStationsS = _collectSeamCrossingStationsJS(spec, ctx, scaleMm, terrainWater, supportStationsS);
+    const placeTwinSeam = spec.width * scaleMm > 4.2;
+    const latOffSeamU = placeTwinSeam ? Math.max(minColR * 1.35, halfW - 1.4 / scaleMm) : 0;
+    for (const s of seamStationsS) {
+      const { pt, tx, ty } = _samplePtAtSJS(spec, s);
+      const colPts = placeTwinSeam
+        ? [_sidePtJS(pt, tx, ty, latOffSeamU, 0), _sidePtJS(pt, tx, ty, -latOffSeamU, 0)]
+        : [pt];
+      let placedAny = false;
+      for (const lp of colPts) {
+        const zFloor = _anchorFloorZJS(lp[0], lp[1], terrainWater, ctx);
+        const inWater = terrainWater.isPointInWater(lp[0], lp[1]);
+        const colR = Math.max(strutRU, Math.min(halfW * 0.88, inWater ? minColR * 1.25 : minColR));
         const zCap = capAt(s, colR);
         if (zCap <= zFloor + 0.04 / scaleMm) continue;
         if (inWater) metrics.syntheticWaterPiers++;

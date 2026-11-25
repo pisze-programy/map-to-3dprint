@@ -73,11 +73,13 @@
           <optgroup label="Żywica MSLA — Anycubic Photon Mono 4 (153.45 × 87.05 × 165 mm, 17 µm)">
             <option value="mono4_custom" selected>Photon Mono 4 • Dowolny Format cm (Auto-Siatka)</option>
             <option value="mono4_75x84_1x1">Photon Mono 4 • 75×84 mm (1 Kafel 1×1 na płasko)</option>
-            <option value="mono4_150x168_2x2">Photon Mono 4 • 150×168 mm (4 Kafle 2×2 po 75×84 mm)</option>
-            <option value="mono4_225x252_3x3">Photon Mono 4 • 225×252 mm (9 Kafli 3×3 po 75×84 mm)</option>
-            <option value="mono4_150_1x2">Photon Mono 4 • 150×150 mm (2 Kafle 1×2 po 150×75 mm)</option>
-            <option value="mono4_296_2x4">Photon Mono 4 • Format XL 296×296 mm (8 Kafli 2×4 po 148×74 mm)</option>
-            <option value="mono4_a4_passepartout_12x17_1x3">A4 Passe-Partout 12x17 cm (1x3: 120x56.7 mm, 4.0 mm solid)</option>
+            <option value="mono4_a4_passepartout_12x17_1x3">Single A4 Passe-Partout 12×17 cm (1×3: 120×56.7 mm, 4.0 mm solid)</option>
+            <option value="single_a4_landscape_3x1">Single A4 Landscape 17×12 cm (3×1: 56.7×120 mm, 4.0 mm solid)</option>
+            <option value="triptych_a4_3x1">Triptych A4 3×(12×17 cm) = 3×3 Pasy (360×170 mm)</option>
+            <option value="quartet_a4_2x2">Quartet A4 2×2 Ramy = 4×(1×3) = 12 Pasów (240×340 mm)</option>
+            <option value="square_150_2x2">Square 15×15 cm (2×2: 75×75 mm, 4.0 mm solid)</option>
+            <option value="square_240_2x4">Square 24×24 cm (2×4: 120×60 mm, 4.0 mm solid)</option>
+            <option value="flagship_50x70_3x9">Flagship 50×70 cm (36×51 cm relief, 3×9: 120×56.7 mm)</option>
           </optgroup>
         </select>
       </div>
@@ -512,7 +514,7 @@
           </label>
           <div class="flex items-center justify-end gap-1 min-w-0" title="Kompensacja szczeliny utwardzania żywicy SLA">
             <span class="text-[11px] text-[var(--muted-foreground)] whitespace-nowrap">Kerf:</span>
-            <input id="kerfMmInput" type="number" min="0" max="0.5" step="0.01" value="0.08" class="w-14 bg-[var(--card)] border border-[var(--border)] rounded px-1 py-0.5 text-xs font-mono font-bold text-[var(--foreground)] text-right focus:outline-none" />
+            <input id="kerfMmInput" type="number" min="0" max="0.5" step="0.01" value="0.00" class="w-14 bg-[var(--card)] border border-[var(--border)] rounded px-1 py-0.5 text-xs font-mono font-bold text-[var(--foreground)] text-right focus:outline-none" />
             <span class="text-[11px] text-[var(--muted-foreground)]">mm</span>
           </div>
           <div class="col-span-2 flex items-center justify-between gap-1 min-w-0" title="Wolny margines z każdej strony kafla na stole Anycubic Photon Mono 4 (153.45×87.05 mm). Kafle są dzielone tak, aby zmieściły się w strefie bezpiecznej.">

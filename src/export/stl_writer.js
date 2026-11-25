@@ -80,30 +80,14 @@ function buildBinarySTLBytes(state, layerFilter = 'all', tileIdFilter = -1) {
   const tileWidthMm = totalWidthMm / tileCols, tileHeightMm = totalHeightMm / tileRows;
   const tileSpanX = (2 * halfW) / tileCols, tileSpanY = (2 * halfH) / tileRows;
 
-  let shiftXScene = halfW, shiftYScene = halfH, targetW = totalWidthMm, targetH = totalHeightMm;
-  if (layerFilter === 'frame') {
-    const fwMm = (state && Number(state.frameWidthMm) > 0) ? Number(state.frameWidthMm) : defFrameWidthMm;
-    const fwU = fwMm / scaleMm;
-    shiftXScene = halfW + fwU; shiftYScene = halfH + fwU;
-    targetW = totalWidthMm + 2 * fwMm; targetH = totalHeightMm + 2 * fwMm;
-  } else if (tileIdFilter >= 0) {
-    const tc = tileIdFilter % tileCols, tr = Math.floor(tileIdFilter / tileCols);
-    shiftXScene = halfW - tc * tileSpanX; shiftYScene = halfH - tr * tileSpanY;
-    targetW = tileWidthMm; targetH = tileHeightMm;
-  }
-
-  const fitsNormal = targetW <= mono4.bedXMm && targetH <= mono4.bedYMm;
-  const fitsRotated = targetH <= mono4.bedXMm && targetW <= mono4.bedYMm;
-  // Prefer the orientation that fits the bed safe area (state.bedSafeMarginMm per side)
-  const safeArea = (typeof resolveMono4SafeArea === 'function') ? resolveMono4SafeArea(state)
-    : ((typeof require !== 'undefined') ? require('../geometry/print_physics_config.js').resolveMono4SafeArea(state) : null);
-  const fitsSafeN = safeArea ? (targetW <= safeArea.maxWMm + 1e-6 && targetH <= safeArea.maxHMm + 1e-6) : fitsNormal;
-  const fitsSafeR = safeArea ? (targetH <= safeArea.maxWMm + 1e-6 && targetW <= safeArea.maxHMm + 1e-6) : fitsRotated;
-  const shouldRotateMono4 = (tileIdFilter >= 0) && ((!fitsSafeN && fitsSafeR) || (!fitsSafeN && !fitsSafeR && !fitsNormal && fitsRotated));
-
   let allTris = [];
   const vaultMod = _getStlVaultSolver();
-  if (layerFilter === 'all' && vaultMod && typeof vaultMod.buildUnifiedTileTrianglesForStlCSG === 'function') {
+  const cutterMod = (typeof buildMasterFrameUnifiedTilesForStl === 'function')
+    ? { buildMasterFrameUnifiedTilesForStl, getCachedMasterFrameEntry }
+    : (typeof require !== 'undefined' ? require('../mesh/tile_seam_cutter.js') : null);
+  if (layerFilter === 'all' && !Array.isArray(state) && cutterMod && typeof cutterMod.buildMasterFrameUnifiedTilesForStl === 'function') {
+    allTris = cutterMod.buildMasterFrameUnifiedTilesForStl(state, tileIdFilter, { vaultMod });
+  } else if (layerFilter === 'all' && vaultMod && typeof vaultMod.buildUnifiedTileTrianglesForStlCSG === 'function') {
     allTris = vaultMod.buildUnifiedTileTrianglesForStlCSG(state, layerFilter, tileIdFilter);
   } else {
     const isCutout = Boolean(state && state.waterCutout);
@@ -123,6 +107,43 @@ function buildBinarySTLBytes(state, layerFilter = 'all', tileIdFilter = -1) {
       }
     }
   }
+
+  let shiftXScene = halfW, shiftYScene = halfH, targetW = totalWidthMm, targetH = totalHeightMm;
+  if (layerFilter === 'frame') {
+    const fwMm = (state && Number(state.frameWidthMm) > 0) ? Number(state.frameWidthMm) : defFrameWidthMm;
+    const fwU = fwMm / scaleMm;
+    shiftXScene = halfW + fwU; shiftYScene = halfH + fwU;
+    targetW = totalWidthMm + 2 * fwMm; targetH = totalHeightMm + 2 * fwMm;
+  } else if (tileIdFilter >= 0) {
+    let customBoundsMm = null;
+    try {
+      const cutterMod = (typeof getCachedMasterFrameEntry === 'function')
+        ? { getCachedMasterFrameEntry }
+        : (typeof require !== 'undefined' ? require('../mesh/tile_seam_cutter.js') : null);
+      const cached = cutterMod && typeof cutterMod.getCachedMasterFrameEntry === 'function'
+        ? cutterMod.getCachedMasterFrameEntry(state) : null;
+      if (cached && cached.tileBoundsMmById) customBoundsMm = cached.tileBoundsMmById.get(tileIdFilter) || null;
+    } catch (_) {}
+    if (customBoundsMm) {
+      shiftXScene = -customBoundsMm.minX / scaleMm;
+      shiftYScene = -customBoundsMm.minY / scaleMm;
+      targetW = customBoundsMm.maxX - customBoundsMm.minX;
+      targetH = customBoundsMm.maxY - customBoundsMm.minY;
+    } else {
+      const tc = tileIdFilter % tileCols, tr = Math.floor(tileIdFilter / tileCols);
+      shiftXScene = halfW - tc * tileSpanX; shiftYScene = halfH - tr * tileSpanY;
+      targetW = tileWidthMm; targetH = tileHeightMm;
+    }
+  }
+
+  const fitsNormal = targetW <= mono4.bedXMm && targetH <= mono4.bedYMm;
+  const fitsRotated = targetH <= mono4.bedXMm && targetW <= mono4.bedYMm;
+  // Prefer the orientation that fits the bed safe area (state.bedSafeMarginMm per side)
+  const safeArea = (typeof resolveMono4SafeArea === 'function') ? resolveMono4SafeArea(state)
+    : ((typeof require !== 'undefined') ? require('../geometry/print_physics_config.js').resolveMono4SafeArea(state) : null);
+  const fitsSafeN = safeArea ? (targetW <= safeArea.maxWMm + 1e-6 && targetH <= safeArea.maxHMm + 1e-6) : fitsNormal;
+  const fitsSafeR = safeArea ? (targetH <= safeArea.maxWMm + 1e-6 && targetW <= safeArea.maxHMm + 1e-6) : fitsRotated;
+  const shouldRotateMono4 = (tileIdFilter >= 0) && ((!fitsSafeN && fitsSafeR) || (!fitsSafeN && !fitsSafeR && !fitsNormal && fitsRotated));
 
   const frameZShiftMm = layerFilter === 'frame' ? computeFrameZShiftMm(allTris, scaleMm) : 0;
   return buildSTLBytesFromTriangles(allTris, shiftXScene, shiftYScene, scaleMm, targetW, targetH, state, shouldRotateMono4, frameZShiftMm);

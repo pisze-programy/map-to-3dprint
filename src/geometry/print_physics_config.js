@@ -35,7 +35,7 @@ const PRINT_PHYSICS_CONFIG = Object.freeze({
     minFeatureMm: 0.12,
     minChannelMm: 0.48,
     dpSimplifyMm: 0.017,
-    defaultKerfMm: 0.08,
+    defaultKerfMm: 0.0,
     densityGPerMl: 1.15
   }),
   // Physical layer heights & tolerances in millimeters

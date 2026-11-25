@@ -837,12 +837,40 @@
 
   // Convert a Manifold to STL triangles. Remove floating micro-shells on grounded meshes.
   // Keep shared Float32 vertices separate and non-collinear for zero-defect topology.
-  function extractDePinchedStlTriangles(mf, man, tid = 0, scaleMm = 1) {
+  function extractDePinchedStlTriangles(mf, man, tid = 0, scaleMm = 1, options = null) {
     if (!man || man.numTri() === 0) return [];
     const scMm = Math.max(1e-4, Number(scaleMm) || 1);
+    const opts = (options && typeof options === 'object') ? options : {};
+    const intSeams = (opts.interiorSeams && typeof opts.interiorSeams === 'object') ? opts.interiorSeams : {};
+    const tbMm = (opts.tileBoundsMm && typeof opts.tileBoundsMm === 'object') ? opts.tileBoundsMm : null;
+    const lockXsMm = [];
+    const lockYsMm = [];
+    const interiorXsU = [];
+    const interiorYsU = [];
+    const addUniquePlane = (arr, v) => {
+      if (!Number.isFinite(v)) return;
+      for (let i = 0; i < arr.length; i++) {
+        if (Math.abs(arr[i] - v) < 1e-6) return;
+      }
+      arr.push(v);
+    };
+    for (const sx of (intSeams.cutXsMm || [])) {
+      const n = Number(sx);
+      if (Number.isFinite(n)) { addUniquePlane(lockXsMm, n); interiorXsU.push(n / scMm); }
+    }
+    for (const sy of (intSeams.cutYsMm || [])) {
+      const n = Number(sy);
+      if (Number.isFinite(n)) { addUniquePlane(lockYsMm, n); interiorYsU.push(n / scMm); }
+    }
+    if (tbMm) {
+      addUniquePlane(lockXsMm, Number(tbMm.minX));
+      addUniquePlane(lockXsMm, Number(tbMm.maxX));
+      addUniquePlane(lockYsMm, Number(tbMm.minY));
+      addUniquePlane(lockYsMm, Number(tbMm.maxY));
+    }
     let src = man;
     let ownsSrc = false;
-    if (typeof man.simplify === 'function') {
+    if (lockXsMm.length === 0 && lockYsMm.length === 0 && typeof man.simplify === 'function') {
       try {
         const tol = Math.max(1e-5, Math.min(1e-3, 0.0015 / scMm));
         const simp = man.simplify(tol);
@@ -935,9 +963,24 @@
       return { add, remove, hasClose };
     };
 
-    const findClearSpiralXY = (bx, by, bz, stepSize, skipId, gridRef, roundF32) => {
+    const findClearSpiralXY = (bx, by, bz, stepSize, skipId, gridRef, roundF32, lockX = false, lockY = false) => {
+      if (lockX && lockY) return null;
       for (let step = 1; step <= 6; step++) {
         const rad = stepSize * step;
+        if (lockX) {
+          for (const s of [1, -1]) {
+            const ty = roundF32 ? Math.fround(by + s * rad) : (by + s * rad);
+            if (!gridRef.hasClose(bx, ty, bz, skipId)) return [bx, ty];
+          }
+          continue;
+        }
+        if (lockY) {
+          for (const s of [1, -1]) {
+            const tx = roundF32 ? Math.fround(bx + s * rad) : (bx + s * rad);
+            if (!gridRef.hasClose(tx, by, bz, skipId)) return [tx, by];
+          }
+          continue;
+        }
         for (let ai = 0; ai < 16; ai++) {
           const ang = (ai * Math.PI) / 8;
           const rawX = bx + Math.cos(ang) * rad;
@@ -950,7 +993,32 @@
       return null;
     };
 
-    // Separate pinched or coincident vertices in scene units.
+    const vertLockX = new Uint8Array(nv);
+    const vertLockY = new Uint8Array(nv);
+    if (lockXsMm.length > 0 || lockYsMm.length > 0) {
+      const planeTolMm = 0.001;
+      for (let v = 0; v < nv; v++) {
+        const b = v * 3;
+        const xMm = vp[b] * scMm;
+        const yMm = vp[b + 1] * scMm;
+        for (let i = 0; i < lockXsMm.length; i++) {
+          if (Math.abs(xMm - lockXsMm[i]) < planeTolMm) {
+            vertLockX[v] = 1;
+            if (Math.abs(xMm - lockXsMm[i]) < 2e-4) vp[b] = lockXsMm[i] / scMm;
+            break;
+          }
+        }
+        for (let i = 0; i < lockYsMm.length; i++) {
+          if (Math.abs(yMm - lockYsMm[i]) < planeTolMm) {
+            vertLockY[v] = 1;
+            if (Math.abs(yMm - lockYsMm[i]) < 2e-4) vp[b + 1] = lockYsMm[i] / scMm;
+            break;
+          }
+        }
+      }
+    }
+
+    // Separate pinched or coincident vertices in scene units while keeping cut planes locked.
     const cellU = 0.001 / scMm;
     const shiftU = 0.0015 / scMm;
     const unitGrid = createSpatialGrid(
@@ -967,14 +1035,24 @@
       let y = vp[b + 1];
       let z = vp[b + 2];
       const origZ = z;
+      const lx = Boolean(vertLockX[v]);
+      const ly = Boolean(vertLockY[v]);
       if (unitGrid.hasClose(x, y, z, -1)) {
-        const nx = vNorm[b];
-        const ny = vNorm[b + 1];
+        const nx = lx ? 0 : vNorm[b];
+        const ny = ly ? 0 : vNorm[b + 1];
         const nz = vNorm[b + 2];
-        const dirs = [[nx, ny, nz], [nx, ny, 0], [1, 0, 0], [0, 1, 0], [0, 0, origZ <= shiftU * 2 ? -1 : 1]];
+        const dirs = [
+          [nx, ny, nz],
+          [nx, ny, 0],
+          [lx ? 0 : 1, 0, 0],
+          [0, ly ? 0 : 1, 0],
+          [0, 0, origZ <= shiftU * 2 ? -1 : 1]
+        ];
         let moved = false;
         outer: for (let di = 0; di < dirs.length; di++) {
           let [dx, dy, dz] = dirs[di];
+          if (lx) dx = 0;
+          if (ly) dy = 0;
           const dl = Math.hypot(dx, dy, dz);
           if (dl < 1e-9) continue;
           dx /= dl; dy /= dl; dz /= dl;
@@ -991,7 +1069,7 @@
           }
         }
         if (!moved) {
-          const xy = findClearSpiralXY(vp[b], vp[b + 1], origZ, shiftU, -1, unitGrid, false);
+          const xy = findClearSpiralXY(vp[b], vp[b + 1], origZ, shiftU, -1, unitGrid, false, lx, ly);
           if (xy) { x = xy[0]; y = xy[1]; z = origZ; }
         }
         vp[b] = x; vp[b + 1] = y; vp[b + 2] = z;
@@ -1093,6 +1171,10 @@
           const syMm = (compMaxY[v] - compMinY[v]) * scMm;
           const areaMm2 = sxMm * syMm;
           const volMm3 = Math.abs(compVolMm3[v]);
+          const touchesInteriorSeam =
+            interiorXsU.some(sx => compMinX[v] <= sx + edgeTolU && compMaxX[v] >= sx - edgeTolU) ||
+            interiorYsU.some(sy => compMinY[v] <= sy + edgeTolU && compMaxY[v] >= sy - edgeTolU);
+          if (touchesInteriorSeam) continue;
           const touchesBorder =
             compMinX[v] <= globalMinX + edgeTolU || compMaxX[v] >= globalMaxX - edgeTolU ||
             compMinY[v] <= globalMinY + edgeTolU || compMaxY[v] >= globalMaxY - edgeTolU;
@@ -1109,6 +1191,8 @@
     const vToId = new Int32Array(nv);
     vToId.fill(-1);
     const verts = [];
+    const mmLockX = [];
+    const mmLockY = [];
     const tris = [];
     let hasNegativeZClamp = false;
     for (let t = 0; t < nTri; t++) {
@@ -1134,6 +1218,8 @@
             hasNegativeZClamp = true;
           }
           verts.push([xMm, yMm, zMm]);
+          mmLockX.push(vertLockX[vi]);
+          mmLockY.push(vertLockY[vi]);
         }
         tri[k] = id;
       }
@@ -1172,12 +1258,12 @@
       for (let id = 0; id < verts.length; id++) {
         const p = verts[id];
         if (!g.hasClose(p[0], p[1], p[2], id)) continue;
-        const xy = findClearSpiralXY(p[0], p[1], p[2], 0.0015, id, g, true);
+        const xy = findClearSpiralXY(p[0], p[1], p[2], 0.0015, id, g, true, Boolean(mmLockX[id]), Boolean(mmLockY[id]));
         if (xy) moveVertMm(id, xy[0], xy[1], p[2]);
       }
     }
 
-    // Repair near-collinear Float32 triangles by nudging shared vertices (VAL-01).
+    // Repair near-collinear Float32 triangles while keeping seam/outer cut-plane vertices locked (VAL-01, VAL-09).
     for (let pass = 0; pass < 10; pass++) {
       let found = 0;
       for (let i = 0; i < tris.length; i++) {
@@ -1205,8 +1291,19 @@
         found++;
         const g = ensureMmGrid();
         const best = (e12 >= e02 && e12 >= e01) ? 0 : (e02 >= e01 ? 1 : 2);
-        const pick = (best + pass) % 3;
-        const cand = pick === 0 ? a : (pick === 1 ? b : c);
+        const triIds = [a, b, c];
+        let cand = triIds[(best + pass) % 3];
+        let bestLockScore = (mmLockX[cand] ? 1 : 0) + (mmLockY[cand] ? 1 : 0);
+        for (let k = 0; k < 3; k++) {
+          const cid = triIds[(best + pass + k) % 3];
+          const sc = (mmLockX[cid] ? 1 : 0) + (mmLockY[cid] ? 1 : 0);
+          if (sc < bestLockScore) {
+            bestLockScore = sc;
+            cand = cid;
+          }
+        }
+        const lx = Boolean(mmLockX[cand]);
+        const ly = Boolean(mmLockY[cand]);
         const o1 = cand === a ? p1 : p0;
         const o2 = cand === c ? p1 : p2;
         const ex = o2[0] - o1[0];
@@ -1224,14 +1321,17 @@
         let chosenZ = vpC[2];
         for (let si = 0; si < scales.length; si++) {
           const eps = 0.0025 * baseSign * scales[si];
-          let tx, ty;
+          let tx = vpC[0];
+          let ty = vpC[1];
           let tz = vpC[2];
-          if (elen > 1e-5) {
+          if (lx && ly) {
+            if (vpC[2] > 0.05) tz = Math.fround(vpC[2] + eps * 0.5);
+          } else if (elen > 1e-5 && !lx && !ly) {
             tx = Math.fround(vpC[0] + (-ey / elen) * eps);
             ty = Math.fround(vpC[1] + (ex / elen) * eps);
           } else {
-            tx = Math.fround(vpC[0] + eps);
-            ty = Math.fround(vpC[1] - eps * 0.73);
+            if (!lx) tx = Math.fround(vpC[0] + eps);
+            if (!ly) ty = Math.fround(vpC[1] - eps * (lx ? 1.0 : 0.73));
             if (vpC[2] > 0.05) tz = Math.fround(vpC[2] + eps * 0.5);
           }
           const isClear = !g.hasClose(tx, ty, tz, cand);
@@ -1310,7 +1410,7 @@
     const xyPixelMm = (printSpec && printSpec.xyPixelMm) || (root.MONO4_SPEC && root.MONO4_SPEC.xyPixelMm) || 0.017;
     const supportlessMode = Boolean(state && state.supportlessMode);
     const slaLaws = root.SLA_PRINT_LAWS || (typeof SLA_PRINT_LAWS !== 'undefined' ? SLA_PRINT_LAWS : null);
-    const defKerfMm = printSpec.defaultKerfMm !== undefined ? printSpec.defaultKerfMm : 0.08;
+    const defKerfMm = printSpec.defaultKerfMm !== undefined ? printSpec.defaultKerfMm : 0.0;
     const rawKerfMm = (state && state.kerfMm !== undefined) ? Number(state.kerfMm) : defKerfMm;
     const halfKerfMm = (tileCols > 1 || tileRows > 1) ? Math.max(0, rawKerfMm * 0.5) : 0.0;
     const kerfUnits = halfKerfMm / scaleMm;
@@ -1342,6 +1442,11 @@
         });
       }
     }
+
+    const cutXs = [];
+    for (let tc = 1; tc < tileCols; tc++) cutXs.push(-halfW + tc * colSpan);
+    const cutYs = [];
+    for (let tr = 1; tr < tileRows; tr++) cutYs.push(-halfH + tr * rowSpan);
 
     const mono4Cfg = cfg.photonMono4 || {};
     const bedZMm = Number(state && state.bedZ) || mono4Cfg.bedZMm || 165.0;
@@ -1502,6 +1607,8 @@
       tileCols,
       tileRows,
       tileBounds,
+      cutXs,
+      cutYs,
       bedZMm,
       zCapLimitMm,
       maxZUnits: zCapLimitMm / scaleMm,

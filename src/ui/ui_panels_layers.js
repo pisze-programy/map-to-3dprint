@@ -330,7 +330,7 @@ function createUILayersStatsController(state, onRebuildNeeded) {
     if (autoFitBtn) autoFitBtn.classList.toggle('hidden', fitsMono4);
 
     const kerfInp = document.getElementById('kerfMmInput');
-    if (kerfInp && document.activeElement !== kerfInp) kerfInp.value = (state.kerfMm !== undefined) ? state.kerfMm : 0.08;
+    if (kerfInp && document.activeElement !== kerfInp) kerfInp.value = (state.kerfMm !== undefined) ? state.kerfMm : 0.0;
     const frameChk = document.getElementById('chkExportFrame');
     if (frameChk && document.activeElement !== frameChk) frameChk.checked = !!state.exportFrame;
 

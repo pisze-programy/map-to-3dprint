@@ -29,6 +29,7 @@ def build():
         "src/vendor/manifold_vendor.js",
         # 2. Central Print Config, 2D Geometry & Manifold Core
         "src/geometry/print_physics_config.js",
+        "src/geometry/format_catalog.js",
         "src/geometry/sla_print_laws.js",
         "src/geometry/polygon_2d.js",
         "src/geometry/obb_medial_2d.js",
@@ -39,6 +40,7 @@ def build():
         "src/mesh/tile_id_emboss.js",
         "src/mesh/tile_msla_vent_builder.js",
         "src/mesh/tile_sla_vault_solver.js",
+        "src/mesh/tile_seam_cutter.js",
         "src/mesh/global_invariants_auditor.js",
         "src/Water/water_elevation_sampler.js",
         "src/Water/water_sloped_reaches.js",
@@ -82,6 +84,7 @@ def build():
         "src/render/webgl_studio.js",
         # 4. Binary .STL / .ZIP / .3MF Exporters
         "src/export/export_io_utils.js",
+        "src/export/assembly_manifest.js",
         "src/export/stl_writer.js",
         "src/export/zip_packager.js",
         "src/export/export_3mf.js",

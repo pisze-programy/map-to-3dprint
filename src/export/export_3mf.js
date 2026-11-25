@@ -271,11 +271,29 @@ function exportMultiColor3MF(state) {
   sink.push(`\n  </resources>\n  <build>\n    ${buildItemsXml}\n  </build>\n</model>`);
   const modelXmlBytes = sink.toUint8Array();
 
-  const zipBytes = createZipArchive([
+  const zipEntries = [
     { name: '[Content_Types].xml', content: contentTypesXml },
     { name: '_rels/.rels', content: relsXml },
     { name: '3D/3dmodel.model', content: modelXmlBytes },
-  ]);
+  ];
+  try {
+    const manifestFn = (typeof buildAssemblyManifest === 'function')
+      ? buildAssemblyManifest
+      : (typeof require !== 'undefined' ? require('./assembly_manifest.js').buildAssemblyManifest : null);
+    if (typeof manifestFn === 'function') {
+      const recPlaceholder = [];
+      for (let tr = 0; tr < tileRows; tr++) {
+        for (let tc = 0; tc < tileCols; tc++) {
+          const tid = tr * tileCols + tc;
+          recPlaceholder.push({ tileId: tid, fileName: `3D/3dmodel.model#Tile_R${tileRows - tr}C${tc + 1}`, bytes: null, skippedEmptyWater: false });
+        }
+      }
+      const manifestObj = manifestFn(state, recPlaceholder, null);
+      zipEntries.push({ name: 'Metadata/assembly_manifest.json', content: JSON.stringify(manifestObj, null, 2) });
+    }
+  } catch (_) {}
+
+  const zipBytes = createZipArchive(zipEntries);
 
   downloadBlob(zipBytes, `Map3D_${safeTitle}${tileSuffix}_Multicolor.3mf`, 'model/3mf');
   return true;

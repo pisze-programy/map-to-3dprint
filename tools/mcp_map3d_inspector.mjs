@@ -398,23 +398,50 @@ function getEffectiveScaleToBed(meta) {
  * @returns {object}
  */
 function resolveFramePresetArgs(args = {}) {
-  const fp = String(args.framePreset || '').trim().toLowerCase();
-  if (
-    fp !== 'a4_12x17' &&
-    fp !== 'a4-12x17' &&
-    fp !== 'mono4_a4_passepartout_12x17_1x3' &&
-    fp !== 'mono4_a4_passepartout_12x17_2x1'
-  ) {
-    return args;
+  const fp = String(args.formatId || args.framePreset || '').trim();
+  const fpLow = fp.toLowerCase();
+  let fmtSpec = null;
+  try {
+    const cat = require('../src/geometry/format_catalog.js');
+    if (cat && typeof cat.resolveFormatSpec === 'function') {
+      fmtSpec = cat.resolveFormatSpec(fp) || cat.resolveFormatSpec(fpLow);
+    }
+  } catch (_) {}
+
+  if (!fmtSpec && (
+    fpLow === 'a4_12x17' ||
+    fpLow === 'a4-12x17' ||
+    fpLow === 'mono4_a4_passepartout_12x17_1x3' ||
+    fpLow === 'mono4_a4_passepartout_12x17_2x1'
+  )) {
+    fmtSpec = {
+      format_id: 'single_a4_1x3',
+      window_mm: [120, 170],
+      frame_cols: 1,
+      frame_rows: 1,
+      tile_cols: 1,
+      tile_rows: 3,
+      solid_base_no_tunnels: true,
+      base_height_mm: 4.0,
+      bed_safe_margin_mm: 4.0,
+      inter_frame_gap_mm: 0.0,
+      is_custom: false,
+    };
   }
+  if (!fmtSpec || fmtSpec.is_custom) return args;
+
   const merged = {
-    targetWidthCm: 12.0,
-    targetHeightCm: 17.0,
-    tileCols: 1,
-    tileRows: 3,
-    solidBaseNoTunnels: true,
-    baseHeightMm: 4.0,
-    bedSafeMarginMm: 4.0,
+    formatId: fmtSpec.format_id,
+    frameCols: fmtSpec.frame_cols,
+    frameRows: fmtSpec.frame_rows,
+    targetWidthCm: fmtSpec.window_mm[0] / 10,
+    targetHeightCm: fmtSpec.window_mm[1] / 10,
+    tileCols: fmtSpec.tile_cols,
+    tileRows: fmtSpec.tile_rows,
+    solidBaseNoTunnels: Boolean(fmtSpec.solid_base_no_tunnels),
+    baseHeightMm: Number(fmtSpec.base_height_mm ?? 4.0),
+    bedSafeMarginMm: Number(fmtSpec.bed_safe_margin_mm ?? 4.0),
+    interFrameGapMm: Number(fmtSpec.inter_frame_gap_mm ?? 0.0),
     kerfMm: 0.0,
     hollowBase: true,
     showFrame: false,
@@ -435,6 +462,10 @@ function buildLoadOptions(rawArgs = {}, silent = true) {
     osmElements: args.osmElements,
     title: args.title,
     framePreset: args.framePreset,
+    formatId: args.formatId,
+    frameCols: args.frameCols,
+    frameRows: args.frameRows,
+    interFrameGapMm: args.interFrameGapMm,
     lat: args.lat,
     lon: args.lon,
     spanMeters: args.spanMeters,
@@ -538,6 +569,7 @@ async function handleExportMap3DStl(rawArgs = {}, { silent = true } = {}) {
   fs.mkdirSync(outDir, { recursive: true });
 
   const exportedTiles = [];
+  const manifestRecords = [];
   for (let tr = rows - 1; tr >= 0; tr--) {
     const northRow = rows - tr;
     for (let tc = 0; tc < cols; tc++) {
@@ -551,6 +583,7 @@ async function handleExportMap3DStl(rawArgs = {}, { silent = true } = {}) {
       const fileName = `${prefix}_${posLabel}_${tileW}x${tileH}mm.stl`;
       const outPath = path.join(outDir, fileName);
       fs.writeFileSync(outPath, bytes);
+      manifestRecords.push({ tileId: tid, fileName, bytes, skippedEmptyWater: false });
       const stats = measureBinaryStlBytes(bytes);
       exportedTiles.push({
         tileId: tid,
@@ -563,8 +596,19 @@ async function handleExportMap3DStl(rawArgs = {}, { silent = true } = {}) {
     }
   }
 
+  let manifestPath = null;
+  if (typeof sb.buildAssemblyManifest === 'function') {
+    const manifestObj = sb.buildAssemblyManifest(exportState, manifestRecords, {
+      sku_id: args.formatId || exportState.formatId,
+      city_slug: args.title || exportState.plaqueText || prefix,
+    });
+    manifestPath = path.join(outDir, 'assembly_manifest.json');
+    fs.writeFileSync(manifestPath, JSON.stringify(manifestObj, null, 2));
+  }
+
   return {
     outputDir: outDir,
+    manifestPath,
     frameMm: [state.bedSizeMm, state.totalHeightMm],
     grid: [cols, rows],
     solidBaseNoTunnels: Boolean(state.solidBaseNoTunnels),
@@ -1777,6 +1821,8 @@ function mapCommonCliFlags(flags) {
     spanMeters: num('span'),
     rotationDeg: num('rot'),
     framePreset: flags['frame-preset'],
+    formatId: flags['format'] || flags['frame-preset'],
+    interFrameGapMm: num('inter-frame-gap-mm'),
     targetWidthCm: num('width-cm'),
     targetHeightCm: num('height-cm'),
     tileCols: num('tile-cols'),

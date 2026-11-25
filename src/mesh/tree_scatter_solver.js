@@ -198,6 +198,18 @@
     const placedTrees = [];
     const MAX_TREES = 25000;
 
+    const cutXs = Array.isArray(ctx && ctx.cutXs) ? ctx.cutXs : [];
+    const cutYs = Array.isArray(ctx && ctx.cutYs) ? ctx.cutYs : [];
+    const seamBasePadU = 0.15 / scaleMm;
+    const minCutDist = (planes, val) => {
+      let best = Infinity;
+      for (let i = 0; i < planes.length; i++) {
+        const d = Math.abs(val - planes[i]);
+        if (d < best) best = d;
+      }
+      return best;
+    };
+
     const tryAcceptTree = (bx, by, h_m, explicitCrownM = 0) => {
       if (placedTrees.length >= MAX_TREES) return;
       if (!Number.isFinite(bx) || !Number.isFinite(by)) return;
@@ -215,6 +227,8 @@
       const minWaterD = minSegClearance(waterSegGrid, bx, by);
       const minWallD = minSegClearance(wallSegGrid, bx, by);
       const minRoadD = minSegClearance(roadSegGrid, bx, by);
+      const minSeamDX = minCutDist(cutXs, bx);
+      const minSeamDY = minCutDist(cutYs, by);
 
       const maxGeomR = Math.min(
         baseDesiredR,
@@ -222,7 +236,9 @@
         (minWallD - wallPadU) / 1.02,
         (minRoadD - roadPadU) / 1.02,
         (halfW - borderPadU - Math.abs(bx)) / 1.02,
-        (halfH - borderPadU - Math.abs(by)) / 1.02
+        (halfH - borderPadU - Math.abs(by)) / 1.02,
+        (minSeamDX - seamBasePadU) / 1.04,
+        (minSeamDY - seamBasePadU) / 1.04
       );
       if (maxGeomR < minCompactR) return;
 

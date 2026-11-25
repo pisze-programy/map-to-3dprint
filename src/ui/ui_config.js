@@ -113,96 +113,13 @@ const WORLD_LOCATIONS = [
   { cat: 'west_east', title: 'BERN', region: 'Szwajcaria • Berno (Zakole Aare)', lat: 46.9480, lon: 7.4515 }
 ];
 
-const PRINT_PROFILES = {
-  mono4_75x84_1x1: {
-    id: 'mono4_75x84_1x1',
-    name: 'Anycubic Photon Mono 4 • 75×84 mm (1 Kafel 1×1)',
-    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
-    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
-    totalWidthMm: 75, totalHeightMm: 84,
-    cols: 1, rows: 1,
-    isResin: true,
-    xyPixelMm: 0.017,
-    layerHeightMm: 0.05
-  },
-  mono4_150x168_2x2: {
-    id: 'mono4_150x168_2x2',
-    name: 'Anycubic Photon Mono 4 • 150×168 mm (4 Kafle 2×2 po 75×84 mm)',
-    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
-    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
-    totalWidthMm: 150, totalHeightMm: 168,
-    cols: 2, rows: 2,
-    isResin: true,
-    xyPixelMm: 0.017,
-    layerHeightMm: 0.05
-  },
-  mono4_225x252_3x3: {
-    id: 'mono4_225x252_3x3',
-    name: 'Anycubic Photon Mono 4 • 225×252 mm (9 Kafli 3×3 po 75×84 mm)',
-    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
-    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
-    totalWidthMm: 225, totalHeightMm: 252,
-    cols: 3, rows: 3,
-    isResin: true,
-    xyPixelMm: 0.017,
-    layerHeightMm: 0.05
-  },
-  mono4_150_1x2: {
-    id: 'mono4_150_1x2',
-    name: 'Anycubic Photon Mono 4 • 150×150 mm (Auto-Siatka w strefie bezpiecznej)',
-    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
-    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
-    totalWidthMm: 150, totalHeightMm: 150,
-    cols: 1, rows: 2,
-    isResin: true,
-    xyPixelMm: 0.017,
-    layerHeightMm: 0.05
-  },
-  mono4_296_2x4: {
-    id: 'mono4_296_2x4',
-    name: 'Anycubic Photon Mono 4 • 296×296 mm (Auto-Siatka w strefie bezpiecznej)',
-    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
-    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
-    totalWidthMm: 296, totalHeightMm: 296,
-    cols: 2, rows: 4,
-    isResin: true,
-    xyPixelMm: 0.017,
-    layerHeightMm: 0.05
-  },
-  mono4_a4_passepartout_12x17_1x3: {
-    id: 'mono4_a4_passepartout_12x17_1x3',
-    name: 'A4 Passe-Partout 12x17 cm (1x3)',
-    printer: 'Anycubic Photon Mono 4 (153.45x87.05x165 mm)',
-    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
-    totalWidthMm: 120, totalHeightMm: 170,
-    targetWidthCm: 12.0, targetHeightCm: 17.0,
-    cols: 1, rows: 3,
-    isResin: true,
-    xyPixelMm: 0.017,
-    layerHeightMm: 0.05,
-    bedSafeMarginMm: 4.0,
-    solidBaseNoTunnels: true,
-    baseHeightMm: 4.0
-  },
-  mono4_custom: {
-    id: 'mono4_custom',
-    name: 'Anycubic Photon Mono 4 • Dowolny Format cm (Auto-Siatka)',
-    printer: 'Anycubic Photon Mono 4 (153.45×87.05×165 mm)',
-    bedX: 153.45, bedY: 87.05, bedZ: 165.0,
-    totalWidthMm: 500, totalHeightMm: 500,
-    cols: 4, rows: 6,
-    isResin: true,
-    xyPixelMm: 0.017,
-    layerHeightMm: 0.05,
-    isCustomMono4: true
-  }
-};
+const _catalogModForUi = (typeof buildCatalogPrintProfiles === 'function')
+  ? { buildCatalogPrintProfiles }
+  : ((typeof require === 'function') ? require('../geometry/format_catalog.js') : null);
 
-// Backwards-compatible aliases for legacy Mono 4 profile IDs
-PRINT_PROFILES.mono4_84_1x1 = PRINT_PROFILES.mono4_75x84_1x1;
-PRINT_PROFILES.mono4_168_2x2 = PRINT_PROFILES.mono4_150x168_2x2;
-PRINT_PROFILES.mono4_252_2x3 = PRINT_PROFILES.mono4_225x252_3x3;
-PRINT_PROFILES.mono4_a4_passepartout_12x17_2x1 = PRINT_PROFILES.mono4_a4_passepartout_12x17_1x3;
+const PRINT_PROFILES = (_catalogModForUi && typeof _catalogModForUi.buildCatalogPrintProfiles === 'function')
+  ? _catalogModForUi.buildCatalogPrintProfiles()
+  : {};
 
 /**
  * Resolves any saved or URL printer profile ID strictly to a valid Photon Mono 4 preset.

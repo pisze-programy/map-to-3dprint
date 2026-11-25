@@ -201,7 +201,6 @@
       ['riverbank', 'dock'].includes(tags.waterway) ||
       Boolean(tags.water) ||
       ['reservoir', 'basin'].includes(tags.landuse) ||
-      tags.leisure === 'marina' ||
       (allowMicroWater && (
         tags.amenity === 'fountain' ||
         (tags.leisure === 'swimming_pool' && tags.location !== 'indoor' && tags.indoor !== 'yes')
