@@ -8,7 +8,8 @@ Read this map first. Open only the focused guide that matches your task.
 - Split large monolithic files into small focused modules.
 - Add strict types: JSDoc or TypeScript types in JS, full type hints in Python.
 - Never treat unit tests alone as proof. Collect real E2E, visual, or validator proof.
-- Run `docs/city-model-and-packshot-qa-checklist.md` and `calibration/validate_assembly.py` (`VAL-01..14`) before you approve any exported STL assembly or production render.
+- Run `docs/city-model-and-packshot-qa-checklist.md` and `calibration/validate_assembly.py` (`VAL-01..14`) before you approve any exported STL assembly.
+- Pass `--manifest <export_dir>/assembly_manifest.json` (`VAL-01..14 PASS`) for all production renders; never bypass with raw STLs.
 - Keep `SLA_PRINT_LAWS`, `roadHeightMm`, and pure ASCII in `src/` and `tests/`.
 - Keep core procedural builders in `src/Water/`, `src/mesh/`, and `src/buildings/` city-agnostic.
 - Put curated flagship monument geometry in `src/landmarks/` using geo-anchored footprints, `replaceOsmIds` suppression, and `VAL-01..08` proof.
@@ -23,7 +24,7 @@ Read this map first. Open only the focused guide that matches your task.
 | :--- | :--- |
 | [clean-code-and-proof-rules.md](docs/clean-code-and-proof-rules.md) | Code edits, typing, proof gates, defect guards, or agent delegation. |
 | [city-model-and-packshot-qa-checklist.md](docs/city-model-and-packshot-qa-checklist.md) | Generating city STLs, checking tiles, verifying bridges/landmarks, or rendering packshots. |
-| [msla-printability-and-validation-spec.md](docs/msla-printability-and-validation-spec.md) | Mesh generation, STL export, `DFM-01`..`DFM-11`, or `VAL-01`..`VAL-08` rules. |
+| [msla-printability-and-validation-spec.md](docs/msla-printability-and-validation-spec.md) | Mesh generation, STL export, `DFM-01`..`DFM-11`, or `VAL-01`..`VAL-14` rules. |
 | [calibration-history-mono4.md](docs/calibration-history-mono4.md) | Photon Mono 4 hardware setup, slicer settings, or verified print milestones. |
 | [mono4-slicer-profile.md](docs/mono4-slicer-profile.md) | Photon Workshop `0.100 mm` ABS White profile and `4.0 mm` solid-base tweaks. |
 | [blender-studio-workflow.md](docs/blender-studio-workflow.md) | Photorealistic Cycles stills, Google Flow keyframes, videos, or studio MCP. |
@@ -41,7 +42,8 @@ Read this map first. Open only the focused guide that matches your task.
 ## Core Commands
 
 - Rebuild browser bundle after `src/` edits: `python3 build_app.py`
-- Run headless invariant suite: `npm run test:headless`
+- Run headless invariant and 10-city repo gate (`16/16`): `npm run test:headless`
+- Export a catalog SKU with automatic `VAL-01..14` check: `node tools/export_city_sku.mjs --city <slug>`
 - Validate an exported single STL: `python3 calibration/validate_msla_stl.py <file.stl>`
 - Validate a whole exported tile assembly (`VAL-01..VAL-14`): `python3 calibration/validate_assembly.py <export_dir>/assembly_manifest.json`
 - Run Playwright E2E suite: `npm run test:e2e`

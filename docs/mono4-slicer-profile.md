@@ -27,7 +27,7 @@ Use Anycubic ABS-Like Resin Pro 2 White and place every tile flat at `Z = 0.00 m
 
 - **Use `1x3` horizontal strips**: Print `Top`, `Middle`, and `Bottom` (`120x56.7 mm`) inside the `4.0 mm` safe bed margin.
 - **Never enable slicer hollowing or infill**: Closed cavities create fatal `VAL-02` suction cups. They also weaken flat tile corners.
-- **Use underside stress-relief grooves, never ungrooved solid slabs**: Ungrooved `6,800 mm2` solid slabs bow-warp on thin bare steel Flex Plates during uneven UV cure. Keep `Z = 0..1.50 mm` gabled relief channels (`<= 4,500 mm2` contact). Keep an unbroken `>= 8.0 mm` outer skirt and `DFM-06` `0.25 mm` chamfer.
+- **Use underside stress-relief grooves**: Ungrooved `6,800 mm2` solid slabs bow-warp on thin Flex Plates during uneven UV cure. Keep `Z=0..1.50 mm` gabled relief channels (`<= 4,500 mm2` contact). Keep an unbroken `>= 8.0 mm` outer skirt and `DFM-06` `0.25 mm` chamfer.
 - **Keep VAT topped up**: Solid `1x3` strips use `30-60 ml` per plate. That is `33%` less peel area than `1x2`.
 - **Wash, dry, and alternate UV cure on bare steel plate**: Wash parts thoroughly in `>= 99%` IPA. Dry parts completely until zero alcohol sheen remains. Then UV-cure top and underside faces flat in short alternating passes (`60 s` each side).
 - **Run whole-assembly validator first**: Run `python3 calibration/validate_assembly.py <export_dir>/assembly_manifest.json` (`VAL-01..VAL-14 PASS`) before slicing.

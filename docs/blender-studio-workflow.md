@@ -29,40 +29,39 @@ Run `python3 studio_blender/render_studio.py --list-props --json` to list all 26
 - **Scene**: `--mount <mode>`, `--surface <preset>`, `--window-gobo <preset>`, `--hdri <preset_or_path>`, `--light-temp <K>`, `--sun-azimuth <deg>`.
 - **Frame**: `--frame-mm <WxH>`, `--frame-width-mm 4.0`, `--frame-height-mm 7.5`, `--backing-finish matte_black|satin_black`, `--show-nameplate` (OFF by default).
 
-## 4. Headless A4 STL Export and Studio CLI
+## 4. Headless A4 STL Export and Manifest-Locked Studio CLI
 
-Export verified A4 `12x17 cm` solid-base STLs headlessly via CLI or `map3d-inspector` MCP (`export_map3d_stl`, `framePreset: 'a4_12x17'`):
+Export verified A4 `12x17 cm` (`1x3`) SKUs headlessly via `tools/export_city_sku.mjs` (writes STLs, `assembly_manifest.json`, and `VAL-01..14` report):
 ```bash
-node tools/mcp_map3d_inspector.mjs export-stl --frame-preset a4_12x17 \
-  --lat 48.8576 --lon 2.2956 --span 1780 --rot -46 --z-scale 1.7 --out-dir ./exports/paris_a4
+node tools/export_city_sku.mjs --city paris_true_scale
 ```
+Production renders require `--manifest <export_dir>/assembly_manifest.json` (`validation.verdict == "PASS"` and matching SHA-256).
+Raw `--stl` calls fail unless you pass `--draft-unvalidated`, which prefixes every output file with `DRAFT_UNVALIDATED_`.
 
 ### Render Frameless Chalk-Plaster Detail Gallery (`18_detail_chalk_gallery`)
 ```bash
 python3 studio_blender/render_studio.py \
-  --stl exports/paris_eiffel_a4_120x170_2x1/Map3D_PARIS_A4_Top_120x85mm.stl \
-  --stl exports/paris_eiffel_a4_120x170_2x1/Map3D_PARIS_A4_Bottom_120x85mm.stl \
+  --manifest exports/paris_true_scale_a4_120x170_1x3/assembly_manifest.json \
   --env 18_detail_chalk_gallery --frame none --preset detail_spire \
   --aspect 1:1 --samples 64 --out ./renders/paris_detail
 ```
-Use `--preset detail_canyon`, `detail_oblique_grid`, or `detail_waterfront` for the other three gallery angles.
+Use `--preset detail_canyon`, `detail_oblique_grid`, or `detail_waterfront` for the other three gallery angles (`f/56.0` minimal blur).
 
 ### Render A4 Stills, Flow Keyframes, and 1:1 Comparison
 ```bash
 python3 studio_blender/render_studio.py \
-  --stl exports/nyc_wtc_a4_120x170_2x1/Map3D_NYC_A4_Top_120x85mm.stl \
-  --stl exports/nyc_wtc_a4_120x170_2x1/Map3D_NYC_A4_Bottom_120x85mm.stl \
+  --manifest exports/paris_true_scale_a4_120x170_1x3/assembly_manifest.json \
   --env 12_persona_architect --frame a4_passepartout --mode stills \
-  --aspect 4:5 --samples 64 --out ./renders/nyc_a4
+  --aspect 4:5 --samples 64 --out ./renders/paris_a4
 ```
 Pass `--mode keyframes --aspect 9:16 --shots 1,2,3,4` to generate Google Flow `Start -> End` pairs and `flow_prompts.json`.
-Run `python3 studio_blender/compare_frames.py --old-stl <old> --a4-stl <a4> --out <dir>` for a 1:1 frame packshot.
+Run `python3 studio_blender/compare_frames.py --old-stl <old> --a4-stl <a4> --draft-unvalidated --out <dir>` for draft comparisons.
 
 ### Render City-Swappable Kinder Commercial Video (`studio_blender/kinder_video.py`)
 ```bash
 python3 studio_blender/kinder_video.py \
-  --stl calibration/Map3D_DUBAI_Pelna_Bryla_145x79mm.stl \
-  --env 16_persona_realestate --frame single_thin --packshot-env 11_packshot_white \
+  --manifest exports/dubai_downtown_a4_120x170_1x3/assembly_manifest.json \
+  --env 16_persona_realestate --frame a4_passepartout --packshot-env 11_packshot_white \
   --camera-mode kinder_multishot --resolution 540x960 --fps 24 \
   --duration 9.5 --samples 56 --shutter 0.68 --out ./renders/dubai_video
 ```
@@ -78,6 +77,6 @@ Command: `python3 /Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/st
 | :--- | :--- | :--- |
 | `list_studio_presets` | Return all 18 environments, frames, mounts, and presets. | None |
 | `list_studio_props` | Return all 26 composable props and placement syntax. | None |
-| `render_city_stills` | Render Cycles PNG stills, A4 packshots, or chalk details. | `stl_paths`, `out_dir`, `env`, `frame`, `presets`, `mount`, `add_props`, `samples` |
-| `render_flow_keyframes` | Render `9:16` `Start -> End` frames and prompts. | `stl_paths`, `out_dir`, `env`, `frame`, `mount`, `add_props`, `shots`, `samples` |
-| `render_commercial_video` | Render 5-angle Kinder (`kinder_multishot` default) or continuous MP4. | `stl_paths`, `out_dir`, `env`, `camera_mode`, `packshot_end`, `samples`, `shutter`, `duration_sec` |
+| `render_city_stills` | Render Cycles PNG stills, A4 packshots, or chalk details. | `manifest_path`, `out_dir`, `env`, `frame`, `presets`, `mount`, `samples` |
+| `render_flow_keyframes` | Render `9:16` `Start -> End` frames and prompts. | `manifest_path`, `out_dir`, `env`, `frame`, `mount`, `shots`, `samples` |
+| `render_commercial_video` | Render 5-angle Kinder (`kinder_multishot` default) or continuous MP4. | `manifest_path`, `out_dir`, `env`, `camera_mode`, `packshot_end`, `samples`, `shutter`, `duration_sec` |

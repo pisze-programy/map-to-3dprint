@@ -61,7 +61,8 @@ Do not change any setting without a single-parameter A/B print test.
 
 - **Production preset (`1x3`)**: Splits `120x170 mm` into three `120x56.7 mm` strips (`Top`, `Middle`, `Bottom`). Fits inside `4.0 mm` safe bed margin.
 - **Unbroken center band**: Seams sit at `Y = +/-28.3 mm`. The `56.7 mm` center hero zone stays intact (`docs/a4-tile-grid-audit.md`).
-- **Solid base (`4.0 mm`)**: Enable `solidBaseNoTunnels` (`baseBottomMm = 4.0 mm`) to remove underside grooves and keep walls smooth and stiff.
+- **Solid base (`4.0 mm`)**: Keep an unbroken `>= 8.0 mm` outer skirt with zero side tunnels (`solidBaseNoTunnels`).
+- **Underside relief (`F-12`, `VAL-13`)**: Carve `Z=0..1.50 mm` gabled grooves (`8.80 mm` pitch) for `<=4,500 mm2` `Z=0` contact. Add a `0.25 mm` `DFM-06` bottom chamfer (`Z=0..0.50 mm`).
 - **Solid-base slicer tweaks**:
   - Set `Normal Off Time` to `2.5-3.0 s`. Set `Normal Z Lift` to `3.5+4.0 mm` (or `3.5+4.5 mm`).
   - Keep `Anti-alias = Off (1)` and print `100%` solid with zero slicer hollowing.
@@ -73,5 +74,6 @@ Do not change any setting without a single-parameter A/B print test.
 
 ## 7. Production Readiness Status
 
-- The Mono 4 hardware, slicer profile, and app export pipeline are production-ready.
-- Start printing next target cities and scale formats from single (`1`) to triptych (`3`) and quartet (`4`).
+- The Mono 4 hardware, slicer profile, and export pipeline pass all production gates.
+- Run `calibration/validate_assembly.py` (`VAL-01..14 PASS`) on every exported assembly before slicing.
+- Start printing verified target cities across single (`1`), triptych (`3`), and quartet (`4`) formats.

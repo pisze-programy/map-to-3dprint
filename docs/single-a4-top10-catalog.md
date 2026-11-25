@@ -1,32 +1,34 @@
 # Top 10 Single A4 Commercial Catalog and Orbital Explorations
 
 This catalog records verified STL exports across two separate product tracks.
-All measurements come directly from exported binary STL files and `calibration/validate_msla_stl.py`.
+Export every commercial city SKU via `node tools/export_city_sku.mjs` from `config/city_catalog.json`.
+All measurements come directly from exported binary STL files and `calibration/validate_assembly.py` (`VAL-01..14`).
 
 ## Track 1: Top 10 Commercial Single A4 Cities (`1x3` Strips)
 
 Each city exports three flush `120 x 56.67 mm` strips (`Top`, `Middle`, `Bottom`) for Anycubic Photon Mono 4.
-Every tile uses a `4.0 mm` solid tunnel-free base (`waterCutout=true`, `4.0 mm` safe bed margin).
+Every tile uses a `4.0 mm` solid perimeter skirt with `Z=0..1.50 mm` underside relief and a `0.25 mm` `DFM-06` chamfer.
 Assemble all three strips North to South inside the `21 x 29.7 cm` white beveled passe-partout frame.
 
-| Rank | City Slug (`exports/<slug>_a4_120x170_1x3/`) | Coordinates (`lat, lon`) | `span` / `rot` / `zScale` | `Zmax` (`mm`) | Total Resin (`ml`) | Total Tris | MSLA Gate |
-| :---: | :--- | :--- | :--- | ---: | ---: | ---: | :--- |
-| `#1` | `paris_true_scale` | `48.8586, 2.2942` | `780 m` / `-46` / `1.05` | `77.54` | `85.42` | `160,410` | `3/3 PASS` |
-| `#2` | `dubai_downtown` | `25.1979, 55.2756` | `1480 m` / `0` / `1.05` | `99.93` | `122.47` | `172,426` | `3/3 PASS` |
-| `#3` | `london_tower_bridge` | `51.5092, -0.0784` | `1880 m` / `-8` / `1.25` | `39.53` | `114.63` | `374,818` | `3/3 PASS` |
-| `#4` | `chicago_loop` | `41.8834, -87.6320` | `1780 m` / `0` / `1.15` | `62.36` | `157.70` | `330,918` | `3/3 PASS` |
-| `#5` | `sydney_harbour` | `-33.8585, 151.2115` | `1720 m` / `+15` / `1.25` | `40.63` | `105.97` | `288,114` | `3/3 PASS` |
-| `#6` | `hong_kong_central` | `22.2838, 114.1592` | `1620 m` / `0` / `1.15` | `54.56` | `152.10` | `425,190` | `3/3 PASS` |
-| `#7` | `venice_grand_canal` | `45.4362, 12.3352` | `1680 m` / `-18` / `1.35` | `14.30` | `91.49` | `611,530` | `3/3 PASS` |
-| `#8` | `amsterdam_canals` | `52.3704, 4.8938` | `2100 m` / `-12` / `1.35` | `10.30` | `103.12` | `523,328` | `3/3 PASS` |
-| `#9` | `san_francisco_bay` | `37.7932, -122.3960` | `1820 m` / `-15` / `1.20` | `41.12` | `114.85` | `185,350` | `3/3 PASS` |
-| `#10` | `warsaw_city_center` | `52.2324, 21.0045` | `1380 m` / `+10` / `1.25` | `52.23` | `127.62` | `427,864` | `3/3 PASS` |
+| Rank | City Slug (`exports/<slug>_a4_120x170_1x3/`) | DEM | Coordinates (`lat, lon`) | `span` / `rot` / `zScale` | `Zmax` (`mm`) | Resin (`ml`) | Total Tris | Assembly Gate |
+| :---: | :--- | :---: | :--- | :--- | ---: | ---: | ---: | :--- |
+| `#1` | `paris_true_scale` | `flat` | `48.8586, 2.2942` | `780 m` / `-46` / `1.05` | `77.54` | `81.23` | `186,930` | `VAL-01..14 PASS` |
+| `#2` | `dubai_downtown` | `flat` | `25.1979, 55.2756` | `1480 m` / `0` / `1.05` | `99.93` | `103.50` | `168,148` | `VAL-01..14 PASS` |
+| `#3` | `london_tower_bridge` | `flat` | `51.5092, -0.0784` | `1880 m` / `-8` / `1.25` | `39.04` | `87.11` | `391,558` | `VAL-01..14 PASS` |
+| `#4` | `chicago_loop` | `flat` | `41.8834, -87.6320` | `1780 m` / `0` / `1.15` | `61.88` | `139.47` | `347,578` | `VAL-01..14 PASS` |
+| `#5` | `sydney_harbour` | `terrarium` | `-33.8585, 151.2115` | `1720 m` / `+15` / `1.25` | `40.63` | `100.97` | `319,642` | `VAL-01..14 PASS` |
+| `#6` | `hong_kong_central` | `terrarium` | `22.2838, 114.1592` | `1620 m` / `0` / `1.15` | `54.56` | `145.09` | `475,928` | `VAL-01..14 PASS` |
+| `#7` | `venice_grand_canal` | `flat` | `45.4362, 12.3352` | `1680 m` / `-18` / `1.35` | `13.11` | `76.64` | `572,762` | `VAL-01..14 PASS` |
+| `#8` | `amsterdam_canals` | `flat` | `52.3704, 4.8938` | `2100 m` / `-12` / `1.35` | `9.46` | `82.96` | `521,030` | `VAL-01..14 PASS` |
+| `#9` | `san_francisco_bay` | `terrarium` | `37.7932, -122.3960` | `1820 m` / `-15` / `1.20` | `41.12` | `106.40` | `220,238` | `VAL-01..14 PASS` |
+| `#10` | `warsaw_city_center` | `flat` | `52.2324, 21.0045` | `1380 m` / `+10` / `1.25` | `51.73` | `102.65` | `426,128` | `VAL-01..14 PASS` |
 
-### Draft Screening Summary (`12 -> 10`)
+### Draft Screening and Verification Summary (`12 -> 10`)
 
 - These 10 cities join existing flagship presets (`nyc_wtc`, `nyc_central_park`, and `singapore_marina_bay`).
 - Visual screening dropped `barcelona_eixample` (`194.1 ml`, low vertical contrast) and `krakow` from the initial Top 10 launch wave.
-- All `30/30` tiles passed `calibration/validate_msla_stl.py` (`0` blocking issues, `VAL-04=[]`) and direct-STL four-angle visual QA.
+- All `10/10` cities (`30/30` tiles) pass `calibration/validate_assembly.py` (`VAL-01..14 PASS`) and direct-STL seam-truth QA (`21/21` `_qa/seam_*_diff.png`).
+- Use the `80x50 mm` (`1x2`) Paris seam coupon (`exports/paris_seam_coupon_80x50_1x2/`) for fast print checks (`9.88 mm` Z, `14.68 ml`, `29,852` tris).
 
 ## Track 2: Separate Explorations (Four Continents and Wildcards)
 

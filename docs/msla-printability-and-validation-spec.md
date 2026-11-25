@@ -2,12 +2,12 @@
 
 ## 1. Scope and Purpose
 
-This specification defines mandatory Design-for-MSLA (DFM) geometry rules and automated pre-export validation checks (`VAL-01` through `VAL-08`) for `map-to-3dprint`.
+This specification defines mandatory Design-for-MSLA (DFM) geometry rules and automated pre-export validation checks (`VAL-01` through `VAL-14`) for `map-to-3dprint`.
 
 City scenes from OpenStreetMap contain arbitrary building footprints, narrow courtyards, thin walls, cantilevered passages (`building:min_height`), river bridges, spires, and dense tree canopies. Manual per-model fixes do not scale to arbitrary cities. Therefore, `map-to-3dprint` must enforce printability in two stages:
 
-1. **Constructive Enforcement (`DFM-01` through `DFM-10`)**: The 3D mesh generator (`src/mesh/`) and STL exporter (`src/export/`) must produce self-supporting, vented, watertight `2-manifold` geometry by construction when Resin Mode is active.
-2. **Automated Pre-Print Gate (`VAL-01` through `VAL-08`)**: Every generated STL file must pass an automated geometric and hydraulic audit before the user starts a print.
+1. **Constructive Enforcement (`DFM-01`..`DFM-11`)**: `src/mesh/` and `src/export/` build self-supporting, vented, watertight `2-manifold` geometry in Resin Mode.
+2. **Automated Pre-Print Gate (`VAL-01`..`VAL-14`)**: Every STL plate and assembly must pass geometric, hydraulic, and seam audits before print.
 
 ---
 
@@ -102,9 +102,10 @@ When Resin Mode (`state.isResin` or `printerPreset === 'photon_mono_4'`) is acti
 
 ---
 
-## 5. Automated Pre-Print Validation Gate (`calibration/validate_msla_stl.py`)
+## 5. Automated Pre-Print Validation Gates (`validate_msla_stl.py` and `validate_assembly.py`)
 
-Every STL candidate must run through `calibration/validate_msla_stl.py` before slicing:
+Run `calibration/validate_assembly.py <export_dir>/assembly_manifest.json` (`VAL-01`..`VAL-14`) on every exported multi-tile assembly before slicing or rendering.
+Run `calibration/validate_msla_stl.py <tile.stl>` (`VAL-01`..`VAL-08`) when you debug a single plate.
 
 | Check ID | Validation Algorithm | Pass Criterion | Severity |
 | :--- | :--- | :--- | :---: |
@@ -116,12 +117,19 @@ Every STL candidate must run through `calibration/validate_msla_stl.py` before s
 | **`VAL-06`** | Multi-shell XY gap check vs classic FEP tenting radius | Gap between two shells with `Z = 0` area `> 180 mm2` is `>= 12.0 mm` | `WARN` |
 | **`VAL-07`** | Layer-by-layer cross-section area (`A(z)`) and peel-spike (`A(z+dz) / A(z)`) scanner | Max slice area `<= 2600 mm2`; step increase `<= 150 mm2` when `A(z) > 100 mm2` | `WARN` |
 | **`VAL-08`** | Build-volume envelope and VAT resin depletion check | `X <= 153.4 mm`, `Y <= 87.0 mm`, `Z <= 163.0 mm`; warns when `volume > 30 ml` to verify VAT fill level | `FAIL` / `INFO` |
-| **`VAL-09`** | Inward seam cross-section continuity (`seam +/- 0.010 mm`) and cut-plane flatness (`Z >= 0.50 mm`) | `true_diff <= 0.15 mm2`, `max_step <= 0.20 mm`, `|area_A - area_B| <= 0.25 mm2`, flatness `<= 0.005 mm` | `FAIL` |
-| **`VAL-10`** | Global assembly footprint, gap/overlap, uniform `Z_base`, 4-way `+` corners, multi-frame datum | Footprint `<= 0.08 mm`, zero overlap, `dZ_base <= 0.05 mm`, `+` corner Z step `<= 0.20 mm` | `FAIL` |
+| **`VAL-09`** | Inward seam cross-section continuity (`seam +/- 0.010 mm`), flush gap, `DFM-01` seam slivers, and `DFM-06` chamfer symmetry | `true_diff <= 0.15 mm2`, `max_step <= 0.20 mm`, gap `<= 0.05 mm`, flatness `<= 0.005 mm`, zero thin seam slivers | `FAIL` |
+| **`VAL-10`** | Global assembly footprint, bounded `nudged_seams`, gap/overlap, uniform `Z_base`, 4-way `+` corners, multi-frame datum | Footprint `<= 0.08 mm`, zero overlap, `dZ_base <= 0.05 mm`, `+` corner Z step `<= 0.20 mm` | `FAIL` |
 | **`VAL-11`** | Uncut master solid vs summed exported tiles volume conservation | `|sum_tiles - master| / master <= 0.5%` | `FAIL` |
 | **`VAL-12`** | Zero unapproved shell crumbs or floating components across assembly | No `minZ > 0.04 mm`, no `z0_area < 35.0 mm2`, no `min_width < 4.0 mm`; secondary shells `>= 60 mm2` & `>= 5.0 mm` allowlisted | `FAIL` |
-| **`VAL-13`** | `DFM-06` bottom chamfer inset (`Z = 0.10` vs `Z = 0.70 mm`) and `Z = 0` contact relief balance | Edge inset `>= 0.20 mm`; `z0_area <= 4,500 mm2` when underside relief is active | `FAIL` |
+| **`VAL-13`** | `DFM-06` bottom chamfer inset (`Z = 0.10` vs `Z = 0.70 mm`), `Z = 0` contact relief balance, and manifest anti-tamper guard | Edge inset `>= 0.20 mm`; `z0_area <= 4,500 mm2`; fails if a solid tile suppresses relief without allowlist | `FAIL` |
 | **`VAL-14`** | Photon Mono 4 safe bed fit (`4.0 mm` margin) and `VAL-01..08` zero failures | All tiles fit `145.45 x 79.05 x 163.0 mm` with `0` blocking issues | `FAIL` |
+
+### Zero-Bypass Deterministic Pipeline Enforcement
+
+- Export catalog SKUs via `node tools/export_city_sku.mjs` (`config/city_catalog.json`). It writes STLs, `assembly_manifest.json`, and `validation_report.json`.
+- `studio_blender/render_studio.py` and `studio_blender/mcp_server.py` require a verified `--manifest` (`validation.verdict == "PASS"` and matching SHA-256) for production renders.
+- Raw `--stl` / `stl_paths` calls require explicit `--draft-unvalidated` (`draft_unvalidated: true`) and add the `DRAFT_UNVALIDATED_` filename prefix.
+- `npm run test:headless` (`16/16` suites) verifies all 10 Top-10 repo exports pass `VAL-01..14` with zero bypasses.
 
 ---
 

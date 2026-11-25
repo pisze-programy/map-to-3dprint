@@ -16,18 +16,16 @@ Keep `80-90%` of the miniature tack-sharp with only whisper-subtle optical edge 
 
 | Preset (`--preset`) | Aperture | Framing Purpose |
 | :--- | :---: | :--- |
-| `detail_spire` | `f/22.0` | Hero spire and plaza tack-sharp soaring into pure `#FFFFFF` horizon. |
-| `detail_canyon` | `f/24.0` | Deep sunlit street-canyon corridor sharp with subtle front and back fade. |
-| `detail_oblique_grid` | `f/28.0` | Full-bleed edge-to-edge urban grid razor-sharp across courtyards and blocks. |
-| `detail_waterfront` | `f/24.0` | Full-bleed matte-black river or waterfront relief with zero outer slab edge. |
+| `detail_spire` | `f/56.0` | Hero spire and plaza tack-sharp soaring into pure `#FFFFFF` horizon. |
+| `detail_canyon` | `f/56.0` | Deep sunlit street-canyon corridor sharp with minimal far-edge softness. |
+| `detail_oblique_grid` | `f/56.0` | Full-bleed edge-to-edge urban grid razor-sharp across courtyards and blocks. |
+| `detail_waterfront` | `f/56.0` | Full-bleed matte-black river or waterfront relief with zero outer slab edge. |
 
 ## 3. CLI Example (`studio_blender/render_studio.py`)
 
 ```bash
 python3 studio_blender/render_studio.py \
-  --stl exports/paris_true_scale_a4_120x170_1x3/Map3D_PARIS_A4_Top_120x57mm.stl \
-  --stl exports/paris_true_scale_a4_120x170_1x3/Map3D_PARIS_A4_Middle_120x57mm.stl \
-  --stl exports/paris_true_scale_a4_120x170_1x3/Map3D_PARIS_A4_Bottom_120x57mm.stl \
+  --manifest exports/paris_true_scale_a4_120x170_1x3/assembly_manifest.json \
   --env 18_detail_chalk_gallery --frame none \
   --preset detail_spire --preset detail_canyon \
   --preset detail_oblique_grid --preset detail_waterfront \
@@ -40,11 +38,7 @@ Call `render_city_stills` on the registered `studio-blender` MCP server with:
 
 ```json
 {
-  "stl_paths": [
-    "exports/paris_true_scale_a4_120x170_1x3/Map3D_PARIS_A4_Top_120x57mm.stl",
-    "exports/paris_true_scale_a4_120x170_1x3/Map3D_PARIS_A4_Middle_120x57mm.stl",
-    "exports/paris_true_scale_a4_120x170_1x3/Map3D_PARIS_A4_Bottom_120x57mm.stl"
-  ],
+  "manifest_path": "exports/paris_true_scale_a4_120x170_1x3/assembly_manifest.json",
   "out_dir": "./renders/paris_detail_gallery",
   "env": "18_detail_chalk_gallery",
   "frame": "none",
