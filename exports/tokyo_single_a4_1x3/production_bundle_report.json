@@ -1,0 +1,328 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-26T09:54:23.096Z",
+  "slug": "tokyo",
+  "title": "TOKYO",
+  "format_id": "single_a4_1x3",
+  "mode": "full",
+  "samples": 48,
+  "qa_samples": 24,
+  "output_dir": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3",
+  "manifest_path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/assembly_manifest.json",
+  "validation_report_path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/validation_report.json",
+  "validation": {
+    "verdict": "PASS",
+    "blocking_failures": 0,
+    "warnings": 10,
+    "tiles_checked": 3,
+    "seam_pairs_checked": 2,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 78014.208,
+    "sum_tile_volume_mm3": 77931.417,
+    "volume_diff_pct": 0.1061,
+    "failures": []
+  },
+  "tiles": [
+    {
+      "tile_id": "R3C1",
+      "frame_id": "F1",
+      "file": "Map3D_TOKYO_Bottom_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 5879584,
+      "sha256": "0f9e7413e994ed4e73003025bd3f82410d92392a4bcd8c8d111e575f83192fed",
+      "stl_rotation_deg": 0,
+      "span_mm": [
+        120,
+        54.6667,
+        14.1291
+      ],
+      "z_max_mm": 14.1291,
+      "volume_mm3": 25180.98,
+      "triangles": 117590,
+      "watertight": true,
+      "shells": 1
+    },
+    {
+      "tile_id": "R2C1",
+      "frame_id": "F1",
+      "file": "Map3D_TOKYO_Middle_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 6800984,
+      "sha256": "9f65938a0bf4c23dfdd61b00fbe9cdfccb63c3af675fc264470eb70ad6ef2f0f",
+      "stl_rotation_deg": 0,
+      "span_mm": [
+        120,
+        59.6667,
+        13.1739
+      ],
+      "z_max_mm": 13.1739,
+      "volume_mm3": 26473.728,
+      "triangles": 136018,
+      "watertight": true,
+      "shells": 1
+    },
+    {
+      "tile_id": "R1C1",
+      "frame_id": "F1",
+      "file": "Map3D_TOKYO_Top_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 5961584,
+      "sha256": "d14c991742dcbd6699d0ac28d610d15c0832477d0808852307ccf91055765ec3",
+      "stl_rotation_deg": 0,
+      "span_mm": [
+        120,
+        55.6667,
+        65.1704
+      ],
+      "z_max_mm": 65.1704,
+      "volume_mm3": 26276.709,
+      "triangles": 119230,
+      "watertight": true,
+      "shells": 1
+    }
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R3C1",
+        "R2C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": -30.3333,
+      "area_a_mm2": 436.097,
+      "area_b_mm2": 436.097,
+      "area_delta_mm2": 0,
+      "true_diff_mm2": 0,
+      "max_step_mm": 0,
+      "max_flatness_dev_mm": 0.00003,
+      "diff_png": "_qa/seam_R3C1_R2C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 29.3333,
+      "area_a_mm2": 418.848,
+      "area_b_mm2": 418.845,
+      "area_delta_mm2": 0.003,
+      "true_diff_mm2": 0.0034,
+      "max_step_mm": 0.0017,
+      "max_flatness_dev_mm": 0.00003,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "renders": {
+    "qa": [
+      {
+        "preset": "qa_seam_raking",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_seam_raking.png"
+      },
+      {
+        "preset": "qa_top_down_grid",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_top_down_grid.png"
+      },
+      {
+        "preset": "qa_underside",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_underside.png"
+      }
+    ],
+    "packshots": [
+      {
+        "preset": "packshot_iso",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_packshot_iso.png"
+      },
+      {
+        "preset": "top_down",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_top_down.png"
+      },
+      {
+        "preset": "profile_low",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_profile_low.png"
+      },
+      {
+        "preset": "macro_skyline",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_macro_skyline.png"
+      }
+    ],
+    "details_3x3": {
+      "cells": [
+        {
+          "preset": "detail_grid_01",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_01.png"
+        },
+        {
+          "preset": "detail_grid_02",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_02.png"
+        },
+        {
+          "preset": "detail_grid_03",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_03.png"
+        },
+        {
+          "preset": "detail_grid_04",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_04.png"
+        },
+        {
+          "preset": "detail_grid_05",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_05.png"
+        },
+        {
+          "preset": "detail_grid_06",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_06.png"
+        },
+        {
+          "preset": "detail_grid_07",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_07.png"
+        },
+        {
+          "preset": "detail_grid_08",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_08.png"
+        },
+        {
+          "preset": "detail_grid_09",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_09.png"
+        }
+      ],
+      "grid_png": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/details_3x3_grid.png"
+    },
+    "all_pngs": [
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_seam_raking.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_top_down_grid.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_underside.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_packshot_iso.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_top_down.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_profile_low.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_macro_skyline.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_01.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_02.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_03.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_04.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_05.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_06.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_07.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_08.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_09.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/details_3x3_grid.png"
+    ]
+  },
+  "visual_qa_checklist": [
+    {
+      "id": "QA-01",
+      "check": "Hero landmark fidelity vs real-world silhouette and spire profile",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_packshot_iso.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_top_down.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_profile_low.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_macro_skyline.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/details_3x3_grid.png"
+      ]
+    },
+    {
+      "id": "QA-02",
+      "check": "Seam continuity across tiles (zero step, offset, or double-wall)",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_seam_raking.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_top_down_grid.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_underside.png"
+      ]
+    },
+    {
+      "id": "QA-03",
+      "check": "Outer perimeter and seam borders (no half-cut buildings, trees, or facade slivers)",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_seam_raking.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_top_down_grid.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_underside.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_packshot_iso.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_top_down.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_profile_low.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_macro_skyline.png"
+      ]
+    },
+    {
+      "id": "QA-04",
+      "check": "Water cutouts, shorelines, islands, and bridge clearance arches",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_packshot_iso.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_top_down.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_profile_low.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_macro_skyline.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/details_3x3_grid.png"
+      ]
+    },
+    {
+      "id": "QA-05",
+      "check": "Frame and backing presentation matches single_a4_1x3",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_packshot_iso.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_top_down.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_profile_low.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_macro_skyline.png"
+      ]
+    },
+    {
+      "id": "QA-06",
+      "check": "Underside DFM-06 chamfer, 8 mm skirt, and continuous 45-deg relief grooves",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_seam_raking.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_top_down_grid.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/qa/tokyo_11_packshot_white_qa_underside.png"
+      ]
+    },
+    {
+      "id": "QA-07",
+      "check": "3x3 chalk detail gallery cells 01..09 framing (zero border/slab intrusion)",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/details_3x3_grid.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_01.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_02.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_03.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_04.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_05.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_06.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_07.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_08.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_09.png"
+      ]
+    },
+    {
+      "id": "QA-08",
+      "check": "Roofs, courtyards, and stepped towers free of collapsed walls or floating stubs",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/details_3x3_grid.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_01.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_02.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_03.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_04.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_05.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_06.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_07.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_08.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_09.png"
+      ]
+    },
+    {
+      "id": "QA-09",
+      "check": "Packshot lighting, framing, and commercial contrast",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_packshot_iso.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_top_down.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_profile_low.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_macro_skyline.png"
+      ]
+    }
+  ]
+}

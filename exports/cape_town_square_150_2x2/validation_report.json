@@ -1,0 +1,417 @@
+{
+  "schema_version": 1,
+  "manifest": "assembly_manifest.json",
+  "sku_id": "square_150_2x2",
+  "format_id": "square_150_2x2",
+  "city_slug": "cape_town",
+  "validated_at": "2026-11-26T10:31:38.307929+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "tiles_checked": 4,
+    "seam_pairs_checked": 4,
+    "corners_4way_checked": 1,
+    "master_volume_mm3": 63125.1859,
+    "sum_tile_volume_mm3": 63077.882,
+    "volume_diff_pct": 0.0749,
+    "blocking_failures": 0,
+    "warnings": 9
+  },
+  "failures": [],
+  "warnings": [
+    "[R2C1] VAL-02: Small sealed upper-story cavities (max 59.8 mm2 < 100 mm2) from Z=4.65 to Z=7.65 mm; add a vent if the part is thin.",
+    "[R2C1] VAL-07: High Z-slice peel area (5504 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R2C1] VAL-07: Sudden cross-section peel jump (+1268 mm2 at Z=1.25 mm).",
+    "[R2C2] VAL-02: Small sealed upper-story cavities (max 38.0 mm2 < 100 mm2) from Z=4.15 to Z=5.15 mm; add a vent if the part is thin.",
+    "[R2C2] VAL-07: High Z-slice peel area (2635 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R2C2] VAL-07: Sudden cross-section peel jump (+525 mm2 at Z=1.25 mm).",
+    "[R1C1] VAL-02: Small sealed upper-story cavities (max 24.8 mm2 < 100 mm2) from Z=4.15 to Z=5.65 mm; add a vent if the part is thin.",
+    "[R1C1] VAL-07: High Z-slice peel area (4035 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R1C1] VAL-07: Sudden cross-section peel jump (+1029 mm2 at Z=1.25 mm)."
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 0.5,
+      "area_a_mm2": 415.293,
+      "area_b_mm2": 415.293,
+      "area_delta_mm2": 0.0,
+      "true_diff_mm2": 0.0004,
+      "max_step_mm": 0.0006,
+      "max_flatness_dev_mm": 0.0,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R2C2"
+      ],
+      "axis": "x",
+      "seam_coord_mm": 3.5,
+      "area_a_mm2": 241.199,
+      "area_b_mm2": 241.199,
+      "area_delta_mm2": 0.0,
+      "true_diff_mm2": 0.0001,
+      "max_step_mm": 0.0006,
+      "max_flatness_dev_mm": 0.0,
+      "diff_png": "_qa/seam_R2C1_R2C2_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C2",
+        "R1C2"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 0.5,
+      "area_a_mm2": 36.291,
+      "area_b_mm2": 36.291,
+      "area_delta_mm2": 0.0,
+      "true_diff_mm2": 0.0,
+      "max_step_mm": 0.0,
+      "max_flatness_dev_mm": 0.0,
+      "diff_png": "_qa/seam_R2C2_R1C2_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R1C1",
+        "R1C2"
+      ],
+      "axis": "x",
+      "seam_coord_mm": 3.5,
+      "area_a_mm2": 37.129,
+      "area_b_mm2": 37.129,
+      "area_delta_mm2": 0.0,
+      "true_diff_mm2": 0.0,
+      "max_step_mm": 0.0,
+      "max_flatness_dev_mm": 0.0,
+      "diff_png": "_qa/seam_R1C1_R1C2_diff.png",
+      "passed": true
+    }
+  ],
+  "tiles": {
+    "R2C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_square_150_2x2/Map3D_CAPE_TOWN_R2C1_75x75mm.stl",
+      "verdict": "PASS",
+      "triangles": 60590,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        78.5,
+        0.0,
+        75.5,
+        0.0,
+        9.7573
+      ],
+      "span_mm": [
+        78.5,
+        75.5,
+        9.7573
+      ],
+      "volume_ml": 29.8321,
+      "volume_mm3": 29832.114,
+      "z0_area_mm2": 3190.502,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            78.5,
+            0.0,
+            75.5,
+            0.0,
+            9.7573
+          ],
+          "z0_area_mm2": 3123.244,
+          "min_width_mm": 75.5
+        },
+        {
+          "shell_index": 1,
+          "bbox": [
+            45.0665,
+            60.7752,
+            0.0,
+            12.1844,
+            0.0,
+            6.199
+          ],
+          "z0_area_mm2": 67.257,
+          "min_width_mm": 12.184
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3190.81,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3246.19,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 3678.12,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4143.75,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 59.8 mm2 < 100 mm2) from Z=4.65 to Z=7.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (5504 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1268 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R2C2": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_square_150_2x2/Map3D_CAPE_TOWN_R2C2_75x75mm.stl",
+      "verdict": "PASS",
+      "triangles": 35684,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        71.5,
+        0.0,
+        75.5,
+        0.0,
+        9.1809
+      ],
+      "span_mm": [
+        71.5,
+        75.5,
+        9.1809
+      ],
+      "volume_ml": 12.3885,
+      "volume_mm3": 12388.46,
+      "z0_area_mm2": 1809.417,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            71.5,
+            0.0,
+            75.5,
+            0.0,
+            9.1809
+          ],
+          "z0_area_mm2": 1738.948,
+          "min_width_mm": 71.5
+        },
+        {
+          "shell_index": 1,
+          "bbox": [
+            50.1691,
+            71.5,
+            0.0,
+            7.2615,
+            0.0,
+            6.6391
+          ],
+          "z0_area_mm2": 70.468,
+          "min_width_mm": 7.261
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 1794.38,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 1824.69,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 2000.81,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 2158.94,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 38.0 mm2 < 100 mm2) from Z=4.15 to Z=5.15 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (2635 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+525 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_square_150_2x2/Map3D_CAPE_TOWN_R1C1_75x75mm.stl",
+      "verdict": "PASS",
+      "triangles": 40762,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        78.5,
+        0.0,
+        70.4036,
+        0.0,
+        9.75
+      ],
+      "span_mm": [
+        78.5,
+        70.4036,
+        9.75
+      ],
+      "volume_ml": 20.6446,
+      "volume_mm3": 20644.603,
+      "z0_area_mm2": 2284.836,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            78.5,
+            0.0,
+            70.4036,
+            0.0,
+            9.75
+          ],
+          "z0_area_mm2": 2284.836,
+          "min_width_mm": 70.404
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 2284.94,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 2319.19,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 2648.12,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 3006.06,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 24.8 mm2 < 100 mm2) from Z=4.15 to Z=5.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (4035 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1029 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C2": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_square_150_2x2/Map3D_CAPE_TOWN_R1C2_75x75mm.stl",
+      "verdict": "PASS",
+      "triangles": 372,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        9.7321,
+        0.0,
+        9.3407,
+        0.0,
+        5.1235
+      ],
+      "span_mm": [
+        9.7321,
+        9.3407,
+        5.1235
+      ],
+      "volume_ml": 0.2127,
+      "volume_mm3": 212.705,
+      "z0_area_mm2": 44.711,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            9.7321,
+            0.0,
+            9.3407,
+            0.0,
+            5.1235
+          ],
+          "z0_area_mm2": 44.711,
+          "min_width_mm": 9.341
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 44.62,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 49.0,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 49.31,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 49.5,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    }
+  }
+}

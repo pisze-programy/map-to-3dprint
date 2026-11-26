@@ -1,0 +1,293 @@
+{
+  "schema_version": 1,
+  "manifest": "assembly_manifest.json",
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "cape_town",
+  "validated_at": "2026-11-26T10:31:04.032312+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "tiles_checked": 3,
+    "seam_pairs_checked": 2,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 147197.1087,
+    "sum_tile_volume_mm3": 147114.714,
+    "volume_diff_pct": 0.056,
+    "blocking_failures": 0,
+    "warnings": 11
+  },
+  "failures": [],
+  "warnings": [
+    "[R3C1] VAL-02: Small sealed upper-story cavities (max 23.8 mm2 < 100 mm2) from Z=5.15 to Z=12.65 mm; add a vent if the part is thin.",
+    "[R3C1] VAL-07: High Z-slice peel area (6768 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R3C1] VAL-07: Sudden cross-section peel jump (+1715 mm2 at Z=1.25 mm).",
+    "[R3C1] VAL-08: Print consumes 61.4 ml resin; verify VAT fill level before starting.",
+    "[R2C1] VAL-02: Small sealed upper-story cavities (max 64.1 mm2 < 100 mm2) from Z=4.65 to Z=13.65 mm; add a vent if the part is thin.",
+    "[R2C1] VAL-07: High Z-slice peel area (6780 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R2C1] VAL-07: Sudden cross-section peel jump (+1724 mm2 at Z=1.25 mm).",
+    "[R2C1] VAL-08: Print consumes 57.2 ml resin; verify VAT fill level before starting.",
+    "[R1C1] VAL-02: Small sealed upper-story cavities (max 84.2 mm2 < 100 mm2) from Z=4.15 to Z=7.15 mm; add a vent if the part is thin.",
+    "[R1C1] VAL-07: High Z-slice peel area (5529 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R1C1] VAL-07: Sudden cross-section peel jump (+1031 mm2 at Z=1.25 mm)."
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R3C1",
+        "R2C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": -28.3333,
+      "area_a_mm2": 1167.552,
+      "area_b_mm2": 1167.553,
+      "area_delta_mm2": 0.001,
+      "true_diff_mm2": 0.0022,
+      "max_step_mm": 0.0082,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R3C1_R2C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 28.8333,
+      "area_a_mm2": 641.62,
+      "area_b_mm2": 641.621,
+      "area_delta_mm2": 0.0,
+      "true_diff_mm2": 0.0004,
+      "max_step_mm": 0.0012,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "tiles": {
+    "R3C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/Map3D_CAPE_TOWN_Bottom_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 106462,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        56.6667,
+        0.0,
+        21.776
+      ],
+      "span_mm": [
+        120.0,
+        56.6667,
+        21.776
+      ],
+      "volume_ml": 61.434,
+      "volume_mm3": 61434.044,
+      "z0_area_mm2": 4184.921,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            56.6667,
+            0.0,
+            21.776
+          ],
+          "z0_area_mm2": 4184.921,
+          "min_width_mm": 56.667
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 4183.31,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 4263.44,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4778.06,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 5286.12,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 23.8 mm2 < 100 mm2) from Z=5.15 to Z=12.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6768 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1715 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 61.4 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R2C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/Map3D_CAPE_TOWN_Middle_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 101906,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        -0.0,
+        57.1667,
+        0.0,
+        22.8627
+      ],
+      "span_mm": [
+        120.0,
+        57.1667,
+        22.8627
+      ],
+      "volume_ml": 57.1582,
+      "volume_mm3": 57158.2,
+      "z0_area_mm2": 3841.204,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            -0.0,
+            57.1667,
+            0.0,
+            22.8627
+          ],
+          "z0_area_mm2": 3841.204,
+          "min_width_mm": 57.167
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3827.12,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3898.69,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4491.88,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 5057.44,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 64.1 mm2 < 100 mm2) from Z=4.65 to Z=13.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6780 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1724 mm2 at Z=1.25 mm).",
+        "VAL-08: Print consumes 57.2 ml resin; verify VAT fill level before starting."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/Map3D_CAPE_TOWN_Top_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 85376,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        56.1667,
+        0.0,
+        9.2673
+      ],
+      "span_mm": [
+        120.0,
+        56.1667,
+        9.2673
+      ],
+      "volume_ml": 28.5225,
+      "volume_mm3": 28522.47,
+      "z0_area_mm2": 3518.735,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            56.1667,
+            0.0,
+            9.2673
+          ],
+          "z0_area_mm2": 3518.735,
+          "min_width_mm": 56.167
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3501.94,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3567.25,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 3991.44,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4362.06,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 84.2 mm2 < 100 mm2) from Z=4.15 to Z=7.15 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (5529 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1031 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    }
+  }
+}

@@ -1,0 +1,302 @@
+{
+  "schema_version": 1,
+  "manifest": "assembly_manifest.json",
+  "sku_id": "single_a4_1x3",
+  "format_id": "single_a4_1x3",
+  "city_slug": "tokyo",
+  "validated_at": "2026-11-26T10:31:31.393586+00:00",
+  "verdict": "PASS",
+  "summary": {
+    "tiles_checked": 3,
+    "seam_pairs_checked": 2,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 78014.208,
+    "sum_tile_volume_mm3": 77931.417,
+    "volume_diff_pct": 0.1061,
+    "blocking_failures": 0,
+    "warnings": 10
+  },
+  "failures": [],
+  "warnings": [
+    "[R3C1] VAL-02: Small sealed upper-story cavities (max 30.1 mm2 < 100 mm2) from Z=4.15 to Z=5.15 mm; add a vent if the part is thin.",
+    "[R3C1] VAL-04: Shallow arch/bridge at Z=5.28 mm XY=(56.4, 27.3) (half_span=2.8 mm, min_ang=0.0 deg).",
+    "[R3C1] VAL-07: High Z-slice peel area (5895 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R3C1] VAL-07: Sudden cross-section peel jump (+1454 mm2 at Z=1.25 mm).",
+    "[R2C1] VAL-02: Small sealed upper-story cavities (max 34.1 mm2 < 100 mm2) from Z=3.65 to Z=5.65 mm; add a vent if the part is thin.",
+    "[R2C1] VAL-07: High Z-slice peel area (6286 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R2C1] VAL-07: Sudden cross-section peel jump (+1367 mm2 at Z=1.25 mm).",
+    "[R1C1] VAL-02: Small sealed upper-story cavities (max 58.9 mm2 < 100 mm2) from Z=3.65 to Z=5.65 mm; add a vent if the part is thin.",
+    "[R1C1] VAL-07: High Z-slice peel area (6123 mm2 > 2600 mm2); core base or lower bottom exposure.",
+    "[R1C1] VAL-07: Sudden cross-section peel jump (+1399 mm2 at Z=1.25 mm)."
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R3C1",
+        "R2C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": -30.3333,
+      "area_a_mm2": 436.097,
+      "area_b_mm2": 436.097,
+      "area_delta_mm2": 0.0,
+      "true_diff_mm2": 0.0,
+      "max_step_mm": 0.0,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R3C1_R2C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 29.3333,
+      "area_a_mm2": 418.848,
+      "area_b_mm2": 418.845,
+      "area_delta_mm2": 0.003,
+      "true_diff_mm2": 0.0034,
+      "max_step_mm": 0.0017,
+      "max_flatness_dev_mm": 3e-05,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "tiles": {
+    "R3C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/Map3D_TOKYO_Bottom_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 117590,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        54.6667,
+        0.0,
+        14.1291
+      ],
+      "span_mm": [
+        120.0,
+        54.6667,
+        14.1291
+      ],
+      "volume_ml": 25.181,
+      "volume_mm3": 25180.98,
+      "z0_area_mm2": 3677.298,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            54.6667,
+            0.0,
+            14.1291
+          ],
+          "z0_area_mm2": 3677.298,
+          "min_width_mm": 54.667
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3679.5,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3752.81,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4184.69,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4616.88,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [
+        {
+          "area_mm2": 100.44,
+          "unsupported_half_span_mm": 2.8,
+          "min_angle_deg": 0.0,
+          "z_mm": 5.28,
+          "center_xy": [
+            56.4,
+            27.3
+          ]
+        }
+      ],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 30.1 mm2 < 100 mm2) from Z=4.15 to Z=5.15 mm; add a vent if the part is thin.",
+        "VAL-04: Shallow arch/bridge at Z=5.28 mm XY=(56.4, 27.3) (half_span=2.8 mm, min_ang=0.0 deg).",
+        "VAL-07: High Z-slice peel area (5895 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1454 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R2C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/Map3D_TOKYO_Middle_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 136018,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        -0.0,
+        59.6667,
+        0.0,
+        13.1739
+      ],
+      "span_mm": [
+        120.0,
+        59.6667,
+        13.1739
+      ],
+      "volume_ml": 26.4737,
+      "volume_mm3": 26473.728,
+      "z0_area_mm2": 3687.324,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            -0.0,
+            59.6667,
+            0.0,
+            13.1739
+          ],
+          "z0_area_mm2": 3687.324,
+          "min_width_mm": 59.667
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3672.25,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3741.69,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4274.38,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4782.19,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 34.1 mm2 < 100 mm2) from Z=3.65 to Z=5.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6286 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1367 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    },
+    "R1C1": {
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/Map3D_TOKYO_Top_120x57mm.stl",
+      "verdict": "PASS",
+      "triangles": 119230,
+      "orig_zmin_mm": 0.0,
+      "bbox_mm": [
+        0.0,
+        120.0,
+        0.0,
+        55.6667,
+        0.0,
+        65.1704
+      ],
+      "span_mm": [
+        120.0,
+        55.6667,
+        65.1704
+      ],
+      "volume_ml": 26.2767,
+      "volume_mm3": 26276.709,
+      "z0_area_mm2": 3786.547,
+      "shells": [
+        {
+          "shell_index": 0,
+          "bbox": [
+            0.0,
+            120.0,
+            0.0,
+            55.6667,
+            0.0,
+            65.1704
+          ],
+          "z0_area_mm2": 3786.547,
+          "min_width_mm": 55.667
+        }
+      ],
+      "base_cavities": [
+        {
+          "z_mm": 0.15,
+          "solid_area_mm2": 3766.31,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.55,
+          "solid_area_mm2": 3838.12,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 0.95,
+          "solid_area_mm2": 4331.44,
+          "sealed_cavities": []
+        },
+        {
+          "z_mm": 1.15,
+          "solid_area_mm2": 4765.62,
+          "sealed_cavities": []
+        }
+      ],
+      "overhangs": [],
+      "failures": [],
+      "warnings": [
+        "VAL-02: Small sealed upper-story cavities (max 58.9 mm2 < 100 mm2) from Z=3.65 to Z=5.65 mm; add a vent if the part is thin.",
+        "VAL-07: High Z-slice peel area (6123 mm2 > 2600 mm2); core base or lower bottom exposure.",
+        "VAL-07: Sudden cross-section peel jump (+1399 mm2 at Z=1.25 mm)."
+      ],
+      "topo": {
+        "nan_inf": 0,
+        "degen": 0,
+        "open_edges": 0,
+        "non_manifold_edges": 0,
+        "bad_half_edges": 0,
+        "non_manifold_verts": 0
+      }
+    }
+  }
+}

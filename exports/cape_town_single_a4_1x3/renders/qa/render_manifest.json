@@ -1,0 +1,159 @@
+{
+  "status": "ok",
+  "mode": "stills",
+  "env": "11_packshot_white",
+  "mount": "desk_flat",
+  "frame": "none",
+  "frame_width_mm": 4.0,
+  "frame_height_mm": 7.5,
+  "backing_finish": "matte_black",
+  "show_nameplate": false,
+  "city_title": "CAPE TOWN",
+  "assembly_manifest": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/assembly_manifest.json",
+  "draft_unvalidated": false,
+  "stl_paths": [
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/Map3D_CAPE_TOWN_Bottom_120x57mm.stl",
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/Map3D_CAPE_TOWN_Middle_120x57mm.stl",
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/Map3D_CAPE_TOWN_Top_120x57mm.stl"
+  ],
+  "cycles": {
+    "blender_version": "5.3.0",
+    "backend": "METAL",
+    "devices": [
+      "METAL:Apple M1 Pro (GPU - 14 cores)"
+    ],
+    "samples": 24,
+    "resolution": [
+      1400,
+      1400
+    ],
+    "motion_blur": false,
+    "color_management": {
+      "view_transform": "AgX",
+      "look": "AgX - Medium High Contrast"
+    }
+  },
+  "analysis": {
+    "bbox_min": [
+      -0.06,
+      -0.085,
+      0.0
+    ],
+    "bbox_max": [
+      0.06,
+      0.085,
+      0.02286
+    ],
+    "size": [
+      0.12,
+      0.17,
+      0.02286
+    ],
+    "frame_width_m": 0.12,
+    "frame_height_m": 0.17,
+    "max_z": 0.02286,
+    "hero_peak": [
+      -0.06,
+      -0.02131,
+      0.02286
+    ],
+    "hero_tower_xy": [
+      -0.05699,
+      -0.02383
+    ],
+    "skyline_centroid": [
+      -0.03478,
+      -0.0223,
+      0.01667
+    ],
+    "water_side": null,
+    "water_scores": {
+      "-X": 0.0016,
+      "+X": 0.0465,
+      "-Y": 0.0016,
+      "+Y": 0.0516
+    },
+    "water_centroid": [
+      0.03841,
+      0.06606,
+      0.0
+    ],
+    "canyon_portal": {
+      "entry": [
+        0.06266,
+        -0.03939,
+        0.01457
+      ],
+      "portal_mid": [
+        0.045,
+        -0.03589,
+        0.00657
+      ],
+      "target": [
+        -0.06,
+        -0.02131,
+        0.01257
+      ],
+      "tower_a": [
+        0.04688,
+        -0.02644,
+        0.01785
+      ],
+      "tower_b": [
+        0.04312,
+        -0.04533,
+        0.01666
+      ],
+      "direction": [
+        -0.9809,
+        0.1947
+      ],
+      "score": 4.3677
+    },
+    "recommended_yaw_deg": -24.0,
+    "vertex_count": 146548
+  },
+  "model_bounds": {
+    "outer_width_m": 0.12,
+    "outer_height_m": 0.17,
+    "desk_z": -0.00315,
+    "wall_y": 0.00465,
+    "max_z": 0.02286
+  },
+  "placed_props": [],
+  "stills": [
+    {
+      "preset": "qa_seam_raking",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_seam_raking.png",
+      "elapsed_sec": 4.91,
+      "lens_mm": 68.0,
+      "fstop": 16.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "qa_top_down_grid",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_top_down_grid.png",
+      "elapsed_sec": 5.95,
+      "lens_mm": 95.0,
+      "fstop": 16.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "qa_underside",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_underside.png",
+      "elapsed_sec": 5.04,
+      "lens_mm": 70.0,
+      "fstop": 16.0,
+      "draft_unvalidated": false
+    }
+  ],
+  "detail_grid_3x3_path": null,
+  "keyframes": {},
+  "flow_prompts_path": null,
+  "video_shots": [],
+  "fps": 24,
+  "total_elapsed_sec": 16.2
+}

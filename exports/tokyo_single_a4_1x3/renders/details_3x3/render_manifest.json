@@ -1,0 +1,213 @@
+{
+  "status": "ok",
+  "mode": "stills",
+  "env": "18_detail_chalk_gallery",
+  "mount": "desk_flat",
+  "frame": "none",
+  "frame_width_mm": 4.0,
+  "frame_height_mm": 7.5,
+  "backing_finish": "matte_black",
+  "show_nameplate": false,
+  "city_title": "TOKYO",
+  "assembly_manifest": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/assembly_manifest.json",
+  "draft_unvalidated": false,
+  "stl_paths": [
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/Map3D_TOKYO_Bottom_120x57mm.stl",
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/Map3D_TOKYO_Middle_120x57mm.stl",
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/Map3D_TOKYO_Top_120x57mm.stl"
+  ],
+  "cycles": {
+    "blender_version": "5.3.0",
+    "backend": "METAL",
+    "devices": [
+      "METAL:Apple M1 Pro (GPU - 14 cores)"
+    ],
+    "samples": 48,
+    "resolution": [
+      1400,
+      1400
+    ],
+    "motion_blur": false,
+    "color_management": {
+      "view_transform": "AgX",
+      "look": "AgX - Medium High Contrast"
+    }
+  },
+  "analysis": {
+    "bbox_min": [
+      -0.06,
+      -0.085,
+      0.0
+    ],
+    "bbox_max": [
+      0.06,
+      0.085,
+      0.06517
+    ],
+    "size": [
+      0.12,
+      0.17,
+      0.06517
+    ],
+    "frame_width_m": 0.12,
+    "frame_height_m": 0.17,
+    "max_z": 0.06517,
+    "hero_peak": [
+      0.03233,
+      0.03728,
+      0.06517
+    ],
+    "hero_tower_xy": [
+      0.03261,
+      0.03754
+    ],
+    "skyline_centroid": [
+      0.03206,
+      0.03662,
+      0.04201
+    ],
+    "water_side": "-X",
+    "water_scores": {
+      "-X": 0.0819,
+      "+X": 0.0032,
+      "-Y": 0.0281,
+      "+Y": 0.0312
+    },
+    "water_centroid": [
+      -0.02957,
+      0.00102,
+      0.0
+    ],
+    "canyon_portal": {
+      "entry": [
+        -0.00634,
+        -0.00794,
+        0.01629
+      ],
+      "portal_mid": [
+        0.01299,
+        0.01467,
+        0.01303
+      ],
+      "target": [
+        0.03233,
+        0.03728,
+        0.02933
+      ],
+      "tower_a": [
+        0.03233,
+        0.03728,
+        0.06517
+      ],
+      "tower_b": [
+        0.03206,
+        0.03662,
+        0.04201
+      ],
+      "direction": [
+        0.65,
+        0.76
+      ],
+      "score": 0.0
+    },
+    "recommended_yaw_deg": -26.0,
+    "vertex_count": 185733
+  },
+  "model_bounds": {
+    "outer_width_m": 0.12,
+    "outer_height_m": 0.17,
+    "desk_z": -0.00315,
+    "wall_y": 0.00465,
+    "max_z": 0.06517
+  },
+  "placed_props": [],
+  "stills": [
+    {
+      "preset": "detail_grid_01",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_01.png",
+      "elapsed_sec": 37.85,
+      "lens_mm": 130.0,
+      "fstop": 56.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "detail_grid_02",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_02.png",
+      "elapsed_sec": 38.68,
+      "lens_mm": 135.0,
+      "fstop": 56.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "detail_grid_03",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_03.png",
+      "elapsed_sec": 38.64,
+      "lens_mm": 128.0,
+      "fstop": 56.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "detail_grid_04",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_04.png",
+      "elapsed_sec": 38.33,
+      "lens_mm": 125.0,
+      "fstop": 56.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "detail_grid_05",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_05.png",
+      "elapsed_sec": 38.53,
+      "lens_mm": 135.0,
+      "fstop": 56.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "detail_grid_06",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_06.png",
+      "elapsed_sec": 38.53,
+      "lens_mm": 125.0,
+      "fstop": 56.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "detail_grid_07",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_07.png",
+      "elapsed_sec": 37.28,
+      "lens_mm": 130.0,
+      "fstop": 56.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "detail_grid_08",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_08.png",
+      "elapsed_sec": 37.99,
+      "lens_mm": 135.0,
+      "fstop": 56.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "detail_grid_09",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/tokyo_18_detail_chalk_gallery_detail_grid_09.png",
+      "elapsed_sec": 38.24,
+      "lens_mm": 128.0,
+      "fstop": 56.0,
+      "draft_unvalidated": false
+    }
+  ],
+  "detail_grid_3x3_path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/details_3x3/details_3x3_grid.png",
+  "keyframes": {},
+  "flow_prompts_path": null,
+  "video_shots": [],
+  "fps": 24,
+  "total_elapsed_sec": 374.34
+}

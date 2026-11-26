@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "sku_id": "square_150_2x2",
+  "format_id": "square_150_2x2",
+  "city_slug": "cape_town",
+  "generated_at": "2026-11-26T10:07:44.366Z",
+  "source_params": {
+    "title": "CAPE_TOWN",
+    "lat": -33.9025,
+    "lon": 18.417,
+    "span_m": 1550,
+    "rotation_deg": -25,
+    "z_scale": 1.2,
+    "terrain_scale": 1,
+    "dem_mode": "terrarium",
+    "window_mm": [
+      150,
+      150
+    ],
+    "grid": [
+      2,
+      2
+    ],
+    "inter_frame_gap_mm": 0,
+    "water_cutout": true,
+    "solid_base_no_tunnels": true,
+    "hollow_base": true,
+    "base_height_mm": 4,
+    "kerf_mm": 0,
+    "bed_safe_margin_mm": 4,
+    "dfm06_chamfer_inset_mm": 0.25,
+    "dfm06_chamfer_height_mm": 0.5,
+    "underside_relief_enabled": true
+  },
+  "master_volume_mm3": 63125.1859,
+  "nudged_seams": [
+    {
+      "axis": "y",
+      "index": 0,
+      "delta_mm": 0.5
+    },
+    {
+      "axis": "x",
+      "index": 0,
+      "delta_mm": 3.5
+    }
+  ],
+  "frames": [
+    {
+      "frame_id": "F1",
+      "frame_index": 0,
+      "frame_col": 0,
+      "frame_row": 0,
+      "north_frame_row": 1,
+      "frame_style": "square_150",
+      "frame_outer_mm": [
+        240,
+        240
+      ],
+      "window_mm": [
+        150,
+        150
+      ],
+      "nominal_origin_mm": [
+        -75,
+        -75
+      ],
+      "tile_ids": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "tiles": [
+    {
+      "tile_idx": 0,
+      "tile_id": "R2C1",
+      "frame_id": "F1",
+      "row": 0,
+      "north_row": 2,
+      "col": 0,
+      "local_row": 0,
+      "local_col": 0,
+      "file": "Map3D_CAPE_TOWN_R2C1_75x75mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 3029584,
+      "sha256": "70ed966655a9a6beacf8cf0df46d712c1c3517d7177d1f032ba7770f5a8144d2",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -75,
+        "x_max": 3.5,
+        "y_min": -75,
+        "y_max": 0.5
+      },
+      "neighbors": {
+        "north": "R1C1",
+        "south": null,
+        "west": null,
+        "east": "R2C2"
+      },
+      "allow_landmasses": [
+        {
+          "bbox_xy": [
+            45.07,
+            60.78,
+            0,
+            12.18
+          ],
+          "z0_area_mm2": 67.26,
+          "min_width_mm": 12.18,
+          "reason": "water_cutout_split_landmass"
+        }
+      ]
+    },
+    {
+      "tile_idx": 1,
+      "tile_id": "R2C2",
+      "frame_id": "F1",
+      "row": 0,
+      "north_row": 2,
+      "col": 1,
+      "local_row": 0,
+      "local_col": 1,
+      "file": "Map3D_CAPE_TOWN_R2C2_75x75mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 1784284,
+      "sha256": "948b6581d2475ff312286e266e5f25e8d2165981bb386d16346da78e1c9ffff6",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": 3.5,
+        "x_max": 75,
+        "y_min": -75,
+        "y_max": 0.5
+      },
+      "neighbors": {
+        "north": "R1C2",
+        "south": null,
+        "west": "R2C1",
+        "east": null
+      },
+      "allow_landmasses": [
+        {
+          "bbox_xy": [
+            50.17,
+            71.5,
+            0,
+            7.26
+          ],
+          "z0_area_mm2": 70.47,
+          "min_width_mm": 7.26,
+          "reason": "water_cutout_split_landmass"
+        }
+      ]
+    },
+    {
+      "tile_idx": 2,
+      "tile_id": "R1C1",
+      "frame_id": "F1",
+      "row": 1,
+      "north_row": 1,
+      "col": 0,
+      "local_row": 1,
+      "local_col": 0,
+      "file": "Map3D_CAPE_TOWN_R1C1_75x75mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 2038184,
+      "sha256": "6d17f585a14c6b4bfebb1092085d9d66b2d3bd8cd401bf05d2cbd3d4098cfa7a",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": -75,
+        "x_max": 3.5,
+        "y_min": 0.5,
+        "y_max": 75
+      },
+      "neighbors": {
+        "north": null,
+        "south": "R2C1",
+        "west": null,
+        "east": "R1C2"
+      },
+      "allow_landmasses": []
+    },
+    {
+      "tile_idx": 3,
+      "tile_id": "R1C2",
+      "frame_id": "F1",
+      "row": 1,
+      "north_row": 1,
+      "col": 1,
+      "local_row": 1,
+      "local_col": 1,
+      "file": "Map3D_CAPE_TOWN_R1C2_75x75mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 18684,
+      "sha256": "cd6fa6d941efad0f9a0ab7a746a0beae9a1a493e64ae2a13f306c76c80fe23d5",
+      "stl_rotation_deg": 0,
+      "nominal_rect_mm": {
+        "x_min": 3.5,
+        "x_max": 75,
+        "y_min": 0.5,
+        "y_max": 75
+      },
+      "neighbors": {
+        "north": null,
+        "south": "R2C2",
+        "west": "R1C1",
+        "east": null
+      },
+      "allow_landmasses": []
+    }
+  ],
+  "validation": {
+    "status": "PASS",
+    "verdict": "PASS",
+    "validated_at": "2026-11-26T10:31:38.307929+00:00",
+    "validator": "calibration/validate_assembly.py",
+    "report_file": "validation_report.json",
+    "report_sha256": "b99ae51fdd2f0fe0ffe3d7cd87b093283317482133cf2951e8f1df1022d6dfc4"
+  }
+}

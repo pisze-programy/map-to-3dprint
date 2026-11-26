@@ -1,0 +1,328 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-26T10:29:58.851Z",
+  "slug": "cape_town",
+  "title": "CAPE TOWN",
+  "format_id": "single_a4_1x3",
+  "mode": "full",
+  "samples": 48,
+  "qa_samples": 24,
+  "output_dir": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3",
+  "manifest_path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/assembly_manifest.json",
+  "validation_report_path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/validation_report.json",
+  "validation": {
+    "verdict": "PASS",
+    "blocking_failures": 0,
+    "warnings": 11,
+    "tiles_checked": 3,
+    "seam_pairs_checked": 2,
+    "corners_4way_checked": 0,
+    "master_volume_mm3": 147197.1087,
+    "sum_tile_volume_mm3": 147114.714,
+    "volume_diff_pct": 0.056,
+    "failures": []
+  },
+  "tiles": [
+    {
+      "tile_id": "R3C1",
+      "frame_id": "F1",
+      "file": "Map3D_CAPE_TOWN_Bottom_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 5323184,
+      "sha256": "b4bfe1a6571c89e21790e2445673168fb8ca66c7a2d66072bc0851009d8b4552",
+      "stl_rotation_deg": 0,
+      "span_mm": [
+        120,
+        56.6667,
+        21.776
+      ],
+      "z_max_mm": 21.776,
+      "volume_mm3": 61434.044,
+      "triangles": 106462,
+      "watertight": true,
+      "shells": 1
+    },
+    {
+      "tile_id": "R2C1",
+      "frame_id": "F1",
+      "file": "Map3D_CAPE_TOWN_Middle_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 5095384,
+      "sha256": "2aa374709d19f0f03d1aa5dfc61959b34a6bab5afc52d8ea0178a19f8193b799",
+      "stl_rotation_deg": 0,
+      "span_mm": [
+        120,
+        57.1667,
+        22.8627
+      ],
+      "z_max_mm": 22.8627,
+      "volume_mm3": 57158.2,
+      "triangles": 101906,
+      "watertight": true,
+      "shells": 1
+    },
+    {
+      "tile_id": "R1C1",
+      "frame_id": "F1",
+      "file": "Map3D_CAPE_TOWN_Top_120x57mm.stl",
+      "skipped_empty_water": false,
+      "byte_length": 4268884,
+      "sha256": "2e9f5c34c9d629ae9bea77d53f7cb1743b4541b3e97fa3f9016a0251e45b802f",
+      "stl_rotation_deg": 0,
+      "span_mm": [
+        120,
+        56.1667,
+        9.2673
+      ],
+      "z_max_mm": 9.2673,
+      "volume_mm3": 28522.47,
+      "triangles": 85376,
+      "watertight": true,
+      "shells": 1
+    }
+  ],
+  "seams": [
+    {
+      "pair": [
+        "R3C1",
+        "R2C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": -28.3333,
+      "area_a_mm2": 1167.552,
+      "area_b_mm2": 1167.553,
+      "area_delta_mm2": 0.001,
+      "true_diff_mm2": 0.0022,
+      "max_step_mm": 0.0082,
+      "max_flatness_dev_mm": 0.00003,
+      "diff_png": "_qa/seam_R3C1_R2C1_diff.png",
+      "passed": true
+    },
+    {
+      "pair": [
+        "R2C1",
+        "R1C1"
+      ],
+      "axis": "y",
+      "seam_coord_mm": 28.8333,
+      "area_a_mm2": 641.62,
+      "area_b_mm2": 641.621,
+      "area_delta_mm2": 0,
+      "true_diff_mm2": 0.0004,
+      "max_step_mm": 0.0012,
+      "max_flatness_dev_mm": 0.00003,
+      "diff_png": "_qa/seam_R2C1_R1C1_diff.png",
+      "passed": true
+    }
+  ],
+  "renders": {
+    "qa": [
+      {
+        "preset": "qa_seam_raking",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_seam_raking.png"
+      },
+      {
+        "preset": "qa_top_down_grid",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_top_down_grid.png"
+      },
+      {
+        "preset": "qa_underside",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_underside.png"
+      }
+    ],
+    "packshots": [
+      {
+        "preset": "packshot_iso",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_packshot_iso.png"
+      },
+      {
+        "preset": "top_down",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_top_down.png"
+      },
+      {
+        "preset": "profile_low",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_profile_low.png"
+      },
+      {
+        "preset": "macro_skyline",
+        "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_macro_skyline.png"
+      }
+    ],
+    "details_3x3": {
+      "cells": [
+        {
+          "preset": "detail_grid_01",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_01.png"
+        },
+        {
+          "preset": "detail_grid_02",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_02.png"
+        },
+        {
+          "preset": "detail_grid_03",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_03.png"
+        },
+        {
+          "preset": "detail_grid_04",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_04.png"
+        },
+        {
+          "preset": "detail_grid_05",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_05.png"
+        },
+        {
+          "preset": "detail_grid_06",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_06.png"
+        },
+        {
+          "preset": "detail_grid_07",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_07.png"
+        },
+        {
+          "preset": "detail_grid_08",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_08.png"
+        },
+        {
+          "preset": "detail_grid_09",
+          "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_09.png"
+        }
+      ],
+      "grid_png": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/details_3x3_grid.png"
+    },
+    "all_pngs": [
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_seam_raking.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_top_down_grid.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_underside.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_packshot_iso.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_top_down.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_profile_low.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_macro_skyline.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_01.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_02.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_03.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_04.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_05.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_06.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_07.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_08.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_09.png",
+      "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/details_3x3_grid.png"
+    ]
+  },
+  "visual_qa_checklist": [
+    {
+      "id": "QA-01",
+      "check": "Hero landmark fidelity vs real-world silhouette and spire profile",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_packshot_iso.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_top_down.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_profile_low.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_macro_skyline.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/details_3x3_grid.png"
+      ]
+    },
+    {
+      "id": "QA-02",
+      "check": "Seam continuity across tiles (zero step, offset, or double-wall)",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_seam_raking.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_top_down_grid.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_underside.png"
+      ]
+    },
+    {
+      "id": "QA-03",
+      "check": "Outer perimeter and seam borders (no half-cut buildings, trees, or facade slivers)",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_seam_raking.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_top_down_grid.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_underside.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_packshot_iso.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_top_down.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_profile_low.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_macro_skyline.png"
+      ]
+    },
+    {
+      "id": "QA-04",
+      "check": "Water cutouts, shorelines, islands, and bridge clearance arches",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_packshot_iso.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_top_down.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_profile_low.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_macro_skyline.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/details_3x3_grid.png"
+      ]
+    },
+    {
+      "id": "QA-05",
+      "check": "Frame and backing presentation matches single_a4_1x3",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_packshot_iso.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_top_down.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_profile_low.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_macro_skyline.png"
+      ]
+    },
+    {
+      "id": "QA-06",
+      "check": "Underside DFM-06 chamfer, 8 mm skirt, and continuous 45-deg relief grooves",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_seam_raking.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_top_down_grid.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/qa/cape_town_11_packshot_white_qa_underside.png"
+      ]
+    },
+    {
+      "id": "QA-07",
+      "check": "3x3 chalk detail gallery cells 01..09 framing (zero border/slab intrusion)",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/details_3x3_grid.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_01.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_02.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_03.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_04.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_05.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_06.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_07.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_08.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_09.png"
+      ]
+    },
+    {
+      "id": "QA-08",
+      "check": "Roofs, courtyards, and stepped towers free of collapsed walls or floating stubs",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/details_3x3_grid.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_01.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_02.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_03.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_04.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_05.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_06.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_07.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_08.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/details_3x3/cape_town_18_detail_chalk_gallery_detail_grid_09.png"
+      ]
+    },
+    {
+      "id": "QA-09",
+      "check": "Packshot lighting, framing, and commercial contrast",
+      "status": "PENDING_VISUAL_INSPECTION",
+      "files_to_inspect": [
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_packshot_iso.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_top_down.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_profile_low.png",
+        "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/cape_town_single_a4_1x3/renders/packshots/cape_town_11_packshot_white_macro_skyline.png"
+      ]
+    }
+  ]
+}

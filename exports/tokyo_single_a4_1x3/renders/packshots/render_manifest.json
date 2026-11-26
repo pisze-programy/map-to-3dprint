@@ -1,0 +1,168 @@
+{
+  "status": "ok",
+  "mode": "stills",
+  "env": "11_packshot_white",
+  "mount": "desk_flat",
+  "frame": "single_a4_1x3",
+  "frame_width_mm": 4.0,
+  "frame_height_mm": 7.5,
+  "backing_finish": "matte_black",
+  "show_nameplate": false,
+  "city_title": "TOKYO",
+  "assembly_manifest": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/assembly_manifest.json",
+  "draft_unvalidated": false,
+  "stl_paths": [
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/Map3D_TOKYO_Bottom_120x57mm.stl",
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/Map3D_TOKYO_Middle_120x57mm.stl",
+    "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/Map3D_TOKYO_Top_120x57mm.stl"
+  ],
+  "cycles": {
+    "blender_version": "5.3.0",
+    "backend": "METAL",
+    "devices": [
+      "METAL:Apple M1 Pro (GPU - 14 cores)"
+    ],
+    "samples": 48,
+    "resolution": [
+      1200,
+      1500
+    ],
+    "motion_blur": false,
+    "color_management": {
+      "view_transform": "AgX",
+      "look": "AgX - Medium High Contrast"
+    }
+  },
+  "analysis": {
+    "bbox_min": [
+      -0.06,
+      -0.085,
+      0.0
+    ],
+    "bbox_max": [
+      0.06,
+      0.085,
+      0.06517
+    ],
+    "size": [
+      0.12,
+      0.17,
+      0.06517
+    ],
+    "frame_width_m": 0.12,
+    "frame_height_m": 0.17,
+    "max_z": 0.06517,
+    "hero_peak": [
+      0.03233,
+      0.03728,
+      0.06517
+    ],
+    "hero_tower_xy": [
+      0.03261,
+      0.03754
+    ],
+    "skyline_centroid": [
+      0.03206,
+      0.03662,
+      0.04201
+    ],
+    "water_side": "-X",
+    "water_scores": {
+      "-X": 0.0819,
+      "+X": 0.0032,
+      "-Y": 0.0281,
+      "+Y": 0.0312
+    },
+    "water_centroid": [
+      -0.02957,
+      0.00102,
+      0.0
+    ],
+    "canyon_portal": {
+      "entry": [
+        -0.00634,
+        -0.00794,
+        0.01629
+      ],
+      "portal_mid": [
+        0.01299,
+        0.01467,
+        0.01303
+      ],
+      "target": [
+        0.03233,
+        0.03728,
+        0.02933
+      ],
+      "tower_a": [
+        0.03233,
+        0.03728,
+        0.06517
+      ],
+      "tower_b": [
+        0.03206,
+        0.03662,
+        0.04201
+      ],
+      "direction": [
+        0.65,
+        0.76
+      ],
+      "score": 0.0
+    },
+    "recommended_yaw_deg": -26.0,
+    "vertex_count": 185733
+  },
+  "model_bounds": {
+    "outer_width_m": 0.21,
+    "outer_height_m": 0.297,
+    "desk_z": -0.021,
+    "wall_y": 0.0225,
+    "max_z": 0.06517
+  },
+  "placed_props": [],
+  "stills": [
+    {
+      "preset": "packshot_iso",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_packshot_iso.png",
+      "elapsed_sec": 17.58,
+      "lens_mm": 68.0,
+      "fstop": 7.1,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "top_down",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_top_down.png",
+      "elapsed_sec": 19.01,
+      "lens_mm": 85.0,
+      "fstop": 8.0,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "profile_low",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_profile_low.png",
+      "elapsed_sec": 13.11,
+      "lens_mm": 85.0,
+      "fstop": 6.3,
+      "draft_unvalidated": false
+    },
+    {
+      "preset": "macro_skyline",
+      "mount": "desk_flat",
+      "path": "/Users/krystianblaszczyk/nodes/piszeprogramy/map-to-3dprint/exports/tokyo_single_a4_1x3/renders/packshots/tokyo_11_packshot_white_macro_skyline.png",
+      "elapsed_sec": 24.56,
+      "lens_mm": 90.0,
+      "fstop": 18.0,
+      "draft_unvalidated": false
+    }
+  ],
+  "detail_grid_3x3_path": null,
+  "keyframes": {},
+  "flow_prompts_path": null,
+  "video_shots": [],
+  "fps": 24,
+  "total_elapsed_sec": 74.63
+}
