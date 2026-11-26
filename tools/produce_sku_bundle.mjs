@@ -378,6 +378,44 @@ function resolveCitySnapshotIfPresent(slug, explicitSnapshot) {
 }
 
 /**
+ * Resolves automatic OSM snapshot cache paths for uncataloged custom-coordinate runs.
+ * Stores snapshots under gitignored cache/osm_snapshots/ rather than inside --out-dir.
+ * @param {{city?: string|null, slug: string, formatId: string, snapshotPath?: string|null, saveSnapshotPath?: string|null, cacheDir?: string}} params
+ * @returns {{snapshotPath: string|null, saveSnapshotPath: string|null, autoCachePath: string|null}}
+ */
+export function resolveAutoCustomSnapshotPaths({
+  city = null,
+  slug,
+  formatId,
+  snapshotPath = null,
+  saveSnapshotPath = null,
+  cacheDir = path.join(ROOT, 'cache', 'osm_snapshots'),
+}) {
+  if (city) {
+    return {
+      snapshotPath: snapshotPath ? path.resolve(snapshotPath) : null,
+      saveSnapshotPath: saveSnapshotPath ? path.resolve(saveSnapshotPath) : null,
+      autoCachePath: null,
+    };
+  }
+  if (snapshotPath) {
+    return {
+      snapshotPath: path.resolve(snapshotPath),
+      saveSnapshotPath: saveSnapshotPath ? path.resolve(saveSnapshotPath) : null,
+      autoCachePath: null,
+    };
+  }
+  const safeSlug = String(slug || 'custom').replace(/[^A-Za-z0-9_-]+/g, '_');
+  const safeFmt = String(formatId || 'single_a4_1x3').replace(/[^A-Za-z0-9_-]+/g, '_');
+  const autoCachePath = path.join(path.resolve(cacheDir), `${safeSlug}_${safeFmt}_auto.json`);
+  return {
+    snapshotPath: fs.existsSync(autoCachePath) ? autoCachePath : null,
+    saveSnapshotPath: saveSnapshotPath ? path.resolve(saveSnapshotPath) : autoCachePath,
+    autoCachePath,
+  };
+}
+
+/**
  * Runs fast software scout mode (top-down + overview renders + audit-scene + metric coverage).
  * @param {object} params
  * @returns {Promise<object>}
@@ -386,33 +424,40 @@ async function runScoutMode({ opts, slug, title, formatId, catalogEntry, outDir 
   const scoutDir = path.join(outDir, 'renders', 'scout');
   fs.mkdirSync(scoutDir, { recursive: true });
 
-  let sceneArgs;
-  if (opts.city && catalogEntry) {
-    const resolvedCity = resolveCityFormatOverrides(catalogEntry, formatId, opts.span, outDir);
-    const catalog = loadCityCatalog();
-    const demCacheDir = opts.demCacheDir
-      ? path.resolve(opts.demCacheDir)
-      : path.join(ROOT, catalog.dem_cache_dir || 'cache/dem_terrarium');
-    const snap = resolveCitySnapshotIfPresent(opts.city, opts.snapshotPath);
-    sceneArgs = {
-      citySlug: catalogEntry.city_slug,
-      formatId: resolvedCity.formatId,
-      lat: catalogEntry.lat,
-      lon: catalogEntry.lon,
-      spanMeters: resolvedCity.spanMeters,
-      rotationDeg: catalogEntry.rotation_deg,
-      zScale: catalogEntry.z_scale,
-      terrainScale: catalogEntry.terrain_scale,
-      waterCutout: catalogEntry.water_cutout !== false,
-      demMode: catalogEntry.dem_mode || 'flat',
-      demCacheDir,
-      title: opts.title || catalogEntry.title,
-      showFrame: false,
-      offlineOnly: Boolean(opts.offline),
-      ...(snap ? { snapshotPath: snap } : {}),
-    };
-  } else {
-    sceneArgs = {
+  const buildSceneArgs = () => {
+    if (opts.city && catalogEntry) {
+      const resolvedCity = resolveCityFormatOverrides(catalogEntry, formatId, opts.span, outDir);
+      const catalog = loadCityCatalog();
+      const demCacheDir = opts.demCacheDir
+        ? path.resolve(opts.demCacheDir)
+        : path.join(ROOT, catalog.dem_cache_dir || 'cache/dem_terrarium');
+      const snap = resolveCitySnapshotIfPresent(opts.city, opts.snapshotPath);
+      return {
+        citySlug: catalogEntry.city_slug,
+        formatId: resolvedCity.formatId,
+        lat: catalogEntry.lat,
+        lon: catalogEntry.lon,
+        spanMeters: resolvedCity.spanMeters,
+        rotationDeg: catalogEntry.rotation_deg,
+        zScale: catalogEntry.z_scale,
+        terrainScale: catalogEntry.terrain_scale,
+        waterCutout: catalogEntry.water_cutout !== false,
+        demMode: catalogEntry.dem_mode || 'flat',
+        demCacheDir,
+        title: opts.title || catalogEntry.title,
+        showFrame: false,
+        offlineOnly: Boolean(opts.offline),
+        ...(snap ? { snapshotPath: snap } : {}),
+      };
+    }
+    const autoSnap = resolveAutoCustomSnapshotPaths({
+      city: null,
+      slug,
+      formatId,
+      snapshotPath: opts.snapshotPath,
+      saveSnapshotPath: opts.saveSnapshotPath,
+    });
+    return {
       citySlug: slug,
       title,
       formatId,
@@ -430,19 +475,20 @@ async function runScoutMode({ opts, slug, title, formatId, catalogEntry, outDir 
       tileCols: opts.tileCols,
       tileRows: opts.tileRows,
       interFrameGapMm: opts.interFrameGapMm,
-      snapshotPath: opts.snapshotPath,
-      saveSnapshotPath: opts.saveSnapshotPath,
+      snapshotPath: autoSnap.snapshotPath,
+      saveSnapshotPath: autoSnap.saveSnapshotPath,
       offlineOnly: Boolean(opts.offline),
       showFrame: false,
     };
-  }
+  };
 
   const topOutPath = path.join(scoutDir, 'scout_top_down.png');
   const overviewOutPath = path.join(scoutDir, 'scout_overview.png');
   const auditJsonPath = path.join(scoutDir, 'audit_scene.json');
 
+  const topArgs = buildSceneArgs();
   const topRes = await handleRenderMap3DView({
-    ...sceneArgs,
+    ...topArgs,
     camera: { preset: 'top' },
     width: 1000,
     height: 1000,
@@ -450,8 +496,9 @@ async function runScoutMode({ opts, slug, title, formatId, catalogEntry, outDir 
     outputPath: topOutPath,
   }, { silent: opts.quiet });
 
+  const overviewArgs = buildSceneArgs();
   const overviewRes = await handleRenderMap3DView({
-    ...sceneArgs,
+    ...overviewArgs,
     camera: { preset: 'overview' },
     width: 1200,
     height: 900,
@@ -459,8 +506,9 @@ async function runScoutMode({ opts, slug, title, formatId, catalogEntry, outDir 
     outputPath: overviewOutPath,
   }, { silent: opts.quiet });
 
+  const auditArgs = buildSceneArgs();
   const auditRes = await handleAuditSceneFidelity({
-    ...sceneArgs,
+    ...auditArgs,
     outputJsonPath: auditJsonPath,
   }, { silent: opts.quiet });
 
@@ -469,7 +517,7 @@ async function runScoutMode({ opts, slug, title, formatId, catalogEntry, outDir 
   if (!opts.quiet) {
     process.stderr.write(
       `[produce_sku_bundle:scout] ${slug} (${formatId}) ground coverage: ${meterWidth}m x ${meterHeight}m ` +
-      `(span=${sceneArgs.spanMeters}m, rot=${sceneArgs.rotationDeg ?? 0}deg, ` +
+      `(span=${auditArgs.spanMeters}m, rot=${auditArgs.rotationDeg ?? 0}deg, ` +
       `floating=${auditRes.manifoldSummary ? auditRes.manifoldSummary.floatingBuildingsCount : 0})\n`
     );
   }
@@ -482,8 +530,8 @@ async function runScoutMode({ opts, slug, title, formatId, catalogEntry, outDir 
     title,
     format_id: formatId,
     output_dir: outDir,
-    span_m: sceneArgs.spanMeters,
-    rotation_deg: sceneArgs.rotationDeg ?? 0,
+    span_m: auditArgs.spanMeters,
+    rotation_deg: auditArgs.rotationDeg ?? 0,
     meterWidth,
     meterHeight,
     coverage_str: `${meterWidth}m x ${meterHeight}m`,
@@ -612,6 +660,13 @@ export async function runProduceSkuBundle(opts) {
       });
     } else {
       const prefix = `Map3D_${String(title).replace(/[^A-Za-z0-9_-]+/g, '_')}`;
+      const autoSnap = resolveAutoCustomSnapshotPaths({
+        city: null,
+        slug,
+        formatId,
+        snapshotPath: opts.snapshotPath,
+        saveSnapshotPath: opts.saveSnapshotPath,
+      });
       await handleExportMap3DStl({
         citySlug: slug,
         title,
@@ -631,8 +686,8 @@ export async function runProduceSkuBundle(opts) {
         tileCols: opts.tileCols,
         tileRows: opts.tileRows,
         interFrameGapMm: opts.interFrameGapMm,
-        snapshotPath: opts.snapshotPath,
-        saveSnapshotPath: opts.saveSnapshotPath,
+        snapshotPath: autoSnap.snapshotPath,
+        saveSnapshotPath: autoSnap.saveSnapshotPath,
         offlineOnly: opts.offline,
         outputDir: outDir,
         showFrame: false,

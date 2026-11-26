@@ -39,7 +39,8 @@ Select `(lat, lon)`, `--rot`, and `--span` to highlight a landmark tower, mounta
 Keep flagship towers and bridges away from outer frame borders and away from tile seam lines.
 Keep `--z-scale` inside `1.0` to `1.4` (`1.0` to `1.25` for tall spires and bridges).
 
-Always run `--mode scout` first on new crops before spending minutes on full STL export and Cycles rendering:
+Always run `--mode scout` first on new crops before spending minutes on full STL export and Cycles rendering.
+Use lowercase underscores for `--slug` (for example `cape_town`) and an uppercase display label for `--title` (for example `"CAPE TOWN"` or `"TOKYO"`).
 
 ```bash
 node tools/produce_sku_bundle.mjs \
@@ -65,6 +66,8 @@ node tools/produce_sku_bundle.mjs \
 ```
 
 Preview mode validates STLs, renders two packshots (`packshot_iso`, `top_down`), and renders the `3x3` chalk detail mosaic.
+`produce_sku_bundle.mjs` caches uncataloged OSM data under `cache/osm_snapshots/` automatically to prevent HTTP 429 rate limits.
+Pass optional `--snapshot <path>` or `--save-snapshot <path>` when you want explicit offline snapshot files.
 Inspect `<out_dir>/renders/packshots/*packshot_iso.png`, `*top_down.png`, and `<out_dir>/renders/details_3x3/details_3x3_grid.png` with `read_file`.
 
 ### Diagnosing `--mode preview` or `--mode full` Validation Aborts
@@ -73,7 +76,8 @@ If export aborts with `VAL-01..14` non-zero exit before rendering PNGs, diagnose
 1. Open `<out_dir>/validation_report.json` and read `failures` plus per-tile `VAL-05` / `VAL-09` entries.
 2. Open any generated `<out_dir>/_qa/seam_*_diff.png` images via `read_file` to locate seam mismatches.
 3. On `VAL-05` (`CRUMB_SHELL` / `SECONDARY_BELOW_LANDMASS_FLOOR`) or `VAL-09` seam failures along piers or islets, adjust `lat`, `lon`, `span`, or `rot`.
-4. Re-verify the adjusted crop quickly with `--mode scout` before re-running `--mode preview` or `--mode full`.
+4. On `VAL-02` sealed upper-story cavities (`> 100 mm2`), check `tiles.<id>.base_cavities` and `warnings` in `validation_report.json`, then adjust `lat`, `lon`, `span`, or `rot`.
+5. Re-verify the adjusted crop quickly with `--mode scout` before re-running `--mode preview` or `--mode full`.
 
 ## Step 2: Full Print Export and Deterministic Validation (`VAL-01..14`)
 
@@ -90,6 +94,7 @@ node tools/produce_sku_bundle.mjs --out-dir <out_dir> --skip-export --mode full
 ```
 
 Standalone `--skip-export --out-dir` reads `city_slug`, `source_params.title`, and `format_id` directly from `assembly_manifest.json`.
+`validate_assembly.py` writes `FINAL ASSEMBLY VERDICT: PASS` in `validation_report.json` as the single rollup covering all `VAL-01..14` checks.
 Confirm these automated gates in `<out_dir>/validation_report.json` and `<out_dir>/production_bundle_report.json`:
 
 - Require `FINAL ASSEMBLY VERDICT: PASS` with `0` blocking failures.
@@ -144,6 +149,7 @@ Pick the single matching remediation path for each defect found in Step 3:
 
 Return this exact report structure with every city SKU deliverable.
 Fill every row from `production_bundle_report.json` and your direct `read_file` image inspection.
+Remember that `validate_assembly.py` rolls all `VAL-01..14` checks into `FINAL ASSEMBLY VERDICT: PASS`, not 14 separate `VAL-xx` lines.
 
 ```markdown
 ### SKU Delivery Summary: <TITLE> (`<format_id>`)

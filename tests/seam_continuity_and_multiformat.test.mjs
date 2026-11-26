@@ -24,6 +24,7 @@ const {
   parseProduceCliArgs,
   isTileReportWatertight,
   resolveProduceBundleTarget,
+  resolveAutoCustomSnapshotPaths,
   buildBundleTileMetrics,
   runProduceSkuBundle,
 } = await import(path.join(ROOT, 'tools/produce_sku_bundle.mjs'));
@@ -808,6 +809,35 @@ try {
   assert.ok(fs.existsSync(scoutRes.renders.top_down_png), 'Scout mode must write scout_top_down.png');
   assert.ok(fs.existsSync(scoutRes.renders.overview_png), 'Scout mode must write scout_overview.png');
   assert.ok(fs.existsSync(scoutRes.renders.audit_json_path), 'Scout mode must write audit_scene.json');
+
+  // Auto snapshot cache path for uncataloged cities (never inside --out-dir)
+  const autoCacheDir = path.join(tmpBase, 'auto_snap_cache');
+  fs.mkdirSync(autoCacheDir, { recursive: true });
+  const autoMiss = resolveAutoCustomSnapshotPaths({
+    city: null,
+    slug: 'kyoto_custom',
+    formatId: 'single_a4_1x3',
+    cacheDir: autoCacheDir,
+  });
+  assert.equal(autoMiss.snapshotPath, null, 'Uncached auto snapshot must start with snapshotPath=null');
+  assert.equal(autoMiss.saveSnapshotPath, path.join(autoCacheDir, 'kyoto_custom_single_a4_1x3_auto.json'));
+  assert.equal(autoMiss.autoCachePath, path.join(autoCacheDir, 'kyoto_custom_single_a4_1x3_auto.json'));
+  fs.writeFileSync(autoMiss.autoCachePath, '{}');
+  const autoHit = resolveAutoCustomSnapshotPaths({
+    city: null,
+    slug: 'kyoto_custom',
+    formatId: 'single_a4_1x3',
+    cacheDir: autoCacheDir,
+  });
+  assert.equal(autoHit.snapshotPath, autoMiss.autoCachePath, 'Existing auto cache must be reused as snapshotPath');
+  assert.equal(autoHit.saveSnapshotPath, autoMiss.autoCachePath, 'saveSnapshotPath stays pointed at autoCachePath for narrow-bbox overwrite');
+  const autoCity = resolveAutoCustomSnapshotPaths({
+    city: 'paris_true_scale',
+    slug: 'paris_true_scale',
+    formatId: 'single_a4_1x3',
+    cacheDir: autoCacheDir,
+  });
+  assert.equal(autoCity.autoCachePath, null, 'Catalog --city runs must not generate custom auto cache path');
 
   // 8G. handleAuditSceneFidelity floatingBuildingIds reporting when floatingBuildingsCount > 0
   const floatingScene = {
