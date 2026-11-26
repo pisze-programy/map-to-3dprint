@@ -396,6 +396,165 @@ function getEffectiveScaleToBed(meta) {
   return 1.0 / effectiveCrop;
 }
 
+/**
+ * Computes physical ground coverage in meters (meterWidth x meterHeight) for a built scene.
+ * @param {object} meta
+ * @param {object} state
+ * @returns {{meterWidth: number, meterHeight: number, effectiveCrop: number}}
+ */
+function computeSceneMetricCoverage(meta, state) {
+  const halfW = Number(meta && meta.halfW) || 84.6;
+  const halfH = Number(meta && meta.halfH) || 84.6;
+  const mToU = Number(meta && meta.metersToUnits) || (169.2 / Math.max(1, Number(meta && meta.spanMeters) || 1200));
+  const baseCrop = Number(meta && meta._fetchedCropRatio) || 1.0;
+  const reqCrop = (state && state.cropRatio !== undefined) ? Number(state.cropRatio) : (meta && meta.cropRatio !== undefined ? Number(meta.cropRatio) : baseCrop);
+  const effectiveCrop = Math.min(1.0, Math.max(0.35, (reqCrop || 0.88) / baseCrop));
+  const meterWidth = Math.round(((2 * halfW * effectiveCrop) / mToU) * 10) / 10;
+  const meterHeight = Math.round(((2 * halfH * effectiveCrop) / mToU) * 10) / 10;
+  return { meterWidth, meterHeight, effectiveCrop };
+}
+
+/**
+ * Identifies floating emitted building components when printMetrics.floatingBuildingsCount > 0.
+ * Returns up to maxItems entries with { id, osmId, cx, cy, minZ, maxZ }.
+ * @param {object} params
+ * @returns {Array<{id: (string|number|null), osmId: (string|number|null), cx: number, cy: number, minZ: number, maxZ: number}>}
+ */
+function detectFloatingBuildingIds({ emittedMap, preparedById, preparedList, buildingBounds, scene, state, meta, audit, ptToBed, maxItems = 8 }) {
+  const halfW = Number(meta && meta.halfW) || 84.6;
+  const halfH = Number(meta && meta.halfH) || 84.6;
+  const scaleMm = (Number(state && state.bedSizeMm) || 120) / (2 * halfW);
+  const floatTolU = 0.65 / Math.max(0.1, scaleMm);
+  const defaultRefZ = Number((audit && audit.ctx && audit.ctx.zLandDatum) ?? (audit && audit.baseInfo && audit.baseInfo.zSubWater) ?? 0);
+  const waterCutout = Boolean(state && state.waterCutout);
+
+  const bedWaterPolys = waterCutout
+    ? ((scene && scene.waterPolys) || [])
+        .filter((w) => w && Array.isArray(w.outer) && w.outer.length >= 3)
+        .map((w) => ({
+          outer: w.outer.map(ptToBed),
+          holes: Array.isArray(w.holes) ? w.holes.map((h) => h.map(ptToBed)) : [],
+        }))
+    : [];
+
+  const inWaterAt = (px, py) => {
+    for (let i = 0; i < bedWaterPolys.length; i++) {
+      if (pointInPolyWithHoles2D(px, py, bedWaterPolys[i].outer, bedWaterPolys[i].holes)) return true;
+    }
+    return false;
+  };
+
+  const boxes = [];
+  const seenPickIds = new Set();
+  for (const em of emittedMap.values()) {
+    seenPickIds.add(em.bId);
+    const prep = (preparedById && preparedById.get(em.bId)) || null;
+    boxes.push({
+      bId: em.bId,
+      id: (prep && prep.id !== undefined) ? prep.id : em.bId,
+      osmId: (prep && prep.osmId !== undefined) ? prep.osmId : null,
+      minX: em.minX,
+      maxX: em.maxX,
+      minY: em.minY,
+      maxY: em.maxY,
+      zMin: em.zMin,
+      zMax: em.zMax,
+      refZ: (prep && Number.isFinite(prep.tZ)) ? prep.tZ : defaultRefZ,
+      isFloatingPart: Boolean(prep && prep.isPart && Number.isFinite(prep.minH) && prep.minH > 0.5),
+    });
+  }
+  for (const bb of (buildingBounds || [])) {
+    if (!bb || (bb.pickId !== undefined && seenPickIds.has(bb.pickId))) continue;
+    const prep = (preparedById && (preparedById.get(bb.pickId) || preparedById.get(bb.id))) || null;
+    boxes.push({
+      bId: bb.pickId ?? bb.id,
+      id: bb.id ?? bb.pickId ?? null,
+      osmId: (prep && prep.osmId !== undefined) ? prep.osmId : (bb.id ?? null),
+      minX: bb.minX,
+      maxX: bb.maxX,
+      minY: bb.minY,
+      maxY: bb.maxY,
+      zMin: bb.zBot,
+      zMax: bb.zTop,
+      refZ: (prep && Number.isFinite(prep.tZ)) ? prep.tZ : defaultRefZ,
+      isFloatingPart: Boolean(prep && prep.isPart && Number.isFinite(prep.minH) && prep.minH > 0.5),
+    });
+  }
+
+  const round2 = (v) => Math.round(Number(v) * 100) / 100;
+  const round3 = (v) => Math.round(Number(v) * 1000) / 1000;
+  const candidates = [];
+  for (let i = 0; i < boxes.length; i++) {
+    const b = boxes[i];
+    if (!Number.isFinite(b.minX) || !Number.isFinite(b.zMin)) continue;
+    if (b.minX >= halfW - 1e-3 || b.maxX <= -halfW + 1e-3 || b.minY >= halfH - 1e-3 || b.maxY <= -halfH + 1e-3) continue;
+    if (b.isFloatingPart) continue;
+    const cx = (b.minX + b.maxX) * 0.5;
+    const cy = (b.minY + b.maxY) * 0.5;
+    const dx = (b.maxX - b.minX) * 0.32;
+    const dy = (b.maxY - b.minY) * 0.32;
+    const samples = [[cx, cy], [cx - dx, cy - dy], [cx + dx, cy - dy], [cx + dx, cy + dy], [cx - dx, cy + dy]];
+    const touchesFrameBorder = (b.minX <= -halfW + 0.02 || b.maxX >= halfW - 0.02 || b.minY <= -halfH + 0.02 || b.maxY >= halfH - 0.02);
+    const allInCutoutSea = bedWaterPolys.length > 0 && samples.every(([px, py]) => inWaterAt(px, py));
+    const aboveSurf = b.zMin > b.refZ + floatTolU;
+    if (!aboveSurf && !(allInCutoutSea && !touchesFrameBorder)) continue;
+
+    let anchored = false;
+    for (let j = 0; j < boxes.length; j++) {
+      if (i === j) continue;
+      const o = boxes[j];
+      if (o.maxX < b.minX - 0.05 || o.minX > b.maxX + 0.05 || o.maxY < b.minY - 0.05 || o.minY > b.maxY + 0.05) continue;
+      if (o.zMin <= o.refZ + floatTolU && o.zMax >= b.zMin - 0.15) {
+        anchored = true;
+        break;
+      }
+    }
+    if (!anchored) {
+      candidates.push({
+        id: b.id ?? null,
+        osmId: b.osmId ?? null,
+        cx: round2(cx),
+        cy: round2(cy),
+        minZ: round3(b.zMin),
+        maxZ: round3(b.zMax),
+        _score: (b.zMin - b.refZ) + (allInCutoutSea ? 1.0 : 0.0),
+      });
+    }
+  }
+
+  if (candidates.length === 0) {
+    for (const p of (preparedList || [])) {
+      if (!p || p.skip) continue;
+      const refZ = Number.isFinite(p.tZ) ? p.tZ : defaultRefZ;
+      if (Number.isFinite(p.zBase) && p.zBase > refZ + floatTolU) {
+        const cx = Array.isArray(p.centroid) ? p.centroid[0] : ((p.minX + p.maxX) * 0.5);
+        const cy = Array.isArray(p.centroid) ? p.centroid[1] : ((p.minY + p.maxY) * 0.5);
+        candidates.push({
+          id: p.id ?? null,
+          osmId: p.osmId ?? null,
+          cx: round2(cx || 0),
+          cy: round2(cy || 0),
+          minZ: round3(p.zBase),
+          maxZ: round3(p.zTop ?? p.zBase),
+          _score: p.zBase - refZ,
+        });
+      }
+    }
+  }
+
+  candidates.sort((a, b) => b._score - a._score);
+  const dedup = [];
+  const seenKey = new Set();
+  for (const c of candidates) {
+    const key = `${c.id}|${c.osmId}|${c.cx}|${c.cy}`;
+    if (seenKey.has(key)) continue;
+    seenKey.add(key);
+    dedup.push({ id: c.id, osmId: c.osmId, cx: c.cx, cy: c.cy, minZ: c.minZ, maxZ: c.maxZ });
+    if (dedup.length >= maxItems) break;
+  }
+  return dedup;
+}
+
 const FRIENDLY_FORMAT_ALIASES = {
   single: 'single_a4_1x3',
   landscape: 'single_a4_landscape_3x1',
@@ -814,6 +973,7 @@ async function handleRenderMap3DView(args = {}, { silent = true } = {}) {
     outputPath: args.outputPath,
   });
 
+  const coverage = computeSceneMetricCoverage(built.meta, built.state);
   return {
     outputPath: out.outputPath,
     width: out.width,
@@ -827,8 +987,12 @@ async function handleRenderMap3DView(args = {}, { silent = true } = {}) {
       bbox: built.meta.bbox,
       center: built.meta.center,
       spanMeters: built.meta.spanMeters,
+      metersToUnits: built.meta.metersToUnits,
+      cropRatio: built.meta.cropRatio,
       halfW: built.meta.halfW,
       halfH: built.meta.halfH,
+      meterWidth: coverage.meterWidth,
+      meterHeight: coverage.meterHeight,
       rotationDeg: built.meta.sceneAppliedRotationDeg,
     },
     elapsedMs: out.elapsedMs,
@@ -1645,6 +1809,22 @@ async function handleAuditSceneFidelity(args = {}, { silent = true } = {}) {
     cutoutWindowActive: Boolean(state.waterCutout) && layerTriangleCounts.water === 0,
   };
 
+  const floatingCount = pm.floatingBuildingsCount ?? null;
+  const floatingBuildingIds = (Number(floatingCount) > 0)
+    ? detectFloatingBuildingIds({
+        emittedMap,
+        preparedById: audit.preparedById,
+        preparedList: audit.preparedList,
+        buildingBounds: built.buildingBounds,
+        scene,
+        state,
+        meta,
+        audit,
+        ptToBed,
+        maxItems: 8,
+      })
+    : [];
+
   const manifoldSummary = {
     isWatertightManifold: Boolean(pm.isWatertightManifold),
     openEdgesCount: pm.openEdgesCount ?? null,
@@ -1653,17 +1833,25 @@ async function handleAuditSceneFidelity(args = {}, { silent = true } = {}) {
     unpairedDirEdgesCount: pm.unpairedDirEdgesCount ?? null,
     degenerateTrisCount: pm.degenerateTrisCount ?? null,
     negativeWindingCount: pm.negativeWindingCount ?? null,
-    floatingBuildingsCount: pm.floatingBuildingsCount ?? null,
+    floatingBuildingsCount: floatingCount,
+    ...(Number(floatingCount) > 0 ? { floatingBuildingIds } : {}),
     outOfTileTrisCount: pm.outOfTileTrisCount ?? null,
     totalVolumeMl: pm.totalVolumeMl ?? null,
     totalTriangles: layerTriangleCounts.total,
   };
 
+  const coverage = computeSceneMetricCoverage(meta, state);
   const report = {
     meta: {
       bbox: meta.bbox,
       center: meta.center,
       spanMeters: meta.spanMeters,
+      metersToUnits: meta.metersToUnits,
+      cropRatio: meta.cropRatio,
+      halfW: meta.halfW,
+      halfH: meta.halfH,
+      meterWidth: coverage.meterWidth,
+      meterHeight: coverage.meterHeight,
       rotationDeg: meta.sceneAppliedRotationDeg,
       elevRange: meta.elevRange,
       extractedBuildings: (scene.buildings || []).length,
@@ -1683,6 +1871,7 @@ async function handleAuditSceneFidelity(args = {}, { silent = true } = {}) {
     waterCutoutMetrics,
     layerTriangleCounts,
     manifoldSummary,
+    ...(Number(floatingCount) > 0 ? { floatingBuildingIds } : {}),
   };
 
   if (args.outputJsonPath) {

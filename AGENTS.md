@@ -44,7 +44,7 @@ Read this map first. Open only the focused guide that matches your task.
 
 ## Core Commands
 
-- Produce a full validated SKU bundle (STLs, `VAL-01..14`, QA, packshots, `3x3` chalk grid): `node tools/produce_sku_bundle.mjs --city <slug> --format <id> --mode <preview|full>`
+- Produce a full validated SKU bundle (STLs, `VAL-01..14`, QA, packshots, `3x3` chalk grid): `node tools/produce_sku_bundle.mjs --city <slug> --format <id> --mode <scout|preview|full>`
 - Inspect landmarks, OSM IDs, and `bridgeAudits` clearance: `node tools/mcp_map3d_inspector.mjs inspect-landmark --query "<name>" --kind <building|bridge>`
 - Run headless invariant and 10-city repo gate (`16/16`): `npm test` (or `npm run test:headless`)
 - Export a catalog SKU with automatic `VAL-01..14` check: `node tools/export_city_sku.mjs --city <slug>`

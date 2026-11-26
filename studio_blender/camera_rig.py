@@ -259,7 +259,8 @@ def _compute_wall_still_pose(
     full_corners = compute_full_model_corners(model_bounds, analysis, mount="wall_mount")
 
     if preset_name == "macro_skyline":
-        lens, fstop, elev, shift_y = 85.0, 4.5, -7.0, 0.0
+        fstop = 16.0 if canonical_env == "11_packshot_white" else 14.0
+        lens, elev, shift_y = 85.0, -7.0, 0.0
         yaw = -46.0 if rec_yaw <= 0.0 else 46.0
         target, cluster_corners = compute_hero_cluster_corners(analysis, mount="wall_mount")
         dist = max(0.13, compute_fit_distance(yaw, elev, target, cluster_corners, lens, aspect, 0.86, 0.78))
@@ -333,19 +334,35 @@ def compute_still_pose(
     elif preset_name == "macro_skyline":
         fw, fh = float(analysis["frame_width_m"]), float(analysis["frame_height_m"])
         edge_hero = (abs(htx) > 0.34 * fw) or (abs(hty) > 0.34 * fh)
-        lens, fstop = (85.0 if edge_hero else 90.0), (7.1 if canonical_env == "11_packshot_white" else 4.5)
+        lens = 85.0 if edge_hero else 90.0
+        fstop = 18.0 if canonical_env == "11_packshot_white" else 14.0
         elev, shift_y = (24.0 if edge_hero else 21.5), 0.01
         if edge_hero:
-            # Aim across open interior/waterfront sightline away from outer edge towers
-            yaw = 28.0 if htx < 0.0 else -28.0
-            tx = max(-0.24 * fw, min(0.24 * fw, 0.20 * htx + 0.55 * sx + 0.25 * wx))
-            ty = max(-0.24 * fh, min(0.24 * fh, 0.20 * hty + 0.55 * sy + 0.25 * wy))
+            portal = analysis.get("canyon_portal") or {}
+            ta = portal.get("tower_a")
+            tb = portal.get("tower_b")
+            has_portal_skyline = (
+                float(portal.get("score", 0.0)) > 0.5
+                and isinstance(ta, (list, tuple))
+                and len(ta) >= 3
+                and abs(float(ta[0])) <= 0.45 * fw
+                and abs(float(ta[1])) <= 0.45 * fh
+            )
+            if has_portal_skyline and isinstance(tb, (list, tuple)) and len(tb) >= 3:
+                sky_x = 0.60 * float(ta[0]) + 0.40 * float(tb[0])
+                sky_y = 0.60 * float(ta[1]) + 0.40 * float(tb[1])
+                sky_z = max(float(ta[2]), float(tb[2]))
+            else:
+                sky_x, sky_y, sky_z = htx, hty, hz
+            yaw = 26.0 if htx < 0.0 else -26.0
+            tx = max(-0.28 * fw, min(0.28 * fw, 0.55 * sky_x + 0.30 * sx + 0.15 * wx))
+            ty = max(-0.28 * fh, min(0.28 * fh, 0.55 * sky_y + 0.30 * sy + 0.15 * wy))
             target = (tx, ty, max(0.32 * max_z, 0.006))
-            r_span = min(0.38 * fw, max(0.034, 0.30 * fh))
+            r_span = min(0.40 * fw, max(0.036, 0.30 * fh))
             cluster_corners = bbox_corners(tx - r_span, tx + r_span, ty - r_span * 0.85, ty + r_span * 0.85, 0.0, max_z * 1.05)
-            dist = max(0.145, compute_fit_distance(yaw, elev, target, cluster_corners, lens, aspect, 0.86, 0.78, shift_y))
+            dist = max(0.155, compute_fit_distance(yaw, elev, target, cluster_corners, lens, aspect, 0.86, 0.78, shift_y))
             cam_dir = spherical_offset(yaw, elev, 1.0)
-            focus_pt = (tx + cam_dir[0] * 0.012, ty + cam_dir[1] * 0.012, max(0.36 * max_z, 0.008))
+            focus_pt = (sky_x + cam_dir[0] * 0.003, sky_y + cam_dir[1] * 0.003, max(0.42 * sky_z, 0.008))
         else:
             yaw = rec_yaw * 0.85
             target, cluster_corners = compute_hero_cluster_corners(analysis, mount="desk_flat")

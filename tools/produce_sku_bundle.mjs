@@ -19,7 +19,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { handleExportMap3DStl } from './mcp_map3d_inspector.mjs';
+import { handleAuditSceneFidelity, handleExportMap3DStl, handleRenderMap3DView } from './mcp_map3d_inspector.mjs';
 import { exportCitySku, loadCityCatalog, resolveCityFormatOverrides } from './export_city_sku.mjs';
 
 const require = createRequire(import.meta.url);
@@ -98,11 +98,16 @@ Format & Grid Options:
   --inter-frame-gap-mm <mm> Gap between multi-frame panels in mm (default: 0.0)
 
 Pipeline & Render Options:
-  --mode <preview|full>     preview (2 packshots + 3x3 chalk) or full (+ Gate 3 QA + 4 packshots, default: full)
+  --mode <scout|preview|full>
+                            scout: fast software top-down + overview PNGs in <out>/renders/scout/ +
+                            audit-scene + metric meterWidth x meterHeight coverage (seconds, before STL CSG)
+                            preview: export + VAL-01..14 + 2 packshots + 3x3 chalk grid (24 samples)
+                            full: export + VAL-01..14 + Gate 3 QA + 4 packshots + 3x3 chalk grid (default: full)
   --out-dir <dir>           Output directory (default: exports/<slug>_<formatId>)
   --samples <n>             Cycles samples (default: 24 for preview, 48 for full)
   --qa-samples <n>          Cycles samples for Gate 3 QA stills (default: min(24, samples))
   --skip-export             Reuse existing validated assembly_manifest.json in --out-dir
+                            (standalone: --out-dir + --skip-export reads slug/title/format from manifest)
   --snapshot <path>         Explicit OSM snapshot JSON path
   --save-snapshot <path>    Save live-fetched OSM snapshot JSON path
   --dem-cache-dir <dir>     Local Terrarium DEM cache directory
@@ -171,9 +176,10 @@ export function parseProduceCliArgs(argv) {
     : undefined;
 
   const mode = String(flags.mode || 'full').trim().toLowerCase();
-  if (mode !== 'preview' && mode !== 'full') {
-    throw new Error(`Invalid --mode "${flags.mode}". Must be "preview" or "full".`);
+  if (mode !== 'scout' && mode !== 'preview' && mode !== 'full') {
+    throw new Error(`Invalid --mode "${flags.mode}". Must be "scout", "preview", or "full".`);
   }
+  const formatExplicit = Boolean(flags.format);
   const formatId = resolveBundleFormatId(flags.format || 'single_a4_1x3');
   const defaultSamples = mode === 'preview' ? 24 : 48;
   const samples = num('samples') !== undefined ? Math.max(1, Math.round(num('samples'))) : defaultSamples;
@@ -193,6 +199,7 @@ export function parseProduceCliArgs(argv) {
     demMode: flags['dem-mode'] ? String(flags['dem-mode']).trim() : undefined,
     waterCutout: parseBoolFlag(flags['water-cutout'], true),
     formatId,
+    formatExplicit,
     widthCm: num('width-cm'),
     heightCm: num('height-cm'),
     tileCols: num('tile-cols'),
@@ -339,17 +346,188 @@ function buildVisualQaChecklist(renders, formatId) {
 }
 
 /**
- * Executes the complete SKU production pipeline and writes production_bundle_report.json.
- * @param {object} opts
+ * Computes whether a validation_report.json tile entry is strictly watertight.
+ * @param {object|null} tr
+ * @returns {boolean|null}
+ */
+export function isTileReportWatertight(tr) {
+  if (!tr) return null;
+  const topo = tr.topo || null;
+  return Boolean(
+    tr.verdict === 'PASS' &&
+    topo &&
+    topo.open_edges === 0 &&
+    topo.non_manifold_edges === 0 &&
+    topo.degen === 0 &&
+    topo.nan_inf === 0 &&
+    (topo.bad_half_edges === undefined || topo.bad_half_edges === 0) &&
+    (topo.non_manifold_verts === undefined || topo.non_manifold_verts === 0)
+  );
+}
+
+/**
+ * Resolves city snapshot path if cached under cache/osm_snapshots/.
+ * @param {string} slug
+ * @param {string|null} explicitSnapshot
+ * @returns {string|null}
+ */
+function resolveCitySnapshotIfPresent(slug, explicitSnapshot) {
+  if (explicitSnapshot) return path.resolve(explicitSnapshot);
+  const p = path.join(ROOT, 'cache', 'osm_snapshots', `${slug}.json`);
+  return fs.existsSync(p) ? p : null;
+}
+
+/**
+ * Runs fast software scout mode (top-down + overview renders + audit-scene + metric coverage).
+ * @param {object} params
  * @returns {Promise<object>}
  */
-export async function runProduceSkuBundle(opts) {
-  const formatId = resolveBundleFormatId(opts.formatId || 'single_a4_1x3');
-  let slug;
-  let title;
-  let catalogEntry = null;
+async function runScoutMode({ opts, slug, title, formatId, catalogEntry, outDir }) {
+  const scoutDir = path.join(outDir, 'renders', 'scout');
+  fs.mkdirSync(scoutDir, { recursive: true });
 
-  if (opts.city) {
+  let sceneArgs;
+  if (opts.city && catalogEntry) {
+    const resolvedCity = resolveCityFormatOverrides(catalogEntry, formatId, opts.span, outDir);
+    const catalog = loadCityCatalog();
+    const demCacheDir = opts.demCacheDir
+      ? path.resolve(opts.demCacheDir)
+      : path.join(ROOT, catalog.dem_cache_dir || 'cache/dem_terrarium');
+    const snap = resolveCitySnapshotIfPresent(opts.city, opts.snapshotPath);
+    sceneArgs = {
+      citySlug: catalogEntry.city_slug,
+      formatId: resolvedCity.formatId,
+      lat: catalogEntry.lat,
+      lon: catalogEntry.lon,
+      spanMeters: resolvedCity.spanMeters,
+      rotationDeg: catalogEntry.rotation_deg,
+      zScale: catalogEntry.z_scale,
+      terrainScale: catalogEntry.terrain_scale,
+      waterCutout: catalogEntry.water_cutout !== false,
+      demMode: catalogEntry.dem_mode || 'flat',
+      demCacheDir,
+      title: opts.title || catalogEntry.title,
+      showFrame: false,
+      offlineOnly: Boolean(opts.offline),
+      ...(snap ? { snapshotPath: snap } : {}),
+    };
+  } else {
+    sceneArgs = {
+      citySlug: slug,
+      title,
+      formatId,
+      lat: opts.lat,
+      lon: opts.lon,
+      spanMeters: opts.span,
+      rotationDeg: opts.rot ?? 0,
+      zScale: opts.zScale ?? 1.0,
+      terrainScale: opts.terrainScale ?? 1.0,
+      demMode: opts.demMode,
+      demCacheDir: opts.demCacheDir || path.join(ROOT, 'cache', 'dem_terrarium'),
+      waterCutout: opts.waterCutout !== false,
+      targetWidthCm: opts.widthCm,
+      targetHeightCm: opts.heightCm,
+      tileCols: opts.tileCols,
+      tileRows: opts.tileRows,
+      interFrameGapMm: opts.interFrameGapMm,
+      snapshotPath: opts.snapshotPath,
+      saveSnapshotPath: opts.saveSnapshotPath,
+      offlineOnly: Boolean(opts.offline),
+      showFrame: false,
+    };
+  }
+
+  const topOutPath = path.join(scoutDir, 'scout_top_down.png');
+  const overviewOutPath = path.join(scoutDir, 'scout_overview.png');
+  const auditJsonPath = path.join(scoutDir, 'audit_scene.json');
+
+  const topRes = await handleRenderMap3DView({
+    ...sceneArgs,
+    camera: { preset: 'top' },
+    width: 1000,
+    height: 1000,
+    ssaa: 1,
+    outputPath: topOutPath,
+  }, { silent: opts.quiet });
+
+  const overviewRes = await handleRenderMap3DView({
+    ...sceneArgs,
+    camera: { preset: 'overview' },
+    width: 1200,
+    height: 900,
+    ssaa: 1,
+    outputPath: overviewOutPath,
+  }, { silent: opts.quiet });
+
+  const auditRes = await handleAuditSceneFidelity({
+    ...sceneArgs,
+    outputJsonPath: auditJsonPath,
+  }, { silent: opts.quiet });
+
+  const meterWidth = auditRes.meta ? auditRes.meta.meterWidth : topRes.meta.meterWidth;
+  const meterHeight = auditRes.meta ? auditRes.meta.meterHeight : topRes.meta.meterHeight;
+  if (!opts.quiet) {
+    process.stderr.write(
+      `[produce_sku_bundle:scout] ${slug} (${formatId}) ground coverage: ${meterWidth}m x ${meterHeight}m ` +
+      `(span=${sceneArgs.spanMeters}m, rot=${sceneArgs.rotationDeg ?? 0}deg, ` +
+      `floating=${auditRes.manifoldSummary ? auditRes.manifoldSummary.floatingBuildingsCount : 0})\n`
+    );
+  }
+
+  const scoutReport = {
+    schema_version: 1,
+    generated_at: new Date().toISOString(),
+    mode: 'scout',
+    slug,
+    title,
+    format_id: formatId,
+    output_dir: outDir,
+    span_m: sceneArgs.spanMeters,
+    rotation_deg: sceneArgs.rotationDeg ?? 0,
+    meterWidth,
+    meterHeight,
+    coverage_str: `${meterWidth}m x ${meterHeight}m`,
+    meta: auditRes.meta || topRes.meta,
+    manifoldSummary: auditRes.manifoldSummary || null,
+    floatingBuildingIds: auditRes.floatingBuildingIds || [],
+    renders: {
+      top_down_png: topRes.outputPath,
+      overview_png: overviewRes.outputPath,
+      audit_json_path: auditJsonPath,
+    },
+  };
+  const scoutReportPath = path.join(scoutDir, 'scout_report.json');
+  fs.writeFileSync(scoutReportPath, JSON.stringify(scoutReport, null, 2));
+  return { scoutReportPath, ...scoutReport };
+}
+
+/**
+ * Resolves target slug, title, formatId, catalogEntry, and outDir from CLI opts
+ * (supporting standalone --skip-export --out-dir via assembly_manifest.json).
+ * @param {object} opts
+ * @returns {{slug: string, title: string, formatId: string, catalogEntry: (object|null), outDir: string}}
+ */
+export function resolveProduceBundleTarget(opts) {
+  let formatId = resolveBundleFormatId(opts.formatId || 'single_a4_1x3');
+  let slug = opts.slug || null;
+  let title = opts.title || null;
+  let catalogEntry = null;
+  let outDir = opts.outDir ? path.resolve(opts.outDir) : null;
+
+  if (opts.skipExport && outDir && !opts.city && (!slug || !title || !Number.isFinite(opts.lat))) {
+    const manifestCandidate = path.join(outDir, 'assembly_manifest.json');
+    if (!fs.existsSync(manifestCandidate)) {
+      throw new Error(`--skip-export requires an existing assembly_manifest.json at ${manifestCandidate}`);
+    }
+    const existingManifest = JSON.parse(fs.readFileSync(manifestCandidate, 'utf8'));
+    const sp = existingManifest.source_params || {};
+    slug = slug || existingManifest.city_slug || path.basename(outDir);
+    title = title || sp.title || String(slug).toUpperCase();
+    if (!opts.formatExplicit) {
+      const manifestFmt = existingManifest.format_id || existingManifest.sku_id;
+      if (manifestFmt) formatId = resolveBundleFormatId(manifestFmt);
+    }
+  } else if (opts.city) {
     const catalog = loadCityCatalog();
     catalogEntry = catalog.cities && catalog.cities[opts.city];
     if (!catalogEntry) {
@@ -359,19 +537,62 @@ export async function runProduceSkuBundle(opts) {
     slug = catalogEntry.city_slug;
     title = opts.title || catalogEntry.title;
   } else {
-    if (!opts.slug || !opts.title || !Number.isFinite(opts.lat) || !Number.isFinite(opts.lon) || !Number.isFinite(opts.span)) {
+    if (!slug || !title || !Number.isFinite(opts.lat) || !Number.isFinite(opts.lon) || !Number.isFinite(opts.span)) {
       throw new Error(
-        'Either --city <slug> OR custom coordinates (--slug, --title, --lat, --lon, --span) are required.'
+        'Either --city <slug>, custom coordinates (--slug, --title, --lat, --lon, --span), ' +
+        'or --skip-export --out-dir <existing_export_dir> are required.'
       );
     }
-    slug = opts.slug;
-    title = opts.title;
   }
 
-  const outDir = opts.outDir
-    ? path.resolve(opts.outDir)
-    : path.join(ROOT, 'exports', `${slug}_${formatId}`);
+  if (!outDir) {
+    outDir = path.join(ROOT, 'exports', `${slug}_${formatId}`);
+  }
+  return { slug, title, formatId, catalogEntry, outDir };
+}
+
+/**
+ * Builds per-tile report metrics combining assembly_manifest.json and validation_report.json.
+ * @param {object} asmManifest
+ * @param {object} valReport
+ * @returns {Array<object>}
+ */
+export function buildBundleTileMetrics(asmManifest, valReport) {
+  return (asmManifest.tiles || []).map((t) => {
+    const tr = (valReport && valReport.tiles && valReport.tiles[t.tile_id]) || null;
+    const tris = tr
+      ? (Number.isFinite(tr.triangles) ? tr.triangles : (tr.topo && Number.isFinite(tr.topo.triangles) ? tr.topo.triangles : 0))
+      : 0;
+    return {
+      tile_id: t.tile_id,
+      frame_id: t.frame_id,
+      file: t.file,
+      skipped_empty_water: Boolean(t.skipped_empty_water),
+      byte_length: t.byte_length || 0,
+      sha256: t.sha256 || null,
+      stl_rotation_deg: t.stl_rotation_deg || 0,
+      span_mm: tr ? tr.span_mm : null,
+      z_max_mm: tr && tr.span_mm ? tr.span_mm[2] : null,
+      volume_mm3: tr ? tr.volume_mm3 : 0,
+      triangles: tris,
+      watertight: isTileReportWatertight(tr),
+      shells: tr && Array.isArray(tr.shells) ? tr.shells.length : 0,
+    };
+  });
+}
+
+/**
+ * Executes the complete SKU production pipeline and writes production_bundle_report.json.
+ * @param {object} opts
+ * @returns {Promise<object>}
+ */
+export async function runProduceSkuBundle(opts) {
+  const { slug, title, formatId, catalogEntry, outDir } = resolveProduceBundleTarget(opts);
   fs.mkdirSync(outDir, { recursive: true });
+
+  if (opts.mode === 'scout') {
+    return runScoutMode({ opts, slug, title, formatId, catalogEntry, outDir });
+  }
 
   // Step 1: Export STLs + assembly_manifest.json + automatic VAL-01..14 validation
   if (!opts.skipExport) {
@@ -500,24 +721,7 @@ export async function runProduceSkuBundle(opts) {
   }
 
   // Step 5: Write production_bundle_report.json
-  const tileMetrics = (asmManifest.tiles || []).map((t) => {
-    const tr = (valReport.tiles && valReport.tiles[t.tile_id]) || null;
-    return {
-      tile_id: t.tile_id,
-      frame_id: t.frame_id,
-      file: t.file,
-      skipped_empty_water: Boolean(t.skipped_empty_water),
-      byte_length: t.byte_length || 0,
-      sha256: t.sha256 || null,
-      stl_rotation_deg: t.stl_rotation_deg || 0,
-      span_mm: tr ? tr.span_mm : null,
-      z_max_mm: tr && tr.span_mm ? tr.span_mm[2] : null,
-      volume_mm3: tr ? tr.volume_mm3 : 0,
-      triangles: tr && tr.topo ? tr.topo.triangles : 0,
-      watertight: tr && tr.topo ? Boolean(tr.topo.watertight) : null,
-      shells: tr && Array.isArray(tr.shells) ? tr.shells.length : 0,
-    };
-  });
+  const tileMetrics = buildBundleTileMetrics(asmManifest, valReport);
 
   const allPngs = [
     ...qaRenders.map((r) => r.path),

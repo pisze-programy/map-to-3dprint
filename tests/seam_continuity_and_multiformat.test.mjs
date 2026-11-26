@@ -17,8 +17,16 @@ const uiConfig = require(path.join(ROOT, 'src/geometry/print_profiles.js'));
 const manifoldCore = require(path.join(ROOT, 'src/geometry/manifold_core.js'));
 const seamCutter = require(path.join(ROOT, 'src/mesh/tile_seam_cutter.js'));
 const stlWriter = require(path.join(ROOT, 'src/export/stl_writer.js'));
-const { handleExportMap3DStl, handleInspectLandmark3D } = await import(path.join(ROOT, 'tools/mcp_map3d_inspector.mjs'));
-const { resolveBundleFormatId, FORMAT_ALIAS_MAP, parseProduceCliArgs } = await import(path.join(ROOT, 'tools/produce_sku_bundle.mjs'));
+const { handleAuditSceneFidelity, handleExportMap3DStl, handleInspectLandmark3D } = await import(path.join(ROOT, 'tools/mcp_map3d_inspector.mjs'));
+const {
+  resolveBundleFormatId,
+  FORMAT_ALIAS_MAP,
+  parseProduceCliArgs,
+  isTileReportWatertight,
+  resolveProduceBundleTarget,
+  buildBundleTileMetrics,
+  runProduceSkuBundle,
+} = await import(path.join(ROOT, 'tools/produce_sku_bundle.mjs'));
 const { resolveCityFormatOverrides } = await import(path.join(ROOT, 'tools/export_city_sku.mjs'));
 const { loadSceneAndBuildModel } = require(path.join(ROOT, 'tools/headless_scene_harness.js'));
 const { loadCachedParisOsmElements } = await import(path.join(ROOT, 'calibration/generate_seam_coupon_stl.mjs'));
@@ -727,13 +735,14 @@ try {
   );
   assert.ok(bridgeInspect.bridgeAudits[0].clearance && Number.isFinite(bridgeInspect.bridgeAudits[0].clearance.zDeckTop));
 
-  // 8F. produce_sku_bundle.mjs --help & format alias resolution
+  // 8F. produce_sku_bundle.mjs --help, --mode scout, --skip-export --out-dir & watertight reporting
   const helpProc = spawnSync('node', [path.join(ROOT, 'tools/produce_sku_bundle.mjs'), '--help'], {
     cwd: ROOT,
     encoding: 'utf8',
   });
   assert.equal(helpProc.status, 0, 'produce_sku_bundle.mjs --help must exit 0');
   assert.ok(helpProc.stdout.includes('--city') && helpProc.stdout.includes('--format') && helpProc.stdout.includes('--mode'));
+  assert.ok(helpProc.stdout.includes('scout') && helpProc.stdout.includes('meterWidth x meterHeight'), '--help must document --mode scout');
   const expectedAliases = {
     single: 'single_a4_1x3',
     landscape: 'single_a4_landscape_3x1',
@@ -755,8 +764,86 @@ try {
   const parsedFull = parseProduceCliArgs(['--city', 'paris_true_scale', '--format', '50x70']);
   assert.equal(parsedFull.formatId, 'flagship_50x70_3x9');
   assert.equal(parsedFull.samples, 48);
+  const parsedScout = parseProduceCliArgs(['--city', 'paris_true_scale', '--mode', 'scout']);
+  assert.equal(parsedScout.mode, 'scout');
 
-  console.log('  PASS: Empty-water skip, auto-tiling, narrow snapshot guard, bridgeAudits & produce_sku_bundle CLI verified');
+  // Standalone --skip-export --out-dir reads city_slug, title, format_id from assembly_manifest.json
+  const parsedSkipStandalone = parseProduceCliArgs(['--skip-export', '--out-dir', parisDir]);
+  const skipTarget = resolveProduceBundleTarget(parsedSkipStandalone);
+  assert.equal(skipTarget.slug, 'paris_test');
+  assert.equal(skipTarget.title, 'PARIS_TEST');
+  assert.equal(skipTarget.formatId, 'single_a4_1x3');
+  assert.equal(skipTarget.outDir, path.resolve(parisDir));
+
+  // Watertight reporting from validation_report.json (tile.verdict === PASS + zero topo errors)
+  const parisAsm = JSON.parse(fs.readFileSync(parisManifestPath, 'utf8'));
+  const parisValRep = JSON.parse(fs.readFileSync(path.join(parisDir, 'validation_report.json'), 'utf8'));
+  const parisMetrics = buildBundleTileMetrics(parisAsm, parisValRep);
+  assert.equal(parisMetrics.length, 3);
+  for (const tm of parisMetrics) {
+    assert.equal(tm.watertight, true, `Tile ${tm.tile_id} must report watertight: true`);
+    assert.ok(tm.triangles > 0, `Tile ${tm.tile_id} must report triangles > 0`);
+  }
+  assert.equal(isTileReportWatertight({ verdict: 'PASS', topo: { open_edges: 1, non_manifold_edges: 0, degen: 0, nan_inf: 0 } }), false);
+
+  // Live --mode scout on cached Paris snapshot (fast software PNGs + audit-scene + metric coverage)
+  const parisSnapFile = path.join(ROOT, 'cache/osm_snapshots/paris_true_scale.json');
+  const scoutOutDir = path.join(tmpBase, 'paris_scout_mode_test');
+  const scoutRes = await runProduceSkuBundle({
+    slug: 'paris_scout',
+    title: 'PARIS_SCOUT',
+    lat: 48.8586,
+    lon: 2.2942,
+    span: 780,
+    rot: -46,
+    formatId: 'single_a4_1x3',
+    mode: 'scout',
+    snapshotPath: parisSnapFile,
+    offline: true,
+    outDir: scoutOutDir,
+    quiet: true,
+  });
+  assert.equal(scoutRes.mode, 'scout');
+  assert.ok(scoutRes.meterWidth > 500 && scoutRes.meterHeight > 500, `Expected metric coverage > 500m, got ${scoutRes.meterWidth}x${scoutRes.meterHeight}`);
+  assert.ok(fs.existsSync(scoutRes.renders.top_down_png), 'Scout mode must write scout_top_down.png');
+  assert.ok(fs.existsSync(scoutRes.renders.overview_png), 'Scout mode must write scout_overview.png');
+  assert.ok(fs.existsSync(scoutRes.renders.audit_json_path), 'Scout mode must write audit_scene.json');
+
+  // 8G. handleAuditSceneFidelity floatingBuildingIds reporting when floatingBuildingsCount > 0
+  const floatingScene = {
+    spanMeters: 800,
+    dem: {
+      grid: [[0.2, 0.2, 0.2, 0.2], [0.2, 0.2, 0.2, 0.2], [0.2, 0.2, 0.2, 0.2], [0.2, 0.2, 0.2, 0.2]],
+      minElev: 0.2,
+      maxElev: 0.2,
+    },
+    waterPolys: [
+      { outer: makeRectRing(0, 0, 40.0, 40.0), holes: [], waterTag: 'sea' },
+    ],
+    waterLines: [],
+    greenPolys: [],
+    trees: [],
+    roads: [],
+    bridgePolys: [],
+    buildings: [
+      { id: 9901, osmId: 99001, outer: makeRectRing(12, 12, 5.0, 5.0), holes: [], h: 20, roof: 'flat', roofH: 0 },
+    ],
+  };
+  const floatAudit = await handleAuditSceneFidelity({
+    scene: floatingScene,
+    formatId: 'single_a4_1x3',
+    waterCutout: true,
+  }, { silent: true });
+  assert.ok(floatAudit.manifoldSummary.floatingBuildingsCount > 0, 'Synthetic elevated building must trigger floatingBuildingsCount > 0');
+  assert.ok(
+    Array.isArray(floatAudit.floatingBuildingIds) && floatAudit.floatingBuildingIds.length >= 1,
+    'audit-scene must include floatingBuildingIds when floatingBuildingsCount > 0'
+  );
+  const fb0 = floatAudit.floatingBuildingIds[0];
+  assert.ok(fb0.osmId === 99001 || fb0.id === 9901, `Expected floating building 99001/9901, got ${JSON.stringify(fb0)}`);
+  assert.ok(Number.isFinite(fb0.cx) && Number.isFinite(fb0.cy) && Number.isFinite(fb0.minZ) && Number.isFinite(fb0.maxZ));
+
+  console.log('  PASS: Empty-water skip, auto-tiling, narrow snapshot guard, bridgeAudits, scout mode, watertight & floatingBuildingIds verified');
 } finally {
   fs.rmSync(tmpBase, { recursive: true, force: true });
 }

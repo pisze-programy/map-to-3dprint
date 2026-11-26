@@ -3,7 +3,18 @@
 Follow this runbook in order for every city relief product request.
 Do not guess parameters, skip validation, or approve uninspected renders.
 
-## Step 0: Format Lookup Table
+## Step 0: City Lookup, `--span` Math, and Format Table
+
+Check existing pre-tuned city presets before inventing coordinates:
+1. Check `config/city_catalog.json` first (`--city <slug>` works directly for all 10 catalog cities).
+2. Check `WORLD_LOCATIONS` in `src/geometry/print_profiles.js` next for 37 pre-selected city and mountain centers.
+3. For any uncataloged city, look up landmark coordinates via `search_web` or OpenStreetMap.
+
+Understand how `--span <m>` maps ground meters onto the frame window (`computeBBoxFromParams`):
+- `--span <m>` (`spanMeters`) sets the ground span of the **longest plate axis** (`max(window_w, window_h)`).
+- The shorter axis scales proportionally: `span_short = span_m * min(window_w, window_h) / max(window_w, window_h)`.
+- For `single_a4_1x3` (`120 x 170 mm`) at `--span 780`, height covers `780.0 m` and width covers `550.6 m`.
+- Verify exact ground dimensions (`meterWidth x meterHeight`) quickly using `--mode scout` in Step 1.
 
 Map the user request to one canonical `format_id` from `config/format_catalog.json`.
 Every strip fits the Anycubic Photon Mono 4 safe bed (`145.45 x 79.05 x 163.0 mm` at `4.0 mm` margin).
@@ -22,14 +33,26 @@ Every strip fits the Anycubic Photon Mono 4 safe bed (`145.45 x 79.05 x 163.0 mm
 When you override an A4 catalog city with `--format`, `export_city_sku.mjs` scales `span_m` automatically by `max(window_w, window_h) / 170.0`.
 For custom dimensions, pass `--format custom --width-cm <W> --height-cm <H>` and omit `--tile-cols` / `--tile-rows` for Mono 4 auto-tiling.
 
-## Step 1: Commercial Crop Selection and Fast Preview
+## Step 1: Fast Software Scout (`--mode scout`) and Preview (`--mode preview`)
 
-Select the crop center `(lat, lon)`, rotation `--rot`, and `--span` to frame the highest-value commercial skyline.
-Highlight a signature landmark tower, mountain silhouette, harbor shoreline, or dense urban core.
+Select `(lat, lon)`, `--rot`, and `--span` to highlight a landmark tower, mountain silhouette, harbor, or dense urban core.
 Keep flagship towers and bridges away from outer frame borders and away from tile seam lines.
-Keep `--z-scale` inside `1.0` to `1.4` (`1.0` to `1.25` for tall spires and arches).
+Keep `--z-scale` inside `1.0` to `1.4` (`1.0` to `1.25` for tall spires and bridges).
 
-Run a fast preview bundle before full export and QA rendering:
+Always run `--mode scout` first on new crops before spending minutes on full STL export and Cycles rendering:
+
+```bash
+node tools/produce_sku_bundle.mjs \
+  --slug <slug> --title <TITLE> --lat <deg> --lon <deg> --span <m> \
+  --rot <deg> --z-scale <n> --dem-mode <flat|terrarium> --format <alias_or_id> --mode scout
+```
+
+Scout mode finishes in seconds without STL CSG and writes:
+- `<out_dir>/renders/scout/scout_top_down.png` and `scout_overview.png` (inspect both via `read_file`).
+- `<out_dir>/renders/scout/scout_report.json` with exact `meterWidth x meterHeight`, `manifoldSummary`, and `floatingBuildingIds` (when `floatingBuildingsCount > 0`).
+- `<out_dir>/renders/scout/audit_scene.json` for GIS and landmark diagnostics.
+
+Once the scout framing, landmark margins, and `floatingBuildingsCount` look clean, run `--mode preview`:
 
 ```bash
 # Catalog city preview
@@ -43,7 +66,14 @@ node tools/produce_sku_bundle.mjs \
 
 Preview mode validates STLs, renders two packshots (`packshot_iso`, `top_down`), and renders the `3x3` chalk detail mosaic.
 Inspect `<out_dir>/renders/packshots/*packshot_iso.png`, `*top_down.png`, and `<out_dir>/renders/details_3x3/details_3x3_grid.png` with `read_file`.
-Confirm composition, rotation, landmark placement, and seam clearance before you run Step 2.
+
+### Diagnosing `--mode preview` or `--mode full` Validation Aborts
+
+If export aborts with `VAL-01..14` non-zero exit before rendering PNGs, diagnose immediately without guessing:
+1. Open `<out_dir>/validation_report.json` and read `failures` plus per-tile `VAL-05` / `VAL-09` entries.
+2. Open any generated `<out_dir>/_qa/seam_*_diff.png` images via `read_file` to locate seam mismatches.
+3. On `VAL-05` (`CRUMB_SHELL` / `SECONDARY_BELOW_LANDMASS_FLOOR`) or `VAL-09` seam failures along piers or islets, adjust `lat`, `lon`, `span`, or `rot`.
+4. Re-verify the adjusted crop quickly with `--mode scout` before re-running `--mode preview` or `--mode full`.
 
 ## Step 2: Full Print Export and Deterministic Validation (`VAL-01..14`)
 
@@ -53,8 +83,13 @@ Run the full production bundle once the preview crop looks balanced:
 node tools/produce_sku_bundle.mjs --city <slug> --format <alias_or_id> --mode full
 ```
 
-For custom coordinates, pass `--slug`, `--title`, `--lat`, `--lon`, `--span`, `--rot`, `--z-scale`, `--dem-mode`, and `--water-cutout`.
-Pass `--skip-export` only when `<out_dir>/assembly_manifest.json` already exists and passes validation.
+When `<out_dir>/assembly_manifest.json` already exists and passes validation, skip re-export cleanly without repeating coordinate flags:
+
+```bash
+node tools/produce_sku_bundle.mjs --out-dir <out_dir> --skip-export --mode full
+```
+
+Standalone `--skip-export --out-dir` reads `city_slug`, `source_params.title`, and `format_id` directly from `assembly_manifest.json`.
 Confirm these automated gates in `<out_dir>/validation_report.json` and `<out_dir>/production_bundle_report.json`:
 
 - Require `FINAL ASSEMBLY VERDICT: PASS` with `0` blocking failures.
@@ -92,7 +127,7 @@ Pick the single matching remediation path for each defect found in Step 3:
 
 1. **Half-cut buildings, trees, or slivers on border or seam**:
    - Adjust `--lat`, `--lon`, `--rot`, or `--span` to shift the cut line along streets or open water.
-   - Re-run `node tools/produce_sku_bundle.mjs --mode preview` (then `--mode full`).
+   - Re-verify fast with `--mode scout`, then re-run `--mode preview` or `--mode full`.
 2. **Generic urban geometry defect (roofs, courtyards, street walls, water cutouts)**:
    - Fix the defect systemically in city-agnostic core modules under `src/`.
    - Run `npm test` (`16/16` suites `PASS`), then re-run `node tools/produce_sku_bundle.mjs`.
