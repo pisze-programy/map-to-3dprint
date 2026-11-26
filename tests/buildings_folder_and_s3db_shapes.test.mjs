@@ -184,7 +184,7 @@ test('2) Every src/buildings/*.js submodule can be require()d standalone in a fr
   }
 });
 
-test('3) All 10 legacy shims (< 45 lines each) re-export 100% of historical symbols, HTML bundles include all 13 modules, and Python gis/s3db_models.py honors building:part=no', () => {
+test('3) All 10 legacy shims (< 45 lines each) re-export 100% of historical symbols, PIPELINE_SCRIPTS includes all 13 modules, and Python gis/s3db_models.py honors building:part=no', () => {
   const legacyExpectations = [
     ['src/gis_client/s3db_unit_parser.js', [
       'normalizeRoofShapeS3DB', 'parseFloatTagJS', 'parseOsmLengthMetersJS', 'parseRoofDirectionJS',
@@ -243,14 +243,12 @@ test('3) All 10 legacy shims (< 45 lines each) re-export 100% of historical symb
     execFileSync(process.execPath, ['-e', script], { cwd: ROOT, stdio: 'pipe' });
   }
 
-  for (const htmlFile of ['index.html', 'video_studio.html']) {
-    const html = fs.readFileSync(path.join(ROOT, htmlFile), 'utf8');
-    for (const file of Object.keys(EXPECTED_BUILDING_MODULES)) {
-      assert.ok(
-        html.includes(`<script src="src/buildings/${file}"></script>`),
-        `${htmlFile} must include <script src="src/buildings/${file}"></script>`
-      );
-    }
+  const { PIPELINE_SCRIPTS } = require(path.join(ROOT, 'tools/headless_scene_harness.js'));
+  for (const file of Object.keys(EXPECTED_BUILDING_MODULES)) {
+    assert.ok(
+      PIPELINE_SCRIPTS.includes(`src/buildings/${file}`),
+      `PIPELINE_SCRIPTS must include src/buildings/${file}`
+    );
   }
 
   const pyCheck = `
@@ -277,7 +275,7 @@ assert len(buildings) == 1 and buildings[0]["osmId"] == 101, f"Expected only par
   execFileSync('python3', ['-c', pyCheck], { cwd: ROOT, stdio: 'pipe' });
 });
 
-test('4) Browser VM (createPipelineRuntime) vs Node CommonJS (buildComplete3DModel) achieve bit-for-bit triangle parity on S3DB + Layer-2 scene', async () => {
+test('4) Headless VM (createPipelineRuntime) vs Node CommonJS (buildComplete3DModel) achieve bit-for-bit triangle parity on S3DB + Layer-2 scene', async () => {
   require(path.join(ROOT, 'src/vendor/vendor_bundle.js'));
   Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/print_physics_config.js')));
   Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/sla_print_laws.js')));

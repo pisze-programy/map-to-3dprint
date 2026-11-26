@@ -1450,7 +1450,7 @@ async function handleAuditSceneFidelity(args = {}, { silent = true } = {}) {
 const MCP_TOOLS = [
   {
     name: 'render_map3d_view',
-    description: 'Headlessly build and render a 3D map print view to a PNG file matching the WebGL studio shaders, shadows, palette, and frame.',
+    description: 'Headlessly build and render a 3D map print view to a PNG file with studio shaders, shadows, palette, and frame.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -125,8 +125,8 @@ function exportAllTilesZipSTL(state, layerFilter = 'all') {
 
   const getPairingSchedFn = () => {
     if (typeof computeZHeightPairingSchedule === 'function') return computeZHeightPairingSchedule;
-    if (typeof window !== 'undefined' && typeof window.computeZHeightPairingSchedule === 'function') return window.computeZHeightPairingSchedule;
-    try { return require('../ui/ui_config.js').computeZHeightPairingSchedule; } catch (_) { return null; }
+    if (typeof globalThis !== 'undefined' && typeof globalThis.computeZHeightPairingSchedule === 'function') return globalThis.computeZHeightPairingSchedule;
+    try { return require('../geometry/print_profiles.js').computeZHeightPairingSchedule; } catch (_) { return null; }
   };
   const pairingFn = getPairingSchedFn();
   const printableTiles = tileEntries.filter(e => !e.skippedEmptyWater);

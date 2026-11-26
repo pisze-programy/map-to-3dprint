@@ -1,32 +1,18 @@
 // ============================================================================
-// src/render/webgl_math.js
-// WebGL Shader Compiler, 4x4 Camera/Light Matrix Algebra &
-// Exact Möller–Trumbore 3D Ray-Triangle Intersection (with Tile Shift + Lift)
+// tools/camera_math.js
+// 4x4 Camera and Shadow Light Matrix Algebra for Headless 3D Rendering
 // ============================================================================
 
-function compileWebGLProgram(gl, vsSrc, fsSrc, label) {
-  const vs = gl.createShader(gl.VERTEX_SHADER);
-  gl.shaderSource(vs, vsSrc);
-  gl.compileShader(vs);
-  if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
-    console.error('VS Error (' + label + '):', gl.getShaderInfoLog(vs));
-  }
-  const fs = gl.createShader(gl.FRAGMENT_SHADER);
-  gl.shaderSource(fs, fsSrc);
-  gl.compileShader(fs);
-  if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
-    console.error('FS Error (' + label + '):', gl.getShaderInfoLog(fs));
-  }
-  const prog = gl.createProgram();
-  gl.attachShader(prog, vs);
-  gl.attachShader(prog, fs);
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-    console.error('Link Error (' + label + '):', gl.getProgramInfoLog(prog));
-  }
-  return prog;
-}
+'use strict';
 
+/**
+ * Builds a right-handed perspective projection matrix.
+ * @param {number} fovRad
+ * @param {number} aspect
+ * @param {number} near
+ * @param {number} far
+ * @returns {Float32Array}
+ */
 function mat4Perspective(fovRad, aspect, near, far) {
   const f = 1.0 / Math.tan(fovRad / 2);
   const nf = 1 / (near - far);
@@ -38,6 +24,16 @@ function mat4Perspective(fovRad, aspect, near, far) {
   ]);
 }
 
+/**
+ * Builds an orthographic projection matrix.
+ * @param {number} left
+ * @param {number} right
+ * @param {number} bottom
+ * @param {number} top
+ * @param {number} near
+ * @param {number} far
+ * @returns {Float32Array}
+ */
 function mat4Ortho(left, right, bottom, top, near, far) {
   const lr = 1 / (left - right);
   const bt = 1 / (bottom - top);
@@ -50,8 +46,17 @@ function mat4Ortho(left, right, bottom, top, near, far) {
   ]);
 }
 
+/**
+ * Builds a look-at view matrix.
+ * @param {number[]} eye
+ * @param {number[]} center
+ * @param {number[]} up
+ * @returns {Float32Array}
+ */
 function mat4LookAt(eye, center, up) {
-  let zx = eye[0] - center[0], zy = eye[1] - center[1], zz = eye[2] - center[2];
+  let zx = eye[0] - center[0];
+  let zy = eye[1] - center[1];
+  let zz = eye[2] - center[2];
   let len = Math.hypot(zx, zy, zz) || 1;
   zx /= len; zy /= len; zz /= len;
   let xx = up[1] * zz - up[2] * zy;
@@ -73,10 +78,19 @@ function mat4LookAt(eye, center, up) {
   ]);
 }
 
+/**
+ * Multiplies two column-major 4x4 matrices.
+ * @param {Float32Array|number[]} a
+ * @param {Float32Array|number[]} b
+ * @returns {Float32Array}
+ */
 function mat4Multiply(a, b) {
   const out = new Float32Array(16);
   for (let i = 0; i < 4; i++) {
-    const ai0 = a[i], ai1 = a[i + 4], ai2 = a[i + 8], ai3 = a[i + 12];
+    const ai0 = a[i];
+    const ai1 = a[i + 4];
+    const ai2 = a[i + 8];
+    const ai3 = a[i + 12];
     out[i]      = ai0 * b[0]  + ai1 * b[1]  + ai2 * b[2]  + ai3 * b[3];
     out[i + 4]  = ai0 * b[4]  + ai1 * b[5]  + ai2 * b[6]  + ai3 * b[7];
     out[i + 8]  = ai0 * b[8]  + ai1 * b[9]  + ai2 * b[10] + ai3 * b[11];
@@ -85,15 +99,23 @@ function mat4Multiply(a, b) {
   return out;
 }
 
+/**
+ * Converts a hex color string like '#ffffff' to normalized [r, g, b] in [0, 1].
+ * @param {string} hex
+ * @returns {[number, number, number]}
+ */
 function hexToRgbNorm(hex) {
   const c = (hex || '#ffffff').replace('#', '');
   const num = parseInt(c, 16);
   return [((num >> 16) & 255) / 255, ((num >> 8) & 255) / 255, (num & 255) / 255];
 }
 
-// Dynamic perspective clip planes scaled with camera.distance:
-// Prevents near-plane slicing down to street level (distance = 2.5) while
-// keeping zFar / zNear < 2000 for zero 24-bit depth-buffer Z-fighting.
+/**
+ * Computes perspective near/far clip planes scaled with camera distance.
+ * @param {number} cameraDistance
+ * @param {number} [explodeSpan=0]
+ * @returns {{zNear: number, zFar: number}}
+ */
 function computeCameraClipPlanes(cameraDistance, explodeSpan = 0) {
   const camDist = Math.max(2.5, Number(cameraDistance) || 274);
   const expSpan = Math.max(0, Number(explodeSpan) || 0);
@@ -102,10 +124,19 @@ function computeCameraClipPlanes(cameraDistance, explodeSpan = 0) {
   return { zNear, zFar };
 }
 
-// Texel-snapped orthographic shadow frustum adaptive to close-up zoom:
-// Preserves full-plate cached shadow map at wide studio distances while
-// tightening shadow texel resolution & contact bias at close zoom without shadow acne.
-const _CANON_HALF_MATH = (typeof SCENE_CANONICAL_HALF_UNITS !== 'undefined') ? SCENE_CANONICAL_HALF_UNITS : 84.6;
+const _CANON_HALF_MATH = 84.6;
+
+/**
+ * Computes texel-snapped orthographic directional shadow frustum parameters.
+ * @param {object} camera
+ * @param {number} sunAngleDeg
+ * @param {number} [halfW=84.6]
+ * @param {number} [halfH=84.6]
+ * @param {number} [explodeFactor=0]
+ * @param {number} [explodeSpan=0]
+ * @param {number} [shadowRes=2048]
+ * @returns {{sunDir: number[], orthoR: number, lx: number, ly: number, lightNear: number, lightFar: number, lightMatrix: Float32Array, frustumKey: string}}
+ */
 function computeShadowFrustum(camera, sunAngleDeg, halfW = _CANON_HALF_MATH, halfH = _CANON_HALF_MATH, explodeFactor = 0, explodeSpan = 0, shadowRes = 2048) {
   const sunRad = (Number(sunAngleDeg) || 0) * Math.PI / 180;
   const sunDir = [Math.cos(sunRad) * 0.68, Math.sin(sunRad) * 0.68, 0.73];
@@ -163,14 +194,11 @@ function computeShadowFrustum(camera, sunAngleDeg, halfW = _CANON_HALF_MATH, hal
   const vy = lightView[1] * tx + lightView[5] * ty + lightView[9] * tz + lightView[13];
   const vz = lightView[2] * tx + lightView[6] * ty + lightView[10] * tz + lightView[14];
 
-  // Snap light-space XY center to integer 64-texel multiples: zero sub-texel shimmer & high cache hit rate
   const texelWorld = (2.0 * orthoR) / (shadowRes || 2048);
   const snapUnit = texelWorld * 64.0;
   const lx = Math.round(vx / snapUnit) * snapUnit;
   const ly = Math.round(vy / snapUnit) * snapUnit;
 
-  // Tight light depth span keeps orthoR / (lightFar - lightNear) <= 0.27 (< 0.319 baseline):
-  // eliminates shadow acne while tightening contact shadows on close-up roofs, bridges & trees.
   const distFocus = Math.max(80.0, -vz);
   const halfDepth = Math.max(76.0, orthoR * 1.45 + 36.0 + explodeLift * 0.65 + explodeSpan * 0.5);
   const lightNear = Math.max(8.0, Math.round(distFocus - halfDepth));
@@ -189,48 +217,12 @@ function computeShadowFrustum(camera, sunAngleDeg, halfW = _CANON_HALF_MATH, hal
   };
 }
 
-// Exact Möller–Trumbore ray-triangle intersection (with optional tile shiftX/shiftY + layer liftZ)
-function rayTriangleIntersect(ox, oy, oz, dx, dy, dz, v0, v1, v2, liftZ = 0, shiftX = 0, shiftY = 0) {
-  const v0x = v0[0] + shiftX, v0y = v0[1] + shiftY, v0z = v0[2] + liftZ;
-  const v1x = v1[0] + shiftX, v1y = v1[1] + shiftY, v1z = v1[2] + liftZ;
-  const v2x = v2[0] + shiftX, v2y = v2[1] + shiftY, v2z = v2[2] + liftZ;
-
-  const e1x = v1x - v0x, e1y = v1y - v0y, e1z = v1z - v0z;
-  const e2x = v2x - v0x, e2y = v2y - v0y, e2z = v2z - v0z;
-
-  const hx = dy * e2z - dz * e2y;
-  const hy = dz * e2x - dx * e2z;
-  const hz = dx * e2y - dy * e2x;
-
-  const a = e1x * hx + e1y * hy + e1z * hz;
-  if (a > -1e-6 && a < 1e-6) return -1;
-  const f = 1.0 / a;
-
-  const sx = ox - v0x, sy = oy - v0y, sz = oz - v0z;
-  const u = f * (sx * hx + sy * hy + sz * hz);
-  if (u < 0.0 || u > 1.0) return -1;
-
-  const qx = sy * e1z - sz * e1y;
-  const qy = sz * e1x - sx * e1z;
-  const qz = sx * e1y - sy * e1x;
-
-  const v = f * (dx * qx + dy * qy + dz * qz);
-  if (v < 0.0 || u + v > 1.0) return -1;
-
-  const t = f * (e2x * qx + e2y * qy + e2z * qz);
-  return t > 0.05 ? t : -1;
-}
-
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    compileWebGLProgram,
-    mat4Perspective,
-    mat4Ortho,
-    mat4LookAt,
-    mat4Multiply,
-    hexToRgbNorm,
-    computeCameraClipPlanes,
-    computeShadowFrustum,
-    rayTriangleIntersect
-  };
-}
+module.exports = {
+  mat4Perspective,
+  mat4Ortho,
+  mat4LookAt,
+  mat4Multiply,
+  hexToRgbNorm,
+  computeCameraClipPlanes,
+  computeShadowFrustum
+};

@@ -402,7 +402,7 @@
   }
 
   /**
-   * Builds UI PRINT_PROFILES entries from the canonical format catalog.
+   * Builds canonical PRINT_PROFILES entries from the format catalog.
    * @returns {object}
    */
   function buildCatalogPrintProfiles() {

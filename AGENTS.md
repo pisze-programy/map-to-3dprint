@@ -7,7 +7,8 @@ Read this map first. Open only the focused guide that matches your task.
 - Write clean, modular code with single-responsibility functions.
 - Split large monolithic files into small focused modules.
 - Add strict types: JSDoc or TypeScript types in JS, full type hints in Python.
-- Never treat unit tests alone as proof. Collect real E2E, visual, or validator proof.
+- Never treat unit tests alone as proof. Collect real headless CLI, validator, or Blender visual proof.
+- Never launch a browser or Playwright. Run all model generation, validation, and rendering via headless CLI scripts and Blender Cycles.
 - Run `docs/city-model-and-packshot-qa-checklist.md` and `calibration/validate_assembly.py` (`VAL-01..14`) before you approve any exported STL assembly.
 - Pass `--manifest <export_dir>/assembly_manifest.json` (`VAL-01..14 PASS`) for all production renders; never bypass with raw STLs.
 - Keep `SLA_PRINT_LAWS`, `roadHeightMm`, and pure ASCII in `src/` and `tests/`.
@@ -41,9 +42,7 @@ Read this map first. Open only the focused guide that matches your task.
 
 ## Core Commands
 
-- Rebuild browser bundle after `src/` edits: `python3 build_app.py`
-- Run headless invariant and 10-city repo gate (`16/16`): `npm run test:headless`
+- Run headless invariant and 10-city repo gate (`16/16`): `npm test` (or `npm run test:headless`)
 - Export a catalog SKU with automatic `VAL-01..14` check: `node tools/export_city_sku.mjs --city <slug>`
 - Validate an exported single STL: `python3 calibration/validate_msla_stl.py <file.stl>`
 - Validate a whole exported tile assembly (`VAL-01..VAL-14`): `python3 calibration/validate_assembly.py <export_dir>/assembly_manifest.json`
-- Run Playwright E2E suite: `npm run test:e2e`

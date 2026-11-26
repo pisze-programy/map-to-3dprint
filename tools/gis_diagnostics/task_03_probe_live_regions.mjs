@@ -49,7 +49,7 @@ const DEFAULT_REGIONS = [
   },
 ];
 
-function parseCliRegion() {
+function parseCliArgs() {
   const args = Object.fromEntries(
     process.argv.slice(2)
       .filter((a) => a.startsWith('--') && a.includes('='))
@@ -58,38 +58,45 @@ function parseCliRegion() {
         return [a.slice(2, idx), a.slice(idx + 1)];
       })
   );
-  if (args.lat && args.lon) {
-    return [{
-      id: 'custom_cli',
-      title: args.title || 'CUSTOM_REGION',
-      lat: Number(args.lat),
-      lon: Number(args.lon),
-      spanMeters: Number(args.span || 2500),
-      targetWidthMm: Number(args.widthMm || 150),
-      targetHeightMm: Number(args.heightMm || 150),
-      minBuildings: 0,
-    }];
-  }
-  return DEFAULT_REGIONS;
+  const regions = (args.lat && args.lon)
+    ? [{
+        id: 'custom_cli',
+        title: args.title || 'CUSTOM_REGION',
+        lat: Number(args.lat),
+        lon: Number(args.lon),
+        spanMeters: Number(args.span || 2500),
+        targetWidthMm: Number(args.widthMm || 150),
+        targetHeightMm: Number(args.heightMm || 150),
+        minBuildings: 0,
+      }]
+    : null;
+  return {
+    proxyOrigin: args.proxy || null,
+    regions,
+  };
 }
 
-export async function runLiveRegionsProbe({ serverOrigin = 'http://127.0.0.1:8765', regions = null } = {}) {
+export async function runLiveRegionsProbe({ proxyOrigin = null, regions = null } = {}) {
   const { createPipelineRuntime } = require(path.join(ROOT, 'tools/headless_scene_harness.js'));
-  const targetRegions = regions || parseCliRegion();
+  const parsed = parseCliArgs();
+  const effProxy = proxyOrigin ?? parsed.proxyOrigin;
+  const targetRegions = regions || parsed.regions || DEFAULT_REGIONS;
   const summaries = [];
 
-  console.log(`=== TASK 03: Live Multi-Region GIS Fetcher Probe (proxy=${serverOrigin}) ===`);
+  console.log(`=== TASK 03: Live Multi-Region GIS Fetcher Probe (mode=${effProxy || 'direct-overpass'}) ===`);
 
   for (const reg of targetRegions) {
     const vmRuntime = createPipelineRuntime({ offlineOnly: false, silent: true });
     await vmRuntime.sandbox.__ensureManifoldReady();
-    vmRuntime.sandbox.window.location.protocol = 'http:';
-    vmRuntime.sandbox.window.location.origin = serverOrigin;
+    if (effProxy) {
+      vmRuntime.sandbox.window.location.protocol = 'http:';
+      vmRuntime.sandbox.window.location.origin = effProxy;
+    }
 
-    // Route relative '/api/interpreter' calls to the live local proxy server
+    // Fetch direct Overpass endpoints (or optional --proxy origin when specified)
     const origFetch = globalThis.fetch;
     vmRuntime.sandbox._overpassCustomFetch = async (ep, init) => {
-      const url = ep.startsWith('/') ? `${serverOrigin}${ep}` : ep;
+      const url = (ep.startsWith('/') && effProxy) ? `${effProxy}${ep}` : ep;
       return origFetch(url, init);
     };
 

@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const ROOT = path.resolve(import.meta.dirname || process.cwd(), '..');
 
 const catalogMod = require(path.join(ROOT, 'src/geometry/format_catalog.js'));
-const uiConfig = require(path.join(ROOT, 'src/ui/ui_config.js'));
+const uiConfig = require(path.join(ROOT, 'src/geometry/print_profiles.js'));
 const manifoldCore = require(path.join(ROOT, 'src/geometry/manifold_core.js'));
 const seamCutter = require(path.join(ROOT, 'src/mesh/tile_seam_cutter.js'));
 const stlWriter = require(path.join(ROOT, 'src/export/stl_writer.js'));

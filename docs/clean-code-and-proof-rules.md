@@ -23,8 +23,8 @@ Follow these engineering rules on every change in `map-to-3dprint`.
 Unit tests catch logic regressions, but unit tests alone do not prove correctness.
 Collect real end-to-end proof for the exact layer you changed:
 
-- **Mesh or STL export edits**: Run `npm run test:headless`, run `calibration/validate_msla_stl.py`, and pass landmark visual QA.
-- **Browser UI or GIS edits**: Rebuild with `python3 build_app.py`, run Playwright E2E on uncached cities, and inspect screenshots.
+- **Mesh or STL export edits**: Run `npm run test:headless`, run `calibration/validate_assembly.py` (`VAL-01..14`), and pass Blender visual QA.
+- **GIS or geometry pipeline edits**: Run `npm run test:headless`, export a catalog SKU with `node tools/export_city_sku.mjs`, and pass `validate_assembly.py` (`VAL-01..14`).
 - **Blender studio edits**: Run real Cycles renders and inspect output images and video frames directly.
 - **Documentation edits**: Check every CLI flag, preset name, and file path against real source files.
 
@@ -43,7 +43,7 @@ Collect real end-to-end proof for the exact layer you changed:
 - Preserve `roadHeightMm` (`0.567` in `src/geometry/print_physics_config.js`) so roads stay crisp above terrain.
 - Keep core solvers in `src/Water/`, `src/mesh/`, and `src/buildings/` city-agnostic with zero city-name conditionals.
 - Register curated monuments in `src/landmarks/` with geo-anchored footprints, `replaceOsmIds` suppression, and `VAL-01..08` proof.
-- Always run `python3 build_app.py` after `src/` edits so `index.html` stays in sync.
+- Never launch a browser or Playwright; verify every change with headless scripts, `validate_assembly.py`, and Blender Cycles renders.
 
 ## 5. Agent Delegation and History Verification
 

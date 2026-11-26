@@ -10,7 +10,7 @@ const physicsMod = require(path.join(ROOT, 'src/geometry/print_physics_config.js
 const lawsMod = require(path.join(ROOT, 'src/geometry/sla_print_laws.js'));
 Object.assign(globalThis, physicsMod, lawsMod);
 const { createBuildContext } = require(path.join(ROOT, 'src/geometry/manifold_core.js'));
-const uiConfigMod = require(path.join(ROOT, 'src/ui/ui_config.js'));
+const uiConfigMod = require(path.join(ROOT, 'src/geometry/print_profiles.js'));
 
 const {
   MONO4_SPEC,

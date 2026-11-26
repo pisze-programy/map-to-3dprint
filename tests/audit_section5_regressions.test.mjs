@@ -16,7 +16,6 @@ Object.assign(globalThis, parser, relHelper, matcherMod);
 const { finalizeOsmBuildingsLayerJS } = require(path.join(ROOT, 'src/gis_client/osm_buildings_extract.js'));
 const { buildComplete3DModel } = require(path.join(ROOT, 'src/mesh/mesh_builder.js'));
 const { buildFrameSegmentsCSG } = require(path.join(ROOT, 'src/mesh/frame_csg_solver.js'));
-const { fastSwapHighlightedBuildings } = require(path.join(ROOT, 'src/ui/fast_render_manager.js'));
 const core = require(path.join(ROOT, 'src/geometry/manifold_core.js'));
 
 let passed = 0;
@@ -319,9 +318,9 @@ console.log('\n[8/9] Hollow Vault Honors < 2.0 mm Wall Thickness');
 }
 
 // ---------------------------------------------------------------------------
-// 9. Bonus Fixes: 3D _pickId + fastSwapHighlightedBuildings & Welded Lattice Nodes
+// 9. Bonus Fixes: 3D _pickId Metadata & Welded Lattice Truss Nodes
 // ---------------------------------------------------------------------------
-console.log('\n[9/9] Bonus: 3D _pickId Highlight Swap & Welded Lattice Truss Nodes');
+console.log('\n[9/9] Bonus: 3D _pickId Metadata & Welded Lattice Truss Nodes');
 {
   const scene = {
     spanMeters: 360, metersToUnits: 169.2 / 360, halfW: 84.6, halfH: 84.6,
@@ -336,19 +335,9 @@ console.log('\n[9/9] Bonus: 3D _pickId Highlight Swap & Welded Lattice Truss Nod
   const built = buildComplete3DModel(scene, st);
   check(built.printMetrics.isWatertightManifold && built.printMetrics.floatingBuildingsCount === 0,
     'Standalone lattice truss tower has 0 floating pinnacle/node slivers', `float=${built.printMetrics.floatingBuildingsCount}`);
-
-  st.layerMeshes = {
-    water: built.meshes.water.slice(), base: built.meshes.base.slice(), greenery: built.meshes.greenery.slice(),
-    roads: built.meshes.roads.slice(), buildings: built.meshes.buildings.slice(), highlighted: built.meshes.highlighted.slice(), frame: [],
-  };
-  st.buildingBounds = built.buildingBounds;
-  st.pickIdMap = built.pickIdMap;
-  scene.buildings[0].highlighted = true;
-  scene.buildings[1].highlighted = true;
-  fastSwapHighlightedBuildings(st);
-  check(st.layerMeshes.highlighted.length > 50 && st.layerMeshes.buildings.length === 0,
-    'fastSwapHighlightedBuildings moves both S3DB and Layer-2 lattice buildings via _pickId',
-    `hlTris=${st.layerMeshes.highlighted.length}, remBldTris=${st.layerMeshes.buildings.length}`);
+  check(built.buildingBounds.length === 2 && built.buildingBounds.every(bb => bb.pickId > 0),
+    'S3DB and Layer-2 lattice buildings carry valid pickId metadata',
+    `count=${built.buildingBounds.length}`);
 }
 
 console.log(`\nSECTION 5 + BONUS AUDIT SUMMARY: ${passed} passed, ${failed} failed.`);

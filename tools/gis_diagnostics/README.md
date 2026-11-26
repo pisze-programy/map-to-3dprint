@@ -10,7 +10,7 @@ node tools/gis_diagnostics/task_01_audit_dag_and_loops.mjs
 ```
 Sprawdza statycznie i dynamicznie:
 - brak cykli `require()` (algorytm DFS 3-kolorowy) w `src/gis_fetch/`, `src/gis_client/`, `src/Water/`, `src/mesh/`, `src/export/`,
-- zgodność kolejności ładowania modułów między `build_app.py` (`index.html`, `video_studio.html`) a `tools/headless_scene_harness.js`,
+- zgodność kolejności ładowania modułów w `tools/headless_scene_harness.js` (`PIPELINE_SCRIPTS` oraz `DAG_ORDER`),
 - limit rozmiaru pojedynczego modułu w `src/gis_fetch/` (`< 350` linii) i brak zaszytych nazw miast,
 - skończone zakończenie podziału `2×2` przy symulowanym permanentnym timeoucie (`MAX_CHUNK_SPLIT_DEPTH = 3`, strażnik `visitedBBoxKeys`).
 
@@ -26,7 +26,7 @@ Mierzy czas wykonania przy 4-krotnym wzroście rozmiaru wejścia i weryfikuje li
 - wiązanie dróg, mostów i wód (`finalizeOsmBridgesLayerJS` — siatka przestrzenna 2D),
 - strumieniowy eksport wielokolorowego `.3MF` (`exportMultiColor3MF`).
 
-### 3. Żywy test pobierania wielu regionów geograficznych i skal (przez lokalne proxy `server.py`)
+### 3. Żywy test pobierania wielu regionów geograficznych i skal (CLI Node)
 ```bash
 # Domyślny zestaw zróżnicowanych obszarów (Warszawa, Zakopane/Tatry, Wenecja)
 node tools/gis_diagnostics/task_03_probe_live_regions.mjs
@@ -44,9 +44,3 @@ Buduje i audytuje topologicznie (`0 open edges`, `0 non-manifold edges`, `0 dege
 - kwadrat `15×15 cm`, panorama `24×12 cm` z podziałem `2×2`, portret `10×16 cm` z obrotem azymutu `37°`, kompakt `12×8 cm`,
 - tryb pełny, odchudzona baza SLA (`hollowBase` z żebrami 45° i drenażem), wycięcie wody (`waterCutout`) oraz ramka ścienna CSG (`showFrame`),
 - eksport binarny `.STL` (bryła pełna + pojedyncze warstwy + ramka CSG), wielokolorowy `.3MF` (XML w archiwum PK-ZIP) oraz wielokaflowy pakiet `.ZIP` z instrukcją Photon Mono 4.
-
-## Inspekcja w przeglądarce (DevTools)
-W konsoli przeglądarki na `http://127.0.0.1:8765` dostępny jest rejestr diagnostyczny ostatniego pobierania:
-```js
-window.__map3dFetchDiagnostics.getFetchDiagnosticsReport()
-```

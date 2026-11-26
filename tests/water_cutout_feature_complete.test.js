@@ -6,28 +6,16 @@
 //   2. Micro-Islet Filtering (< 6.0 mm²) + Building/Border Protection & Manifold
 //   3. MSLA Z=0 Bridge Pier Cross-Section Reinforcement (gated on waterCutout)
 //   4. 100% Open Sea & 360° Sea-Surrounded Island (with/without inland pond)
-//   5. Exporters (.STL, .3MF, .ZIP) Empty Sea Blocking vs Mixed Tile Export & UI
-//   6. WebGL Studio 36-Vert Solid Matte Board, Shader Contrast & index.html DOM
+//   5. Exporters (.STL, .3MF, .ZIP) Empty Sea Blocking vs Mixed Tile Export
 // ============================================================================
 
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { createHeadlessCanvas } = require('../tools/headless_scene_harness.js');
+const { createHeadlessCanvas, PIPELINE_SCRIPTS } = require('../tools/headless_scene_harness.js');
 
 const ROOT = path.resolve(__dirname, '..');
-
-function extractModuleListFromBuildApp() {
-  const src = fs.readFileSync(path.join(ROOT, 'build_app.py'), 'utf8');
-  const m = src.match(/js_files\s*=\s*\[([\s\S]*?)\]/);
-  if (!m) throw new Error('Could not parse js_files from build_app.py');
-  const files = [];
-  const re = /"([^"]+\.js)"/g;
-  let match;
-  while ((match = re.exec(m[1])) !== null) files.push(match[1]);
-  return files;
-}
 
 function makeFakeElement(tagName, id = '') {
   return {
@@ -162,7 +150,13 @@ function createSandbox() {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
 
-  const modules = extractModuleListFromBuildApp().filter(f => !f.startsWith('src/video/') && f !== 'src/ui/ui_app.js');
+  const modules = [];
+  for (const rel of PIPELINE_SCRIPTS) {
+    modules.push(rel);
+    if (rel === 'src/export/stl_writer.js') {
+      modules.push('src/export/zip_packager.js', 'src/export/export_3mf.js');
+    }
+  }
   for (const rel of modules) {
     const code = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     vm.runInContext(code, sandbox, { filename: rel });
@@ -618,95 +612,6 @@ console.log('\n[4/6] .STL / .3MF / .ZIP Empty Sea Tile Blocking & Mixed Tile Exp
   st2x2Off.exportTileFilter = String(emptyTid);
   const offSeaTileExport = sb.exportBinarySTL(st2x2Off, 'all');
   check(offSeaTileExport === true && downloads.length === 1 && downloads[0].bytes.byteLength > 84, 'waterCutout=false still exports sea tile normally (zero regression)');
-
-  // UI Selector Controller: updateTileSelectorOptions & updateStatsUI
-  const uiCtrl = sb.createUILayersStatsController(st2x2Cut, () => {});
-  st2x2Cut.exportTileFilter = String(emptyTid);
-  uiCtrl.updateTileSelectorOptions();
-  uiCtrl.updateStatsUI();
-  const tileSel = sb.__elements.get('exportTileSelect');
-  const disabledTileOpts = tileSel.children.filter(o => o.disabled);
-  const enabledTileOpts = tileSel.children.filter(o => !o.disabled && o.value !== 'all');
-  check(
-    disabledTileOpts.length === 1 &&
-    disabledTileOpts[0].value === String(emptyTid) &&
-    disabledTileOpts[0].textContent.includes('POMINIĘTY: 100% woda') &&
-    enabledTileOpts.some(o => o.value === String(mixedBayTid)),
-    'updateTileSelectorOptions disables only 100%-sea tile while keeping mixed tiles active'
-  );
-  check(st2x2Cut.exportTileFilter === 'all' && tileSel.value === 'all', 'Selecting disabled empty tile resets exportTileFilter to all');
-  check(
-    sb.__elements.get('chkPreviewWaterCutout').checked === true &&
-    sb.__elements.get('chkWaterCutout').checked === true &&
-    sb.__elements.get('singleLayerStlSelect').querySelector('option[value="water"]').disabled === true &&
-    sb.__elements.get('singleLayerStlSelect').value === 'buildings',
-    'updateStatsUI syncs checkboxes and disables single-layer water STL export when waterCutout=true'
-  );
-
-  // Switch back to waterCutout=false
-  st2x2Cut.waterCutout = false;
-  uiCtrl.updateTileSelectorOptions();
-  uiCtrl.updateStatsUI();
-  check(
-    sb.__elements.get('exportTileSelect').children.every(o => !o.disabled) &&
-    sb.__elements.get('singleLayerStlSelect').querySelector('option[value="water"]').disabled === false,
-    'waterCutout=false keeps all tile options & water layer option enabled'
-  );
-})();
-
-// ============================================================================
-// [5/6] WebGL Studio 3D Backing Board & Shader High-Contrast Matte Shading
-// ============================================================================
-console.log('\n[5/6] WebGL Studio 3D Matte Backing Board & Shader Exclusions');
-(() => {
-  const studioSrc = fs.readFileSync(path.join(ROOT, 'src/render/webgl_studio.js'), 'utf8');
-  const shaderSrc = String(vm.runInContext('WEBGL_MAIN_FS', sb) || '');
-
-  check(studioSrc.includes("black_wood: [0.082, 0.078, 0.075]"), 'webgl_studio defines BACKING_BOARD_COLORS.black_wood default matte dark wood');
-  check(studioSrc.includes('gl.drawArrays(gl.TRIANGLES, 0, 36)'), 'webgl_studio draws 36-vertex closed 3D backing box');
-  check(
-    studioSrc.includes("if (key === 'water' && state.waterCutout) return;") &&
-    studioSrc.includes("${state.backingStyle || 'black_wood'}") &&
-    studioSrc.includes('${Boolean(state.waterCutout)}'),
-    'webgl_studio skips water in Shadow/Main passes and tracks backingStyle/waterCutout in sig & shadowSig'
-  );
-  check(
-    shaderSrc.includes('uShowLayerLines > 0.5 && lid != 6 && lid != 8') &&
-    shaderSrc.includes('uActiveTileFilter >= 0.0 && lid != 6 && lid != 8'),
-    'WEBGL_MAIN_FS excludes lid == 8 from SLA layer waves and inactive-tile dimming'
-  );
-  check(
-    shaderSrc.includes('float spec = (lid == 8) ? 0.0') &&
-    shaderSrc.includes('float boardShadow = mix(0.34, 1.0, shadow)') &&
-    !shaderSrc.includes('woodGrain'),
-    'WEBGL_MAIN_FS uses uniform matte dark shading with boosted cutout shadow contrast & no wood-grain noise'
-  );
-})();
-
-// ============================================================================
-// [6/6] Built index.html DOM Placement & Palette/Layers Panel Cleanliness
-// ============================================================================
-console.log('\n[6/6] Rebuilt index.html Viewport Control Placement & Cleanliness');
-(() => {
-  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  const hasAllIds = [
-    'id="frameStyleSelect"',
-    'id="backingStyleWrap"',
-    'id="backingStyleSelect"',
-    'id="chkPreviewWaterCutout"',
-    'id="chkWaterCutout"',
-    'id="waterCutoutBadge"'
-  ].every(tok => html.includes(tok));
-  check(hasAllIds, 'Built index.html contains all expected viewport & export Water Cutout IDs');
-  check(html.includes('<option value="black_wood" selected>Czarne Drewno (Mat)</option>'), 'black_wood is selected by default in index.html');
-
-  const palettesBlock = (html.match(/<div id="palettesGrid"[\s\S]*?<\/div>/) || [''])[0];
-  const layersBlock = (html.match(/<div id="layersList"[\s\S]*?<\/div>/) || [''])[0];
-  check(
-    !palettesBlock.includes('backingStyle') && !palettesBlock.includes('WaterCutout') &&
-    !layersBlock.includes('backingStyle') && !layersBlock.includes('WaterCutout'),
-    '3. Paleta & 4. Warstwy panels remain untouched (controls placed cleanly under 3D viewport)'
-  );
 })();
 
 console.log(`\nSUMMARY: ${passed} passed, ${failed} failed.`);

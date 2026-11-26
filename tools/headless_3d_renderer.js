@@ -3,9 +3,8 @@
 /**
  * Headless Pure-Node Software 3D Studio Renderer (CommonJS)
  *
- * Implements the visual shading, orthographic PCF shadow mapping, floor drop
- * shadow, water cutout backing board, camera math, SSAA, and depth-crevice
- * SSAO of `src/render/webgl_studio.js` & `src/render/webgl_shaders.js`.
+ * Implements orthographic PCF shadow mapping, floor drop shadow, water cutout
+ * backing board, camera math, SSAA, and depth-crevice SSAO without any GPU or GUI.
  */
 
 const fs = require('fs');
@@ -19,8 +18,8 @@ const {
   hexToRgbNorm,
   computeCameraClipPlanes,
   computeShadowFrustum,
-} = require('../src/render/webgl_math.js');
-const { PALETTES } = require('../src/ui/ui_config.js');
+} = require('./camera_math.js');
+const { PALETTES } = require('../src/geometry/print_profiles.js');
 
 // ============================================================================
 // Pure-Node PNG Encoder (CRC32 + zlib.deflateSync)
@@ -774,7 +773,7 @@ function rasterizeSceneGBuffer(soup, viewProj, W, H, rs) {
     let cz2 = m2 * gx + m6 * gy + m10 * gz + m14;
     const cw2 = m3 * gx + m7 * gy + m11 * gz + m15;
 
-    // Layer depth offsets matching WEBGL_MAIN_VS
+    // Layer depth offsets
     const lid = lids[i];
     const bid = bIds[i];
     let zOff = 0.0;

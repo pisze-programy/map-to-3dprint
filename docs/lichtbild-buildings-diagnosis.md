@@ -5,7 +5,7 @@ This diagnosis compares our code at `b307cd6` against the public Lichtbild bundl
 
 ## 1. Evidence Scope and Limits
 
-Lichtbild does not run geometry generation in the browser.
+Lichtbild runs mesh generation on private servers, not client-side.
 Their 31 client JS chunks contain only the configurator, cart, and image fetchers (`POST /api/createCity` -> stream -> `GET /api/image?id=...`).
 Their mesh generator runs on private servers.
 

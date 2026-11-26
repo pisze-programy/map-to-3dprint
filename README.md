@@ -36,8 +36,7 @@ Convert live OpenStreetMap vectors and AWS Terrarium DEM elevation into watertig
 
 ```bash
 npm install
-python3 build_app.py
-npm run test:headless
+npm test
 node tools/export_city_sku.mjs --city paris_true_scale
 python3 calibration/validate_assembly.py exports/paris_true_scale_a4_120x170_1x3/assembly_manifest.json
 ```

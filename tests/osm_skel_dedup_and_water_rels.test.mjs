@@ -358,18 +358,18 @@ test('FM7: Linear type=waterway / route relations are rejected as water multipol
   assert.equal(scene.waterLines.length, 2, 'Both member ways of type=waterway relation must extract as linear waterLines');
 });
 
-test('Python pipeline & server.py: py_compile, FM1 skel dedup, FM7 relation guards, and FM2 water/island priority', () => {
+test('Python pipeline: py_compile, FM1 skel dedup, FM7 relation guards, and Sopot reconstruction', () => {
   // 1. Bytecode syntax compile check (-B avoids writing __pycache__)
   execFileSync(
     'python3',
-    ['-B', '-m', 'py_compile', 'server.py', 'gis/scene_pipeline.py', 'gis/terrain_features.py'],
+    ['-B', '-m', 'py_compile', 'gis/scene_pipeline.py', 'gis/terrain_features.py'],
     { cwd: ROOT, encoding: 'utf8' }
   );
 
   const sopotPath = resolveCacheFile('osm_54.4381_18.5575_54.4511_18.5797.json');
   assert.ok(sopotPath, 'Expected cached Sopot OSM payload');
 
-  // 2. Python functional verification of gis/scene_pipeline.py, gis/terrain_features.py, and server.py
+  // 2. Python functional verification of gis/scene_pipeline.py and gis/terrain_features.py
   const pyScript = `
 import json
 import os
@@ -379,7 +379,6 @@ from unittest import mock
 
 import gis.scene_pipeline as sp
 import gis.terrain_features as tf
-import server
 
 sopot_path = sys.argv[1]
 
@@ -465,89 +464,6 @@ with tempfile.TemporaryDirectory() as tmpdir:
         sea_polys = [wp for wp in sopot_sc["waterPolys"] if "Morze" in wp.get("name", "")]
         assert len(sea_polys) >= 1, f"Expected Python Sopot pipeline to recover Baltic Sea polygon, got {[w.get('name') for w in sopot_sc['waterPolys']]}"
         assert len(sopot_sc["buildings"]) > 1000
-
-# --- D. server.py FM2 prioritization + <=450 member water/island cap + FM1 dedup ---
-raw_els = [{"type": "way", "id": 1, "nodes": [10, 11], "tags": {"natural": "coastline"}}]
-# Add 80 incomplete building relations (priority=1) BEFORE water & island relations!
-for i in range(80):
-    raw_els.append({
-        "type": "relation",
-        "id": 1000 + i,
-        "members": [{"type": "way", "ref": 9000 + i, "role": "outer"}] * 5,
-        "tags": {"type": "building", "building": "yes"},
-    })
-# Large 147-member Nieuwe Maas river multipolygon (100 < 147 <= 450 -> MUST be kept at priority 0!)
-raw_els.append({
-    "type": "relation",
-    "id": 2001,
-    "members": [{"type": "way", "ref": 50000 + k, "role": "outer"} for k in range(147)],
-    "tags": {"type": "multipolygon", "natural": "water", "water": "river", "name": "Nieuwe Maas"},
-})
-# 210-member island multipolygon (100 < 210 <= 450 -> MUST be kept at priority 0!)
-raw_els.append({
-    "type": "relation",
-    "id": 2002,
-    "members": [{"type": "way", "ref": 60000 + k, "role": "outer"} for k in range(210)],
-    "tags": {"type": "multipolygon", "place": "island", "name": "IJsselmonde"},
-})
-# Canal multipolygon & reservoir multipolygon (priority 0!)
-raw_els.append({
-    "type": "relation",
-    "id": 2003,
-    "members": [{"type": "way", "ref": 70001, "role": "outer"}],
-    "tags": {"type": "multipolygon", "waterway": "riverbank"},
-})
-raw_els.append({
-    "type": "relation",
-    "id": 2004,
-    "members": [{"type": "way", "ref": 70002, "role": "outer"}],
-    "tags": {"type": "multipolygon", "landuse": "reservoir"},
-})
-# >450 member continental water relation -> MUST be skipped
-raw_els.append({
-    "type": "relation",
-    "id": 2999,
-    "members": [{"type": "way", "ref": 80000 + k, "role": "outer"} for k in range(451)],
-    "tags": {"type": "multipolygon", "natural": "water"},
-})
-# >100 member building relation -> MUST be skipped
-raw_els.append({
-    "type": "relation",
-    "id": 3999,
-    "members": [{"type": "way", "ref": 85000 + k, "role": "part"} for k in range(101)],
-    "tags": {"type": "building", "building": "yes"},
-})
-# Linear type=waterway relation -> MUST be skipped
-raw_els.append({
-    "type": "relation",
-    "id": 4999,
-    "members": [{"type": "way", "ref": 89000, "role": ""}],
-    "tags": {"type": "waterway", "waterway": "canal"},
-})
-
-selected = server._select_osm_v06_relations_to_complete(raw_els)
-assert len(selected) == 24, f"Expected cap of 24 relations, got {len(selected)}"
-top4_ids = [rid for _, _, rid in selected[:4]]
-assert set(top4_ids) == {2001, 2002, 2003, 2004}, f"Water & island rels must beat all 80 buildings! Got top4={selected[:4]}"
-all_selected_ids = {rid for _, _, rid in selected}
-assert 2999 not in all_selected_ids, ">450 member water relation should be excluded"
-assert 3999 not in all_selected_ids, ">100 member building relation should be excluded"
-assert 4999 not in all_selected_ids, "type=waterway relation should be excluded"
-
-# Verify server._merge_osm_v06_elements preserves tags when extra_rel_elements has skel or vice-versa
-merged_map = server._merge_osm_v06_elements(
-    [
-        {"type": "way", "id": 10, "nodes": [1, 2, 3], "tags": {"natural": "coastline"}},
-        {"type": "way", "id": 11, "nodes": [4, 5]},
-    ],
-    [
-        {"type": "way", "id": 10, "nodes": [1, 2, 3, 4]},
-        {"type": "way", "id": 11, "nodes": [4, 5], "tags": {"building": "yes"}},
-    ],
-)
-assert merged_map[("way", 10)]["tags"] == {"natural": "coastline"}
-assert merged_map[("way", 10)]["nodes"] == [1, 2, 3, 4]
-assert merged_map[("way", 11)]["tags"] == {"building": "yes"}
 print("PYTHON_CHECKS_OK")
 `;
 

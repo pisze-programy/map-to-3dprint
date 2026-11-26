@@ -3,8 +3,8 @@
 /**
  * Headless 3D Print Scene Harness (CommonJS)
  *
- * Pure-Node execution environment for the production GIS, mesh, shader-math,
- * and UI-config pipeline without any browser or local server dependency.
+ * Pure-Node execution environment for the production GIS, mesh, and
+ * print-profile pipeline without any external server dependency.
  */
 
 const fs = require('fs');
@@ -16,8 +16,7 @@ const https = require('https');
 const REPO_ROOT = path.resolve(__dirname, '..');
 
 /**
- * Exact headless-compatible module load order matching build_app.py (stages 1-5)
- * plus WebGL math/shaders and UI config/rotation modules.
+ * Exact headless module load order across vendor, geometry, mesh, export, and GIS layers.
  */
 function _discoverLandmarkScripts() {
   const dir = path.join(REPO_ROOT, 'src/landmarks');
@@ -80,8 +79,6 @@ const PIPELINE_SCRIPTS = [
   'src/mesh/layer2_archetypes.js',
   'src/mesh/layer3_invariants_tiles.js',
   'src/mesh/mesh_builder.js',
-  'src/render/webgl_math.js',
-  'src/render/webgl_shaders.js',
   'src/export/export_io_utils.js',
   'src/export/assembly_manifest.js',
   'src/export/stl_writer.js',
@@ -121,10 +118,8 @@ const PIPELINE_SCRIPTS = [
   'src/gis_fetch/gis_stream_coordinator.js',
   'src/gis_client/overpass_chunk_grid.js',
   'src/gis_client/gis_chunk_streamer.js',
-  'src/ui/ui_config.js',
-  'src/ui/map_rotation.js',
-  'src/ui/fast_render_manager.js',
-  'src/ui/ui_map2d.js',
+  'src/geometry/print_profiles.js',
+  'src/geometry/scene_rotation.js',
 ];
 
 // ============================================================================
@@ -1393,12 +1388,11 @@ async function fetchLiveOsmElementsViaOsmApi({ south, west, north, east }) {
 }
 
 // ============================================================================
-// Coordinate & BBox Helpers (Matching ui_map2d.js / osm_scene_builder.js / map_rotation.js)
+// Coordinate & BBox Helpers (Matching osm_scene_builder.js / scene_rotation.js)
 // ============================================================================
 
 /**
- * Computes tight geographic selection bbox and rotation-padded fetch bbox
- * matching `createMap2DController().getSelectionBBox()`.
+ * Computes tight geographic selection bbox and rotation-padded fetch bbox.
  */
 function computeBBoxFromParams({
   lat,
@@ -1886,14 +1880,14 @@ function resolveCachedCityEntry(cachedCity) {
   const byName = entries.find(e => e.name.toLowerCase() === q || e.name.toLowerCase().includes(q));
   if (byName) return byName;
 
-  // 2. Match WORLD_LOCATIONS in ui_config.js by name and pick closest cached scene/osm
-  const uiCfg = fs.readFileSync(path.join(REPO_ROOT, 'src/ui/ui_config.js'), 'utf8');
-  const locRegex = /name:\s*['"]([^'"]+)['"][^}]*?lat:\s*([-\d.]+)[^}]*?lon:\s*([-\d.]+)/g;
+  // 2. Match WORLD_LOCATIONS in print_profiles.js by title/region and pick closest cached scene/osm
+  const { WORLD_LOCATIONS } = require('../src/geometry/print_profiles.js');
   let bestLoc = null;
-  let m;
-  while ((m = locRegex.exec(uiCfg)) !== null) {
-    if (m[1].toLowerCase().includes(q)) {
-      bestLoc = { name: m[1], lat: Number(m[2]), lon: Number(m[3]) };
+  for (const loc of (WORLD_LOCATIONS || [])) {
+    const title = String(loc.title || '').toLowerCase();
+    const region = String(loc.region || '').toLowerCase();
+    if (title.includes(q) || region.includes(q)) {
+      bestLoc = { name: loc.title, lat: Number(loc.lat), lon: Number(loc.lon) };
       break;
     }
   }

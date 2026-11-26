@@ -1,23 +1,13 @@
 {
   "name": "map-to-3dprint",
   "version": "1.0.0",
-  "description": "3D Map to 3D Print Studio & Progressive WebGL Pipeline",
+  "description": "Headless 3D Map to MSLA 3D Print CLI, Validator & Blender Cycles Pipeline",
   "private": true,
   "scripts": {
-    "test": "playwright test",
-    "test:e2e": "playwright test tests/e2e",
-    "test:baseline": "playwright test tests/e2e/baseline_runner.spec.js",
-    "test:tier1": "playwright test tests/e2e/tier1_features.spec.js",
-    "test:tier2": "playwright test tests/e2e/tier2_boundary.spec.js",
-    "test:tier3": "playwright test tests/e2e/tier3_combinations.spec.js",
-    "test:tier4": "playwright test tests/e2e/tier4_realworld.spec.js tests/e2e/tier4_uncached_visual.spec.js",
-    "test:tier4:visual": "playwright test tests/e2e/tier4_uncached_visual.spec.js",
-    "test:all": "playwright test tests/e2e/",
+    "test": "npm run test:headless",
     "inspect:3d": "node tools/mcp_map3d_inspector.mjs",
     "mcp:map3d": "node tools/mcp_map3d_inspector.mjs mcp",
     "build:vendor": "node scripts/build_vendor_bundles.mjs",
-    "build:app": "python3 build_app.py",
-    "build": "npm run build:vendor && npm run build:app",
     "benchmark:3layer": "node tests/benchmark_3layer_invariants.test.mjs",
     "test:headless": "node tests/sla_print_laws.test.mjs && node tests/s3db_17roofs_and_spires.test.mjs && node tests/bridges_global_invariants.test.mjs && node tests/waterfronts_and_archetypes.test.mjs && node tests/ordinary_roads_regression.test.mjs && node tests/audit_section5_regressions.test.mjs && node tests/export_stl_3mf_vault_audit.test.mjs && node tests/benchmark_3layer_invariants.test.mjs && node tests/tree_placement_parity.test.js && node tests/water_cutout_feature_complete.test.js && node tests/mcp_map3d_inspector.test.js && node tests/hero_landmark_registry.test.mjs && node --test tests/gis_fetch_modular_dag_and_bigo.test.mjs && node --test tests/mono4_bed_safe_area.test.mjs && node --test tests/stl_export_manifold_hygiene.test.mjs && node tests/seam_continuity_and_multiformat.test.mjs",
     "verify:15scenes": "node tests/verify_15scenes_invariants.mjs"
@@ -32,8 +22,6 @@
     "straight-skeleton": "1.1.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.0",
-    "esbuild": "^0.25.0",
-    "playwright": "^1.65.0"
+    "esbuild": "^0.25.0"
   }
 }

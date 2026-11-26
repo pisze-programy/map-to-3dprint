@@ -125,18 +125,16 @@ test('3) Legacy shim paths re-export 100% of historical functions cleanly', () =
     execFileSync(process.execPath, ['-e', script], { cwd: ROOT, stdio: 'pipe' });
   }
 
-  for (const htmlFile of ['index.html', 'video_studio.html']) {
-    const html = fs.readFileSync(path.join(ROOT, htmlFile), 'utf8');
-    for (const file of Object.keys(EXPECTED_WATER_MODULES)) {
-      assert.ok(
-        html.includes(`<script src="src/Water/${file}"></script>`),
-        `${htmlFile} must include <script src="src/Water/${file}"></script>`
-      );
-    }
+  const { PIPELINE_SCRIPTS } = require(path.join(ROOT, 'tools/headless_scene_harness.js'));
+  for (const file of Object.keys(EXPECTED_WATER_MODULES)) {
+    assert.ok(
+      PIPELINE_SCRIPTS.includes(`src/Water/${file}`),
+      `PIPELINE_SCRIPTS must include src/Water/${file}`
+    );
   }
 });
 
-test('4) Browser VM script-order execution and Node CommonJS buildComplete3DModel achieve bit-for-bit triangle parity', async () => {
+test('4) Headless VM script-order execution and Node CommonJS buildComplete3DModel achieve bit-for-bit triangle parity', async () => {
   require(path.join(ROOT, 'src/vendor/vendor_bundle.js'));
   Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/print_physics_config.js')));
   Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/sla_print_laws.js')));

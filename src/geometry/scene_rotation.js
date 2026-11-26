@@ -1,26 +1,27 @@
 // ============================================================================
-// src/ui/map_rotation.js
-// Real-Time 2D & 3D Area Orientation / Rotation Transform (Vector + DEM Grid,
-// Including bridgePolys, roadPolys, Water, Parks, Trees & S3DB Buildings)
+// src/geometry/scene_rotation.js
+// Area Orientation / Rotation Transform (Vector + DEM Grid, Including
+// bridgePolys, roadPolys, Water, Parks, Trees & S3DB Buildings)
 // ============================================================================
 
+'use strict';
+
+/**
+ * Normalizes any rotation angle in degrees to [-180, 179].
+ * @param {number} deg
+ * @returns {number}
+ */
 function normalizeRotationDeg(deg) {
   let d = Number(deg) || 0;
   d = ((d + 180) % 360 + 360) % 360 - 180;
   return Math.round(d);
 }
 
-function formatRotationBadgeText(deg) {
-  const d = normalizeRotationDeg(deg);
-  if (d === 0) return '0° (Północ ↑)';
-  if (d === 90) return '+90° (Wschód ↑)';
-  if (d === -90) return '-90° (Zachód ↑)';
-  if (d === 180 || d === -180) return '180° (Południe ↑)';
-  if (d === 45) return '+45° (NE ↑)';
-  if (d === -45) return '-45° (NW ↑)';
-  return `${d > 0 ? '+' : ''}${d}°`;
-}
-
+/**
+ * Captures an unrotated snapshot of all scene vectors and DEM grid once.
+ * @param {object} scene
+ * @returns {void}
+ */
 function ensureUnrotatedSceneSnapshot(scene) {
   if (!scene || scene._unrotatedSnapshot) return;
   const clonePt = p => [p[0], p[1]];
@@ -77,6 +78,15 @@ function ensureUnrotatedSceneSnapshot(scene) {
   scene._appliedDemSig = '';
 }
 
+/**
+ * Resamples a DEM grid onto the rotated target frame using bilinear interpolation.
+ * @param {object} rawDem
+ * @param {number} rad
+ * @param {number} [padW=85.0]
+ * @param {number} [padH=85.0]
+ * @param {number} [demHalfU=85.0]
+ * @returns {object}
+ */
 function rotateDemGridBilinear(rawDem, rad, padW = 85.0, padH = 85.0, demHalfU = 85.0) {
   if (!rawDem || !rawDem.grid || rawDem.grid.length < 2) return rawDem;
   const N = rawDem.gridSize || rawDem.grid.length;
@@ -87,7 +97,8 @@ function rotateDemGridBilinear(rawDem, rad, padW = 85.0, padH = 85.0, demHalfU =
   const effDemHalf = Math.max(1.0, demHalfU || Math.max(padW, padH));
   const invDemSpan = 1.0 / (2.0 * effDemHalf);
   const outGrid = [];
-  let minElev = Infinity, maxElev = -Infinity;
+  let minElev = Infinity;
+  let maxElev = -Infinity;
 
   for (let gy = 0; gy < N; gy++) {
     const by = -padH + (gy / denom) * (2.0 * padH);
@@ -98,9 +109,12 @@ function rotateDemGridBilinear(rawDem, rad, padW = 85.0, padH = 85.0, demHalfU =
       const wy = -bx * sinA + by * cosA;
       const su = Math.min(N - 1.0001, Math.max(0, (wx + effDemHalf) * invDemSpan * denom));
       const sv = Math.min(N - 1.0001, Math.max(0, (wy + effDemHalf) * invDemSpan * denom));
-      const i0 = Math.floor(su), i1 = Math.min(N - 1, i0 + 1);
-      const j0 = Math.floor(sv), j1 = Math.min(N - 1, j0 + 1);
-      const fu = su - i0, fv = sv - j0;
+      const i0 = Math.floor(su);
+      const i1 = Math.min(N - 1, i0 + 1);
+      const j0 = Math.floor(sv);
+      const j1 = Math.min(N - 1, j0 + 1);
+      const fu = su - i0;
+      const fv = sv - j0;
       const val = (src[j0][i0] * (1 - fu) + src[j0][i1] * fu) * (1 - fv) +
                   (src[j1][i0] * (1 - fu) + src[j1][i1] * fu) * fv;
       const rVal = Math.round(val * 100) / 100;
@@ -119,6 +133,14 @@ function rotateDemGridBilinear(rawDem, rad, padW = 85.0, padH = 85.0, demHalfU =
   };
 }
 
+/**
+ * Rotates all scene geometry layers and DEM heights around the bed center.
+ * @param {object} scene
+ * @param {number} rotationDeg
+ * @param {number|null} [bedHalfW=null]
+ * @param {number|null} [bedHalfH=null]
+ * @returns {object}
+ */
 function applySceneRotation(scene, rotationDeg, bedHalfW = null, bedHalfH = null) {
   if (!scene) return scene;
   ensureUnrotatedSceneSnapshot(scene);
@@ -143,7 +165,8 @@ function applySceneRotation(scene, rotationDeg, bedHalfW = null, bedHalfH = null
   }
 
   const rad = (normDeg * Math.PI) / 180.0;
-  const cosA = Math.cos(rad), sinA = Math.sin(rad);
+  const cosA = Math.cos(rad);
+  const sinA = Math.sin(rad);
   const rotPt = (normDeg === 0)
     ? (p => [p[0], p[1]])
     : (p => [
@@ -225,10 +248,16 @@ function applySceneRotation(scene, rotationDeg, bedHalfW = null, bedHalfH = null
   return scene;
 }
 
+if (typeof globalThis !== 'undefined') {
+  globalThis.normalizeRotationDeg = normalizeRotationDeg;
+  globalThis.ensureUnrotatedSceneSnapshot = ensureUnrotatedSceneSnapshot;
+  globalThis.rotateDemGridBilinear = rotateDemGridBilinear;
+  globalThis.applySceneRotation = applySceneRotation;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     normalizeRotationDeg,
-    formatRotationBadgeText,
     ensureUnrotatedSceneSnapshot,
     rotateDemGridBilinear,
     applySceneRotation

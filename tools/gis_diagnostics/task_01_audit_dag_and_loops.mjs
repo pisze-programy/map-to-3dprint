@@ -90,21 +90,16 @@ export async function runDagAndLoopAudit({ quiet = false } = {}) {
   }
   log(`  [PASS] All ${actualFiles.length} modules in src/gis_fetch/ are < 350 lines, city-agnostic, and standalone-loadable.`);
 
-  // 3. Verify script load-order parity across index.html, video_studio.html, and headless_scene_harness.js
-  const indexHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  const harnessTxt = fs.readFileSync(path.join(ROOT, 'tools/headless_scene_harness.js'), 'utf8');
-  let prevHtmlPos = -1;
+  // 3. Verify script load-order parity in tools/headless_scene_harness.js
+  const { PIPELINE_SCRIPTS } = require(path.join(ROOT, 'tools/headless_scene_harness.js'));
   let prevHarnessPos = -1;
   for (const modName of barrel.DAG_ORDER) {
     const rel = `src/gis_fetch/${modName}`;
-    const hPos = indexHtml.indexOf(`<script src="${rel}"></script>`);
-    const nPos = harnessTxt.indexOf(`'${rel}'`);
-    assert.ok(hPos > prevHtmlPos, `index.html must load ${rel} in strict DAG_ORDER`);
-    assert.ok(nPos > prevHarnessPos, `headless_scene_harness.js must load ${rel} in strict DAG_ORDER`);
-    prevHtmlPos = hPos;
+    const nPos = PIPELINE_SCRIPTS.indexOf(rel);
+    assert.ok(nPos > prevHarnessPos, `headless_scene_harness.js PIPELINE_SCRIPTS must load ${rel} in strict DAG_ORDER`);
     prevHarnessPos = nPos;
   }
-  log(`  [PASS] index.html and headless_scene_harness.js follow identical topological DAG_ORDER.`);
+  log(`  [PASS] headless_scene_harness.js follows strict topological DAG_ORDER.`);
 
   // 4. Dynamic adversarial proof: permanent proxy timeout terminates cleanly without infinite split loop
   let calls = 0;

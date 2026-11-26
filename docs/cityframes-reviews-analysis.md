@@ -115,9 +115,9 @@ Live OpenStreetMap data freshness creates unexpected buyer delight that static c
 
 | Priority | Action Item | Root Evidence From 374 Reviews |
 | :---: | :--- | :--- |
-| **P0** | **Lead ads with live 3D WebGL framing and zoom** | Solves fixed-crop omissions (NYC, Barcelona, Lisbon, Seville), missing long-tail cities (Gent, Brighton, Bremen, Nashville), and "cannot zoom on website" complaints. |
+| **P0** | **Lead ads with dynamic 3D framing and zoom** | Solves fixed-crop omissions (NYC, Barcelona, Lisbon, Seville), missing long-tail cities (Gent, Brighton, Bremen, Nashville), and "cannot zoom on website" complaints. |
 | **P0** | **Engineer spire toughness plus magnetic option** | Eliminates transit breakage and spare-antenna hacks. Use tough matte resin blends, strict `DFM` thickness rules, custom foam top clearance, and flat-packed magnetic spires for extreme towers. |
-| **P0** | **Add real-scale view and flat-area warning in WebGL** | Show a 1:1 hand or smartphone scale toggle inside the configurator. Warn buyers when a chosen crop has very low building relief (LA or flat suburbs) so they pick a dramatic skyline. |
+| **P0** | **Add real-scale view and flat-area warning** | Show a 1:1 hand or smartphone scale toggle in product previews. Warn buyers when a chosen crop has very low building relief (LA or flat suburbs) so they pick a dramatic skyline. |
 | **P0** | **Offer optional plaque without forcing DIY gluing** | Keep default hero fronts clean (supports the guest guessing game and minimalist taste). Offer an optional factory-mounted bezel plaque, rear engraving, or an alignment jig (`+29-39 PLN`) so buyers never struggle to glue loose metal strips. |
 | **P1** | **Design deep, zero-wobble flush wall-mount slots** | Cityframes' rear clasps are too short for wall rails. Mill deep (`6-8 mm`), dual-orientation flush keyholes on every `13 x 18 cm` frame so it sits flat on a desk or hangs rock-solid on a wall. |
 | **P1** | **Engineer recessed-groove cover only if offered** | Never show glass in ads unless included. If adding a dust-cover upsell, use seamless bent low-iron clear acrylic with dual-side peel film, low profile height, and a recessed bezel groove, offered via 1-click cart add-on. Otherwise highlight washable matte resin. |

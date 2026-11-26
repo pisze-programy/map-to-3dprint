@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const cfg = require('../src/geometry/print_physics_config.js');
-const ui = require('../src/ui/ui_config.js');
+const ui = require('../src/geometry/print_profiles.js');
 
 test('default safe area is 4.0 mm per side', () => {
   const sa = cfg.resolveMono4SafeArea(null);

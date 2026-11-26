@@ -79,7 +79,7 @@ function buildManifoldVendor() {
   const fixCrossRealmArrays = (code) =>
     code.replace(/([a-zA-Z0-9_\$\[\]]+)\s*instanceof\s+Array(?!Buffer)\b/g, 'Array.isArray($1)');
 
-  // Async version for browser offline file:// & async Node init
+  // Async version for offline async Node init
   let mfAsyncBody = fixCrossRealmArrays(mfRaw)
     .replace('var _scriptName=import.meta.url;', 'var _scriptName="";')
     .replace('new URL("manifold.wasm",import.meta.url).href', '"manifold.wasm"')

@@ -16,7 +16,7 @@ We inspected these sources directly:
 - 31 Lichtbild client JS chunks (`~1.84 MB`), including 10 lazy chunks from webpack runtime maps.
 - Public endpoints: `/api/data-licenses`, `/api/geocode-v3`, `/api/exchange-rates`, `/api/createCity`, `/api/image`, `/api/mcp/*`, `/.well-known/*`.
 - Two live previews from their public MCP (`design_3d_city_model` + `render_model_preview`): Stuttgart `20 cm` and Zugspitze `20 cm`.
-- Our baseline files: `mesh_builder.js`, `exporters.js`, `webgl_studio.js`, `ui_app.js`, `gis_pipeline.py`, `fetch_gis.py`, `server.py`, `template.html`.
+- Our historical baseline modules (`mesh_builder.js`, `exporters.js`, `gis_pipeline.py`, `fetch_gis.py`) and subsequent headless CLI pipeline.
 
 Three Lichtbild details remain private:
 
@@ -26,15 +26,15 @@ Three Lichtbild details remain private:
 
 ## 2. Architecture Comparison
 
-| Layer | `map-to-3dprint` (`2026-11-10`) | Lichtbild |
+| Layer | `map-to-3dprint` (Historical Baseline -> Headless CLI) | Lichtbild |
 | :--- | :--- | :--- |
-| Frontend | Static `index.html` via `build_app.py`, zero deps | Next.js Pages Router on Vercel, 14 languages |
-| Client 3D render | Custom WebGL 1.0 (`webgl_studio.js:289`, 2048 shadow map, PCF 9-tap) | None (zero WebGL/three.js in 31 chunks) |
-| 2D map | Custom canvas tiles (`OSM FR` / `Esri`, `ui_app.js:238,241`) | Leaflet + Stadia Alidade Satellite (`mod 13769, 37275, 38041, 80942`) |
-| Geocoding | Photon proxy (`server.py:62`) | `/api/geocode-v3` (`mod 24984`), OpenCage schema |
+| Execution model | Pure-Node CLI (`tools/export_city_sku.mjs`) + Python Blender Cycles | Next.js Pages Router on Vercel, 14 languages |
+| Offline 3D preview | Headless software preview (`tools/headless_3d_renderer.js`) + Blender Cycles | None |
+| Vector context | Overpass QL vectors + AWS Terrarium DEM | Leaflet + Stadia Alidade Satellite (`mod 13769, 37275, 38041, 80942`) |
+| Geocoding | Preset catalog (`config/city_catalog.json`, `src/geometry/print_profiles.js`) | `/api/geocode-v3` (`mod 24984`), OpenCage schema |
 | GIS data | AWS Terrarium DEM z14 + Overpass (`fetch_gis.py:118,162`) | OSM + GeoNames + national lidar (`3DEP`, `ALKIS/ATKIS`, `OSNI`, `NRCan`, `Mapterhorn`) |
-| Mesh generation | Browser (`buildComplete3DModel`) | Server (`POST /api/createCity` progress stream) |
-| Preview | Interactive WebGL orbit, zoom, building pick | Two static `1400 x 1400` WebP views (table, wall) |
+| Mesh generation | Headless Node Manifold CSG (`buildComplete3DModel`) | Server (`POST /api/createCity` progress stream) |
+| Visual output | Blender Cycles `11_packshot_white` & `18_detail_chalk_gallery` | Two static `1400 x 1400` WebP views (table, wall) |
 | Checkout | None | Shopify variants (`mod 70931`), `/api/checkout` |
 | Pricing | None | Bundle table (`mod 69382`) |
 | AI connector | None | MCP `https://mcp.lichtbild.com` + OAuth metadata |
@@ -50,9 +50,9 @@ Three Lichtbild details remain private:
 
 ### 3.2 Vectors and Geocoding
 
-- **`map-to-3dprint`**: Queries Overpass QL (`fetch_gis.py:162`) for buildings, parts, water, parks, trees, roads, and bridges. Uses Photon (`limit=6`, `server.py:62-80`).
+- **`map-to-3dprint`**: Queries Overpass QL (`fetch_gis.py:162`) for buildings, parts, water, parks, trees, roads, and bridges. Uses catalog presets (`config/city_catalog.json`).
 - **Lichtbild**: Combines OSM (ODbL) with local cadastral datasets (`ALKIS`, `Berliner Gebaeude Atlas`, `Ipswich Cadastral`). Uses `/api/geocode-v3` with OpenCage annotations (`DMS`, `MGRS`, `NUTS`) and `country_hint`.
-- **Map tiles**: We draw `tile.openstreetmap.fr/hot` and `Esri World_Topo_Map` on canvas. They use Leaflet with retina `@2x` Stadia Alidade Satellite (`maxZoom` 16-20).
+- **Map context**: We sample OSM vectors and Terrarium DEM directly in headless scripts. They use Leaflet with retina `@2x` Stadia Alidade Satellite (`maxZoom` 16-20).
 
 ## 4. Geometry Comparison (Layer by Layer)
 
@@ -68,7 +68,7 @@ Three Lichtbild details remain private:
 - **Greenery and trees**: Our baseline uses a zero-thickness single quad (`:846`) and open 5-sided cones (`:410-431`). Lichtbild places dense closed low-poly tree clusters.
 - **Roads**: Our baseline builds open ribbons (top + 2 sides, zero bottom, `:1004-1006`) without lane markings. Lichtbild models flat roads with white dashed lane markings.
 - **Buildings**: We extrude LoD2 roofs (`extrudeBuildingLoD2`, `:298-408`) recessed `0.15` into terrain without bottoms. Lichtbild uses flat roofs with rooftop HVAC details and per-building edit lists (`mod 49391`).
-- **Frame**: We render a mitered frame (`:1186-1200`) in WebGL but omit it from exports (`exporters.js:121-128`). Lichtbild includes frame, acrylic cover, and engraved plaque.
+- **Frame**: Baseline omitted frame exports (`exporters.js:121-128`). Lichtbild includes frame, acrylic cover, and engraved plaque. Our production pipeline now adds heavy A4 passe-partout framing in Blender studio renders.
 
 ### 4.3 Baseline Topology Audit (`2026-11-10`)
 
@@ -114,7 +114,7 @@ Baseline `README.md` also overstated implementation (claimed 6 manifold volumes,
 
 ## 8. Preview Rendering and Storefront
 
-- **`map-to-3dprint`**: Interactive WebGL 1.0 gives instant picking and edits, but looks game-like rather than photorealistic.
+- **`map-to-3dprint` (Historical Baseline)**: Legacy preview shading looked game-like rather than photorealistic; replaced by offline Blender Cycles rendering.
 - **Lichtbild**: `POST /api/createCity` streams `PROGRESS <n>` and returns two `1400 x 1400` WebP images (`80-110 KB`) in `40-65 s`. Corner PSNR (`47-52 dB`) confirms a fixed studio background plate with composited model shadows.
 - **Storefront**: Uses Shopify checkout, dynamic lead-time dates, public account-free MCP (`https://mcp.lichtbild.com`), and per-model license attribution (`/api/data-licenses`).
 
@@ -132,7 +132,7 @@ Baseline `README.md` also overstated implementation (claimed 6 manifold volumes,
 2. Separate `ams` filament hex and `render` preview hex per layer.
 3. True multi-tile splitting with modular frames and printer size classes.
 4. Watertight unified solids instead of open overlapping shells.
-5. Photorealistic fixed-studio renders for product pages, paired with interactive WebGL editing.
+5. Photorealistic fixed-studio Cycles renders for product pages, paired with deterministic headless CLI generation.
 6. Modeled road markings and per-model license attribution.
 
 **Skip:**

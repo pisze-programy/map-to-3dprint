@@ -25,7 +25,7 @@ Read and execute all four gates before you approve any city STL, tile, or packsh
 
 ## Gate 3: Direct-STL Four-Angle and Seam-Truth Inspection
 
-- Never approve a city STL from validator metrics or browser preview alone.
+- Never approve a city STL from validator metrics alone.
 - Render seam-truth QA views using `--manifest assembly_manifest.json` (`qa_seam_raking`, `qa_top_down_grid`, `qa_underside`).
 - Inspect `qa_seam_raking` under `12 deg` side light with alternating tile tints for flush seam mating.
 - Inspect `qa_underside` to verify `45 deg` gabled relief channels, `>= 8.0 mm` outer perimeter skirt, and `DFM-06` bottom chamfers.
@@ -38,7 +38,7 @@ Read and execute all four gates before you approve any city STL, tile, or packsh
   - **Outer perimeter sliver check**: Inspect all frame borders. Reject razor-sliced perimeter walls or orphaned sidewalk annexes.
   - **Waterfronts and streets**: Verify zero floating vessels in `waterCutout`, zero streetlamp mast spikes, and zero collapsed walls.
 - Fix procedural defects systemically in core `src/`. Put curated flagship monuments in `src/landmarks/` with `replaceOsmIds` suppression.
-- Rebuild `python3 build_app.py`, pass `npm run test:headless` (`100%`), re-export STLs, and re-run Gates 2 and 3.
+- Pass `npm run test:headless` (`100%`), re-export STLs, and re-run Gates 2 and 3.
 
 ## Gate 4: Honest Manifest-Driven Packshot and Detail Render QA
 

@@ -51,6 +51,6 @@ Design every `9:16` Reels, Meta, and TikTok ad with this exact pacing:
 ## 5. Production Visual Standard
 
 - Render all product stills and ad footage in photorealistic Blender Cycles environments.
-- Never publish flat WebGL void captures as paid ad creative.
+- Never publish flat untextured viewport captures as paid ad creative.
 - Export `9:16` `Start -> End` keyframes for Google Flow (Veo) or render direct Cycles MP4 clips.
 - Read `docs/blender-studio-workflow.md` for exact CLI commands and MCP tools.

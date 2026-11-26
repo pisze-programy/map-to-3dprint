@@ -465,12 +465,10 @@ async function run() {
     }
   }
 
-  // [7/7] Pier/Island Rotation Invariance (±42°), Marina Pier Z-Height, Waterfront Building Datum, 3D Picking & Video Prism
-  console.log('\n[7/7] Pier/Island Rotation (±42°), Marina Z-Height, Waterfront Datum, 3D Picking & Video Frame');
+  // [7/7] Pier/Island Rotation Invariance (±42°), Marina Pier Z-Height & Waterfront Building Datum
+  console.log('\n[7/7] Pier/Island Rotation (±42°), Marina Z-Height & Waterfront Datum');
   {
-    const { applySceneRotation } = require(path.join(ROOT, 'src/ui/map_rotation.js'));
-    const { fastSwapHighlightedBuildings } = require(path.join(ROOT, 'src/ui/fast_render_manager.js'));
-    const { buildVideoProductFrameBuffers } = require(path.join(ROOT, 'src/video/video_frame_builder.js'));
+    const { applySceneRotation } = require(path.join(ROOT, 'src/geometry/scene_rotation.js'));
 
     // 7a. Linear floating piers (pierLines) + areal piers (pierPolys) + _openSeaIslands rotate identically with buildings at ±42°
     const rotScene = {
@@ -536,19 +534,9 @@ async function run() {
       'Waterfront 8m building grazing waterCutout anchors at Z=0 while roof rises above 2.35 mm land slab',
       `minZMm=${(wfVillaBounds.minZ * scaleMm150).toFixed(2)}, maxZMm=${(wfVillaBounds.maxZ * scaleMm150).toFixed(2)}`);
 
-    // 7c. 3D picking metadata & fastSwapHighlightedBuildings
+    // 7c. 3D picking metadata populated on buildingBounds
     check(rotBuilt.buildingBounds.every(bb => bb.pickId > 0 && bb.layerId === 4 && bb.building && bb.building._pickId === bb.pickId),
-      'All buildingBounds populate pickId, layerId, and building._pickId for 3D raycast & highlight swap');
-    rotScene.buildings[0].highlighted = true;
-    const uiState = { ...rotState, sceneData: rotScene, layerMeshes: rotBuilt.meshes, buildingBounds: rotBuilt.buildingBounds, pickIdMap: rotBuilt.pickIdMap };
-    const swapped = fastSwapHighlightedBuildings(uiState);
-    check(swapped && uiState.layerMeshes.highlighted.length > 0, 'fastSwapHighlightedBuildings swaps highlighted building triangles cleanly', `hlTris=${uiState.layerMeshes.highlighted.length}`);
-
-    // 7d. Video Studio frame builder works without legacy extrudeBuildingLoD2
-    const vFrame = buildVideoProductFrameBuffers({ halfW: 84.6, halfH: 84.6, matStyle: 'gallery_white', frameStyle: 'black', showPlaque: true, showGlass: true, waterCutout: true }, true);
-    check(vFrame.frameTris.length >= 48 && vFrame.backingTris.length >= 12 && vFrame.matTris.length >= 48,
-      'Video Studio buildVideoProductFrameBuffers emits closed frame/backing/mat prisms cleanly',
-      `frame=${vFrame.frameTris.length}, backing=${vFrame.backingTris.length}, mat=${vFrame.matTris.length}`);
+      'All buildingBounds populate pickId, layerId, and building._pickId for 3D identification');
   }
 
   // ==========================================================================
@@ -560,7 +548,7 @@ async function run() {
     const { stitchCoastlineSeaPolysJS } = require(path.join(ROOT, 'src/gis_client/overpass_dem_fetch.js'));
     const { createS3DBClientCollector } = require(path.join(ROOT, 'src/gis_client/s3db_client_matcher.js'));
     const { buildLayer1TerrainAndWater } = require(path.join(ROOT, 'src/mesh/layer1_terrain_water.js'));
-    const { applySceneRotation } = require(path.join(ROOT, 'src/ui/map_rotation.js'));
+    const { applySceneRotation } = require(path.join(ROOT, 'src/geometry/scene_rotation.js'));
 
     // 8a. Overpass QL excludes continental natural=bay|peninsula and includes unclipped place=island|islet across all tiers
     for (const tier of ['detail', 'urban', 'regional', 'mountain']) {
