@@ -86,11 +86,31 @@
     return { rawGapMm, resolvedGapMm, isFloating, needsPiles, deckThickU, zDeckBot, zDeckTop };
   }
 
+  function _getLandmarkSuppressHelpers() {
+    if (typeof root.isBridgeOrPierSuppressedByLandmarks !== 'function' && typeof require !== 'undefined') {
+      try { Object.assign(root, require('../landmarks/landmark_registry.js')); } catch (_) {}
+    }
+    return {
+      isSuppressed: typeof root.isBridgeOrPierSuppressedByLandmarks === 'function'
+        ? root.isBridgeOrPierSuppressedByLandmarks
+        : (typeof isBridgeOrPierSuppressedByLandmarks === 'function' ? isBridgeOrPierSuppressedByLandmarks : null),
+      findPlan: typeof root.findActiveLandmarksAndSuppression === 'function'
+        ? root.findActiveLandmarksAndSuppression
+        : (typeof findActiveLandmarksAndSuppression === 'function' ? findActiveLandmarksAndSuppression : null),
+    };
+  }
+
   function _collectPierItems(scene, ctx) {
     const { toBed, scaleToBed, minPrintU } = ctx;
+    const { isSuppressed, findPlan } = _getLandmarkSuppressHelpers();
+    const landmarkPlan = (ctx && ctx._landmarkPlan) || (findPlan ? findPlan(scene, ctx) : null);
     const items = [], seenOsm = new Set();
     const lineOsmIds = new Set(((scene && scene.pierLines) || []).map(pl => pl && pl.osmId).filter(id => id != null));
     const pushItem = (rec, isArea, ptsOrRing, holesBed, widthU) => {
+      const pierIds = (rec && Array.isArray(rec.wayIds))
+        ? [rec.osmId, ...rec.wayIds]
+        : (rec ? rec.osmId : null);
+      if (isSuppressed && landmarkPlan && isSuppressed(landmarkPlan, pierIds, ptsOrRing)) return;
       const kId = rec.osmId != null ? `${isArea ? 'A' : 'L'}:${rec.osmId}` : null;
       if (kId && seenOsm.has(kId)) return;
       if (kId) seenOsm.add(kId);

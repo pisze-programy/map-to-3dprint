@@ -186,6 +186,7 @@ ENV_ALIASES: Dict[str, str] = {
 ALL_ENV_CHOICES: Tuple[str, ...] = tuple(ENVIRONMENTS.keys()) + tuple(ENV_ALIASES.keys())
 
 FRAME_STYLES: Dict[str, str] = {
+    "auto": "Resolve framing automatically from assembly_manifest.json format_id (defaults to single_13x18 for raw STL drafts).",
     "single_13x18": (
         "True Variant C 130x180mm ultra-thin matte-black frame (4.0mm bezel, 7.5mm low-profile "
         "height, matte-black archival backing, no nameplate by default; stacks 2 tiles seamlessly)."
@@ -199,9 +200,22 @@ FRAME_STYLES: Dict[str, str] = {
     "single_thin": "Ultra-thin matte-black frame (4.0mm bezel) hugging the exact tile footprint.",
     "single_thick": "Gallery matte-black shadowbox frame (10.0mm bezel) with matte-black backing.",
     "cube_cover": "Matte-black plinth base with crystal-clear museum acrylic cover (IOR 1.49).",
+    "cube_plinth": "Matte-black 5mm plinth frame without acrylic cover.",
     "triptych_3x1": "3-tile side-by-side matte-black wall/desk collection (pass 3 --stl flags).",
     "quartet_2x2": "4-tile 2x2 matte-black architectural wall/desk grid (pass 4 --stl flags).",
+    "single_a4_1x3": "Catalog format: Single A4 210x297x30mm matte-black frame with 120x170mm passe-partout (1x3 strips).",
+    "single_a4_landscape_3x1": "Catalog format: Single A4 Landscape 297x210x30mm matte-black frame with 170x120mm passe-partout (3x1 strips).",
+    "triptych_a4_3x1": "Catalog format: 3-frame A4 Triptych 3x(210x297x30mm) gallery spread.",
+    "quartet_a4_2x2": "Catalog format: 4-frame A4 Quartet 2x2(210x297x30mm) gallery grid.",
+    "square_150_2x2": "Catalog format: Square 240x240x30mm gallery frame with 150x150mm passe-partout.",
+    "square_240_2x4": "Catalog format: Square 340x340x30mm gallery frame with 240x240mm passe-partout.",
+    "flagship_50x70_3x9": "Catalog format: Flagship 500x700x32mm gallery frame with 360x510mm passe-partout.",
+    "custom_grid": "Catalog format: Custom grid framing (A4 passe-partout for A4 dimensions, single_thick gallery frame otherwise).",
 }
+
+ALL_FRAME_CHOICES: Tuple[str, ...] = tuple(FRAME_STYLES.keys())
+
+DETAIL_GRID_PRESETS: Tuple[str, ...] = tuple(f"detail_grid_{i:02d}" for i in range(1, 10))
 
 STILL_PRESETS: Dict[str, str] = {
     "hero_desk": "Editorial 3/4 desk lifestyle hero framing the full 13x18 matte-black frame, skyline & real scale props.",
@@ -211,10 +225,20 @@ STILL_PRESETS: Dict[str, str] = {
     "profile_low": "Dramatic low-angle 85mm telephoto skyline silhouette emphasizing spire height & thin bezel.",
     "top_down": "Clean 85mm gallery overhead plan view showing crisp street grid geometry inside the black frame.",
     "packshot_iso": "E-commerce 3/4 product hero (68mm f/7.1 tack-sharp front-to-back) with clean balanced margins.",
-    "detail_spire": "135mm f/8.0 low eye-level telephoto of hero spire rising above full-bleed city blocks into #FFFFFF sky.",
-    "detail_canyon": "120mm f/10.0 low avenue-canyon telephoto with dense foreground blocks and crisp raking sunlight shadows.",
-    "detail_oblique_grid": "130mm f/14.0 full-bleed 44-deg oblique architectural grid packed edge-to-edge with zero outer borders.",
-    "detail_waterfront": "125mm f/11.0 tight 30-deg interior macro highlighting waterfront bridges or dense downtown canyon tiers.",
+    "detail_spire": "135mm f/56.0 low eye-level telephoto of hero spire rising above full-bleed city blocks into #FFFFFF sky.",
+    "detail_canyon": "120mm f/56.0 low avenue-canyon telephoto with dense foreground blocks and crisp raking sunlight shadows.",
+    "detail_oblique_grid": "130mm f/56.0 full-bleed 44-deg oblique architectural grid packed edge-to-edge with zero outer borders.",
+    "detail_waterfront": "125mm f/56.0 tight 30-deg interior macro highlighting waterfront bridges or dense downtown canyon tiers.",
+    "detail_grid_3x3": "3x3 chalk detail gallery mosaic (detail_grid_01..09) rendered 1:1 at f/56.0 and stitched into details_3x3_grid.png.",
+    "detail_grid_01": "130mm f/56.0 chalk detail grid cell 01 (NW sector) at 34-deg elevation with strict interior clamping.",
+    "detail_grid_02": "135mm f/56.0 chalk detail grid cell 02 (N sector) at 30-deg elevation with strict interior clamping.",
+    "detail_grid_03": "128mm f/56.0 chalk detail grid cell 03 (NE sector) at 36-deg elevation with strict interior clamping.",
+    "detail_grid_04": "125mm f/56.0 chalk detail grid cell 04 (W sector) at 38-deg elevation with strict interior clamping.",
+    "detail_grid_05": "135mm f/56.0 chalk detail grid cell 05 (Center/Hero sector) at 26-deg elevation with strict interior clamping.",
+    "detail_grid_06": "125mm f/56.0 chalk detail grid cell 06 (E sector) at 40-deg elevation with strict interior clamping.",
+    "detail_grid_07": "130mm f/56.0 chalk detail grid cell 07 (SW sector) at 35-deg elevation with strict interior clamping.",
+    "detail_grid_08": "135mm f/56.0 chalk detail grid cell 08 (S sector) at 28-deg elevation with strict interior clamping.",
+    "detail_grid_09": "128mm f/56.0 chalk detail grid cell 09 (SE sector) at 42-deg elevation with strict interior clamping.",
     "qa_seam_raking": "QA seam truth: low 12-deg raking side-light with alternating tile tints exposing every seam step.",
     "qa_top_down_grid": "QA orthographic plan view across full tile assembly grid with alternating tile tints.",
     "qa_underside": "QA underside view showing continuous 45-deg gabled relief grooves, 8 mm skirt, and DFM-06 chamfer.",

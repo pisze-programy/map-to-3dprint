@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -13,6 +14,8 @@ Object.assign(globalThis, require(path.join(ROOT, 'src/geometry/sla_print_laws.j
 Object.assign(globalThis, require(path.join(ROOT, 'src/export/export_io_utils.js')));
 const registry = require(path.join(ROOT, 'src/landmarks/landmark_registry.js'));
 Object.assign(globalThis, registry);
+const stlLoader = require(path.join(ROOT, 'src/landmarks/stl_landmark_loader.js'));
+Object.assign(globalThis, stlLoader);
 
 // Auto-load every curated landmark module present in src/landmarks/
 const landmarksDir = path.join(ROOT, 'src/landmarks');
@@ -52,6 +55,43 @@ function makeState(overrides = {}) {
 
 function makeRect(cx, cy, hx, hy) {
   return [[cx - hx, cy - hy], [cx + hx, cy - hy], [cx + hx, cy + hy], [cx - hx, cy + hy]];
+}
+
+function makeBinaryStlFromManifold(man) {
+  const mesh = man.getMesh();
+  const triCount = Math.floor(mesh.triVerts.length / 3);
+  const buf = new ArrayBuffer(84 + triCount * 50);
+  const view = new DataView(buf);
+  const hdr = 'Unit Test Binary STL';
+  const hdrBytes = new Uint8Array(buf, 0, 80);
+  for (let i = 0; i < hdr.length; i++) hdrBytes[i] = hdr.charCodeAt(i);
+  view.setUint32(80, triCount, true);
+  const stride = mesh.numProp || 3;
+  const vp = mesh.vertProperties;
+  let off = 84;
+  for (let t = 0; t < triCount; t++) {
+    view.setFloat32(off, 0, true);
+    view.setFloat32(off + 4, 0, true);
+    view.setFloat32(off + 8, 1, true);
+    for (let v = 0; v < 3; v++) {
+      const vi = mesh.triVerts[t * 3 + v] * stride;
+      view.setFloat32(off + 12 + v * 12, vp[vi], true);
+      view.setFloat32(off + 16 + v * 12, vp[vi + 1], true);
+      view.setFloat32(off + 20 + v * 12, vp[vi + 2], true);
+    }
+    view.setUint16(off + 48, 0, true);
+    off += 50;
+  }
+  return new Uint8Array(buf);
+}
+
+function countRoadTrisInYBand(tris, yMin, yMax) {
+  let cnt = 0;
+  for (const t of tris || []) {
+    const cy = (t.v0[1] + t.v1[1] + t.v2[1]) / 3.0;
+    if (cy >= yMin && cy <= yMax) cnt++;
+  }
+  return cnt;
 }
 
 console.log('================================================================');
@@ -205,6 +245,334 @@ console.log('\n[4/4] All Registered Curated Landmarks Watertight Smoke Audit');
       `Landmark ${spec.id} builds strictly watertight 2-manifold`,
       `tris=${pm.totalTriangles}, open=${pm.openEdgesCount}, nm=${pm.nonManifoldEdgesCount}, maxZ=${pm.maxZMm.toFixed(1)}mm`
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 5. Bridge & Pier Suppression via replaceOsmIds & replacePolygonM
+// ---------------------------------------------------------------------------
+console.log('\n[5/7] Bridge & Pier Suppression (replaceOsmIds + replacePolygonM)');
+{
+  const mToU = 169.2 / 780.0;
+  const polyYM = 10.0 / mToU;
+  const baseBridgeScene = () => ({
+    center: [12.0, 22.0],
+    spanMeters: 780,
+    metersToUnits: mToU,
+    dem: { grid: [[4, 4, 4], [4, 2, 4], [4, 4, 4]], minElev: 2, maxElev: 4 },
+    waterPolys: [{ outer: [[-20, -60], [20, -60], [20, 60], [-20, 60]], holes: [] }],
+    waterLines: [], greenPolys: [], trees: [], bridgeSupports: [], bridgePolys: [], buildings: [],
+    roads: [
+      {
+        osmId: 777001, pts: [[-28, -10], [28, -10]], width: 4.5,
+        isBridge: true, layer: 1, structure: 'beam',
+        tags: { bridge: 'yes', 'bridge:structure': 'beam' },
+      },
+      {
+        osmId: 777002, pts: [[-28, 10], [28, 10]], width: 4.5,
+        isBridge: true, layer: 1, structure: 'beam',
+        tags: { bridge: 'yes', 'bridge:structure': 'beam' },
+      },
+      {
+        osmId: 777003, pts: [[-28, 45], [28, 45]], width: 4.5,
+        isBridge: true, layer: 1, structure: 'beam',
+        tags: { bridge: 'yes', 'bridge:structure': 'beam' },
+      },
+    ],
+    pierLines: [
+      { osmId: 888001, pts: [[-10, -25], [10, -25]], width: 2.0, pierKind: 'pier' },
+      { osmId: 888002, pts: [[-8, 12], [8, 12]], width: 2.0, pierKind: 'pier' },
+      { osmId: 888003, pts: [[-10, -45], [10, -45]], width: 2.0, pierKind: 'pier' },
+    ],
+  });
+
+  const baselineRes = buildComplete3DModel(baseBridgeScene(), makeState());
+  check(
+    (baselineRes.audit.bridgeAudits || []).length === 3 && (baselineRes.audit.pierAudits || []).length === 3,
+    'Baseline bridge+pier scene emits all 3 bridges and 3 piers before suppression',
+    `bridges=${(baselineRes.audit.bridgeAudits || []).length}, piers=${(baselineRes.audit.pierAudits || []).length}`
+  );
+  const baselineBandTris = countRoadTrisInYBand(baselineRes.meshes.roads, -28, 22);
+  check(baselineBandTris > 0, 'Baseline scene emits bridge/pier triangles in suppression band', `tris=${baselineBandTris}`);
+
+  const lmId = '__unit_test_bridge_pier_lm';
+  registry.registerHeroLandmark({
+    id: lmId,
+    name: 'Unit Test Custom Bridge Landmark',
+    lat: 12.0,
+    lon: 22.0,
+    headingDeg: 0,
+    footprintRadiusM: 120,
+    maxHeightM: 24,
+    replaceOsmIds: [777001, 888001],
+    replacePolygonM: [[-150, polyYM - 25], [150, polyYM - 25], [150, polyYM + 25], [-150, polyYM + 25]],
+    buildManifold(core, mf, _ctx, anchor) {
+      const ring = [
+        anchor.toBedXY(-12, -4),
+        anchor.toBedXY(12, -4),
+        anchor.toBedXY(12, 4),
+        anchor.toBedXY(-12, 4),
+      ];
+      return core.extrudeRingSolid(mf, ring, [], anchor.toBedZ(0), anchor.toBedZ(20));
+    },
+  });
+
+  try {
+    const supRes = buildComplete3DModel(baseBridgeScene(), makeState());
+    const brAudits = supRes.audit.bridgeAudits || [];
+    const prAudits = supRes.audit.pierAudits || [];
+    const suppressedBandTris = countRoadTrisInYBand(supRes.meshes.roads, -28, 22);
+    const controlBridge = brAudits.find(a => a.osmId === 777003);
+    const controlPier = prAudits.find(a => a.osmId === 888003);
+
+    check(
+      brAudits.length === 1 && !brAudits.some(a => a.osmId === 777001 || a.osmId === 777002),
+      'Both replaceOsmIds and replacePolygonM bridges are suppressed from bridgeAudits',
+      `remaining=${brAudits.map(a => a.osmId).join(',')}`
+    );
+    check(
+      Boolean(controlBridge && Array.isArray(controlBridge.wayIds) && controlBridge.wayIds.includes(777003)),
+      'bridgeAudits attaches osmId and wayIds diagnostics on retained bridge'
+    );
+    check(
+      prAudits.length === 1 && !prAudits.some(a => a.osmId === 888001 || a.osmId === 888002) && Boolean(controlPier),
+      'Both replaceOsmIds and replacePolygonM piers are suppressed from pierAudits',
+      `remaining=${prAudits.map(a => a.osmId).join(',')}`
+    );
+    check(
+      suppressedBandTris === 0,
+      'Zero bridge/pier road triangles emitted inside suppressed OSM zones',
+      `bandTris=${suppressedBandTris}`
+    );
+    check(
+      supRes.buildingBounds.some(b => b.id === `landmark:${lmId}`) &&
+        supRes.printMetrics.openEdgesCount === 0 &&
+        supRes.printMetrics.nonManifoldEdgesCount === 0 &&
+        supRes.printMetrics.degenerateTrisCount === 0,
+      'Custom landmark replacement after bridge/pier suppression is watertight 2-manifold'
+    );
+
+    const directPlan = registry.findActiveLandmarksAndSuppression(
+      baseBridgeScene(),
+      { halfW: 60, halfH: 85, mToU, scaleToBed: 1, zScale: 1, rotDeg: 0, toBed: p => p }
+    );
+    check(
+      registry.isBridgeOrPierSuppressedByLandmarks(directPlan, 777001, null) === true &&
+        registry.isBridgeOrPierSuppressedByLandmarks(directPlan, [999, 888001], null) === true &&
+        registry.isBridgeOrPierSuppressedByLandmarks(directPlan, 777002, [[-28, 10], [28, 10]]) === true &&
+        registry.isBridgeOrPierSuppressedByLandmarks(directPlan, 777003, [[-28, 45], [28, 45]]) === false,
+      'isBridgeOrPierSuppressedByLandmarks handles single ids, arrays, and replacePolygonM centroids'
+    );
+  } finally {
+    registry.unregisterHeroLandmark(lmId);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 6. Binary STL Landmark Loader & Manifest Registration
+// ---------------------------------------------------------------------------
+console.log('\n[6/7] Binary STL Landmark Loader, Geo-Anchor & Manifest Discovery');
+{
+  const mf = globalThis.__getManifoldSync();
+  const baseCube = mf.Manifold.cube([20, 16, 40], false).translate([-10, -8, 0]);
+  const spireCube = mf.Manifold.cube([6, 6, 30], false).translate([-3, -3, 40]);
+  const towerMeters = baseCube.add(spireCube);
+  baseCube.delete();
+  spireCube.delete();
+  const stlBytes = makeBinaryStlFromManifold(towerMeters);
+  towerMeters.delete();
+
+  const standaloneMan = stlLoader.loadBinaryStlToManifold(mf, stlBytes, {
+    transform: { uPerM: 0.25, zPerM: 0.25, cxBed: 4.0, cyBed: -6.0, zGround: 2.0 },
+    headingDeg: 90,
+  });
+  const sbb = standaloneMan.boundingBox();
+  const st = standaloneMan.status();
+  check(
+    (st === 'NoError' || st === 0) &&
+      Math.abs(sbb.min[2] - 2.0) < 1e-4 &&
+      Math.abs(sbb.max[2] - 19.5) < 1e-4 &&
+      Math.abs((sbb.max[0] - sbb.min[0]) - 4.0) < 1e-4 &&
+      Math.abs((sbb.max[1] - sbb.min[1]) - 5.0) < 1e-4,
+    'loadBinaryStlToManifold parses binary STL, welds, rotates, scales, and seats Z=0 at zGround',
+    `status=${st}, bboxX=${(sbb.max[0] - sbb.min[0]).toFixed(2)}, bboxY=${(sbb.max[1] - sbb.min[1]).toFixed(2)}, z=[${sbb.min[2].toFixed(2)},${sbb.max[2].toFixed(2)}]`
+  );
+  standaloneMan.delete();
+
+  const stlLmId = '__unit_test_stl_lm';
+  registry.registerHeroLandmark({
+    id: stlLmId,
+    name: 'Unit Test Binary STL Landmark',
+    lat: 15.0,
+    lon: 25.0,
+    headingDeg: 0,
+    footprintRadiusM: 40,
+    maxHeightM: 70,
+    replaceOsmIds: [555001, 555002],
+    buildManifold(_core, mfArg, ctxArg, anchor) {
+      return stlLoader.loadBinaryStlToManifold(mfArg, stlBytes, { transform: anchor, ctx: ctxArg });
+    },
+  });
+
+  try {
+    const sc = {
+      center: [15.0, 25.0],
+      spanMeters: 780,
+      dem: { grid: [[2, 2], [2, 2]], minElev: 2, maxElev: 2 },
+      waterPolys: [{ outer: [[-40, -40], [-14, -40], [-14, 40], [-40, 40]], holes: [] }],
+      waterLines: [], greenPolys: [], trees: [], bridgeSupports: [], bridgePolys: [],
+      roads: [
+        {
+          osmId: 555002, pts: [[-45, 0], [-10, 0]], width: 4.0,
+          isBridge: true, layer: 1, structure: 'beam',
+          tags: { bridge: 'yes', 'bridge:structure': 'beam' },
+        },
+      ],
+      buildings: [
+        { id: 501, osmId: 555001, outer: makeRect(0, 0, 2.0, 2.0), holes: [], h: 25, minH: 0, roof: 'flat', tags: { building: 'yes', height: '25' } },
+      ],
+    };
+    const res = buildComplete3DModel(sc, makeState({ mapRotationDeg: 30 }));
+    const pm = res.printMetrics;
+    const supBld = res.audit.preparedList.find(p => p.osmId === 555001);
+    const emittedStl = res.buildingBounds.find(b => b.id === `landmark:${stlLmId}`);
+    check(
+      Boolean(supBld && supBld.skip && supBld.skipReason === 'hero_landmark_override') &&
+        (res.audit.bridgeAudits || []).length === 0 &&
+        Boolean(emittedStl),
+      'Binary STL landmark suppresses target OSM building and bridge and emits geo-anchored solid'
+    );
+    check(
+      pm.openEdgesCount === 0 && pm.nonManifoldEdgesCount === 0 && pm.degenerateTrisCount === 0 && pm.floatingBuildingsCount === 0,
+      'Binary STL landmark scene is strictly watertight 2-manifold (0 open/nm/degen/float)',
+      `tris=${pm.totalTriangles}, open=${pm.openEdgesCount}, nm=${pm.nonManifoldEdgesCount}, degen=${pm.degenerateTrisCount}`
+    );
+  } finally {
+    registry.unregisterHeroLandmark(stlLmId);
+  }
+
+  // Test declarative JSON manifest loader in an isolated temp dir
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stl-lm-manifest-'));
+  const manifestId = '__unit_test_manifest_stl';
+  try {
+    const stlPath = path.join(tmpDir, 'tower.stl');
+    const manifestPath = path.join(tmpDir, 'landmarks.json');
+    fs.writeFileSync(stlPath, Buffer.from(stlBytes));
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        landmarks: [
+          {
+            id: manifestId,
+            name: 'Manifest Test Tower',
+            stlFile: 'tower.stl',
+            lat: 16.0,
+            lon: 26.0,
+            headingDeg: 15,
+            footprintRadiusM: 35,
+            scaleM: 1.0,
+            zOffsetM: 0.0,
+            replaceOsmIds: [666001],
+            replacePolygonM: [[-20, -20], [20, -20], [20, 20], [-20, 20]],
+          },
+        ],
+      }),
+      'utf8'
+    );
+    const regSpecs = stlLoader.registerStlLandmarksFromManifest(manifestPath);
+    const scManifest = {
+      center: [16.0, 26.0],
+      spanMeters: 780,
+      dem: { grid: [[2, 2], [2, 2]], minElev: 2, maxElev: 2 },
+      waterPolys: [], waterLines: [], greenPolys: [], trees: [], roads: [], bridgePolys: [],
+      buildings: [
+        { id: 601, osmId: 666001, outer: makeRect(0, 0, 1.5, 1.5), holes: [], h: 20, minH: 0, roof: 'flat', tags: { building: 'yes', height: '20' } },
+      ],
+    };
+    const resM = buildComplete3DModel(scManifest, makeState());
+    check(
+      regSpecs.length === 1 &&
+        resM.buildingBounds.some(b => b.id === `landmark:${manifestId}`) &&
+        resM.printMetrics.openEdgesCount === 0 &&
+        resM.printMetrics.nonManifoldEdgesCount === 0,
+      'registerStlLandmarksFromManifest loads JSON + relative .stl and builds watertight solid'
+    );
+  } finally {
+    registry.unregisterHeroLandmark(manifestId);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 7. Wide-Span Landmark Activation (spanMeters: 12000, distance 6.5 km)
+// ---------------------------------------------------------------------------
+console.log('\n[7/7] Wide-Span Landmark Activation (spanMeters: 12000 at 6.5 km)');
+{
+  const centerLat = 52.23;
+  const centerLon = 21.0;
+  const cosLat = Math.cos((centerLat * Math.PI) / 180.0);
+  const offsetM = 4600.0; // hypot(4600, 4600) = 6505 m (~6.5 km)
+  const lmLat = centerLat + offsetM / 111320.0;
+  const lmLon = centerLon + offsetM / (111320.0 * cosLat);
+  const wideId = '__unit_test_wide_span_lm';
+
+  registry.registerHeroLandmark({
+    id: wideId,
+    name: 'Wide Span 6.5km Landmark',
+    lat: lmLat,
+    lon: lmLon,
+    headingDeg: 0,
+    footprintRadiusM: 80,
+    maxHeightM: 50,
+    buildManifold(core, mf, _ctx, anchor) {
+      const ring = [
+        anchor.toBedXY(-20, -20),
+        anchor.toBedXY(20, -20),
+        anchor.toBedXY(20, 20),
+        anchor.toBedXY(-20, 20),
+      ];
+      return core.extrudeRingSolid(mf, ring, [], anchor.toBedZ(0), anchor.toBedZ(50));
+    },
+  });
+
+  try {
+    const wideState = makeState({ targetWidthCm: 28, targetHeightCm: 28, bedSizeMm: 280, totalHeightMm: 280 });
+    const wideSpec = resolveSceneScaleAndSpec(wideState, { spanMeters: 12000 });
+    const mToU = (wideSpec.halfW * 2) / 12000.0;
+    const wideScene = {
+      center: [centerLat, centerLon],
+      spanMeters: 12000,
+      metersToUnits: mToU,
+      dem: { grid: [[2, 2], [2, 2]], minElev: 2, maxElev: 2 },
+      waterPolys: [], waterLines: [], greenPolys: [], trees: [], roads: [], bridgePolys: [], buildings: [],
+    };
+    const widePlan = registry.findActiveLandmarksAndSuppression(
+      wideScene,
+      { halfW: wideSpec.halfW, halfH: wideSpec.halfH, mToU, scaleToBed: 1, zScale: 1, rotDeg: 0, toBed: p => p }
+    );
+    const activeEntry = widePlan.active.find(a => a.spec.id === wideId);
+    const narrowPlan = registry.findActiveLandmarksAndSuppression(
+      { center: [centerLat, centerLon], spanMeters: 2000, buildings: [] },
+      { halfW: wideSpec.halfW, halfH: wideSpec.halfH, mToU: (wideSpec.halfW * 2) / 2000.0, scaleToBed: 1, zScale: 1, rotDeg: 0, toBed: p => p }
+    );
+    const wideRes = buildComplete3DModel(wideScene, wideState);
+    check(
+      Boolean(activeEntry) && activeEntry.baseXf.distM > 6400 && activeEntry.baseXf.distM < 6600,
+      'Landmark at 6.5 km activates cleanly when spanMeters is 12000',
+      `distM=${activeEntry ? activeEntry.baseXf.distM.toFixed(1) : 'none'}`
+    );
+    check(
+      !narrowPlan.active.some(a => a.spec.id === wideId),
+      'Same 6.5 km landmark stays inactive when spanMeters is 2000'
+    );
+    check(
+      wideRes.buildingBounds.some(b => b.id === `landmark:${wideId}`) &&
+        wideRes.printMetrics.openEdgesCount === 0 &&
+        wideRes.printMetrics.nonManifoldEdgesCount === 0,
+      'Wide-span 6.5 km landmark builds into watertight 2-manifold model'
+    );
+  } finally {
+    registry.unregisterHeroLandmark(wideId);
   }
 }
 

@@ -1083,9 +1083,11 @@ def validate_assembly(
         f_orig = fr.get("nominal_origin_mm")
         if not (fid and f_win and f_orig and len(f_win) == 2 and len(f_orig) == 2):
             continue
-        f_tiles = [t for t in tile_entries if t.get("frame_id") == fid and not t.get("skipped_empty_water")]
-        if not f_tiles:
+        f_tiles_all = [t for t in tile_entries if t.get("frame_id") == fid]
+        f_active = [t for t in f_tiles_all if not t.get("skipped_empty_water")]
+        if not f_active:
             continue
+        f_tiles = f_tiles_all if water_cutout else f_active
         fx0 = min(float(t["nominal_rect_mm"]["x_min"]) for t in f_tiles)
         fx1 = max(float(t["nominal_rect_mm"]["x_max"]) for t in f_tiles)
         fy0 = min(float(t["nominal_rect_mm"]["y_min"]) for t in f_tiles)

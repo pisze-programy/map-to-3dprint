@@ -396,13 +396,67 @@ function getEffectiveScaleToBed(meta) {
   return 1.0 / effectiveCrop;
 }
 
+const FRIENDLY_FORMAT_ALIASES = {
+  single: 'single_a4_1x3',
+  landscape: 'single_a4_landscape_3x1',
+  triptych: 'triptych_a4_3x1',
+  quartet: 'quartet_a4_2x2',
+  square: 'square_150_2x2',
+  square240: 'square_240_2x4',
+  '50x70': 'flagship_50x70_3x9',
+  custom: 'custom_grid',
+  'a4-12x17': 'single_a4_1x3',
+};
+
 /**
- * Applies optional framePreset defaults (e.g. 'a4_12x17') without overriding explicit args.
- * @param {object} args
+ * Resolves a friendly format alias or catalog ID into a canonical format_id.
+ * @param {string|null|undefined} rawId
+ * @returns {string}
+ */
+function resolveFriendlyFormatId(rawId) {
+  const clean = String(rawId || '').trim();
+  if (!clean) return '';
+  const low = clean.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(FRIENDLY_FORMAT_ALIASES, low)) {
+    return FRIENDLY_FORMAT_ALIASES[low];
+  }
+  try {
+    const cat = require('../src/geometry/format_catalog.js');
+    if (cat && typeof cat.resolveFormatSpec === 'function') {
+      const spec = cat.resolveFormatSpec(clean) || cat.resolveFormatSpec(low);
+      if (spec && spec.format_id) return spec.format_id;
+    }
+  } catch (_) {}
+  return clean;
+}
+
+/**
+ * Computes Mono 4 safe tile grid using computeOptimalMono4GridForState() for custom dimensions.
+ * @param {number} widthMm
+ * @param {number} heightMm
+ * @param {number} [bedSafeMarginMm=4.0]
+ * @returns {{cols: number, rows: number, tileW: number, tileH: number, rotated90: boolean, totalTiles: number}}
+ */
+function computeAutoMono4Grid(widthMm, heightMm, bedSafeMarginMm = 4.0) {
+  const profiles = require('../src/geometry/print_profiles.js');
+  if (profiles && typeof profiles.computeOptimalMono4GridForState === 'function') {
+    return profiles.computeOptimalMono4GridForState({ bedSafeMarginMm }, widthMm, heightMm);
+  }
+  const cols = Math.max(1, Math.ceil(widthMm / 145.45));
+  const rows = Math.max(1, Math.ceil(heightMm / 79.05));
+  return { cols, rows, tileW: widthMm / cols, tileH: heightMm / rows, rotated90: false, totalTiles: cols * rows };
+}
+
+/**
+ * Applies optional format/framePreset defaults without overriding explicit args,
+ * and auto-tiles custom_grid or custom dimensions when tileCols/tileRows are omitted.
+ * @param {object} [args]
+ * @param {{autoTileCustom?: boolean}} [opts]
  * @returns {object}
  */
-function resolveFramePresetArgs(args = {}) {
-  const fp = String(args.formatId || args.framePreset || '').trim();
+function resolveFramePresetArgs(args = {}, { autoTileCustom = false } = {}) {
+  const rawFp = String(args.formatId || args.framePreset || '').trim();
+  const fp = resolveFriendlyFormatId(rawFp);
   const fpLow = fp.toLowerCase();
   let fmtSpec = null;
   try {
@@ -432,26 +486,71 @@ function resolveFramePresetArgs(args = {}) {
       is_custom: false,
     };
   }
-  if (!fmtSpec || fmtSpec.is_custom) return args;
 
-  const merged = {
-    formatId: fmtSpec.format_id,
-    frameCols: fmtSpec.frame_cols,
-    frameRows: fmtSpec.frame_rows,
-    targetWidthCm: fmtSpec.window_mm[0] / 10,
-    targetHeightCm: fmtSpec.window_mm[1] / 10,
-    tileCols: fmtSpec.tile_cols,
-    tileRows: fmtSpec.tile_rows,
-    solidBaseNoTunnels: Boolean(fmtSpec.solid_base_no_tunnels),
-    baseHeightMm: Number(fmtSpec.base_height_mm ?? 4.0),
-    bedSafeMarginMm: Number(fmtSpec.bed_safe_margin_mm ?? 4.0),
-    interFrameGapMm: Number(fmtSpec.inter_frame_gap_mm ?? 0.0),
-    kerfMm: 0.0,
-    hollowBase: true,
-    showFrame: false,
-  };
-  for (const [k, v] of Object.entries(args)) {
-    if (v !== undefined) merged[k] = v;
+  let merged;
+  if (fmtSpec && !fmtSpec.is_custom) {
+    merged = {
+      formatId: fmtSpec.format_id,
+      frameCols: fmtSpec.frame_cols,
+      frameRows: fmtSpec.frame_rows,
+      targetWidthCm: fmtSpec.window_mm[0] / 10,
+      targetHeightCm: fmtSpec.window_mm[1] / 10,
+      tileCols: fmtSpec.tile_cols,
+      tileRows: fmtSpec.tile_rows,
+      solidBaseNoTunnels: Boolean(fmtSpec.solid_base_no_tunnels),
+      baseHeightMm: Number(fmtSpec.base_height_mm ?? 4.0),
+      bedSafeMarginMm: Number(fmtSpec.bed_safe_margin_mm ?? 4.0),
+      interFrameGapMm: Number(fmtSpec.inter_frame_gap_mm ?? 0.0),
+      kerfMm: 0.0,
+      hollowBase: true,
+      showFrame: false,
+    };
+    for (const [k, v] of Object.entries(args)) {
+      if (v !== undefined) merged[k] = v;
+    }
+    merged.formatId = fmtSpec.format_id;
+    return merged;
+  }
+
+  if (fmtSpec && fmtSpec.is_custom) {
+    merged = {
+      formatId: fmtSpec.format_id,
+      frameCols: fmtSpec.frame_cols,
+      frameRows: fmtSpec.frame_rows,
+      targetWidthCm: fmtSpec.window_mm[0] / 10,
+      targetHeightCm: fmtSpec.window_mm[1] / 10,
+      solidBaseNoTunnels: Boolean(fmtSpec.solid_base_no_tunnels),
+      baseHeightMm: Number(fmtSpec.base_height_mm ?? 2.35),
+      bedSafeMarginMm: Number(fmtSpec.bed_safe_margin_mm ?? 4.0),
+      interFrameGapMm: Number(fmtSpec.inter_frame_gap_mm ?? 0.0),
+      kerfMm: 0.0,
+      showFrame: false,
+    };
+    for (const [k, v] of Object.entries(args)) {
+      if (v !== undefined) merged[k] = v;
+    }
+    merged.formatId = fmtSpec.format_id;
+    if (args.targetWidthCm !== undefined && args.targetHeightCm === undefined) {
+      merged.targetHeightCm = Number(args.targetWidthCm);
+    }
+    if (merged.tileCols === undefined || merged.tileRows === undefined) {
+      const wMm = Number(merged.targetWidthCm ?? 50) * 10;
+      const hMm = Number(merged.targetHeightCm ?? merged.targetWidthCm ?? 50) * 10;
+      const opt = computeAutoMono4Grid(wMm, hMm, Number(merged.bedSafeMarginMm ?? 4.0));
+      if (merged.tileCols === undefined) merged.tileCols = opt.cols;
+      if (merged.tileRows === undefined) merged.tileRows = opt.rows;
+    }
+    return merged;
+  }
+
+  merged = { ...args };
+  const hasCustomDims = args.targetWidthCm !== undefined || args.targetHeightCm !== undefined;
+  if (autoTileCustom && hasCustomDims && (merged.tileCols === undefined || merged.tileRows === undefined)) {
+    const wCm = Number(merged.targetWidthCm ?? 50);
+    const hCm = Number(merged.targetHeightCm ?? wCm);
+    const opt = computeAutoMono4Grid(wCm * 10, hCm * 10, Number(merged.bedSafeMarginMm ?? 4.0));
+    if (merged.tileCols === undefined) merged.tileCols = opt.cols;
+    if (merged.tileRows === undefined) merged.tileRows = opt.rows;
   }
   return merged;
 }
@@ -552,7 +651,7 @@ function measureBinaryStlBytes(bytes) {
  * @returns {Promise<object>}
  */
 async function handleExportMap3DStl(rawArgs = {}, { silent = true } = {}) {
-  const args = resolveFramePresetArgs(rawArgs);
+  const args = resolveFramePresetArgs(rawArgs, { autoTileCustom: true });
   if (!args.outputDir) throw new Error('export_map3d_stl requires outputDir');
   const tStart = Date.now();
   const built = await loadSceneAndBuildModel(buildLoadOptions({
@@ -587,6 +686,22 @@ async function handleExportMap3DStl(rawArgs = {}, { silent = true } = {}) {
           ? (tr === 2 ? 'Top' : (tr === 1 ? 'Middle' : 'Bottom'))
           : `R${northRow}C${tc + 1}`;
       const fileName = `${prefix}_${posLabel}_${tileW}x${tileH}mm.stl`;
+      if (bytes.byteLength <= 84) {
+        manifestRecords.push({ tileId: tid, fileName, bytes, skippedEmptyWater: true });
+        exportedTiles.push({
+          tileId: tid,
+          label: `R${northRow}C${tc + 1}`,
+          position: posLabel,
+          path: null,
+          bytes: bytes.byteLength,
+          skippedEmptyWater: true,
+          triangles: 0,
+          minMm: [0, 0, 0],
+          maxMm: [0, 0, 0],
+          spanMm: [0, 0, 0],
+        });
+        continue;
+      }
       const outPath = path.join(outDir, fileName);
       fs.writeFileSync(outPath, bytes);
       manifestRecords.push({ tileId: tid, fileName, bytes, skippedEmptyWater: false });
@@ -597,6 +712,7 @@ async function handleExportMap3DStl(rawArgs = {}, { silent = true } = {}) {
         position: posLabel,
         path: outPath,
         bytes: bytes.byteLength,
+        skippedEmptyWater: false,
         ...stats,
       });
     }
@@ -731,6 +847,9 @@ async function handleInspectLandmark3D(args = {}, { silent = true } = {}) {
   const mToU = meta.metersToUnits || (169.2 / Math.max(1, meta.spanMeters || 1200));
 
   const queryStr = focus.query ? String(focus.query).trim().toLowerCase() : null;
+  const focusKind = focus.kind
+    ? String(focus.kind).trim().toLowerCase()
+    : (args.kind ? String(args.kind).trim().toLowerCase() : null);
   const focusOsmNum = stripNumericOsmId(focus.osmId);
   const radiusM = Number(focus.radiusM ?? 150);
   const radiusScene = radiusM * mToU * scaleToBed;
@@ -742,22 +861,25 @@ async function handleInspectLandmark3D(args = {}, { silent = true } = {}) {
     [fx, fy] = projectLatLonToBed(Number(focus.lat), Number(focus.lon));
   }
 
-  // Fallback focus resolution via query or osmId (preferring building/landmark ways & rels over transit nodes)
-  if (fx === null && (queryStr || focusOsmNum !== null)) {
+  // Fallback focus resolution via query or osmId (preferring building/landmark/bridge ways & rels)
+  if (fx === null && (queryStr || focusOsmNum !== null || focusKind === 'bridge')) {
     let bestCand = null;
     let bestScore = -1;
     for (const el of (audit.osmElements || [])) {
       if (!el || !el.tags) continue;
+      const isBridgeEl = Boolean(el.tags.bridge || el.tags.man_made === 'bridge');
+      if (focusKind === 'bridge' && !isBridgeEl && focusOsmNum === null) continue;
       const matchId = focusOsmNum !== null && el.id === focusOsmNum;
       const matchQ = queryStr && [
         el.tags.name, el.tags.alt_name, el.tags['addr:housename'],
-        el.tags.historic, el.tags.amenity, el.tags.building,
+        el.tags.historic, el.tags.amenity, el.tags.building, el.tags.bridge,
       ].some(v => v && String(v).toLowerCase().includes(queryStr));
-      if (matchId || matchQ) {
+      if (matchId || matchQ || (focusKind === 'bridge' && !queryStr && focusOsmNum === null && isBridgeEl)) {
         const ll = osmLookup.getElementCentroidLatLon(el);
         if (!ll) continue;
         let score = el.type === 'node' ? 1 : 10;
         if (el.tags.building || el.tags.type === 'building' || el.tags['building:part']) score += 20;
+        if (isBridgeEl) score += (focusKind === 'bridge' ? 30 : 15);
         if (el.tags.historic || el.tags.amenity === 'place_of_worship') score += 5;
         if (matchId) score += 100;
         if (score > bestScore) {
@@ -767,6 +889,17 @@ async function handleInspectLandmark3D(args = {}, { silent = true } = {}) {
       }
     }
     if (bestCand) [fx, fy] = projectLatLonToBed(bestCand[0], bestCand[1]);
+  }
+  const rawBridgeAuditsEarly = (audit.bridgeAudits) ||
+    (audit.ctx && audit.ctx.audit && audit.ctx.audit.bridgeAudits) || [];
+  if (fx === null && rawBridgeAuditsEarly.length > 0 && (focusKind === 'bridge' || queryStr)) {
+    const baMatch = rawBridgeAuditsEarly.find(ba =>
+      !queryStr || String(ba.name || '').toLowerCase().includes(queryStr)
+    );
+    if (baMatch && Array.isArray(baMatch.bbox) && baMatch.bbox.length >= 4) {
+      fx = (baMatch.bbox[0] + baMatch.bbox[2]) * 0.5;
+      fy = (baMatch.bbox[1] + baMatch.bbox[3]) * 0.5;
+    }
   }
   if (fx === null) {
     fx = 0; fy = 0;
@@ -917,6 +1050,119 @@ async function handleInspectLandmark3D(args = {}, { silent = true } = {}) {
     }
   }
 
+  // 4. Match emitted bridgeAudits (enriched with osmId / wayIds from scene & OSM elements)
+  const scaleMm = (Number(state.bedSizeMm) || 120) / (2 * halfW);
+  const rawBridgeAudits = (audit.bridgeAudits) ||
+    (audit.ctx && audit.ctx.audit && audit.ctx.audit.bridgeAudits) || [];
+  const bridgeSources = [];
+  for (const rd of (scene.roads || [])) {
+    if (!rd || !(rd.isBridge || rd.bridge) || !Array.isArray(rd.pts) || rd.pts.length < 2) continue;
+    const bPts = rd.pts.map(ptToBed);
+    const info = computeRingCentroidAndBBox(bPts);
+    if (!info) continue;
+    bridgeSources.push({
+      osmId: stripNumericOsmId(rd.osmId),
+      name: String(rd.name || '').trim().toLowerCase(),
+      bbox: [info.minX, info.minY, info.maxX, info.maxY],
+      extraIds: [stripNumericOsmId(rd._bridgePolyOsmId), ...(Array.isArray(rd._bridgePolyOsmIds) ? rd._bridgePolyOsmIds.map(stripNumericOsmId) : [])].filter(Boolean),
+    });
+  }
+  for (const bp of (scene.bridgePolys || [])) {
+    if (!bp || bp.isPier || !Array.isArray(bp.outer) || bp.outer.length < 3) continue;
+    const bOuter = bp.outer.map(ptToBed);
+    const info = computeRingCentroidAndBBox(bOuter);
+    if (!info) continue;
+    bridgeSources.push({
+      osmId: stripNumericOsmId(bp.osmId),
+      name: String(bp.name || '').trim().toLowerCase(),
+      bbox: [info.minX, info.minY, info.maxX, info.maxY],
+      extraIds: Array.isArray(bp.acrossRoadIds) ? bp.acrossRoadIds.map(stripNumericOsmId).filter(Boolean) : [],
+    });
+  }
+  const osmBridgeElements = [];
+  for (const el of (audit.osmElements || [])) {
+    if (!el || !el.tags) continue;
+    if (!el.tags.bridge && el.tags.man_made !== 'bridge') continue;
+    const ll = osmLookup.getElementCentroidLatLon(el);
+    const sPt = ll ? projectLatLonToBed(ll[0], ll[1]) : null;
+    osmBridgeElements.push({
+      id: el.id,
+      name: String(el.tags.name || '').trim().toLowerCase(),
+      scenePt: sPt,
+    });
+  }
+  const hasOsmBridgeMatch = matchedOsmElements.some(e => e.tags && (e.tags.bridge || e.tags.man_made === 'bridge'));
+  const matchedBridgeAudits = [];
+  for (const ba of rawBridgeAudits) {
+    const bb = Array.isArray(ba.bbox) && ba.bbox.length >= 4 ? ba.bbox : [0, 0, 0, 0];
+    const pad = Math.max(1.5, Number(ba.width) || 1.0);
+    const baNameLow = String(ba.name || '').trim().toLowerCase();
+    const wayIdSet = new Set();
+    const directBaOsmId = stripNumericOsmId(ba.osmId);
+    if (directBaOsmId !== null) wayIdSet.add(directBaOsmId);
+    if (Array.isArray(ba.wayIds)) {
+      for (const wid of ba.wayIds) {
+        const nw = stripNumericOsmId(wid);
+        if (nw !== null) wayIdSet.add(nw);
+      }
+    }
+    for (const src of bridgeSources) {
+      const overlaps = !(src.bbox[2] < bb[0] - pad || src.bbox[0] > bb[2] + pad || src.bbox[3] < bb[1] - pad || src.bbox[1] > bb[3] + pad);
+      if (!overlaps) continue;
+      const nameCompat = !baNameLow || baNameLow === 'most' || !src.name || src.name.includes(baNameLow) || baNameLow.includes(src.name);
+      if (nameCompat) {
+        if (src.osmId !== null) wayIdSet.add(src.osmId);
+        for (const eid of src.extraIds) wayIdSet.add(eid);
+      }
+    }
+    for (const oe of osmBridgeElements) {
+      const inBox = oe.scenePt && oe.scenePt[0] >= bb[0] - pad && oe.scenePt[0] <= bb[2] + pad && oe.scenePt[1] >= bb[1] - pad && oe.scenePt[1] <= bb[3] + pad;
+      const nameCompat = Boolean(baNameLow && baNameLow !== 'most' && oe.name && (oe.name.includes(baNameLow) || baNameLow.includes(oe.name)));
+      if ((inBox && (!baNameLow || baNameLow === 'most' || !oe.name || nameCompat)) || nameCompat) {
+        wayIdSet.add(oe.id);
+      }
+    }
+    const wayIds = Array.from(wayIdSet);
+    const osmId = wayIds.length > 0 ? wayIds[0] : null;
+    const dx = Math.max(bb[0] - fx, 0, fx - bb[2]);
+    const dy = Math.max(bb[1] - fy, 0, fy - bb[3]);
+    const distToFocus = Math.hypot(dx, dy);
+    const matchQ = Boolean(queryStr && (
+      baNameLow.includes(queryStr) ||
+      String(ba.structure || '').toLowerCase().includes(queryStr) ||
+      wayIds.some(id => directQueryOsmIds.has(id))
+    ));
+    const matchId = focusOsmNum !== null && wayIds.includes(focusOsmNum);
+    const matchDist = distToFocus <= radiusScene;
+    const includeBridge = (focusKind === 'bridge')
+      ? ((!queryStr && focusOsmNum === null && !Number.isFinite(focus.lat)) || matchQ || matchId || matchDist)
+      : (matchQ || matchId || (hasOsmBridgeMatch && matchDist));
+
+    if (includeBridge) {
+      matchedBridgeAudits.push({
+        name: ba.name || null,
+        osmId,
+        wayIds,
+        structure: ba.structure || null,
+        bbox: bb.map(v => Math.round(Number(v) * 1000) / 1000),
+        clearance: {
+          midspanClearanceU: ba.midspanClearanceU ?? null,
+          midspanClearanceMm: Number.isFinite(ba.midspanClearanceU)
+            ? Math.round(ba.midspanClearanceU * scaleMm * 1000) / 1000
+            : null,
+          zDeckBot: ba.zDeckBot ?? null,
+          zDeckTop: ba.zDeckTop ?? null,
+          zPylonTop: ba.zPylonTop ?? null,
+          pierMinZ: ba.pierMinZ ?? null,
+        },
+        isThroughArch: Boolean(ba.isThroughArch),
+        isRail: Boolean(ba.isRail),
+        crossesWater: Boolean(ba.crossesWater),
+        width: ba.width ?? null,
+      });
+    }
+  }
+
   // Pick smart Z target from matched buildings
   zTops.sort((a, b) => a - b);
   const medianTop = zTops.length > 0 ? zTops[Math.floor(zTops.length * 0.65)] : 8.0;
@@ -957,8 +1203,9 @@ async function handleInspectLandmark3D(args = {}, { silent = true } = {}) {
   return {
     focus: {
       ...focus,
+      kind: focusKind || focus.kind || null,
       resolvedSceneXY: [Math.round(fx * 1000) / 1000, Math.round(fy * 1000) / 1000],
-      resolvedLatLon: sceneXYToLatLon(fx, fy, meta),
+      resolvedLatLon: (meta && (meta.center || meta.bbox)) ? sceneXYToLatLon(fx, fy, meta) : null,
       radiusScene: Math.round(radiusScene * 100) / 100,
     },
     counts: {
@@ -966,10 +1213,12 @@ async function handleInspectLandmark3D(args = {}, { silent = true } = {}) {
       matchedSceneBuildings: matchedSceneBuildings.length,
       matchedPrepared: matchedPrepared.length,
       emittedBuildingIds: Object.keys(emittedByBuildingId).length,
+      matchedBridgeAudits: matchedBridgeAudits.length,
     },
     matchedOsmElements: matchedOsmElements.slice(0, 60),
     matchedSceneBuildings: matchedSceneBuildings.slice(0, 60),
     matchedPrepared: matchedPrepared.slice(0, 80),
+    bridgeAudits: matchedBridgeAudits.slice(0, 60),
     emittedByBuildingId,
     outputSheetPath: args.outputSheetPath || null,
     sheetElapsedMs: sheetResult ? sheetResult.elapsedMs : 0,
@@ -1539,6 +1788,7 @@ const MCP_TOOLS = [
             radiusM: { type: 'number' },
             query: { type: 'string' },
             osmId: { type: ['string', 'number'] },
+            kind: { type: 'string', description: 'Optional filter kind: building or bridge' },
           },
         },
         outputSheetPath: { type: 'string' },
@@ -1578,17 +1828,26 @@ const MCP_TOOLS = [
   },
   {
     name: 'export_map3d_stl',
-    description: 'Headlessly build a 3D map model and export watertight binary per-tile .stl files (supports a4_12x17 preset and solidBaseNoTunnels rigid base).',
+    description: 'Headlessly build a 3D map model and export watertight binary per-tile .stl files + assembly_manifest.json + VAL-01..14 validation (supports all 8 format catalog IDs, friendly aliases, auto-tiling, and solidBaseNoTunnels).',
     inputSchema: {
       type: 'object',
       properties: {
         snapshotPath: { type: 'string' },
+        saveSnapshotPath: { type: 'string' },
         cachedCity: { type: 'string' },
         scenePath: { type: 'string' },
+        citySlug: { type: 'string' },
         title: { type: 'string' },
         filePrefix: { type: 'string' },
         outputDir: { type: 'string' },
+        formatId: {
+          type: 'string',
+          description: 'Catalog format ID (single_a4_1x3, single_a4_landscape_3x1, triptych_a4_3x1, quartet_a4_2x2, square_150_2x2, square_240_2x4, flagship_50x70_3x9, custom_grid) or friendly alias (single, landscape, triptych, quartet, square, square240, 50x70, custom).',
+        },
         framePreset: { type: 'string' },
+        frameCols: { type: 'number' },
+        frameRows: { type: 'number' },
+        interFrameGapMm: { type: 'number' },
         lat: { type: 'number' },
         lon: { type: 'number' },
         spanMeters: { type: 'number' },
@@ -1607,6 +1866,7 @@ const MCP_TOOLS = [
         zScale: { type: 'number' },
         terrainScale: { type: 'number' },
         cropRatio: { type: 'number' },
+        demMode: { type: 'string', enum: ['flat', 'terrarium'] },
         demCacheDir: { type: 'string' },
         offlineOnly: { type: 'boolean' },
       },
@@ -1849,14 +2109,18 @@ function mapCommonCliFlags(flags) {
 
   return {
     snapshotPath: flags.snapshot,
+    saveSnapshotPath: flags['save-snapshot'],
     cachedCity: flags['cached-city'],
     scenePath: flags.scene,
+    citySlug: flags['city-slug'],
     lat: num('lat'),
     lon: num('lon'),
     spanMeters: num('span'),
     rotationDeg: num('rot'),
     framePreset: flags['frame-preset'],
     formatId: flags['format'] || flags['frame-preset'],
+    frameCols: num('frame-cols'),
+    frameRows: num('frame-rows'),
     interFrameGapMm: num('inter-frame-gap-mm'),
     targetWidthCm: num('width-cm'),
     targetHeightCm: num('height-cm'),
@@ -1894,25 +2158,33 @@ Usage:
 
 Commands:
   render             Render a headless PNG studio preview
-  inspect-landmark   Inspect OSM/S3DB/mesh hierarchy + render 4-angle contact sheet
+  inspect-landmark   Inspect OSM/S3DB/bridge/mesh hierarchy + render 4-angle contact sheet
   audit-scene        Run architectural & GIS fidelity + manifold topology audit
-  export-stl         Export watertight binary per-tile .stl files (supports --frame-preset a4_12x17)
+  export-stl         Export watertight binary per-tile .stl files + VAL-01..14 validation
   mcp                Run MCP JSON-RPC 2.0 server over stdio
   list-cache         List cached scene_v4 / osm JSON files in cache/
 
 Common Scene Options:
   --snapshot <path>       OSM Snapshot JSON ({ bbox?, elements })
+  --save-snapshot <path>  Save live-fetched OSM elements as snapshot JSON
   --cached-city <name>    Cached scene or city name (matches cache/)
   --scene <path>          Prebuilt scene_v4 JSON
+  --city-slug <slug>      Optional canonical city slug for manifest metadata
   --lat <deg> --lon <deg> Center coordinate (optional when snapshot defines bbox)
   --span <meters>         Map span in meters (default: 1200)
   --rot <deg>             Map rotation in degrees (default: 0)
-  --width-cm <cm>         Print bed width in cm (default: 50)
+  --format <id>           Catalog format ID or friendly alias:
+                          single (single_a4_1x3), landscape (single_a4_landscape_3x1),
+                          triptych (triptych_a4_3x1), quartet (quartet_a4_2x2),
+                          square (square_150_2x2), square240 (square_240_2x4),
+                          50x70 (flagship_50x70_3x9), custom (custom_grid)
+  --frame-preset <id>     Legacy alias for --format (supports a4_12x17)
+  --inter-frame-gap-mm <mm> Gap between multi-frame panels in mm (default: 0.0)
+  --width-cm <cm>         Print bed width in cm (auto-tiles for Mono 4 if grid omitted)
   --height-cm <cm>        Print bed height in cm (default: width-cm)
-  --frame-preset <id>     Preset geometry contract (a4_12x17: 12x17 cm, 1x3: 3x 120x56.7 mm, 4.0 mm solid base)
-  --tile-cols <n>         Tile columns (default: 1)
-  --tile-rows <n>         Tile rows (default: 1)
-  --kerf-mm <mm>          Inter-tile kerf in mm (default: 0.08; 0.0 for a4_12x17)
+  --tile-cols <n>         Tile columns (auto-computed via Mono 4 safe grid if omitted)
+  --tile-rows <n>         Tile rows (auto-computed via Mono 4 safe grid if omitted)
+  --kerf-mm <mm>          Inter-tile kerf in mm (default: 0.0)
   --bed-margin-mm <mm>    Mono 4 bed safe margin per side in mm (default: 4.0)
   --solid-base            Rigid solid tunnel-free base (skips grooves and underside ID)
   --base-height-mm <mm>   Physical solid base thickness in mm (default: 2.35; 4.0 for solid-base)
@@ -1925,6 +2197,7 @@ Common Scene Options:
   --no-frame              Disable frame
   --z-scale <mult>        Building Z scale multiplier
   --terrain-scale <mult>  Terrain Z scale multiplier
+  --dem-mode <mode>       flat | terrarium (default: terrarium online, flat offline w/o cache)
   --dem-cache-dir <dir>   Local Terrarium DEM PNG tile cache directory
   --offline               Disallow remote OpenStreetMap/Terrarium network fetches
 
@@ -1946,8 +2219,9 @@ Render Options:
 
 Inspect Landmark Options:
   --focus-lat <deg> --focus-lon <deg> --radius-m <m>
-  --query <text>          Filter OSM names/tags (e.g. "Paulskirche")
+  --query <text>          Filter OSM names/tags/bridges (e.g. "Paulskirche", "Tower Bridge")
   --osm-id <id>           Filter specific OSM way/relation id
+  --kind <building|bridge> Filter landmark kind (bridge reports bridgeAudits + clearance)
   --highlight             Highlight matched building triangles in PNG sheet
   --out <path>            Optional 2x2 contact sheet output PNG path
 
@@ -1956,9 +2230,10 @@ Audit Scene Options:
   --max-examples <n>      Max examples per detector (default: 25)
 
 Export STL Options:
-  --out-dir <dir>         Output directory for per-tile binary .stl files
+  --out-dir <dir>         Output directory for per-tile binary .stl files + assembly_manifest.json
   --prefix <name>         Output filename prefix (default: Map3D)
-  --frame-preset a4_12x17 Shortcut for 12x17 cm, 1x3 (3x 120x56.7 mm), 4.0 mm solid tunnel-free base
+  --format <id>           Any of the 8 catalog format IDs or friendly aliases
+  --frame-preset a4_12x17 Shortcut for single_a4_1x3 (12x17 cm, 1x3, 4.0 mm solid tunnel-free base)
 `.trimStart();
   process.stdout.write(help);
 }
@@ -2029,6 +2304,7 @@ async function runCli() {
         radiusM: num('radius-m') ?? 150,
         query: flags.query,
         osmId: flags['osm-id'],
+        kind: flags.kind,
       },
       highlightMatched: Boolean(flags.highlight),
       width: num('width') ?? 1200,
@@ -2071,6 +2347,8 @@ export {
   handleInspectLandmark3D,
   handleAuditSceneFidelity,
   handleExportMap3DStl,
+  resolveFriendlyFormatId,
+  FRIENDLY_FORMAT_ALIASES,
   MCP_TOOLS,
 };
 

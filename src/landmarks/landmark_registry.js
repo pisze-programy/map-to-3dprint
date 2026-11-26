@@ -100,7 +100,8 @@
     if (!center) return null;
     const [centerLat, centerLon] = center;
     const distM = _approxDistanceMeters(centerLat, centerLon, spec.lat, spec.lon);
-    if (distM > 5000.0) return null;
+    const maxDistM = Math.max(5000.0, ((scene && Number(scene.spanMeters)) || 2000.0) * 1.5);
+    if (distM > maxDistM) return null;
 
     const cosLat = Math.max(0.2, Math.cos((centerLat * Math.PI) / 180.0));
     const dxM = (spec.lon - centerLon) * 111320.0 * cosLat;
@@ -295,6 +296,80 @@
     };
   }
 
+  /**
+   * Collects numeric OSM ids from a single scalar, array, or Set into an output array.
+   * @param {number|string|Array|Set|null|undefined} rawIds
+   * @param {number[]} out
+   */
+  function _collectNumericOsmIds(rawIds, out) {
+    if (rawIds === null || rawIds === undefined) return;
+    if (Array.isArray(rawIds) || rawIds instanceof Set) {
+      for (const item of rawIds) {
+        _collectNumericOsmIds(item, out);
+      }
+      return;
+    }
+    const num = _parseOsmIdNum(rawIds);
+    if (num !== null) out.push(num);
+  }
+
+  /**
+   * Computes centroid [x, y] of a bed-coordinate point, polyline, or polygon ring.
+   * @param {number[]|number[][]|null|undefined} ptsOrRingBed
+   * @returns {[number, number]|null}
+   */
+  function _centroidBed2D(ptsOrRingBed) {
+    if (!Array.isArray(ptsOrRingBed) || ptsOrRingBed.length === 0) return null;
+    if (typeof ptsOrRingBed[0] === 'number' && typeof ptsOrRingBed[1] === 'number') {
+      return Number.isFinite(ptsOrRingBed[0]) && Number.isFinite(ptsOrRingBed[1])
+        ? [ptsOrRingBed[0], ptsOrRingBed[1]]
+        : null;
+    }
+    let sx = 0, sy = 0, cnt = 0;
+    for (let i = 0; i < ptsOrRingBed.length; i++) {
+      const p = ptsOrRingBed[i];
+      if (p && Number.isFinite(p[0]) && Number.isFinite(p[1])) {
+        sx += p[0];
+        sy += p[1];
+        cnt++;
+      }
+    }
+    return cnt > 0 ? [sx / cnt, sy / cnt] : null;
+  }
+
+  /**
+   * Checks whether a bridge or pier is suppressed by active hero landmarks via
+   * OSM id matching or replacePolygonM containment of its bed-space centroid/midpoint.
+   * @param {object|null|undefined} plan
+   * @param {number|string|Array|Set|null|undefined} osmIdsOrSingle
+   * @param {number[]|number[][]|null|undefined} ptsOrRingBed
+   * @returns {boolean}
+   */
+  function isBridgeOrPierSuppressedByLandmarks(plan, osmIdsOrSingle, ptsOrRingBed) {
+    if (!plan) return false;
+    const suppressedIds = plan.suppressedOsmIds;
+    if (suppressedIds && suppressedIds.size > 0 && osmIdsOrSingle !== null && osmIdsOrSingle !== undefined) {
+      const nums = [];
+      _collectNumericOsmIds(osmIdsOrSingle, nums);
+      for (let i = 0; i < nums.length; i++) {
+        if (suppressedIds.has(nums[i])) return true;
+      }
+    }
+    const activeList = Array.isArray(plan.active) ? plan.active : [];
+    if (activeList.length > 0 && ptsOrRingBed) {
+      const centerBed = _centroidBed2D(ptsOrRingBed);
+      if (centerBed) {
+        for (let ci = 0; ci < activeList.length; ci++) {
+          const entry = activeList[ci];
+          if (!entry || !entry.spec || !entry.spec.replacePolygonM || !entry.baseXf) continue;
+          const [locX, locY] = entry.baseXf.bedToLocalM(centerBed[0], centerBed[1]);
+          if (_pointInRing2D(locX, locY, entry.spec.replacePolygonM)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   const exportsObj = {
     registerHeroLandmark,
     unregisterHeroLandmark,
@@ -302,8 +377,16 @@
     matchBuildingForLandmark,
     findActiveLandmarksAndSuppression,
     computeLandmarkAnchor,
+    isBridgeOrPierSuppressedByLandmarks,
   };
   Object.assign(root, exportsObj);
   if (typeof window !== 'undefined') Object.assign(window, exportsObj);
   if (typeof module !== 'undefined' && module.exports) module.exports = exportsObj;
+
+  if (typeof root.registerStlLandmarksFromManifest !== 'function' && typeof require === 'function') {
+    try { Object.assign(root, require('./stl_landmark_loader.js')); } catch (_) {}
+  }
+  if (typeof root.registerStlLandmarksFromManifest === 'function') {
+    try { root.registerStlLandmarksFromManifest(); } catch (_) {}
+  }
 })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : global));

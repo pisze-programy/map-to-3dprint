@@ -17,6 +17,9 @@
       Object.assign(root, require('./bridge_supports_solver.js'));
       Object.assign(root, require('./bridge_superstructure_arch_cable.js'));
     }
+    if (typeof root.isBridgeOrPierSuppressedByLandmarks !== 'function' && typeof require !== 'undefined') {
+      try { Object.assign(root, require('../../landmarks/landmark_registry.js')); } catch (_) {}
+    }
   }
 
   function _normalizeBridgeStructure(rawStruct, tags = {}) {
@@ -52,14 +55,70 @@
     }
   }
 
-  function buildLayer1Bridges(ctx, scene, terrainWater) {
+  /**
+   * Collects unique OSM way/polygon ids associated with a bridge spec.
+   * @param {object} sp
+   * @returns {Array<number|string>}
+   */
+  function _collectBridgeWayIds(sp) {
+    const idSet = new Set();
+    if (sp && sp.osmId !== null && sp.osmId !== undefined) idSet.add(sp.osmId);
+    if (sp && Array.isArray(sp.wayIds)) {
+      for (const wid of sp.wayIds) {
+        if (wid !== null && wid !== undefined) idSet.add(wid);
+      }
+    }
+    if (sp && Array.isArray(sp.linkedPolyOsmIds)) {
+      for (const lid of sp.linkedPolyOsmIds) {
+        if (lid !== null && lid !== undefined) idSet.add(lid);
+      }
+    }
+    if (sp && sp.acrossOsmIdSet) {
+      for (const aid of sp.acrossOsmIdSet) {
+        if (aid !== null && aid !== undefined) idSet.add(aid);
+      }
+    }
+    return Array.from(idSet);
+  }
+
+  /**
+   * Resolves the active landmark suppression plan for bridge/pier filtering.
+   * @param {object} ctx
+   * @param {object} scene
+   * @param {object|null} s3db
+   * @returns {object|null}
+   */
+  function _resolveBridgeLandmarkPlan(ctx, scene, s3db) {
+    let plan = (s3db && s3db.landmarkPlan) || (ctx && ctx._landmarkPlan) || null;
+    if (!plan) {
+      const findFn = typeof root.findActiveLandmarksAndSuppression === 'function'
+        ? root.findActiveLandmarksAndSuppression
+        : (typeof findActiveLandmarksAndSuppression === 'function' ? findActiveLandmarksAndSuppression : null);
+      if (findFn) plan = findFn(scene, ctx);
+    }
+    if (plan && s3db && s3db.suppressedLandmarkOsmIds instanceof Set && plan.suppressedOsmIds instanceof Set) {
+      for (const oid of s3db.suppressedLandmarkOsmIds) plan.suppressedOsmIds.add(oid);
+    }
+    return plan;
+  }
+
+  function buildLayer1Bridges(ctx, scene, terrainWater, s3db = null) {
     _ensureBridgeDeps();
     const mf = ctx.mf;
     const specs = solveBridgeGraph(scene || {}, terrainWater, ctx);
+    const landmarkPlan = _resolveBridgeLandmarkPlan(ctx, scene, s3db);
+    const suppressFn = typeof root.isBridgeOrPierSuppressedByLandmarks === 'function'
+      ? root.isBridgeOrPierSuppressedByLandmarks
+      : (typeof isBridgeOrPierSuppressedByLandmarks === 'function' ? isBridgeOrPierSuppressedByLandmarks : null);
     const bridgeManifolds = [], bridgeAudits = [];
 
     for (const sp of specs) {
       if (sp.bbox[2] < -ctx.halfW || sp.bbox[0] > ctx.halfW || sp.bbox[3] < -ctx.halfH || sp.bbox[1] > ctx.halfH) continue;
+      const wayIds = _collectBridgeWayIds(sp);
+      const ptsForCheck = (sp.pts && sp.pts.length > 0) ? sp.pts : (sp.outer || null);
+      if (suppressFn && landmarkPlan && suppressFn(landmarkPlan, wayIds, ptsForCheck)) {
+        continue;
+      }
       const deck = buildSlopedBridgeDeck(sp, mf);
       if (!deck || deck.numTri() === 0) { if (deck) deck.delete(); continue; }
 
@@ -76,6 +135,8 @@
       const mbb = combined.boundingBox();
       const audit = {
         name: sp.name || 'Most',
+        osmId: sp.osmId ?? null,
+        wayIds,
         structure: sp.structNorm,
         deckLayer: sp.deckLayer,
         isRail: Boolean(sp.isRail),

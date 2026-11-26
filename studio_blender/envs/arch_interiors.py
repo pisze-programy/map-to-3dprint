@@ -206,17 +206,22 @@ def build_gallery_wall_mount_stage(
     wall_mat: Any,
     credenza_mat: Any,
     collection: Any,
+    outer_w_m: float = 0.210,
 ) -> List[Any]:
     """Build clean sunlit plaster gallery wall with side black-steel loft window & brick return."""
     _ = (outer_h_m, credenza_mat)
     objs: List[Any] = []
     wall_thick = 0.08
+    win_x = max(0.295, float(outer_w_m) * 0.5 + 0.09)
+    left_edge = -max(0.290, float(outer_w_m) * 0.5 + 0.09)
+    gal_w = max(0.62, (win_x - left_edge) + 0.04)
+    gal_cx = 0.5 * (left_edge + win_x) - 0.005
 
-    # Clean uninterrupted central gallery plaster wall around the A4 frame (X in [-0.30, +0.295])
+    # Clean uninterrupted central gallery plaster wall around the frame(s)
     objs.append(
         create_mesh_object(
             "Arch_GalleryWall",
-            make_box_bm(0.62, wall_thick, 2.80, (-0.005, wall_y + wall_thick * 0.5, 0.05)),
+            make_box_bm(gal_w, wall_thick, 2.80, (gal_cx, wall_y + wall_thick * 0.5, 0.05)),
             collection,
             wall_mat,
         )
@@ -224,17 +229,17 @@ def build_gallery_wall_mount_stage(
 
     # Far-left warm exposed loft brick architectural pier softly grazing left bokeh edge
     brick_mat = _make_loft_brick_material("Arch_GalleryLoftBrick")
+    pier_w = 1.10
     left_pier = create_mesh_object(
         "Arch_GalleryLoftBrickPier",
-        make_box_bm(1.10, 0.14, 2.80, (-0.84, wall_y + 0.01, 0.05)),
+        make_box_bm(pier_w, 0.14, 2.80, (left_edge - pier_w * 0.5, wall_y + 0.01, 0.05)),
         collection,
         brick_mat,
     )
     add_bevel(left_pier, width=0.003, segments=2)
     objs.append(left_pier)
 
-    # Right-side deep loft brick reveal + black steel-framed industrial loft window bay (X = +0.295 m)
-    win_x = 0.295
+    # Right-side deep loft brick reveal + black steel-framed industrial loft window bay
     reveal = create_mesh_object(
         "Arch_LoftRightBrickReveal",
         make_box_bm(0.12, 0.22, 2.80, (win_x + 0.06, wall_y - 0.03, 0.05)),

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 try:
     import bpy
@@ -51,6 +51,92 @@ def apply_qa_alternating_tile_tints(tile_objects: List[Any]) -> None:
             obj.data.materials[0] = mat
 
 
+def suppress_qa_obstructions() -> Dict[str, Tuple[bool, bool]]:
+    """Hide all non-CityTile_ meshes (frames, backing slab, studio floor/props) during QA shots."""
+    saved: Dict[str, Tuple[bool, bool]] = {}
+    for obj in bpy.data.objects:
+        if obj.type == "MESH" and not obj.name.startswith("CityTile_"):
+            saved[obj.name] = (bool(obj.hide_render), bool(obj.hide_viewport))
+            obj.hide_render = True
+            obj.hide_viewport = True
+    return saved
+
+
+def restore_qa_visibility(hidden_state: Optional[Dict[str, Tuple[bool, bool]]]) -> None:
+    """Restore pre-QA hide_render/hide_viewport flags for all hidden non-CityTile_ meshes."""
+    if not hidden_state:
+        return
+    for name, (hr, hv) in hidden_state.items():
+        obj = bpy.data.objects.get(name)
+        if obj is not None:
+            obj.hide_render = hr
+            obj.hide_viewport = hv
+
+
+def capture_qa_scene_state(scene: Any, tile_objects: Sequence[Any]) -> Dict[str, Any]:
+    """Snapshot light energies, world, tile materials, and camera settings before a QA shot."""
+    light_energies = {
+        obj.name: float(obj.data.energy)
+        for obj in bpy.data.objects
+        if obj.type == "LIGHT" and obj.data is not None
+    }
+    tile_mats = {
+        obj.name: list(obj.data.materials)
+        for obj in tile_objects
+        if getattr(obj, "data", None) is not None
+    }
+    cam = getattr(scene, "camera", None)
+    cam_state = None
+    if cam is not None and cam.type == "CAMERA":
+        cam_state = (cam.name, cam.data.type, bool(cam.data.dof.use_dof))
+    return {
+        "orig_world": scene.world,
+        "light_energies": light_energies,
+        "tile_mats": tile_mats,
+        "cam_state": cam_state,
+    }
+
+
+def restore_qa_scene_state(
+    scene: Any,
+    state: Optional[Dict[str, Any]],
+    hidden_state: Optional[Dict[str, Tuple[bool, bool]]] = None,
+    qa_created_objs: Sequence[Any] = (),
+) -> None:
+    """Restore studio visibility, lighting, world, tile materials, and camera after a QA shot."""
+    restore_qa_visibility(hidden_state)
+    for qobj in qa_created_objs:
+        try:
+            bpy.data.objects.remove(qobj, do_unlink=True)
+        except Exception:
+            pass
+    if not state:
+        return
+    qa_world = scene.world
+    orig_world = state.get("orig_world")
+    if orig_world is not None and qa_world is not orig_world:
+        scene.world = orig_world
+        if qa_world is not None and qa_world.users == 0 and qa_world.name.startswith("QAWorld"):
+            bpy.data.worlds.remove(qa_world)
+    for name, energy in state.get("light_energies", {}).items():
+        obj = bpy.data.objects.get(name)
+        if obj is not None and obj.type == "LIGHT" and obj.data is not None:
+            obj.data.energy = energy
+    for name, mats in state.get("tile_mats", {}).items():
+        obj = bpy.data.objects.get(name)
+        if obj is not None and getattr(obj, "data", None) is not None:
+            obj.data.materials.clear()
+            for mat in mats:
+                obj.data.materials.append(mat)
+    cam_state = state.get("cam_state")
+    if cam_state is not None:
+        cname, ctype, use_dof = cam_state
+        cam = bpy.data.objects.get(cname)
+        if cam is not None and cam.type == "CAMERA":
+            cam.data.type = ctype
+            cam.data.dof.use_dof = use_dof
+
+
 def configure_qa_lighting(scene: Any, preset_name: str, analysis: Dict[str, Any]) -> List[Any]:
     """Replace lights with a deterministic low-angle raking Sun rig exposing seam/chamfer truth."""
     created: List[Any] = []
@@ -59,11 +145,11 @@ def configure_qa_lighting(scene: Any, preset_name: str, analysis: Dict[str, Any]
         if obj.type == "LIGHT":
             obj.data.energy = 0.0
 
-    # Neutral sky ambient so shadowed sides stay legible without hiding steps
-    if scene.world is None:
-        scene.world = bpy.data.worlds.new("QAWorld")
-    scene.world.use_nodes = True
-    wnt = scene.world.node_tree
+    # Dedicated temporary QAWorld so existing studio HDRI world is preserved for mixed preset runs
+    qa_world = bpy.data.worlds.new(f"QAWorld_{preset_name}")
+    qa_world.use_nodes = True
+    scene.world = qa_world
+    wnt = qa_world.node_tree
     wnt.nodes.clear()
     wout = wnt.nodes.new("ShaderNodeOutputWorld")
     wbg = wnt.nodes.new("ShaderNodeBackground")
@@ -130,12 +216,8 @@ def setup_qa_camera(
     fh = max(0.04, float(load_result.get("total_height_m", 0.17)))
     max_z = max(0.008, float(load_result.get("max_z_m", 0.02)))
 
-    # Hide matte black paper backing / studio floor during qa_underside so underside grooves are unobstructed
-    if preset_name == "qa_underside":
-        for obj in bpy.data.objects:
-            if obj.type == "MESH" and not obj.name.startswith("CityTile_"):
-                obj.hide_render = True
-                obj.hide_viewport = True
+    # Hide frames, backing slab, and studio floor/props during all QA truth shots
+    hidden_state = suppress_qa_obstructions()
 
     if preset_name == "qa_seam_raking":
         # Aim across seam & relief with full vertical spire headroom (no summit clipping)
@@ -174,4 +256,5 @@ def setup_qa_camera(
     return {
         "preset": preset_name,
         "pose": {"eye": eye, "target": target, "lens_mm": lens_mm, "fstop": fstop},
+        "hidden_visibility": hidden_state,
     }

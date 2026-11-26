@@ -26,6 +26,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from studio_blender.studio_presets import (
     ALL_ENV_CHOICES,
+    ALL_FRAME_CHOICES,
     ENVIRONMENTS,
     ENV_ALIASES,
     FRAME_STYLES,
@@ -154,7 +155,7 @@ def run_studio_render(
     stl_paths: Optional[Sequence[str]] = None,
     out_dir: str = "./studio_renders",
     env: str = "01_architect_window_desk",
-    frame: str = "single_13x18",
+    frame: Optional[str] = None,
     mount: str = "auto",
     mode: str = "stills",
     presets: Optional[Sequence[str]] = None,
@@ -184,6 +185,8 @@ def run_studio_render(
     verbose: bool = False,
     assembly_manifest: Optional[str] = None,
     draft_unvalidated: bool = False,
+    fstop: Optional[float] = None,
+    focus_xy: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Programmatic entry point used by both CLI and MCP server."""
     from studio_blender.stl_loader import apply_draft_prefix, validate_render_source
@@ -193,6 +196,7 @@ def run_studio_render(
         if not os.path.isfile(p):
             raise FileNotFoundError(f"STL file not found: {p}")
 
+    eff_frame = frame if frame is not None else ("auto" if assembly_manifest else "single_13x18")
     canonical_env = resolve_env_name(env)
     blender = find_blender_binary(blender_bin)
     out_path = Path(out_dir).resolve()
@@ -210,7 +214,7 @@ def run_studio_render(
     for p in (stl_paths or []):
         cmd.extend(["--stl", str(Path(p).resolve())])
     cmd.extend([
-        "--env", canonical_env, "--frame", frame, "--mount", mount, "--mode", mode,
+        "--env", canonical_env, "--frame", eff_frame, "--mount", mount, "--mode", mode,
         "--frame-width-mm", str(float(frame_width_mm)),
         "--frame-height-mm", str(float(frame_height_mm)),
         "--backing-finish", backing_finish,
@@ -228,6 +232,11 @@ def run_studio_render(
         cmd.extend(["--resolution", resolution])
     if samples is not None:
         cmd.extend(["--samples", str(int(samples))])
+    if fstop is not None:
+        cmd.extend(["--fstop", str(float(fstop))])
+    if focus_xy is not None:
+        focus_arg = f"{focus_xy[0]},{focus_xy[1]}" if isinstance(focus_xy, (tuple, list)) and len(focus_xy) == 2 else str(focus_xy)
+        cmd.extend(["--focus-xy", focus_arg])
     if fps:
         cmd.extend(["--fps", str(int(fps))])
     if frame_mm:
@@ -310,16 +319,15 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     p.add_argument("--manifest", default=None, help="Path to validated assembly_manifest.json")
     p.add_argument("--draft-unvalidated", action="store_true", default=False, help="Allow unvalidated renders with DRAFT_UNVALIDATED_ prefix")
     p.add_argument("--env", default="01_architect_window_desk", choices=ALL_ENV_CHOICES, help="3D studio environment")
-    p.add_argument(
-        "--frame", default="single_13x18",
-        choices=("single_13x18", "a4_passepartout", "none", "single_thin", "single_thick", "cube_cover", "cube_plinth", "triptych_3x1", "quartet_2x2"),
-    )
+    p.add_argument("--frame", default=None, choices=ALL_FRAME_CHOICES)
     p.add_argument("--mount", default="auto", choices=("auto", "desk_flat", "wall_mount"))
     p.add_argument("--mode", default="stills", choices=("stills", "keyframes", "video"))
     p.add_argument("--preset", action="append", default=None, help="Still preset(s) or 'all'")
     p.add_argument("--aspect", default=None, choices=("9:16", "4:5", "1:1", "16:9"))
     p.add_argument("--resolution", default=None, help="Explicit WxH override (e.g. 540x960, 1080x1920)")
     p.add_argument("--samples", type=int, default=None)
+    p.add_argument("--fstop", type=float, default=None, help="Optional aperture f-stop override (e.g. 56.0 or 2.8)")
+    p.add_argument("--focus-xy", default=None, help="Optional focus target XY in mm as 'x_mm,y_mm'")
     p.add_argument("--fps", type=int, default=24)
     p.add_argument("--frame-mm", default=None, help="Override nominal inner frame opening in mm")
     p.add_argument("--frame-width-mm", type=float, default=4.0, help="Matte-black frame rim width in mm (default 4.0)")
@@ -374,6 +382,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             video_name=args.video_name, shots=args.shots, blender_bin=args.blender_bin,
             keep_frames=args.keep_frames, verbose=args.verbose,
             assembly_manifest=args.manifest, draft_unvalidated=bool(args.draft_unvalidated),
+            fstop=args.fstop, focus_xy=args.focus_xy,
         )
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -386,6 +395,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"  Env: {manifest.get('env')} | Backend: {manifest.get('cycles', {}).get('backend')}")
         for st in manifest.get("stills", []):
             print(f"  [PNG] {st.get('path')} ({st.get('elapsed_sec')}s)")
+        if manifest.get("detail_grid_3x3_path"):
+            print(f"  [3X3 GRID] {manifest['detail_grid_3x3_path']}")
         if manifest.get("storyboard_path"):
             print(f"  [STORYBOARD] {manifest['storyboard_path']}")
         if manifest.get("flow_prompts_path"):

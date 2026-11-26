@@ -163,6 +163,8 @@ def build_product_assembly(
     centers_xy: List[Tuple[float, float]] = load_result["frame_centers_xy"]
     tile_w = load_result["tile_width_m"]
     tile_h = load_result["tile_height_m"]
+    total_w = float(load_result.get("total_width_m", tile_w))
+    total_h = float(load_result.get("total_height_m", tile_h))
     max_z = load_result["max_z_m"]
 
     n_frames = len(centers_xy)
@@ -183,8 +185,10 @@ def build_product_assembly(
 
         col = get_or_create_collection("StudioFrame")
         slab_margin, slab_thick, slab_top = -0.0008, 0.0030, -0.00015
-        slab_w = max(0.01, tile_w + 2.0 * slab_margin)
-        slab_h = max(0.01, tile_h + 2.0 * slab_margin)
+        slab_w = max(0.01, total_w + 2.0 * slab_margin)
+        slab_h = max(0.01, total_h + 2.0 * slab_margin)
+        slab_cx = 0.5 * (min(c[0] for c in centers_xy) + max(c[0] for c in centers_xy))
+        slab_cy = 0.5 * (min(c[1] for c in centers_xy) + max(c[1] for c in centers_xy))
         mat_back = (
             _mats.make_backing_material(backing_finish)
             if hasattr(_mats, "make_backing_material")
@@ -192,7 +196,7 @@ def build_product_assembly(
         )
         slab = create_mesh_object(
             "FramelessBackingSlab",
-            make_box_bm(slab_w, slab_h, slab_thick, (0.0, 0.0, slab_top - 0.5 * slab_thick)),
+            make_box_bm(slab_w, slab_h, slab_thick, (slab_cx, slab_cy, slab_top - 0.5 * slab_thick)),
             col,
             material=mat_back,
             smooth=False,
@@ -209,9 +213,13 @@ def build_product_assembly(
         if frame_specs and frame_style != "none":
             for idx, fs in enumerate(frame_specs):
                 plate_text = title if (show_nameplate and idx == mid_idx) else None
-                per_style = fs.get("format_id") or frame_style
+                per_style = (fs.get("format_id") or frame_style) if frame_style in ("auto", "single_13x18") else frame_style
                 if per_style == "custom_grid":
-                    per_style = "a4_passepartout" if (abs(fs["opening_w_m"] - 0.120) < 0.005 and abs(fs["opening_h_m"] - 0.170) < 0.005) else frame_style
+                    is_a4_open = (
+                        (abs(fs["opening_w_m"] - 0.120) < 0.005 and abs(fs["opening_h_m"] - 0.170) < 0.005)
+                        or (abs(fs["opening_w_m"] - 0.170) < 0.005 and abs(fs["opening_h_m"] - 0.120) < 0.005)
+                    )
+                    per_style = "a4_passepartout" if is_a4_open else "single_thick"
                 raw_kwargs: Dict[str, Any] = {
                     "width_m": fs["opening_w_m"],
                     "height_m": fs["opening_h_m"],
@@ -337,32 +345,72 @@ def render_stills_mode(
     mount: str = "desk_flat",
     load_result: Optional[Dict[str, Any]] = None,
     draft_unvalidated: bool = False,
+    fstop: Optional[float] = None,
+    focus_xy: Optional[Tuple[float, float]] = None,
+    result_meta: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
-    """Render one or more still camera presets to PNG files."""
+    """Render one or more still camera presets (expanding detail_grid_3x3 and restoring QA state)."""
+    from studio_blender import camera_detail
+
+    has_grid_3x3 = bool(presets_arg and "detail_grid_3x3" in presets_arg)
     if not presets_arg:
         presets = [get_default_still_preset(env_name, mount=mount)]
     elif "all" in presets_arg:
         presets = [p for p in camera_rig.STILL_PRESETS if (mount == "wall_mount" or p != "hero_wall")]
     else:
-        presets = list(presets_arg)
+        presets = []
+        for p in presets_arg:
+            items = camera_detail.DETAIL_GRID_PRESETS if p == "detail_grid_3x3" else (p,)
+            for item in items:
+                if item not in presets:
+                    presets.append(item)
 
     rendered: List[Dict[str, Any]] = []
+    grid_paths: Dict[str, str] = {}
     city_slug = city_title.lower().replace(" ", "_")
-    draft_prefix = "DRAFT_UNVALIDATED_" if draft_unvalidated else ""
     for preset in presets:
         t_shot = time.time()
+        if filename_override and len(presets) == 1:
+            base_fn = filename_override if filename_override.lower().endswith(".png") else f"{filename_override}.png"
+            fname = stl_loader.apply_draft_prefix(base_fn, draft_unvalidated)
+        else:
+            fname = stl_loader.apply_draft_prefix(f"{city_slug}_{env_name}_{preset}.png", draft_unvalidated)
+        out_path = out_dir / fname
+
         if preset.startswith("qa_"):
             from studio_blender import camera_qa
 
-            if load_result and load_result.get("objects"):
-                camera_qa.apply_qa_alternating_tile_tints(load_result["objects"])
-            camera_qa.configure_qa_lighting(scene, preset, analysis)
-            cam_info = camera_qa.setup_qa_camera(
-                scene=scene,
-                preset_name=preset,
-                load_result=load_result or {"total_width_m": model_bounds.get("frame_width_m", 0.12), "total_height_m": model_bounds.get("frame_height_m", 0.17), "max_z_m": analysis.get("max_z", 0.02)},
-                aspect=aspect_ratio,
+            tile_objs = (load_result or {}).get("objects") or []
+            qa_scene_state = camera_qa.capture_qa_scene_state(scene, tile_objs)
+            qa_created: List[Any] = []
+            hidden_vis: Optional[Dict[str, Tuple[bool, bool]]] = None
+            try:
+                if tile_objs:
+                    camera_qa.apply_qa_alternating_tile_tints(tile_objs)
+                qa_created = camera_qa.configure_qa_lighting(scene, preset, analysis)
+                cam_info = camera_qa.setup_qa_camera(
+                    scene=scene,
+                    preset_name=preset,
+                    load_result=load_result or {"total_width_m": model_bounds.get("frame_width_m", 0.12), "total_height_m": model_bounds.get("frame_height_m", 0.17), "max_z_m": analysis.get("max_z", 0.02)},
+                    aspect=aspect_ratio,
+                )
+                hidden_vis = cam_info.get("hidden_visibility")
+                scene.render.filepath = str(out_path)
+                bpy.ops.render.render(write_still=True)
+            finally:
+                camera_qa.restore_qa_scene_state(scene, qa_scene_state, hidden_state=hidden_vis, qa_created_objs=qa_created)
+        elif preset.startswith("detail_"):
+            cam_obj, focus_obj = camera_rig.ensure_studio_camera(scene)
+            pose = camera_detail.compute_detail_still_pose(
+                preset, analysis, model_bounds, aspect=aspect_ratio, fstop=fstop, focus_xy=focus_xy,
             )
+            camera_rig.apply_camera_pose(
+                cam_obj, focus_obj, pose["eye"], pose["target"], pose["focus_point"],
+                pose["lens_mm"], pose["fstop"], pose["shift_x"], pose["shift_y"], frame=None,
+            )
+            cam_info = {"camera": cam_obj, "focus_empty": focus_obj, "pose": pose}
+            scene.render.filepath = str(out_path)
+            bpy.ops.render.render(write_still=True)
         else:
             cam_info = camera_rig.setup_still_camera(
                 scene=scene,
@@ -373,20 +421,31 @@ def render_stills_mode(
                 aspect=aspect_ratio,
                 mount=mount,
             )
-        if filename_override and len(presets) == 1:
-            base_fn = filename_override if filename_override.lower().endswith(".png") else f"{filename_override}.png"
-            fname = stl_loader.apply_draft_prefix(base_fn, draft_unvalidated)
-        else:
-            fname = stl_loader.apply_draft_prefix(f"{city_slug}_{env_name}_{preset}.png", draft_unvalidated)
-        out_path = out_dir / fname
-        scene.render.filepath = str(out_path)
-        bpy.ops.render.render(write_still=True)
+            if fstop is not None:
+                cam_info["camera"].data.dof.aperture_fstop = float(fstop)
+                cam_info["pose"]["fstop"] = float(fstop)
+            scene.render.filepath = str(out_path)
+            bpy.ops.render.render(write_still=True)
+
+        if preset in camera_detail.DETAIL_GRID_PRESETS:
+            grid_paths[preset] = str(out_path)
         rendered.append({
             "preset": preset, "mount": mount, "path": str(out_path),
             "elapsed_sec": round(time.time() - t_shot, 2),
             "lens_mm": cam_info["pose"]["lens_mm"], "fstop": cam_info["pose"]["fstop"],
             "draft_unvalidated": draft_unvalidated,
         })
+
+    if has_grid_3x3 and all(p in grid_paths for p in camera_detail.DETAIL_GRID_PRESETS):
+        mosaic_name = stl_loader.apply_draft_prefix("details_3x3_grid.png", draft_unvalidated)
+        mosaic_path = camera_detail.stitch_detail_grid_3x3(
+            [grid_paths[p] for p in camera_detail.DETAIL_GRID_PRESETS],
+            out_dir / mosaic_name,
+            gutter_px=6,
+            add_labels=True,
+        )
+        if result_meta is not None:
+            result_meta["detail_grid_3x3_path"] = mosaic_path
     return rendered
 
 

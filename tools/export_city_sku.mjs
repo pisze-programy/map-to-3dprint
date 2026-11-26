@@ -15,7 +15,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handleExportMap3DStl } from './mcp_map3d_inspector.mjs';
+import { createRequire } from 'node:module';
+import { handleExportMap3DStl, resolveFriendlyFormatId } from './mcp_map3d_inspector.mjs';
+
+const require = createRequire(import.meta.url);
+const formatCatalogMod = require('../src/geometry/format_catalog.js');
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(__filename), '..');
@@ -32,7 +36,7 @@ export function loadCityCatalog() {
 /**
  * Parses CLI flags into a normalized options object.
  * @param {Array<string>} argv
- * @returns {{city: string|null, allTop10: boolean, coupon: boolean, format: string|null, outDir: string|null, snapshot: string|null, snapshotDir: string|null, demCacheDir: string|null, offline: boolean, quiet: boolean}}
+ * @returns {{city: string|null, allTop10: boolean, coupon: boolean, format: string|null, span: number|undefined, outDir: string|null, snapshot: string|null, snapshotDir: string|null, demCacheDir: string|null, offline: boolean, quiet: boolean}}
  */
 function parseArgs(argv) {
   const opts = {
@@ -40,6 +44,7 @@ function parseArgs(argv) {
     allTop10: false,
     coupon: false,
     format: null,
+    span: undefined,
     outDir: null,
     snapshot: null,
     snapshotDir: null,
@@ -53,6 +58,7 @@ function parseArgs(argv) {
     else if (a === '--all-top10') opts.allTop10 = true;
     else if (a === '--coupon') opts.coupon = true;
     else if (a === '--format' && argv[i + 1]) opts.format = argv[++i];
+    else if (a === '--span' && argv[i + 1]) opts.span = Number(argv[++i]);
     else if (a === '--out-dir' && argv[i + 1]) opts.outDir = argv[++i];
     else if (a === '--snapshot' && argv[i + 1]) opts.snapshot = argv[++i];
     else if (a === '--snapshot-dir' && argv[i + 1]) opts.snapshotDir = argv[++i];
@@ -95,6 +101,50 @@ function resolveSnapshotPath(slug, explicitSnapshot, snapshotDir) {
 }
 
 /**
+ * Computes effective output directory and scaled span_m when --format overrides entry.format_id.
+ * @param {object} entry
+ * @param {string|null|undefined} requestedFormat
+ * @param {number|undefined} explicitSpanM
+ * @param {string|null|undefined} explicitOutDir
+ * @returns {{formatId: string, formatOverridden: boolean, outDir: string, spanMeters: number}}
+ */
+export function resolveCityFormatOverrides(entry, requestedFormat, explicitSpanM, explicitOutDir) {
+  const defaultFormatId = resolveFriendlyFormatId(entry.format_id || 'single_a4_1x3') || 'single_a4_1x3';
+  const formatId = requestedFormat
+    ? (resolveFriendlyFormatId(requestedFormat) || requestedFormat)
+    : defaultFormatId;
+  const formatOverridden = Boolean(requestedFormat && formatId !== defaultFormatId);
+  const outDir = explicitOutDir
+    ? path.resolve(explicitOutDir)
+    : (formatOverridden
+        ? path.join(ROOT, 'exports', `${entry.city_slug}_${formatId}`)
+        : path.join(ROOT, entry.output_dir));
+
+  let spanMeters = Number(entry.span_m);
+  if (Number.isFinite(explicitSpanM) && explicitSpanM > 0) {
+    spanMeters = Number(explicitSpanM);
+  } else if (formatOverridden) {
+    const fmtSpec = formatCatalogMod && typeof formatCatalogMod.resolveFormatSpec === 'function'
+      ? formatCatalogMod.resolveFormatSpec(formatId)
+      : null;
+    const entryFmtSpec = formatCatalogMod && typeof formatCatalogMod.resolveFormatSpec === 'function'
+      ? formatCatalogMod.resolveFormatSpec(defaultFormatId)
+      : null;
+    const isEntryA4 = Boolean(
+      (entryFmtSpec && Math.max(Number(entryFmtSpec.window_mm[0]), Number(entryFmtSpec.window_mm[1])) === 170) ||
+      defaultFormatId.includes('a4')
+    );
+    if (isEntryA4 && fmtSpec && Array.isArray(fmtSpec.window_mm) && fmtSpec.window_mm.length >= 2) {
+      const fmtMaxMm = Math.max(Number(fmtSpec.window_mm[0]), Number(fmtSpec.window_mm[1]));
+      if (Number.isFinite(fmtMaxMm) && fmtMaxMm > 0) {
+        spanMeters = entry.span_m * (fmtMaxMm / 170.0);
+      }
+    }
+  }
+  return { formatId, formatOverridden, outDir, spanMeters };
+}
+
+/**
  * Exports and validates a single catalog city SKU. Throws on any VAL-01..14 failure.
  * @param {string} citySlug
  * @param {object} [overrides]
@@ -110,10 +160,12 @@ export async function exportCitySku(citySlug, overrides = {}) {
   const demCacheDir = overrides.demCacheDir
     ? path.resolve(overrides.demCacheDir)
     : path.join(ROOT, catalog.dem_cache_dir || 'cache/dem_terrarium');
-  const formatId = overrides.formatId || entry.format_id || 'single_a4_1x3';
-  const outDir = overrides.outputDir
-    ? path.resolve(overrides.outputDir)
-    : path.join(ROOT, entry.output_dir);
+  const { formatId, outDir, spanMeters } = resolveCityFormatOverrides(
+    entry,
+    overrides.formatId,
+    overrides.spanMeters,
+    overrides.outputDir
+  );
   const snapshotPath = resolveSnapshotPath(citySlug, overrides.snapshotPath || null, overrides.snapshotDir || null);
 
   const exportArgs = {
@@ -121,7 +173,7 @@ export async function exportCitySku(citySlug, overrides = {}) {
     formatId,
     lat: entry.lat,
     lon: entry.lon,
-    spanMeters: entry.span_m,
+    spanMeters,
     rotationDeg: entry.rotation_deg,
     zScale: entry.z_scale,
     terrainScale: entry.terrain_scale,
@@ -192,7 +244,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.city && !opts.allTop10 && !opts.coupon) {
     process.stderr.write(
-      'Usage: node tools/export_city_sku.mjs --city <slug> | --all-top10 | --coupon [--format <id>] [--snapshot <file>] [--offline]\n'
+      'Usage: node tools/export_city_sku.mjs --city <slug> | --all-top10 | --coupon [--format <id>] [--span <m>] [--out-dir <dir>] [--snapshot <file>] [--offline]\n'
     );
     process.exit(2);
   }
@@ -204,6 +256,7 @@ async function main() {
       if (!opts.quiet) process.stderr.write(`\n[export_city_sku] Exporting ${slug}...\n`);
       const res = await exportCitySku(slug, {
         formatId: opts.format,
+        spanMeters: opts.span,
         snapshotDir: opts.snapshotDir,
         demCacheDir: opts.demCacheDir,
         offlineOnly: opts.offline,
@@ -215,6 +268,7 @@ async function main() {
   if (opts.city) {
     const res = await exportCitySku(opts.city, {
       formatId: opts.format,
+      spanMeters: opts.span,
       outputDir: opts.outDir,
       snapshotPath: opts.snapshot,
       snapshotDir: opts.snapshotDir,

@@ -21,10 +21,15 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 function _discoverLandmarkScripts() {
   const dir = path.join(REPO_ROOT, 'src/landmarks');
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir)
+  const scripts = [];
+  if (fs.existsSync(path.join(dir, 'stl_landmark_loader.js'))) {
+    scripts.push('src/landmarks/stl_landmark_loader.js');
+  }
+  const landmarkFiles = fs.readdirSync(dir)
     .filter(f => f.startsWith('landmark_') && f !== 'landmark_registry.js' && f.endsWith('.js'))
     .sort()
     .map(f => `src/landmarks/${f}`);
+  return scripts.concat(landmarkFiles);
 }
 
 const PIPELINE_SCRIPTS = [
@@ -1930,37 +1935,80 @@ function deepCloneScene(sc) {
   return JSON.parse(JSON.stringify(sc));
 }
 
+const HARNESS_FORMAT_ALIASES = {
+  single: 'single_a4_1x3',
+  landscape: 'single_a4_landscape_3x1',
+  triptych: 'triptych_a4_3x1',
+  quartet: 'quartet_a4_2x2',
+  square: 'square_150_2x2',
+  square240: 'square_240_2x4',
+  '50x70': 'flagship_50x70_3x9',
+  custom: 'custom_grid',
+  'a4-12x17': 'single_a4_1x3',
+};
+
 /**
- * Applies optional preset defaults (e.g. 'a4_12x17' / 'mono4_a4_passepartout_12x17_1x3')
+ * Applies optional format/preset defaults across all 8 catalog format IDs and aliases
  * without overriding explicitly supplied caller options.
- * @param {object} opts
+ * @param {object} [opts]
  * @returns {object}
  */
 function resolvePresetOptions(opts = {}) {
-  const fp = String(opts.framePreset || opts.presetFrame || '').trim().toLowerCase();
-  if (
-    fp !== 'a4_12x17' &&
-    fp !== 'a4-12x17' &&
-    fp !== 'mono4_a4_passepartout_12x17_1x3' &&
-    fp !== 'mono4_a4_passepartout_12x17_2x1'
-  ) {
-    return opts;
+  const rawFp = String(opts.formatId || opts.framePreset || opts.presetFrame || '').trim();
+  if (!rawFp) return opts;
+  const low = rawFp.toLowerCase();
+  const mapped = HARNESS_FORMAT_ALIASES[low] || rawFp;
+
+  let fmtSpec = null;
+  try {
+    const cat = require('../src/geometry/format_catalog.js');
+    if (cat && typeof cat.resolveFormatSpec === 'function') {
+      fmtSpec = cat.resolveFormatSpec(mapped) || cat.resolveFormatSpec(mapped.toLowerCase());
+    }
+  } catch (_) {}
+
+  if (!fmtSpec && (
+    low === 'a4_12x17' ||
+    low === 'a4-12x17' ||
+    low === 'mono4_a4_passepartout_12x17_1x3' ||
+    low === 'mono4_a4_passepartout_12x17_2x1'
+  )) {
+    fmtSpec = {
+      format_id: 'single_a4_1x3',
+      window_mm: [120.0, 170.0],
+      frame_cols: 1,
+      frame_rows: 1,
+      tile_cols: 1,
+      tile_rows: 3,
+      solid_base_no_tunnels: true,
+      base_height_mm: 4.0,
+      bed_safe_margin_mm: 4.0,
+      inter_frame_gap_mm: 0.0,
+      is_custom: false,
+    };
   }
+  if (!fmtSpec) return opts;
+
   const preset = {
-    targetWidthCm: 12.0,
-    targetHeightCm: 17.0,
-    tileCols: 1,
-    tileRows: 3,
-    solidBaseNoTunnels: true,
-    baseHeightMm: 4.0,
-    bedSafeMarginMm: 4.0,
+    formatId: fmtSpec.format_id,
+    frameCols: fmtSpec.frame_cols,
+    frameRows: fmtSpec.frame_rows,
+    targetWidthCm: fmtSpec.window_mm[0] / 10,
+    targetHeightCm: fmtSpec.window_mm[1] / 10,
+    tileCols: fmtSpec.tile_cols,
+    tileRows: fmtSpec.tile_rows,
+    solidBaseNoTunnels: Boolean(fmtSpec.solid_base_no_tunnels),
+    baseHeightMm: Number(fmtSpec.base_height_mm ?? (fmtSpec.is_custom ? 2.35 : 4.0)),
+    bedSafeMarginMm: Number(fmtSpec.bed_safe_margin_mm ?? 4.0),
+    interFrameGapMm: Number(fmtSpec.inter_frame_gap_mm ?? 0.0),
     kerfMm: 0.0,
-    hollowBase: true,
+    hollowBase: !fmtSpec.is_custom,
     showFrame: false,
   };
   for (const [k, v] of Object.entries(opts)) {
     if (v !== undefined) preset[k] = v;
   }
+  preset.formatId = fmtSpec.format_id;
   return preset;
 }
 
@@ -2163,6 +2211,31 @@ async function loadSceneAndBuildModel(rawOpts = {}) {
       throw new Error('Must specify { lat, lon } or a snapshot/scene with bbox');
     }
 
+    // Verify snapshot bbox covers requested selBBox (with small epsilon) before reusing stale narrow snapshot
+    if (rawElements && snapBBox && selBBox) {
+      const bboxEps = 1e-4;
+      const coversSel = (
+        snapBBox.south <= selBBox.south + bboxEps &&
+        snapBBox.west <= selBBox.west + bboxEps &&
+        snapBBox.north >= selBBox.north - bboxEps &&
+        snapBBox.east >= selBBox.east - bboxEps
+      );
+      if (!coversSel) {
+        const snapStr = `[${snapBBox.south.toFixed(5)}, ${snapBBox.west.toFixed(5)}, ${snapBBox.north.toFixed(5)}, ${snapBBox.east.toFixed(5)}]`;
+        const selStr = `[${selBBox.south.toFixed(5)}, ${selBBox.west.toFixed(5)}, ${selBBox.north.toFixed(5)}, ${selBBox.east.toFixed(5)}]`;
+        if (opts.offlineOnly) {
+          throw new Error(
+            `Snapshot bbox ${snapStr} does not cover requested selBBox ${selStr} in offlineOnly mode. ` +
+            'Re-run without --offline to live-fetch OSM elements or provide a wider snapshot.'
+          );
+        }
+        if (!opts.silent) {
+          process.stderr.write(`[harness] Refusing stale narrow snapshot bbox ${snapStr} < selBBox ${selStr}; live-fetching OSM elements...\n`);
+        }
+        rawElements = null;
+      }
+    }
+
     if (!rawElements) {
       if (opts.offlineOnly) {
         throw new Error('Cannot fetch live OpenStreetMap API in offlineOnly mode without snapshot or scene');
@@ -2326,6 +2399,8 @@ async function loadSceneAndBuildModel(rawOpts = {}) {
       preparedById: auditState.preparedById,
       baseInfo: auditState.baseInfo,
       pierAudits: (model && model.audit && model.audit.pierAudits) || [],
+      bridgeAudits: (model && model.audit && model.audit.bridgeAudits) ||
+        (auditState.ctx && auditState.ctx.audit && auditState.ctx.audit.bridgeAudits) || [],
       ctx: auditState.ctx,
     },
     runtime,

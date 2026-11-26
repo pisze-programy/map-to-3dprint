@@ -160,11 +160,37 @@ function _buildEmptySceneFallback(state) {
   return { meshes, buildingBounds: [], pickIdMap: new Map(), totalTriangles };
 }
 
+function _resolveLandmarkPlanForLayers(ctx, scene, s3db) {
+  if (s3db && s3db.landmarkPlan) {
+    if (ctx) ctx._landmarkPlan = s3db.landmarkPlan;
+    return s3db.landmarkPlan;
+  }
+  if (ctx && ctx._landmarkPlan) {
+    return ctx._landmarkPlan;
+  }
+  const plan = (typeof findActiveLandmarksAndSuppression === 'function')
+    ? findActiveLandmarksAndSuppression(scene, ctx)
+    : {
+        active: [],
+        suppressedBuildingIndices: new Set(),
+        suppressedBuildingIds: new Set(),
+        suppressedOsmIds: new Set(),
+      };
+  if (s3db && s3db.suppressedLandmarkOsmIds instanceof Set) {
+    for (const oid of s3db.suppressedLandmarkOsmIds) {
+      plan.suppressedOsmIds.add(oid);
+    }
+  }
+  if (ctx) ctx._landmarkPlan = plan;
+  return plan;
+}
+
 function _runThreeLayerPipelineSync(scene, state, options = {}) {
   const ctx = createBuildContext(scene, state, options);
   const terrainWater = buildLayer1TerrainAndWater(ctx, scene, options);
   const s3db = buildLayer1S3DBBuildings(ctx, scene, terrainWater);
-  const bridges = buildLayer1Bridges(ctx, scene, terrainWater);
+  _resolveLandmarkPlanForLayers(ctx, scene, s3db);
+  const bridges = buildLayer1Bridges(ctx, scene, terrainWater, s3db);
   const archetypes = buildLayer2Archetypes(ctx, scene, terrainWater, s3db);
   return finalize3LayerTilesAndInvariants(ctx, { terrainWater, s3db, bridges, archetypes }, options);
 }
@@ -216,11 +242,12 @@ async function rebuildModel3DProgressive(scene, state, options = {}) {
   const s3db = (typeof buildLayer1S3DBBuildingsAsync === 'function')
     ? await buildLayer1S3DBBuildingsAsync(ctx, scene, terrainWater, yieldCtrl)
     : buildLayer1S3DBBuildings(ctx, scene, terrainWater);
+  _resolveLandmarkPlanForLayers(ctx, scene, s3db);
   await yieldCtrl.yieldIfNeeded(true);
 
   onProgress(52, 'Etap 3/5: Mosty i archetypy semantyczne OSM...', 'Mosty bridge:structure + obiekty specjalne');
   await yieldCtrl.yieldIfNeeded(true);
-  const bridges = buildLayer1Bridges(ctx, scene, terrainWater);
+  const bridges = buildLayer1Bridges(ctx, scene, terrainWater, s3db);
   await yieldCtrl.yieldIfNeeded(true);
   const archetypes = (typeof buildLayer2ArchetypesAsync === 'function')
     ? await buildLayer2ArchetypesAsync(ctx, scene, terrainWater, s3db, yieldCtrl)

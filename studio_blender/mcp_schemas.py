@@ -5,14 +5,11 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from studio_blender.camera_qa import QA_PRESETS
-from studio_blender.studio_presets import ALL_ENV_CHOICES, STILL_PRESETS
+from studio_blender.studio_presets import ALL_ENV_CHOICES, ALL_FRAME_CHOICES, STILL_PRESETS
 
 
 ENV_ENUM = list(ALL_ENV_CHOICES)
-FRAME_ENUM = [
-    "single_13x18", "a4_passepartout", "none", "single_thin", "single_thick",
-    "cube_cover", "cube_plinth", "triptych_3x1", "quartet_2x2",
-]
+FRAME_ENUM = list(ALL_FRAME_CHOICES)
 MOUNT_ENUM = ["auto", "desk_flat", "wall_mount"]
 BACKING_ENUM = ["matte_black", "satin_black"]
 PRESET_ENUM = list(dict.fromkeys(list(STILL_PRESETS.keys()) + list(QA_PRESETS) + ["all"]))
@@ -51,8 +48,8 @@ def _common_scene_properties() -> Dict[str, Any]:
         "frame": {
             "type": "string",
             "enum": FRAME_ENUM,
-            "default": "single_13x18",
-            "description": "Frame assembly style (default Variant C 13x18cm matte-black).",
+            "default": "auto",
+            "description": "Frame assembly style ('auto' resolves from manifest.format_id; defaults to single_13x18 for raw STLs).",
         },
         "mount": {
             "type": "string",
@@ -108,6 +105,16 @@ def build_tools_schema() -> List[Dict[str, Any]]:
             "resolution": {"type": "string"},
             "samples": {"type": "integer", "minimum": 8, "maximum": 1024, "default": 96},
             "filename": {"type": "string"},
+            "fstop": {
+                "type": "number",
+                "minimum": 0.7,
+                "maximum": 128.0,
+                "description": "Optional camera aperture f-stop override (e.g. 56.0 for minimal blur or 2.8 for shallow DoF).",
+            },
+            "focus_xy": {
+                "type": "string",
+                "description": "Optional focus target XY in millimeters as 'x_mm,y_mm' (forwarded to detail presets).",
+            },
         }
     )
 

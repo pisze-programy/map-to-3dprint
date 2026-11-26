@@ -171,7 +171,11 @@ def build_frame_assembly(
 ) -> Dict[str, Any]:
     """Build matte-black gallery frame + archival backing (Variant C 13x18 & A4 white passe-partout)."""
     style_key = (style or "single_13x18").lower()
-    if style_key == "a4_passepartout":
+    is_a4_dims = (
+        (abs(float(width_m) - 0.120) < 0.005 and abs(float(height_m) - 0.170) < 0.005)
+        or (abs(float(width_m) - 0.170) < 0.005 and abs(float(height_m) - 0.120) < 0.005)
+    )
+    if style_key == "a4_passepartout" or (style_key in ("custom_grid", "auto") and is_a4_dims):
         return build_a4_passepartout_frame(
             width_m=width_m,
             height_m=height_m,
@@ -196,6 +200,8 @@ def build_frame_assembly(
     if style_key == "cube_cover":
         add_cover = True
         spec_key = "cube_plinth"
+    elif style_key in ("custom_grid", "auto"):
+        spec_key = "single_thick" if (float(width_m) > 0.185 or float(height_m) > 0.185) else "single_13x18"
     elif style_key in _STYLE_DEFAULTS:
         spec_key = style_key
     else:

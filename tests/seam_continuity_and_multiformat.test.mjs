@@ -17,7 +17,10 @@ const uiConfig = require(path.join(ROOT, 'src/geometry/print_profiles.js'));
 const manifoldCore = require(path.join(ROOT, 'src/geometry/manifold_core.js'));
 const seamCutter = require(path.join(ROOT, 'src/mesh/tile_seam_cutter.js'));
 const stlWriter = require(path.join(ROOT, 'src/export/stl_writer.js'));
-const { handleExportMap3DStl } = await import(path.join(ROOT, 'tools/mcp_map3d_inspector.mjs'));
+const { handleExportMap3DStl, handleInspectLandmark3D } = await import(path.join(ROOT, 'tools/mcp_map3d_inspector.mjs'));
+const { resolveBundleFormatId, FORMAT_ALIAS_MAP, parseProduceCliArgs } = await import(path.join(ROOT, 'tools/produce_sku_bundle.mjs'));
+const { resolveCityFormatOverrides } = await import(path.join(ROOT, 'tools/export_city_sku.mjs'));
+const { loadSceneAndBuildModel } = require(path.join(ROOT, 'tools/headless_scene_harness.js'));
 const { loadCachedParisOsmElements } = await import(path.join(ROOT, 'calibration/generate_seam_coupon_stl.mjs'));
 
 const TOP10_A4_CITY_DIRS = [
@@ -182,13 +185,16 @@ for (const fmtId of [
   const f = diskCatalog.formats[fmtId];
   assert.ok(f, `Missing format ${fmtId}`);
   assert.equal(f.inter_frame_gap_mm, 0.0, `${fmtId} default inter_frame_gap_mm must be 0.0`);
-  if (!f.is_custom) {
-    const tw = f.window_mm[0] / f.tile_cols;
-    const th = f.window_mm[1] / f.tile_rows;
-    const fits = (tw <= 145.45 && th <= 79.05) || (th <= 145.45 && tw <= 79.05);
-    assert.ok(fits, `${fmtId} tile ${tw.toFixed(2)}x${th.toFixed(2)} must fit 145.45x79.05 mm`);
-  }
+  const tw = f.window_mm[0] / f.tile_cols;
+  const th = f.window_mm[1] / f.tile_rows;
+  const fits = (tw <= 145.45 && th <= 79.05) || (th <= 145.45 && tw <= 79.05);
+  assert.ok(fits, `${fmtId} tile ${tw.toFixed(2)}x${th.toFixed(2)} must fit 145.45x79.05 mm`);
 }
+const customFmt = diskCatalog.formats.custom_grid;
+assert.equal(customFmt.tiles_per_frame_rows, 7, 'custom_grid tiles_per_frame_rows must be 7');
+assert.equal(customFmt.tile_rows, 7, 'custom_grid default tile_rows must be 7');
+assert.equal(customFmt.tile_nominal_mm[0], 125.0, 'custom_grid tile_nominal_mm[0] must be 125.0');
+assert.ok(Math.abs(customFmt.tile_nominal_mm[1] - 71.4286) < 1e-4, 'custom_grid tile_nominal_mm[1] must be 71.4286');
 const qLayout = catalogMod.computeFormatFrameAndTileLayout({ formatId: 'quartet_a4_2x2' });
 assert.equal(qLayout.frames.length, 4, 'quartet_a4_2x2 must have 4 Heavy A4 frames');
 assert.equal(qLayout.tileMetaById.length, 12, 'quartet_a4_2x2 must have 12 strips');
@@ -605,6 +611,152 @@ try {
     }
   }
   console.log(`  PASS: All ${TOP10_A4_CITY_DIRS.length}/10 committed A4 1x3 city assemblies verified PASS with matching SHA-256 digests`);
+
+  // 8. Coastal Empty-Water Tile Skip, Custom Auto-Tiling, Narrow Snapshot Guard, Bridge Inspection & Produce CLI
+  console.log('[8/8] Coastal Empty-Water Skip, Auto-Tiling, Narrow Snapshot Guard & produce_sku_bundle CLI');
+
+  // 8A. Empty 100%-water tile skipping on coastal multi-tile export
+  const coastalDir = path.join(tmpBase, 'coastal_empty_water_test');
+  const coastalScene = {
+    spanMeters: 800,
+    dem: {
+      grid: [[0.2, 0.2, 0.2, 0.2], [0.2, 0.2, 0.2, 0.2], [0.2, 0.2, 0.2, 0.2], [0.2, 0.2, 0.2, 0.2]],
+      minElev: 0.2,
+      maxElev: 0.2,
+    },
+    waterPolys: [
+      // Top half (y >= 5) is 100% open water so top tile R1C1 has zero geometry under waterCutout
+      { outer: [[-95, 5], [95, 5], [95, 95], [-95, 95]], holes: [], waterTag: 'sea' },
+    ],
+    waterLines: [],
+    greenPolys: [],
+    trees: [],
+    roads: [],
+    bridgePolys: [],
+    buildings: [
+      { id: 9101, outer: makeRectRing(0, -35, 10.0, 10.0), holes: [], h: 25, roof: 'flat', roofH: 0 },
+    ],
+  };
+  const coastalRes = await handleExportMap3DStl({
+    scene: coastalScene,
+    formatId: 'single_a4_1x3',
+    waterCutout: true,
+    title: 'COASTAL_SKIP',
+    filePrefix: 'COASTAL_SKIP',
+    outputDir: coastalDir,
+  }, { silent: true });
+  const skippedTiles = coastalRes.tiles.filter(t => t.skippedEmptyWater);
+  assert.ok(skippedTiles.length >= 1, 'Expected at least 1 skipped 100%-water tile');
+  for (const st of skippedTiles) {
+    assert.equal(st.path, null, 'Skipped empty-water tile must not write an STL file');
+    assert.ok(st.bytes <= 84, 'Skipped empty-water tile must be <= 84 bytes');
+  }
+  const coastalManifest = JSON.parse(fs.readFileSync(path.join(coastalDir, 'assembly_manifest.json'), 'utf8'));
+  const manifestSkipped = coastalManifest.tiles.filter(t => t.skipped_empty_water);
+  assert.ok(manifestSkipped.length >= 1, 'assembly_manifest.json must mark skipped_empty_water: true');
+  for (const mt of manifestSkipped) {
+    assert.equal(fs.existsSync(path.join(coastalDir, mt.file)), false, `Must not write 84-byte STL ${mt.file}`);
+  }
+  assert.equal(coastalRes.validation.verdict, 'PASS', 'Coastal export with skipped 100%-water tile must PASS VAL-01..14');
+
+  // 8B. Auto-tiling custom dimensions via computeOptimalMono4GridForState()
+  const autoTileDir = path.join(tmpBase, 'auto_tile_custom_16x14');
+  const autoTileRes = await handleExportMap3DStl({
+    osmElements: parisOsm,
+    lat: 48.8586,
+    lon: 2.2942,
+    spanMeters: 950,
+    rotationDeg: -46,
+    targetWidthCm: 16,
+    targetHeightCm: 14,
+    solidBaseNoTunnels: true,
+    baseHeightMm: 4.0,
+    waterCutout: true,
+    title: 'AUTO_TILE',
+    filePrefix: 'AUTO_TILE',
+    outputDir: autoTileDir,
+    offlineOnly: true,
+  }, { silent: true });
+  const expectedAutoGrid = uiConfig.computeOptimalMono4GridForState({ bedSafeMarginMm: 4.0 }, 160, 140);
+  assert.deepEqual(
+    autoTileRes.grid,
+    [expectedAutoGrid.cols, expectedAutoGrid.rows],
+    `Auto-tiling 16x14 cm must match computeOptimalMono4GridForState (${expectedAutoGrid.cols}x${expectedAutoGrid.rows})`
+  );
+  assert.equal(autoTileRes.validation.verdict, 'PASS', 'Auto-tiled custom export must PASS VAL-01..14');
+
+  // 8C. Snapshot bbox coverage rejection when snapshot is too narrow
+  const narrowSnapPath = path.join(tmpBase, 'narrow_snap.json');
+  fs.writeFileSync(narrowSnapPath, JSON.stringify({
+    bbox: [48.857, 2.292, 48.860, 2.296],
+    elements: [
+      { type: 'node', id: 1, lat: 48.8585, lon: 2.294 },
+    ],
+  }));
+  await assert.rejects(
+    () => loadSceneAndBuildModel({
+      snapshotPath: narrowSnapPath,
+      lat: 48.8586,
+      lon: 2.2942,
+      spanMeters: 2400,
+      targetWidthCm: 36,
+      targetHeightCm: 51,
+      offlineOnly: true,
+      silent: true,
+    }),
+    /does not cover requested selBBox/i,
+    'Narrow snapshot covering smaller area than requested selBBox must be rejected in offlineOnly mode'
+  );
+
+  // 8D. export_city_sku format override preserves A4 output_dir and scales span_m proportionally
+  const parisEntry = JSON.parse(fs.readFileSync(path.join(ROOT, 'config/city_catalog.json'), 'utf8')).cities.paris_true_scale;
+  const tripOv = resolveCityFormatOverrides(parisEntry, 'triptych', undefined, null);
+  assert.equal(tripOv.formatId, 'triptych_a4_3x1');
+  assert.ok(tripOv.outDir.endsWith(path.join('exports', 'paris_true_scale_triptych_a4_3x1')));
+  assert.ok(Math.abs(tripOv.spanMeters - parisEntry.span_m * (360.0 / 170.0)) < 1e-6);
+
+  // 8E. inspect-landmark bridgeAudits inspection with --kind bridge / --query
+  const bridgeInspect = await handleInspectLandmark3D({
+    scene: advScene,
+    focus: { kind: 'bridge', query: 'most' },
+    silent: true,
+  }, { silent: true });
+  assert.ok(
+    Array.isArray(bridgeInspect.bridgeAudits) && bridgeInspect.bridgeAudits.length >= 1,
+    'inspect-landmark with kind=bridge must report emitted bridgeAudits'
+  );
+  assert.ok(bridgeInspect.bridgeAudits[0].clearance && Number.isFinite(bridgeInspect.bridgeAudits[0].clearance.zDeckTop));
+
+  // 8F. produce_sku_bundle.mjs --help & format alias resolution
+  const helpProc = spawnSync('node', [path.join(ROOT, 'tools/produce_sku_bundle.mjs'), '--help'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(helpProc.status, 0, 'produce_sku_bundle.mjs --help must exit 0');
+  assert.ok(helpProc.stdout.includes('--city') && helpProc.stdout.includes('--format') && helpProc.stdout.includes('--mode'));
+  const expectedAliases = {
+    single: 'single_a4_1x3',
+    landscape: 'single_a4_landscape_3x1',
+    triptych: 'triptych_a4_3x1',
+    quartet: 'quartet_a4_2x2',
+    square: 'square_150_2x2',
+    square240: 'square_240_2x4',
+    '50x70': 'flagship_50x70_3x9',
+    custom: 'custom_grid',
+  };
+  assert.deepEqual(FORMAT_ALIAS_MAP, expectedAliases);
+  for (const [alias, canonical] of Object.entries(expectedAliases)) {
+    assert.equal(resolveBundleFormatId(alias), canonical, `Alias ${alias} must resolve to ${canonical}`);
+    assert.equal(resolveBundleFormatId(canonical), canonical, `Canonical ${canonical} must resolve to itself`);
+  }
+  const parsedPreview = parseProduceCliArgs(['--city', 'paris_true_scale', '--format', 'triptych', '--mode', 'preview']);
+  assert.equal(parsedPreview.formatId, 'triptych_a4_3x1');
+  assert.equal(parsedPreview.samples, 24);
+  const parsedFull = parseProduceCliArgs(['--city', 'paris_true_scale', '--format', '50x70']);
+  assert.equal(parsedFull.formatId, 'flagship_50x70_3x9');
+  assert.equal(parsedFull.samples, 48);
+
+  console.log('  PASS: Empty-water skip, auto-tiling, narrow snapshot guard, bridgeAudits & produce_sku_bundle CLI verified');
 } finally {
   fs.rmSync(tmpBase, { recursive: true, force: true });
 }

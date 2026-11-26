@@ -41,6 +41,8 @@ def _build_desk_architecture(
     surface_key: str,
     wall_key: str,
     col: Any,
+    outer_w_m: float = 0.210,
+    outer_h_m: float = 0.297,
 ) -> List[Any]:
     """Assemble tabletop slab and authentic interior room backdrop for lifestyle desk scenes."""
     persona_fn = PERSONA_ARCH_BUILDERS.get(style)
@@ -50,19 +52,29 @@ def _build_desk_architecture(
     objs: List[Any] = []
     desk_mat = materials.make_surface_material(surface_key, name=f"Desk_{surface_key}")
     wall_mat = materials.make_surface_material(wall_key, name=f"BackWall_{wall_key}")
+    desk_w = max(1.95, float(outer_w_m) + 0.90)
+    desk_d = max(1.15, float(outer_h_m) + 0.56)
+    desk_cy = 0.16 if desk_d <= 1.15 else (0.735 - 0.5 * desk_d)
 
     if style == "living_room":
-        objs.append(build_desk_slab(f"Env_CoffeeTable_{surface_key}", desk_z, 1.40, 0.68, 0.08, desk_mat, col, thickness=0.036))
+        table_w = max(1.40, float(outer_w_m) + 0.65)
+        table_d = max(0.68, float(outer_h_m) + 0.36)
+        table_cy = 0.08 if table_d <= 0.68 else 0.04
+        objs.append(build_desk_slab(f"Env_CoffeeTable_{surface_key}", desk_z, table_w, table_d, table_cy, desk_mat, col, thickness=0.036))
         objs.extend(build_living_room_backdrop(desk_z, wall_mat, col))
     elif style == "boiserie_console":
-        objs.append(build_desk_slab(f"Env_Console_{surface_key}", desk_z, 1.75, 0.62, 0.13, desk_mat, col, thickness=0.034))
+        cons_w = max(1.75, float(outer_w_m) + 0.70)
+        front_y = -0.18 if float(outer_h_m) <= 0.31 else min(-0.18, -0.5 * float(outer_h_m) - 0.15)
+        cons_d = 0.44 - front_y
+        cons_cy = 0.5 * (0.44 + front_y)
+        objs.append(build_desk_slab(f"Env_Console_{surface_key}", desk_z, cons_w, cons_d, cons_cy, desk_mat, col, thickness=0.034))
         objs.extend(build_boiserie_console_wall(desk_z, wall_mat, col))
     elif style == "loft_wall":
-        objs.append(build_desk_slab(f"Env_LoftDesk_{surface_key}", desk_z, 1.95, 1.15, 0.16, desk_mat, col))
+        objs.append(build_desk_slab(f"Env_LoftDesk_{surface_key}", desk_z, desk_w, desk_d, desk_cy, desk_mat, col))
         oak_mat = materials.make_surface_material("brushed_oak", name="LoftShelfOak")
         objs.extend(build_loft_shelving_wall(desk_z, wall_mat, oak_mat, col))
     elif style in ("window_studio", "evening_window"):
-        objs.append(build_desk_slab(f"Env_Desk_{surface_key}", desk_z, 1.95, 1.15, 0.16, desk_mat, col))
+        objs.append(build_desk_slab(f"Env_Desk_{surface_key}", desk_z, desk_w, desk_d, desk_cy, desk_mat, col))
         objs.extend(
             build_window_studio_wall(
                 desk_z=desk_z,
@@ -73,7 +85,7 @@ def _build_desk_architecture(
             )
         )
     else:
-        objs.append(build_desk_slab(f"Env_Desk_{surface_key}", desk_z, 1.95, 1.15, 0.16, desk_mat, col))
+        objs.append(build_desk_slab(f"Env_Desk_{surface_key}", desk_z, desk_w, desk_d, desk_cy, desk_mat, col))
         objs.append(create_mesh_object("Env_BackWall", make_box_bm(3.00, 0.06, 1.90, (0.0, 0.76, desk_z + 0.85)), col, wall_mat))
     return objs
 
@@ -133,7 +145,7 @@ def build_environment(
         if spec.architecture_style == "slat_wall":
             objects.extend(build_acoustic_slat_wall_stage(wall_y, outer_w, outer_h, surf_mat, wall_mat, col))
         else:
-            objects.extend(build_gallery_wall_mount_stage(wall_y, outer_h, wall_mat, surf_mat, col))
+            objects.extend(build_gallery_wall_mount_stage(wall_y, outer_h, wall_mat, surf_mat, col, outer_w_m=outer_w))
     elif spec.architecture_style == "packshot_white":
         mat_white = materials.make_cyclorama_white_material()
         floor = create_mesh_object("Env_WhiteShadowCatcher", make_box_bm(3.20, 3.20, 0.004, (0.0, 0.0, desk_z - 0.002)), col, mat_white)
@@ -147,7 +159,7 @@ def build_environment(
         plinth_mat = materials.make_surface_material(surface_key, name=f"Plinth_{surface_key}")
         objects.extend(build_dark_cinematic_stage(desk_z, outer_h, plinth_mat, col))
     else:
-        objects.extend(_build_desk_architecture(spec.architecture_style, desk_z, surface_key, wall_key, col))
+        objects.extend(_build_desk_architecture(spec.architecture_style, desk_z, surface_key, wall_key, col, outer_w_m=outer_w, outer_h_m=outer_h))
 
     # 2. Calibrated Cycles 3-point + CC0 HDRI World lighting
     if detail_stage_refs is None:

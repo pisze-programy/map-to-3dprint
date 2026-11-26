@@ -23,7 +23,8 @@ if str(_REPO_ROOT) not in sys.path:
 import bpy  # type: ignore
 
 from studio_blender import environments, materials, stl_loader
-from studio_blender.studio_presets import ALL_ENV_CHOICES, get_env_mount, resolve_env_name
+from studio_blender.camera_detail import parse_focus_xy
+from studio_blender.studio_presets import ALL_ENV_CHOICES, ALL_FRAME_CHOICES, get_env_mount, resolve_env_name
 from studio_blender.worker_render import (
     build_product_assembly,
     configure_cycles_metal,
@@ -95,17 +96,15 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
     p.add_argument("--assembly-manifest", default=None, help="Path to validated assembly_manifest.json")
     p.add_argument("--draft-unvalidated", action="store_true", default=False, help="Allow unvalidated renders with DRAFT_UNVALIDATED_ prefix")
     p.add_argument("--env", default="01_architect_window_desk", choices=ALL_ENV_CHOICES)
-    p.add_argument(
-        "--frame",
-        default="single_13x18",
-        choices=("single_13x18", "a4_passepartout", "none", "single_thin", "single_thick", "cube_cover", "cube_plinth", "triptych_3x1", "quartet_2x2"),
-    )
+    p.add_argument("--frame", default="auto", choices=ALL_FRAME_CHOICES)
     p.add_argument("--mount", default="auto", choices=("auto", "desk_flat", "wall_mount"))
     p.add_argument("--mode", default="stills", choices=("stills", "keyframes", "video"))
     p.add_argument("--preset", action="append", default=None)
     p.add_argument("--aspect", default=None, choices=("9:16", "4:5", "1:1", "16:9"))
     p.add_argument("--resolution", default=None)
     p.add_argument("--samples", type=int, default=None)
+    p.add_argument("--fstop", type=float, default=None, help="Optional aperture f-stop override")
+    p.add_argument("--focus-xy", default=None, help="Optional focus XY override in mm as 'x_mm,y_mm'")
     p.add_argument("--fps", type=int, default=24)
     p.add_argument("--frame-mm", default=None)
     p.add_argument("--frame-width-mm", type=float, default=4.0, help="Frame rim width in mm (default 4.0)")
@@ -136,18 +135,22 @@ def main() -> int:
 
     canonical_env = resolve_env_name(args.env)
     mount = get_env_mount(canonical_env, args.mount)
-    aspect = args.aspect or ("4:5" if args.mode == "stills" else "9:16")
+    is_grid_3x3 = bool(args.preset and "detail_grid_3x3" in args.preset)
+    aspect = args.aspect or ("1:1" if is_grid_3x3 else ("4:5" if args.mode == "stills" else "9:16"))
     width, height = _parse_resolution(args.resolution, args.mode, aspect)
     aspect_ratio = float(width) / float(height)
     samples = args.samples if args.samples is not None else (32 if args.mode == "video" else 96)
+    focus_xy_mm = parse_focus_xy(args.focus_xy)
     _, is_draft = stl_loader.validate_render_source(
         args.assembly_manifest, args.stl, draft_unvalidated=bool(args.draft_unvalidated)
     )
     if args.assembly_manifest:
         m_data = json.loads(Path(args.assembly_manifest).read_text(encoding="utf-8"))
         default_title = str(m_data.get("source_params", {}).get("title") or m_data.get("city_slug") or "CITY MAP")
+        effective_frame = str(m_data.get("format_id") or "a4_passepartout") if args.frame == "auto" else args.frame
     else:
         default_title = stl_loader.infer_city_title(args.stl)
+        effective_frame = "single_13x18" if args.frame == "auto" else args.frame
     city_title = args.title.strip() if args.title else default_title
 
     t0 = time.time()
@@ -164,19 +167,19 @@ def main() -> int:
         plaster_mat = materials_detail.make_chalk_plaster_material()
     else:
         plaster_mat = materials.make_plaster_cement_material()
-    is_qa_run = bool(args.preset and any(p.startswith("qa_") for p in args.preset))
+    is_qa_only = bool(args.preset and all(p.startswith("qa_") for p in args.preset))
     if args.assembly_manifest:
         load_result = stl_loader.load_from_manifest(
             manifest_path=args.assembly_manifest,
-            frame_style=args.frame,
+            frame_style=effective_frame,
             material=plaster_mat,
-            continuous_flush=is_qa_run,
+            continuous_flush=is_qa_only,
             allow_draft=bool(args.draft_unvalidated),
         )
     else:
         load_result = stl_loader.load_city_stls(
             stl_paths=args.stl,
-            frame_style=args.frame,
+            frame_style=effective_frame,
             rim_width_mm=args.frame_width_mm,
             frame_mm=args.frame_mm,
             material=plaster_mat,
@@ -187,7 +190,7 @@ def main() -> int:
     frame_info, analysis = build_product_assembly(
         scene=scene,
         load_result=load_result,
-        frame_style=args.frame,
+        frame_style=effective_frame,
         title=city_title,
         mount=mount,
         rim_width_mm=args.frame_width_mm,
@@ -239,6 +242,7 @@ def main() -> int:
     rendered_keyframes: Dict[int, Dict[str, str]] = {}
     video_shot_frames: List[Dict[str, Any]] = []
     flow_prompts_path: Optional[str] = None
+    still_meta: Dict[str, Any] = {}
 
     if args.mode == "stills":
         rendered_stills = render_stills_mode(
@@ -246,6 +250,9 @@ def main() -> int:
             args.filename, analysis, model_bounds, aspect_ratio, mount=mount,
             load_result=load_result,
             draft_unvalidated=is_draft,
+            fstop=args.fstop,
+            focus_xy=focus_xy_mm,
+            result_meta=still_meta,
         )
     elif args.mode == "keyframes":
         rendered_stills, rendered_keyframes, flow_prompts_path = render_keyframes_mode(
@@ -265,7 +272,7 @@ def main() -> int:
         "mode": args.mode,
         "env": canonical_env,
         "mount": mount,
-        "frame": args.frame,
+        "frame": effective_frame,
         "frame_width_mm": args.frame_width_mm,
         "frame_height_mm": args.frame_height_mm,
         "backing_finish": args.backing_finish,
@@ -285,6 +292,7 @@ def main() -> int:
         },
         "placed_props": env_refs.get("placed_props", []),
         "stills": rendered_stills,
+        "detail_grid_3x3_path": still_meta.get("detail_grid_3x3_path"),
         "keyframes": rendered_keyframes,
         "flow_prompts_path": flow_prompts_path,
         "video_shots": video_shot_frames,
