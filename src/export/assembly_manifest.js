@@ -214,9 +214,14 @@
     const chamferHeightMm = (cached && Number.isFinite(cached.chamferHeightMm))
       ? cached.chamferHeightMm
       : (defaultChamfer ? 0.50 : 0.0);
+    const minReliefBaseMm = (cfgMod && cfgMod.PRINT_PHYSICS_CONFIG && Number(cfgMod.PRINT_PHYSICS_CONFIG.undersideReliefMinBaseMm) > 0)
+      ? Number(cfgMod.PRINT_PHYSICS_CONFIG.undersideReliefMinBaseMm)
+      : 2.60;
     const undersideReliefEnabled = (cached && typeof cached.undersideReliefApplied === 'boolean')
       ? cached.undersideReliefApplied
-      : Boolean(state && state.solidBaseNoTunnels);
+      : ((cfgMod && typeof cfgMod.resolveUndersideReliefEnabled === 'function')
+          ? cfgMod.resolveUndersideReliefEnabled(state, cfgMod.PRINT_PHYSICS_CONFIG, safeBaseMm)
+          : (Boolean(state && state.solidBaseNoTunnels) && safeBaseMm > minReliefBaseMm));
     const demMode = String(
       (extraMeta && extraMeta.dem_mode) ||
       (state && state.demMode) ||

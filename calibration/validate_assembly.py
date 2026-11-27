@@ -669,6 +669,8 @@ def validate_assembly(
     inter_frame_gap = float(src_params.get("inter_frame_gap_mm", 0.0))
     water_cutout = bool(src_params.get("water_cutout", False))
     solid_base = bool(src_params.get("solid_base_no_tunnels", False))
+    thin_base_relief_cutoff_mm = 2.60
+    base_height_mm = float(src_params.get("base_height_mm", 4.0) or 4.0)
     chamfer_inset_cfg = float(src_params.get("dfm06_chamfer_inset_mm", 0.0))
     relief_enabled = bool(src_params.get("underside_relief_enabled", False))
     safe_margin_mm = float(src_params.get("bed_safe_margin_mm", 4.0))
@@ -691,7 +693,8 @@ def validate_assembly(
     sku_id_l = str(manifest.get("sku_id") or "").lower()
     is_a4_sku = ("a4" in fmt_id_l) or ("a4" in sku_id_l)
     require_dfm06_chamfer = solid_base or is_a4_sku or is_multi_tile
-    require_underside_relief = solid_base or is_a4_sku
+    thick_solid_base = base_height_mm > thin_base_relief_cutoff_mm
+    require_underside_relief = (solid_base or is_a4_sku) and thick_solid_base
 
     if require_dfm06_chamfer and chamfer_inset_cfg < 0.20:
         failures.append(
@@ -700,8 +703,8 @@ def validate_assembly(
         )
     if require_underside_relief and not relief_enabled:
         failures.append(
-            f"VAL-13: underside_relief_enabled=False is forbidden on solid_base_no_tunnels or A4 catalog SKU "
-            f"({manifest.get('format_id')})."
+            f"VAL-13: underside_relief_enabled=False is forbidden on thick (> 2.60 mm) solid_base_no_tunnels or A4 catalog SKU "
+            f"({manifest.get('format_id')}, base_height_mm={base_height_mm:.2f})."
         )
     if is_multi_tile and len(tile_entries) != tile_cols * tile_rows:
         failures.append(
@@ -801,6 +804,21 @@ def validate_assembly(
             failures.append(
                 f"VAL-13: Tile {tid} Z=0 contact area={rep['z0_area_mm2']:.1f} mm2 exceeds 4500.0 mm2 underside relief cap."
             )
+        elif (solid_base or is_a4_sku) and not relief_enabled and not thick_solid_base and rep["z0_area_mm2"] > 4500.0:
+            # Anti-tamper cross-check: verify declared thin base_height_mm against actual STL geometry.
+            probe_z_mm = thin_base_relief_cutoff_mm + 0.15
+            if sz > probe_z_mm + 0.05 and raw_tris:
+                xs_t = [pt[0] for tri in raw_tris for pt in tri[:3]]
+                ys_t = [pt[1] for tri in raw_tris for pt in tri[:3]]
+                xmin_t, xmax_t = min(xs_t), max(xs_t)
+                ymin_t, ymax_t = min(ys_t), max(ys_t)
+                area_070, _ = vmsla.slice_grid_2d(raw_tris, 0.70, xmin_t, xmax_t, ymin_t, ymax_t, step=0.40)
+                area_hi, _ = vmsla.slice_grid_2d(raw_tris, probe_z_mm, xmin_t, xmax_t, ymin_t, ymax_t, step=0.40)
+                if area_070 > 4500.0 and area_hi > 4500.0 and area_hi >= 0.92 * area_070:
+                    failures.append(
+                        f"VAL-13: Tile {tid} declared thin base_height_mm={base_height_mm:.2f} mm without underside relief, "
+                        f"but STL solid slab persists at Z={probe_z_mm:.2f} mm ({area_hi:.1f} vs {area_070:.1f} mm2 at Z=0.70 mm)."
+                    )
 
         placed_tris[tid] = unrotate_and_place_tris(
             raw_tris, t["nominal_rect_mm"], int(t.get("stl_rotation_deg", 0))

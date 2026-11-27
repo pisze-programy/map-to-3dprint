@@ -745,6 +745,7 @@ function buildLoadOptions(rawArgs = {}, silent = true) {
     hollowBase: Boolean(args.hollowBase),
     solidBaseNoTunnels: Boolean(args.solidBaseNoTunnels),
     baseHeightMm: args.baseHeightMm,
+    undersideReliefEnabled: typeof args.undersideReliefEnabled === 'boolean' ? args.undersideReliefEnabled : undefined,
     supportlessMode: Boolean(args.supportlessMode),
     isResin: true,
     showFrame: args.showFrame !== false,

@@ -2044,6 +2044,7 @@ function buildStateFromOpts(rawOpts = {}, sandbox, scene) {
     totalHeightMm,
     baseHeightMm: Number.isFinite(explicitBaseMm) ? explicitBaseMm : (solidBaseNoTunnels ? 4.0 : 2.35),
     solidBaseNoTunnels,
+    undersideReliefEnabled: typeof opts.undersideReliefEnabled === 'boolean' ? opts.undersideReliefEnabled : undefined,
     kerfMm: opts.kerfMm !== undefined ? Number(opts.kerfMm) : 0.0,
     bedSafeMarginMm: opts.bedSafeMarginMm !== undefined ? Number(opts.bedSafeMarginMm) : 4.0,
     zScale: Number(opts.zScale ?? 1.0),

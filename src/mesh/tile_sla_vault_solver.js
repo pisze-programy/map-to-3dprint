@@ -1391,6 +1391,7 @@
       safeBaseMm + 0.05,
       safeBaseMm + 0.15,
       safeBaseMm + 0.30,
+      safeBaseMm + 0.40,
       safeBaseMm + 0.55,
       safeBaseMm + 0.65,
       safeBaseMm + 0.90,
@@ -1399,9 +1400,9 @@
     for (let zm = safeBaseMm + 1.15; zm <= zUpperLimitMm + 1e-6; zm += 0.50) {
       zListMm.push(zm);
     }
-    const zSlabCheckMm = Math.max(1.85, safeBaseMm - 0.50);
-    const zBaseTopCheckMm = Math.max(2.10, safeBaseMm - 0.15);
-    const zBotFloorMm = Math.max(2.30, safeBaseMm - 0.05);
+    const zSlabCheckMm = Math.max(1.25, safeBaseMm - 0.50);
+    const zBaseTopCheckMm = Math.max(1.45, safeBaseMm - 0.15);
+    const zBotFloorMm = Math.max(1.55, safeBaseMm - 0.05);
 
     const spanXMm = (initBB.max[0] - initBB.min[0]) * scaleMm;
     const spanYMm = (initBB.max[1] - initBB.min[1]) * scaleMm;
@@ -1448,7 +1449,7 @@
       if (zMm >= curBB.max[2] * scaleMm - 0.15) continue;
 
       const lastExtAirByPhase = [null, null, null, null];
-      for (let iter = 0; iter < 6; iter++) {
+      for (let iter = 0; iter < 8; iter++) {
         let sCur = null;
         let polys = [];
         try {
@@ -1672,7 +1673,13 @@
         } finally {
           core.safeDeleteManifold(sHigh);
         }
-        if (!didCut) break;
+        if (!didCut) {
+          if (iter < 4) {
+            iter = 3;
+            continue;
+          }
+          break;
+        }
       }
       for (let pi = 0; pi < phases.length; pi++) {
         if (lastExtAirByPhase[pi] !== null && ventSeedByPhase[pi] !== null) {
@@ -1911,10 +1918,10 @@
     const belowCache = new Map();
     const newPiers = [];
 
-    // Anchor dry-land piers on the roof plateau strictly above any <= 1.50 mm relief grooves.
-    const roofLoMm = Math.max(1.75, safeBaseMm - 0.60);
-    const roofHiMm = Math.max(2.10, safeBaseMm - 0.25);
-    const roofCheckMm = Math.max(2.15, safeBaseMm - 0.20);
+    // Anchor dry-land piers on the roof plateau strictly above any underside relief grooves.
+    const roofLoMm = Math.max(1.15, safeBaseMm - 0.60);
+    const roofHiMm = Math.max(1.45, safeBaseMm - 0.25);
+    const roofCheckMm = Math.max(1.50, safeBaseMm - 0.20);
     let roofSafePolys = [];
     if (uBB.max[2] > (roofHiMm + 0.10) / scaleMm) {
       let s175 = null;
@@ -2260,8 +2267,8 @@
         );
       }
     }
-    out = _ventUpperSealedCourtyards(core, poly, mf, out, scaleMm, baseBottomMm, ventMod);
     out = _groundFlatOverhangPiers(core, poly, mf, out, out.boundingBox(), scaleMm, baseBottomMm);
+    out = _ventUpperSealedCourtyards(core, poly, mf, out, scaleMm, baseBottomMm, ventMod);
     out = _cleanupDetachedBorderSlivers(core, mf, out, scaleMm);
     return out;
   }

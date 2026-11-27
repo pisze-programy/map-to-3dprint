@@ -205,7 +205,15 @@
       shallowOrnamentalRings = core.clipperDiffPolys(shallowOrnamentalRings, unionedWaterRings, 1e-5);
     }
     const shallowOrnamentalPolys2D = core.ringsToOutersWithHoles(shallowOrnamentalRings, 1e-5);
-    const minShallowFloorU = 2.2 / (ctx.scaleMm || 1);
+    const baseBottomMm = Number(ctx.baseBottomMm) > 0 ? Number(ctx.baseBottomMm) : 2.35;
+    const minReliefBaseMm = (ctx.cfg && Number(ctx.cfg.undersideReliefMinBaseMm) > 0) ? Number(ctx.cfg.undersideReliefMinBaseMm) : 2.60;
+    const reliefEnabled = typeof ctx.undersideReliefEnabled === 'boolean'
+      ? ctx.undersideReliefEnabled
+      : (Boolean(ctx.solidBaseNoTunnels) && baseBottomMm > minReliefBaseMm);
+    const minShallowFloorMm = (typeof root.resolveShallowPondMinFloorMm === 'function')
+      ? root.resolveShallowPondMinFloorMm(baseBottomMm, reliefEnabled, 1.50)
+      : (reliefEnabled ? (Math.min(1.50, Math.max(0.85, baseBottomMm - 1.20)) + 0.70) : Math.max(0.80, baseBottomMm - 0.80));
+    const minShallowFloorU = minShallowFloorMm / (ctx.scaleMm || 1);
     const shallowRecessU = 0.40 / (ctx.scaleMm || 1);
     const shallowOrnamentalEntries = shallowOrnamentalPolys2D.length > 0
       ? sampler._classifyFlatWaterPolys(ctx, shallowOrnamentalPolys2D).map(fe => ({

@@ -1646,6 +1646,9 @@
     const baseBottomMm = (typeof root.resolveBaseBottomMm === 'function')
       ? root.resolveBaseBottomMm(state, cfg)
       : defaultBaseBottomMm;
+    const undersideReliefEnabled = (typeof root.resolveUndersideReliefEnabled === 'function')
+      ? root.resolveUndersideReliefEnabled(state, cfg, baseBottomMm)
+      : (solidBaseNoTunnels && baseBottomMm > (Number(cfg.undersideReliefMinBaseMm) || 2.60));
     const baseDeltaMm = baseBottomMm - defaultBaseBottomMm;
     const deepWaterMm = Math.max(0.8, (cfg.deepWaterMm || 1.68) + baseDeltaMm);
     const subWaterMm = Math.max(0.5, (cfg.subWaterMm || 1.30) + baseDeltaMm);
@@ -1730,6 +1733,7 @@
       hollowBase,
       solidBaseNoTunnels,
       baseBottomMm,
+      undersideReliefEnabled,
       hollowWallMm,
       isExport,
       isResin,

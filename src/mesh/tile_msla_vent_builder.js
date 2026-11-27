@@ -169,6 +169,15 @@
         const dy = pAir[1] - pLast[1];
         const d = Math.hypot(dx, dy);
         if (d > 1e-8) pts.push([pLast[0] + (dx / d) * extU, pLast[1] + (dy / d) * extU]);
+      } else if (runEnd === cellPath.length - 1 && runEnd > 0) {
+        // Terminated on a solid interior seam plane: extend across the cut plane so both
+        // seam faces match symmetrically (VAL-09) and open cleanly into interior air.
+        const pPrev = cellXY(cellPath[runEnd - 1]);
+        const pLast = cellXY(cellPath[runEnd]);
+        const dx = pLast[0] - pPrev[0];
+        const dy = pLast[1] - pPrev[1];
+        const d = Math.hypot(dx, dy);
+        if (d > 1e-8) pts.push([pLast[0] + (dx / d) * extU, pLast[1] + (dy / d) * extU]);
       }
       if (pts.length >= 2) {
         const simp = [pts[0]];
@@ -187,10 +196,31 @@
   }
 
   /**
-   * Carves hidden underside vent slots (width 1.8 mm, Z=0..1.35 mm, >= 45 deg gable roof
-   * closing below baseBottomMm) for large enclosed water-cutout basins (>= 18 mm^2) so
-   * top-down black water cutouts remain 100% crisp while eliminating Z=0..1.15 suction cups.
-   * Prefers routing to open exterior water or interior tile seam edges (never outer frame).
+   * Computes self-supporting gabled underside vent dimensions for the given base thickness.
+   * Guarantees >= 0.50 mm solid roof above tunnel apex for bases >= 2.00 mm (>= 0.45 mm for
+   * 1.80..1.99 mm), 45 deg gable roof slope, and open slot clearance at Z = 1.15 mm (VAL-03).
+   * @param {number} safeBaseMm
+   * @returns {{ventHalfWidthMm: number, zSpringMm: number, gableRiseMm: number}}
+   */
+  function resolveUndersideVentProfileMm(safeBaseMm) {
+    if (safeBaseMm >= 2.65) {
+      const zSpringMm = Math.min(1.38, Math.max(1.22, safeBaseMm - 1.65));
+      const gableRiseMm = Math.min(1.05, Math.max(0.75, safeBaseMm - zSpringMm - 0.55));
+      return { ventHalfWidthMm: 0.90, zSpringMm, gableRiseMm };
+    }
+    const minRoofMm = safeBaseMm >= 2.00 ? 0.50 : 0.45;
+    const maxApexMm = Math.max(1.35, safeBaseMm - minRoofMm);
+    const ventHalfWidthMm = safeBaseMm >= 2.35 ? 0.85 : (safeBaseMm >= 2.00 ? 0.70 : 0.60);
+    const gableRiseMm = ventHalfWidthMm;
+    const zSpringMm = Math.max(0.65, maxApexMm - gableRiseMm);
+    return { ventHalfWidthMm, zSpringMm, gableRiseMm };
+  }
+
+  /**
+   * Carves hidden underside vent slots (Z=0..apex, >= 45 deg gable roof closing >= 0.50 mm
+   * below baseBottomMm for >= 2.00 mm bases) for large enclosed water-cutout basins (>= 18 mm^2)
+   * so top-down black water cutouts remain 100% crisp while eliminating Z=0..1.15 suction cups.
+   * Prefers routing to open exterior water or interior tile seam planes (never outer frame).
    * @param {object} core
    * @param {object} poly
    * @param {object} mf
@@ -198,13 +228,15 @@
    * @param {object} uBB
    * @param {number} scaleMm
    * @param {number} baseBottomMm
-   * @param {{south?: boolean, north?: boolean, west?: boolean, east?: boolean}} [interiorSeams]
+   * @param {{south?: boolean, north?: boolean, west?: boolean, east?: boolean, cutXsU?: Array<number>, cutYsU?: Array<number>}|null} [interiorSeams]
    * @param {Function} rasterizeFn
    * @returns {object}
    */
   function ventLargeBasePocketsUnderside(core, poly, mf, unified, uBB, scaleMm, baseBottomMm, interiorSeams, rasterizeFn) {
     const safeBaseMm = (Number(baseBottomMm) > 0) ? Number(baseBottomMm) : 2.35;
-    if (safeBaseMm < 2.2 || !unified || unified.numTri() === 0) return unified;
+    if (safeBaseMm < 1.8 || !unified || unified.numTri() === 0) return unified;
+    const ventProfile = resolveUndersideVentProfileMm(safeBaseMm);
+    const ventHalfWidthMm = ventProfile.ventHalfWidthMm;
     const zProbeU = 1.05 / scaleMm;
     if (uBB.max[2] <= zProbeU) return unified;
 
@@ -267,29 +299,72 @@
       if (cy + 1 < ny && !solidGrid[cur + nx] && !extAir[cur + nx]) { extAir[cur + nx] = 1; q[qt++] = cur + nx; }
     }
 
-    // Prefer open exterior water inside the tile bbox OR interior tile seam faces
+    // Compute exact base-level XY bounds from the Z=1.05 mm slice (not full 3D uBB, which
+    // can be inflated by overhanging trees/buildings beyond the outer passe-partout wall).
+    let baseMinX = Infinity, baseMaxX = -Infinity, baseMinY = Infinity, baseMaxY = -Infinity;
+    for (let i = 0; i < polys.length; i++) {
+      const r = polys[i];
+      if (!r) continue;
+      for (let k = 0; k < r.length; k++) {
+        const px = r[k][0], py = r[k][1];
+        if (px < baseMinX) baseMinX = px;
+        if (px > baseMaxX) baseMaxX = px;
+        if (py < baseMinY) baseMinY = py;
+        if (py > baseMaxY) baseMaxY = py;
+      }
+    }
+    if (!Number.isFinite(baseMinX)) {
+      baseMinX = uBB.min[0]; baseMaxX = uBB.max[0];
+      baseMinY = uBB.min[1]; baseMaxY = uBB.max[1];
+    }
+
+    // Prefer open exterior water strictly inside the base footprint OR interior tile seam faces/cut planes
     // so outer A4 passe-partout perimeter walls remain 100% unbroken whenever possible.
     const seams = interiorSeams || {};
+    const cutXsU = Array.isArray(seams.cutXsU) ? seams.cutXsU : [];
+    const cutYsU = Array.isArray(seams.cutYsU) ? seams.cutYsU : [];
     const prefGoal = new Uint8Array(total);
     let prefCount = 0;
-    const innerPadU = 0.65 / scaleMm;
+    const innerPadU = 1.50 / scaleMm;
+    const outerSkirtPadU = Math.min(8.0, Math.min(spanXMm, spanYMm) * 0.2) / scaleMm;
+    const cutBandU = 0.65 * stepU;
     for (let r = 0; r < ny; r++) {
       const cy = oy + (r + 0.5) * stepU;
       const rowOff = r * nx;
       for (let c = 0; c < nx; c++) {
         const idx = rowOff + c;
-        if (!extAir[idx]) continue;
         const cx = ox + (c + 0.5) * stepU;
-        const insideWater = cx > uBB.min[0] + innerPadU && cx < uBB.max[0] - innerPadU &&
-                            cy > uBB.min[1] + innerPadU && cy < uBB.max[1] - innerPadU;
-        const onInteriorSeam =
-          (seams.south && cy <= uBB.min[1] + 0.1 * stepU && cx > uBB.min[0] + innerPadU && cx < uBB.max[0] - innerPadU) ||
-          (seams.north && cy >= uBB.max[1] - 0.1 * stepU && cx > uBB.min[0] + innerPadU && cx < uBB.max[0] - innerPadU) ||
-          (seams.west && cx <= uBB.min[0] + 0.1 * stepU && cy > uBB.min[1] + innerPadU && cy < uBB.max[1] - innerPadU) ||
-          (seams.east && cx >= uBB.max[0] - 0.1 * stepU && cy > uBB.min[1] + innerPadU && cy < uBB.max[1] - innerPadU);
-        if (insideWater || onInteriorSeam) {
-          prefGoal[idx] = 1;
-          prefCount++;
+        if (extAir[idx]) {
+          const insideWater = cx > baseMinX + innerPadU && cx < baseMaxX - innerPadU &&
+                              cy > baseMinY + innerPadU && cy < baseMaxY - innerPadU;
+          const onInteriorSeam =
+            (seams.south && cy <= baseMinY + 0.25 * stepU && cx > baseMinX + innerPadU && cx < baseMaxX - innerPadU) ||
+            (seams.north && cy >= baseMaxY - 0.25 * stepU && cx > baseMinX + innerPadU && cx < baseMaxX - innerPadU) ||
+            (seams.west && cx <= baseMinX + 0.25 * stepU && cy > baseMinY + innerPadU && cy < baseMaxY - innerPadU) ||
+            (seams.east && cx >= baseMaxX - 0.25 * stepU && cy > baseMinY + innerPadU && cy < baseMaxY - innerPadU);
+          if (insideWater || onInteriorSeam) {
+            prefGoal[idx] = 1;
+            prefCount++;
+            continue;
+          }
+        }
+        if (cutXsU.length > 0 && cy > baseMinY + outerSkirtPadU && cy < baseMaxY - outerSkirtPadU) {
+          for (let ci = 0; ci < cutXsU.length; ci++) {
+            if (Math.abs(cx - cutXsU[ci]) <= cutBandU) {
+              prefGoal[idx] = 1;
+              prefCount++;
+              break;
+            }
+          }
+        }
+        if (!prefGoal[idx] && cutYsU.length > 0 && cx > baseMinX + outerSkirtPadU && cx < baseMaxX - outerSkirtPadU) {
+          for (let ci = 0; ci < cutYsU.length; ci++) {
+            if (Math.abs(cy - cutYsU[ci]) <= cutBandU) {
+              prefGoal[idx] = 1;
+              prefCount++;
+              break;
+            }
+          }
         }
       }
     }
@@ -321,16 +396,26 @@
         }
       }
       if (seeds.length === 0) continue;
-      let runs = findShortestSolidVentRuns(seeds, goalMask, solidGrid, nx, ny, ox, oy, stepU, scaleMm, 0.90);
+      // If the enclosed basin already intersects an interior tile cut plane (goalMask),
+      // cutting into tiles opens it directly onto the interior seam with zero vent tunnel needed.
+      let alreadyTouchesGoal = false;
+      for (let si = 0; si < seeds.length; si++) {
+        if (goalMask[seeds[si]]) {
+          alreadyTouchesGoal = true;
+          break;
+        }
+      }
+      if (alreadyTouchesGoal) continue;
+      let runs = findShortestSolidVentRuns(seeds, goalMask, solidGrid, nx, ny, ox, oy, stepU, scaleMm, ventHalfWidthMm);
       if (runs.length === 0 && goalMask !== extAir) {
-        runs = findShortestSolidVentRuns(seeds, extAir, solidGrid, nx, ny, ox, oy, stepU, scaleMm, 0.90);
+        runs = findShortestSolidVentRuns(seeds, extAir, solidGrid, nx, ny, ox, oy, stepU, scaleMm, ventHalfWidthMm);
       }
       for (let k = 0; k < runs.length; k++) allRuns.push(runs[k]);
     }
 
     if (allRuns.length === 0) return unified;
-    const zSpringMm = Math.min(1.38, Math.max(1.22, safeBaseMm - 1.65));
-    const gableRiseMm = Math.min(1.05, Math.max(0.75, safeBaseMm - zSpringMm - 0.55));
+    const zSpringMm = ventProfile.zSpringMm;
+    const gableRiseMm = ventProfile.gableRiseMm;
     const cutter = buildGabledTunnelManifold(
       core, mf, allRuns, -0.15 / scaleMm, zSpringMm / scaleMm, gableRiseMm / scaleMm, scaleMm
     );
@@ -354,6 +439,7 @@
   const exportsObj = {
     buildGabledTunnelManifold,
     findShortestSolidVentRuns,
+    resolveUndersideVentProfileMm,
     ventLargeBasePocketsUnderside,
   };
   Object.assign(root, exportsObj);

@@ -106,3 +106,36 @@ test('A4 Passe-Partout 12x17 cm (1x3) preset resolves to 3 tiles of 120x56.67 mm
   assert.equal(cfg.resolveBaseBottomMm({ baseBottomMm: 3.5 }), 3.5);
   assert.equal(cfg.PRINT_PHYSICS_CONFIG.roadHeightMm, 0.567);
 });
+
+test('underside relief toggle and shallow pond floor resolve deterministically by base thickness', () => {
+  assert.equal(cfg.resolveUndersideReliefEnabled({ solidBaseNoTunnels: true, baseHeightMm: 4.0 }), true);
+  assert.equal(cfg.resolveUndersideReliefEnabled({ solidBaseNoTunnels: true, baseHeightMm: 2.0 }), false);
+  assert.equal(cfg.resolveUndersideReliefEnabled({ solidBaseNoTunnels: true, baseHeightMm: 2.6 }), false);
+  assert.equal(cfg.resolveUndersideReliefEnabled({ solidBaseNoTunnels: true, baseHeightMm: 2.65 }), true);
+  assert.equal(cfg.resolveUndersideReliefEnabled({ solidBaseNoTunnels: true, baseHeightMm: 4.0, undersideReliefEnabled: false }), false);
+  assert.equal(cfg.resolveUndersideReliefEnabled({ solidBaseNoTunnels: true, baseHeightMm: 2.0, undersideReliefEnabled: true }), true);
+  assert.equal(cfg.resolveUndersideReliefEnabled({ solidBaseNoTunnels: false, baseHeightMm: 4.0 }), false);
+
+  // 4.0 mm grooved base preserves exact 2.20 mm floor above 1.50 mm relief ceiling
+  assert.ok(Math.abs(cfg.resolveShallowPondMinFloorMm(4.0, true, 1.50) - 2.20) < 1e-9);
+  // 2.0 mm smooth base keeps pond floor well below 2.0 mm so 0.40 mm recess stays visible (1.60 mm)
+  assert.ok(Math.abs(cfg.resolveShallowPondMinFloorMm(2.0, false, 1.50) - 1.20) < 1e-9);
+  // 1.8 mm minimum base still keeps >= 1.00 mm floor under 0.40 mm recess (1.40 mm)
+  assert.ok(Math.abs(cfg.resolveShallowPondMinFloorMm(1.8, false, 1.50) - 1.00) < 1e-9);
+});
+
+test('underside vent profile preserves >= 0.50 mm roof for >= 2.0 mm bases and stays below shallow ponds', () => {
+  const ventMod = require('../src/mesh/tile_msla_vent_builder.js');
+  for (const baseMm of [1.80, 1.90, 2.00, 2.15, 2.20, 2.25, 2.35, 2.60, 3.00, 4.00]) {
+    const p = ventMod.resolveUndersideVentProfileMm(baseMm);
+    const apexMm = p.zSpringMm + p.gableRiseMm;
+    const roofMm = baseMm - apexMm;
+    const minRoof = baseMm >= 2.00 ? 0.50 : 0.45;
+    assert.ok(roofMm >= minRoof - 1e-6, `base=${baseMm}: roof=${roofMm.toFixed(3)} < ${minRoof}`);
+    assert.ok(apexMm >= 1.35 - 1e-6, `base=${baseMm}: apex=${apexMm.toFixed(3)} < 1.35 (VAL-03 clearance)`);
+    assert.ok(p.gableRiseMm >= p.ventHalfWidthMm - 0.16, `base=${baseMm}: gable slope too shallow`);
+    if (baseMm >= 2.00) {
+      assert.ok(apexMm <= baseMm - 0.40 + 1e-6, `base=${baseMm}: apex=${apexMm.toFixed(3)} breaches 0.40 mm shallow pond`);
+    }
+  }
+});

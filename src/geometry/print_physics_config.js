@@ -41,6 +41,7 @@ const PRINT_PHYSICS_CONFIG = Object.freeze({
   // Physical layer heights & tolerances in millimeters
   baseBottomMm: 2.35,
   solidBaseBottomMm: 4.0,
+  undersideReliefMinBaseMm: 2.60,
   baseBottomMinMm: 1.8,
   baseBottomMaxMm: 12.0,
   deepWaterMm: 1.68,
@@ -208,6 +209,52 @@ function resolveBaseBottomMm(state, cfg = PRINT_PHYSICS_CONFIG) {
 }
 
 /**
+ * Resolves whether underside stress-relief grooves should be carved for the given state.
+ * Thick solid bases (> 2.60 mm) default to true; thin bases (<= 2.60 mm) default to false
+ * unless state.undersideReliefEnabled explicitly overrides the choice.
+ * @param {object|null} state - optional state carrying undersideReliefEnabled, solidBaseNoTunnels, or baseHeightMm.
+ * @param {object|null} [cfg] - optional PRINT_PHYSICS_CONFIG override.
+ * @param {number|null} [baseBottomMm] - optional pre-resolved base thickness in millimeters.
+ * @returns {boolean}
+ */
+function resolveUndersideReliefEnabled(state, cfg = PRINT_PHYSICS_CONFIG, baseBottomMm = null) {
+  const s = state || {};
+  if (typeof s.undersideReliefEnabled === 'boolean') {
+    return s.undersideReliefEnabled;
+  }
+  if (s.solidBaseNoTunnels === true) {
+    const conf = cfg || PRINT_PHYSICS_CONFIG;
+    const minReliefBaseMm = Number(conf.undersideReliefMinBaseMm) > 0 ? Number(conf.undersideReliefMinBaseMm) : 2.60;
+    const effBaseMm = (baseBottomMm !== null && Number.isFinite(Number(baseBottomMm)) && Number(baseBottomMm) > 0)
+      ? Number(baseBottomMm)
+      : resolveBaseBottomMm(s, conf);
+    return effBaseMm > minReliefBaseMm;
+  }
+  return false;
+}
+
+/**
+ * Computes the minimum safe physical floor height (mm) for shallow ornamental park pools
+ * (< 4500 m^2) under waterCutout so pools never breach underside grooves and never disappear
+ * on thin smooth bases.
+ * @param {number} baseBottomMm - physical base thickness in millimeters.
+ * @param {boolean} undersideReliefEnabled - whether underside stress-relief grooves are active.
+ * @param {number} [reliefCapMm=1.50] - configured cap height of underside grooves in millimeters.
+ * @returns {number}
+ */
+function resolveShallowPondMinFloorMm(baseBottomMm, undersideReliefEnabled, reliefCapMm = 1.50) {
+  const safeBaseMm = (Number.isFinite(Number(baseBottomMm)) && Number(baseBottomMm) > 0)
+    ? Number(baseBottomMm)
+    : 2.35;
+  if (undersideReliefEnabled === true) {
+    const capMm = (Number.isFinite(Number(reliefCapMm)) && Number(reliefCapMm) > 0) ? Number(reliefCapMm) : 1.50;
+    const effReliefMm = Math.min(capMm, Math.max(0.85, safeBaseMm - 1.20));
+    return effReliefMm + 0.70;
+  }
+  return Math.max(0.80, safeBaseMm - 0.80);
+}
+
+/**
  * Resolves the usable tile area on the Photon Mono 4 plate for the bed safe margin in state.
  * @param {object|null} state - reads state.bedSafeMarginMm (mm per side); null uses the default.
  * @returns {{marginMm:number, bedXMm:number, bedYMm:number, maxWMm:number, maxHMm:number,
@@ -261,6 +308,8 @@ if (typeof window !== 'undefined') {
   window.resolveSceneScaleAndSpec = resolveSceneScaleAndSpec;
   window.resolveTriangleTileId = resolveTriangleTileId;
   window.resolveBaseBottomMm = resolveBaseBottomMm;
+  window.resolveUndersideReliefEnabled = resolveUndersideReliefEnabled;
+  window.resolveShallowPondMinFloorMm = resolveShallowPondMinFloorMm;
   window.resolveMono4SafeArea = resolveMono4SafeArea;
 }
 
@@ -276,6 +325,8 @@ if (typeof module !== 'undefined' && module.exports) {
     resolveSceneScaleAndSpec,
     resolveTriangleTileId,
     resolveBaseBottomMm,
+    resolveUndersideReliefEnabled,
+    resolveShallowPondMinFloorMm,
     resolveMono4SafeArea
   };
 }

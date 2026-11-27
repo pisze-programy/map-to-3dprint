@@ -36,7 +36,7 @@ export function loadCityCatalog() {
 /**
  * Parses CLI flags into a normalized options object.
  * @param {Array<string>} argv
- * @returns {{city: string|null, allTop10: boolean, coupon: boolean, format: string|null, span: number|undefined, outDir: string|null, snapshot: string|null, snapshotDir: string|null, demCacheDir: string|null, offline: boolean, quiet: boolean}}
+ * @returns {{city: string|null, allTop10: boolean, coupon: boolean, format: string|null, span: number|undefined, baseHeightMm: number|undefined, undersideReliefEnabled: boolean|undefined, outDir: string|null, snapshot: string|null, snapshotDir: string|null, demCacheDir: string|null, offline: boolean, quiet: boolean}}
  */
 function parseArgs(argv) {
   const opts = {
@@ -45,6 +45,8 @@ function parseArgs(argv) {
     coupon: false,
     format: null,
     span: undefined,
+    baseHeightMm: undefined,
+    undersideReliefEnabled: undefined,
     outDir: null,
     snapshot: null,
     snapshotDir: null,
@@ -59,6 +61,9 @@ function parseArgs(argv) {
     else if (a === '--coupon') opts.coupon = true;
     else if (a === '--format' && argv[i + 1]) opts.format = argv[++i];
     else if (a === '--span' && argv[i + 1]) opts.span = Number(argv[++i]);
+    else if (a === '--base-height-mm' && argv[i + 1]) opts.baseHeightMm = Number(argv[++i]);
+    else if (a === '--no-underside-relief') opts.undersideReliefEnabled = false;
+    else if (a === '--underside-relief') opts.undersideReliefEnabled = true;
     else if (a === '--out-dir' && argv[i + 1]) opts.outDir = argv[++i];
     else if (a === '--snapshot' && argv[i + 1]) opts.snapshot = argv[++i];
     else if (a === '--snapshot-dir' && argv[i + 1]) opts.snapshotDir = argv[++i];
@@ -186,6 +191,12 @@ export async function exportCitySku(citySlug, overrides = {}) {
     showFrame: false,
     offlineOnly: Boolean(overrides.offlineOnly),
   };
+  if (overrides.baseHeightMm !== undefined && Number.isFinite(Number(overrides.baseHeightMm))) {
+    exportArgs.baseHeightMm = Number(overrides.baseHeightMm);
+  }
+  if (typeof overrides.undersideReliefEnabled === 'boolean') {
+    exportArgs.undersideReliefEnabled = overrides.undersideReliefEnabled;
+  }
   if (snapshotPath) {
     exportArgs.snapshotPath = snapshotPath;
   } else if (!overrides.offlineOnly) {
@@ -224,7 +235,12 @@ export async function exportParisSeamCoupon(overrides = {}) {
     tileCols: c.tile_cols,
     tileRows: c.tile_rows,
     solidBaseNoTunnels: c.solid_base_no_tunnels !== false,
-    baseHeightMm: c.base_height_mm,
+    baseHeightMm: (overrides.baseHeightMm !== undefined && Number.isFinite(Number(overrides.baseHeightMm)))
+      ? Number(overrides.baseHeightMm)
+      : c.base_height_mm,
+    undersideReliefEnabled: typeof overrides.undersideReliefEnabled === 'boolean'
+      ? overrides.undersideReliefEnabled
+      : undefined,
     waterCutout: c.water_cutout !== false,
     kerfMm: c.kerf_mm,
     bedSafeMarginMm: c.bed_safe_margin_mm,
@@ -244,7 +260,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.city && !opts.allTop10 && !opts.coupon) {
     process.stderr.write(
-      'Usage: node tools/export_city_sku.mjs --city <slug> | --all-top10 | --coupon [--format <id>] [--span <m>] [--out-dir <dir>] [--snapshot <file>] [--offline]\n'
+      'Usage: node tools/export_city_sku.mjs --city <slug> | --all-top10 | --coupon [--format <id>] [--span <m>] [--base-height-mm <mm>] [--no-underside-relief|--underside-relief] [--out-dir <dir>] [--snapshot <file>] [--offline]\n'
     );
     process.exit(2);
   }
@@ -257,6 +273,8 @@ async function main() {
       const res = await exportCitySku(slug, {
         formatId: opts.format,
         spanMeters: opts.span,
+        baseHeightMm: opts.baseHeightMm,
+        undersideReliefEnabled: opts.undersideReliefEnabled,
         snapshotDir: opts.snapshotDir,
         demCacheDir: opts.demCacheDir,
         offlineOnly: opts.offline,
@@ -269,6 +287,8 @@ async function main() {
     const res = await exportCitySku(opts.city, {
       formatId: opts.format,
       spanMeters: opts.span,
+      baseHeightMm: opts.baseHeightMm,
+      undersideReliefEnabled: opts.undersideReliefEnabled,
       outputDir: opts.outDir,
       snapshotPath: opts.snapshot,
       snapshotDir: opts.snapshotDir,
@@ -280,6 +300,8 @@ async function main() {
   }
   if (opts.coupon) {
     const res = await exportParisSeamCoupon({
+      baseHeightMm: opts.baseHeightMm,
+      undersideReliefEnabled: opts.undersideReliefEnabled,
       outputDir: opts.outDir,
       silent: opts.quiet,
     });

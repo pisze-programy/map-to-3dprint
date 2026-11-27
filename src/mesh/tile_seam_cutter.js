@@ -1357,6 +1357,12 @@
     const tileRows = Math.max(1, Math.round(Number(state && state.tileRows) || 1));
     const isCutout = Boolean(state && state.waterCutout);
     const solidBaseNoTunnels = Boolean(state && state.solidBaseNoTunnels);
+    const minReliefBaseMm = (cfgMod && cfgMod.PRINT_PHYSICS_CONFIG && Number(cfgMod.PRINT_PHYSICS_CONFIG.undersideReliefMinBaseMm) > 0)
+      ? Number(cfgMod.PRINT_PHYSICS_CONFIG.undersideReliefMinBaseMm)
+      : 2.60;
+    const undersideReliefWanted = (cfgMod && typeof cfgMod.resolveUndersideReliefEnabled === 'function')
+      ? cfgMod.resolveUndersideReliefEnabled(state, cfgMod.PRINT_PHYSICS_CONFIG, baseBottomMm)
+      : (solidBaseNoTunnels && baseBottomMm > minReliefBaseMm);
     const meshesObj = (state && (state.layerMeshes || state.meshes)) || {};
     const vis = (state && state.layerVisible) || {};
     const fmtIdKey = String((state && (state.formatId || state.printerProfileId)) || '');
@@ -1370,6 +1376,7 @@
       Number(scaleMm).toFixed(6),
       isCutout ? 1 : 0,
       solidBaseNoTunnels ? 1 : 0,
+      undersideReliefWanted ? 1 : 0,
       Number(baseBottomMm).toFixed(3),
       vis.water !== false ? 1 : 0,
       vis.base !== false ? 1 : 0,
@@ -1596,7 +1603,7 @@
           core.safeDeleteManifold(s0Probe);
         }
 
-        if (solidBaseNoTunnels && (z0AreaMm2 > 3500.0 || hasInlandLake || tileCols > 1 || tileRows > 1)) {
+        if (undersideReliefWanted && (z0AreaMm2 > 3500.0 || hasInlandLake || tileCols > 1 || tileRows > 1)) {
           const totalWMm = 2 * halfW * scaleMm;
           const totalHMm = 2 * halfH * scaleMm;
           if (totalWMm >= 36.0 && totalHMm >= 36.0) undersideReliefApplied = true;
@@ -1606,22 +1613,29 @@
           );
         } else if (isCutout === true && hasInlandLake && ventMod && typeof ventMod.ventLargeBasePocketsUnderside === 'function' && vaultMod && vaultMod._rasterizePolysToGrid) {
           const masterSeams = (activeCutXsU.length > 0 || activeCutYsU.length > 0)
-            ? { south: false, north: false, west: false, east: false }
+            ? {
+                south: false,
+                north: false,
+                west: false,
+                east: false,
+                cutXsU: activeCutXsU,
+                cutYsU: activeCutYsU,
+              }
             : null;
           masterSolid = ventMod.ventLargeBasePocketsUnderside(
             core, poly, mf, masterSolid, masterSolid.boundingBox(), scaleMm, baseBottomMm, masterSeams, vaultMod._rasterizePolysToGrid
           );
         }
 
-        // 5. Global upper courtyard venting, overhang grounding, and outer-only sliver cleanup
-        if (vaultMod && typeof vaultMod._ventUpperSealedCourtyards === 'function') {
-          masterSolid = vaultMod._ventUpperSealedCourtyards(
-            core, poly, mf, masterSolid, scaleMm, baseBottomMm, ventMod
-          );
-        }
+        // 5. Global overhang grounding before upper courtyard venting so piers never re-seal vents, then sliver cleanup
         if (vaultMod && typeof vaultMod._groundFlatOverhangPiers === 'function') {
           masterSolid = vaultMod._groundFlatOverhangPiers(
             core, poly, mf, masterSolid, masterSolid.boundingBox(), scaleMm, baseBottomMm
+          );
+        }
+        if (vaultMod && typeof vaultMod._ventUpperSealedCourtyards === 'function') {
+          masterSolid = vaultMod._ventUpperSealedCourtyards(
+            core, poly, mf, masterSolid, scaleMm, baseBottomMm, ventMod
           );
         }
         if (vaultMod && typeof vaultMod._cleanupDetachedBorderSlivers === 'function') {
